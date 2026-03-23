@@ -3291,14 +3291,12 @@ export class EverythingPresenceProPanel extends LitElement {
 			return this._renderWizard();
 		}
 
-		let content;
-		if (this._view === "settings") {
-			content = this._renderSettings();
-		} else if (this._view === "editor" && this._perspective) {
-			content = this._renderEditor();
-		} else {
-			content = this._renderLiveOverview();
-		}
+		const content =
+			this._view === "settings"
+				? this._renderSettings()
+				: this._view === "editor" && this._perspective
+					? this._renderEditor()
+					: this._renderLiveOverview();
 
 		return html`${content}${this._renderGlobalDialogs()}`;
 	}
