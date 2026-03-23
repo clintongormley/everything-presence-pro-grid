@@ -453,4 +453,55 @@ describe("_onKeyDown furniture shortcuts", () => {
 		a._onKeyDown(makeEvent("c", { metaKey: true }));
 		expect(a._furnitureClipboard).not.toBeNull();
 	});
+
+	it("ignores keys in textarea elements", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		const textarea = document.createElement("textarea");
+		const ev = new KeyboardEvent("keydown", {
+			key: "Backspace",
+			bubbles: true,
+			cancelable: true,
+		});
+		Object.defineProperty(ev, "target", { value: textarea });
+		a._onKeyDown(ev);
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("ignores keys in select elements", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		const select = document.createElement("select");
+		const ev = new KeyboardEvent("keydown", {
+			key: "Backspace",
+			bubbles: true,
+			cancelable: true,
+		});
+		Object.defineProperty(ev, "target", { value: select });
+		a._onKeyDown(ev);
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("Ctrl+C with invalid selection does not crash", () => {
+		addItem();
+		a._selectedFurnitureId = "nonexistent";
+		a._onKeyDown(makeEvent("c", { ctrlKey: true }));
+		expect(a._furnitureClipboard).toBeNull();
+	});
+
+	it("Ctrl+X with invalid selection does not crash", () => {
+		addItem();
+		a._selectedFurnitureId = "nonexistent";
+		a._onKeyDown(makeEvent("x", { ctrlKey: true }));
+		expect(a._furnitureClipboard).toBeNull();
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("ignores when sidebarTab is zones", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._sidebarTab = "zones";
+		a._onKeyDown(makeEvent("Backspace"));
+		expect(a._furniture).toHaveLength(1);
+	});
 });

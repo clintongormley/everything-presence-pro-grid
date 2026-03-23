@@ -893,6 +893,72 @@ describe("editor rename dialog DOM events", () => {
 });
 
 // =========================================================
+// _renderGlobalDialogs: template and unsaved dialogs
+// =========================================================
+describe("_renderGlobalDialogs branch coverage", () => {
+	it("renders template save dialog", () => {
+		const a = createPanel() as any;
+		a._showTemplateSave = true;
+		a._templateName = "test";
+		const tpl = a._renderGlobalDialogs();
+		const c = renderTo(tpl);
+		expect(c.querySelectorAll(".template-dialog").length).toBeGreaterThan(0);
+		document.body.removeChild(c);
+	});
+
+	it("renders template load dialog", () => {
+		const a = createPanel() as any;
+		a._showTemplateLoad = true;
+		const tpl = a._renderGlobalDialogs();
+		const c = renderTo(tpl);
+		expect(c.querySelectorAll(".template-dialog").length).toBeGreaterThan(0);
+		document.body.removeChild(c);
+	});
+
+	it("renders unsaved changes dialog", () => {
+		const a = createPanel() as any;
+		a._showUnsavedDialog = true;
+		const tpl = a._renderGlobalDialogs();
+		const c = renderTo(tpl);
+		expect(c.querySelectorAll(".template-dialog").length).toBeGreaterThan(0);
+		document.body.removeChild(c);
+	});
+
+	it("renders delete calibration dialog", () => {
+		const a = createPanel() as any;
+		a._showDeleteCalibrationDialog = true;
+		const tpl = a._renderGlobalDialogs();
+		const c = renderTo(tpl);
+		expect(c.querySelectorAll(".template-dialog").length).toBeGreaterThan(0);
+		document.body.removeChild(c);
+	});
+
+	it("renders nothing when no dialogs are active", () => {
+		const a = createPanel() as any;
+		const tpl = a._renderGlobalDialogs();
+		const c = renderTo(tpl);
+		expect(c.querySelectorAll(".template-dialog").length).toBe(0);
+		document.body.removeChild(c);
+	});
+});
+
+// =========================================================
+// render(): view branching
+// =========================================================
+describe("render view branching", () => {
+	it("renders settings view", () => {
+		const a = createPanel() as any;
+		a._view = "settings";
+		a._entries = [{ entry_id: "e1", title: "T", state: "loaded" }];
+		a._selectedEntryId = "e1";
+		const tpl = a.render();
+		const c = renderTo(tpl);
+		expect(c.innerHTML).not.toBe("");
+		document.body.removeChild(c);
+	});
+});
+
+// =========================================================
 // _renderZoneSidebar: zone color picker stopPropagation
 // =========================================================
 describe("stopPropagation handlers in zone sidebar", () => {

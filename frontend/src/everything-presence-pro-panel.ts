@@ -468,6 +468,7 @@ export class EverythingPresenceProPanel extends LitElement {
 		null,
 	];
 	@state() private _isPainting = false;
+	private _justPainted = false;
 	@state() private _paintAction: PaintAction = "set";
 	private _frozenBounds: {
 		minCol: number;
@@ -876,6 +877,13 @@ export class EverythingPresenceProPanel extends LitElement {
 		);
 
 		this._applyPaintToCell(index);
+
+		// Listen on window so releasing outside the grid ends the paint
+		const onUp = () => {
+			this._onCellMouseUp();
+			window.removeEventListener("mouseup", onUp);
+		};
+		window.addEventListener("mouseup", onUp);
 	}
 
 	private _onCellMouseEnter(index: number): void {
@@ -885,6 +893,13 @@ export class EverythingPresenceProPanel extends LitElement {
 	}
 
 	private _onCellMouseUp(): void {
+		if (this._isPainting) {
+			// Flag to prevent the panel click handler from deselecting the zone
+			this._justPainted = true;
+			requestAnimationFrame(() => {
+				this._justPainted = false;
+			});
+		}
 		this._isPainting = false;
 		this._frozenBounds = null;
 	}
@@ -4737,6 +4752,7 @@ export class EverythingPresenceProPanel extends LitElement {
 
 		return html`
       <div class="panel" @click=${(e: Event) => {
+				if (this._justPainted) return;
 				const el = e.target as HTMLElement;
 				if (!el.closest(".grid") && !el.closest(".zone-sidebar")) {
 					this._activeZone = null;
@@ -4758,7 +4774,6 @@ export class EverythingPresenceProPanel extends LitElement {
               class="grid"
               style="grid-template-columns: repeat(${visCols}, ${cellPx}px); grid-template-rows: repeat(${visRows}, ${cellPx}px);"
               @mouseup=${this._onCellMouseUp}
-              @mouseleave=${this._onCellMouseUp}
             >
               ${this._renderVisibleCells(minCol, maxCol, minRow, maxRow, cellPx)}
             </div>
