@@ -1608,7 +1608,8 @@ const he={attribute:!0,type:String,converter:b,reflect:!1,hasChanged:y},de=(e=he
     }
 
     .furniture-item.selected {
-      border: 2px solid var(--primary-color, #03a9f4);
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: -1px;
       box-shadow: 0 0 8px rgba(3, 169, 244, 0.4);
       z-index: 10;
     }
