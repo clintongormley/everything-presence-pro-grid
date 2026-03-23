@@ -1441,7 +1441,7 @@ const he={attribute:!0,type:String,converter:b,reflect:!1,hasChanged:y},de=(e=he
       position: relative;
       display: inline-block;
       max-width: 100%;
-      overflow: hidden;
+      overflow: visible;
     }
 
     .grid {

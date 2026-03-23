@@ -1672,7 +1672,7 @@ export class EverythingPresenceProPanel extends LitElement {
       position: relative;
       display: inline-block;
       max-width: 100%;
-      overflow: hidden;
+      overflow: visible;
     }
 
     .grid {
