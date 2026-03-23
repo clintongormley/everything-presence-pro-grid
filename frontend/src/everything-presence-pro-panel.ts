@@ -570,16 +570,32 @@ export class EverythingPresenceProPanel extends LitElement {
 				(f) => f.id === this._selectedFurnitureId,
 			);
 			if (item) this._furnitureClipboard = { ...item };
+		} else if (e.key === "x" && (e.ctrlKey || e.metaKey)) {
+			const item = this._furniture.find(
+				(f) => f.id === this._selectedFurnitureId,
+			);
+			if (item) {
+				this._furnitureClipboard = { ...item };
+				this._removeFurniture(item.id);
+			}
 		} else if (e.key === "v" && (e.ctrlKey || e.metaKey)) {
 			if (!this._furnitureClipboard) return;
 			e.preventDefault();
 			const id = `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+			const cb = this._furnitureClipboard;
+			const bounds = this._getRoomBounds();
+			const roomCols = Math.ceil(this._roomWidth / GRID_CELL_MM);
+			const startCol = Math.floor((GRID_COLS - roomCols) / 2);
+			const visMinX = (bounds.minCol - startCol) * GRID_CELL_MM;
+			const visMaxX = (bounds.maxCol + 1 - startCol) * GRID_CELL_MM;
+			const visMinY = bounds.minRow * GRID_CELL_MM;
+			const visMaxY = (bounds.maxRow + 1) * GRID_CELL_MM;
 			const offset = 300; // 1 cell offset so paste is visible
 			const newItem: FurnitureItem = {
-				...this._furnitureClipboard,
+				...cb,
 				id,
-				x: this._furnitureClipboard.x + offset,
-				y: this._furnitureClipboard.y + offset,
+				x: Math.max(visMinX, Math.min(visMaxX - cb.width, cb.x + offset)),
+				y: Math.max(visMinY, Math.min(visMaxY - cb.height, cb.y + offset)),
 			};
 			this._furniture = [...this._furniture, newItem];
 			this._selectedFurnitureId = newItem.id;
