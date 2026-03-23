@@ -556,9 +556,18 @@ export class EverythingPresenceProPanel extends LitElement {
 		if (this._view !== "editor" || this._sidebarTab !== "furniture") return;
 		if (!this._selectedFurnitureId) return;
 
-		// Ignore if user is typing in an input
-		const tag = (e.target as HTMLElement)?.tagName;
-		if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+		// Ignore if user is typing in an editable element (including shadow DOM)
+		const editable = e.composedPath().some((el) => {
+			if (!(el instanceof HTMLElement)) return false;
+			const tag = el.tagName;
+			return (
+				tag === "INPUT" ||
+				tag === "TEXTAREA" ||
+				tag === "SELECT" ||
+				el.isContentEditable
+			);
+		});
+		if (editable) return;
 
 		if (e.key === "Backspace" || e.key === "Delete") {
 			e.preventDefault();

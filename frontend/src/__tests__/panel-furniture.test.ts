@@ -378,7 +378,7 @@ describe("_onKeyDown furniture shortcuts", () => {
 			bubbles: true,
 			cancelable: true,
 		});
-		Object.defineProperty(ev, "target", { value: input });
+		ev.composedPath = () => [input];
 		a._onKeyDown(ev);
 		expect(a._furniture).toHaveLength(1);
 	});
@@ -463,7 +463,7 @@ describe("_onKeyDown furniture shortcuts", () => {
 			bubbles: true,
 			cancelable: true,
 		});
-		Object.defineProperty(ev, "target", { value: textarea });
+		ev.composedPath = () => [textarea];
 		a._onKeyDown(ev);
 		expect(a._furniture).toHaveLength(1);
 	});
@@ -477,7 +477,7 @@ describe("_onKeyDown furniture shortcuts", () => {
 			bubbles: true,
 			cancelable: true,
 		});
-		Object.defineProperty(ev, "target", { value: select });
+		ev.composedPath = () => [select];
 		a._onKeyDown(ev);
 		expect(a._furniture).toHaveLength(1);
 	});
