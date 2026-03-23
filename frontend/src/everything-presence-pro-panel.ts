@@ -387,6 +387,7 @@ export class EverythingPresenceProPanel extends LitElement {
 	@state() private _customIconValue = "";
 	@state() private _furniture: FurnitureItem[] = [];
 	@state() private _selectedFurnitureId: string | null = null;
+	private _furnitureClipboard: FurnitureItem | null = null;
 	private _dragState: {
 		type: "move" | "resize" | "rotate";
 		id: string;
@@ -550,11 +551,48 @@ export class EverythingPresenceProPanel extends LitElement {
 			: "";
 	}
 
+	private _onKeyDown = (e: KeyboardEvent): void => {
+		if (this._view !== "editor" || this._sidebarTab !== "furniture") return;
+		if (!this._selectedFurnitureId) return;
+
+		// Ignore if user is typing in an input
+		const tag = (e.target as HTMLElement)?.tagName;
+		if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+
+		if (e.key === "Backspace" || e.key === "Delete") {
+			e.preventDefault();
+			this._removeFurniture(this._selectedFurnitureId);
+		} else if (e.key === "Escape") {
+			e.preventDefault();
+			this._selectedFurnitureId = null;
+		} else if (e.key === "c" && (e.ctrlKey || e.metaKey)) {
+			const item = this._furniture.find(
+				(f) => f.id === this._selectedFurnitureId,
+			);
+			if (item) this._furnitureClipboard = { ...item };
+		} else if (e.key === "v" && (e.ctrlKey || e.metaKey)) {
+			if (!this._furnitureClipboard) return;
+			e.preventDefault();
+			const id = `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+			const offset = 300; // 1 cell offset so paste is visible
+			const newItem: FurnitureItem = {
+				...this._furnitureClipboard,
+				id,
+				x: this._furnitureClipboard.x + offset,
+				y: this._furnitureClipboard.y + offset,
+			};
+			this._furniture = [...this._furniture, newItem];
+			this._selectedFurnitureId = newItem.id;
+			this._dirty = true;
+		}
+	};
+
 	connectedCallback(): void {
 		super.connectedCallback();
 		this._initialize();
 		window.addEventListener("beforeunload", this._beforeUnloadHandler);
 		window.addEventListener("click", this._dismissTooltips);
+		window.addEventListener("keydown", this._onKeyDown);
 
 		// Intercept HA's client-side routing (pushState/replaceState)
 		this._originalPushState = history.pushState.bind(history);
@@ -587,6 +625,7 @@ export class EverythingPresenceProPanel extends LitElement {
 		this._unsubscribeTargets();
 		window.removeEventListener("beforeunload", this._beforeUnloadHandler);
 		window.removeEventListener("click", this._dismissTooltips);
+		window.removeEventListener("keydown", this._onKeyDown);
 
 		// Restore original history methods
 		if (this._originalPushState) history.pushState = this._originalPushState;
