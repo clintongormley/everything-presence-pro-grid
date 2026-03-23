@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import type { EverythingPresenceProPanel } from "../everything-presence-pro-panel.js";
 import "../everything-presence-pro-panel.js";
-import { GRID_CELL_COUNT } from "../lib/grid.js";
+import { GRID_CELL_COUNT, initGridFromRoom } from "../lib/grid.js";
 
 function createPanel(): EverythingPresenceProPanel {
 	const el = document.createElement(
@@ -9,7 +9,7 @@ function createPanel(): EverythingPresenceProPanel {
 	) as EverythingPresenceProPanel;
 	el.hass = { callWS: async () => ({}) };
 	const a = el as any;
-	a._grid = new Uint8Array(GRID_CELL_COUNT);
+	a._grid = initGridFromRoom(6000, 6000);
 	a._zoneConfigs = new Array(7).fill(null);
 	a._activeZone = 0;
 	a._dirty = false;
@@ -316,5 +316,141 @@ describe("_addCustomFurniture", () => {
 
 		expect(a._dirty).toBe(true);
 		expect(a._selectedFurnitureId).toBe(a._furniture[0].id);
+	});
+});
+
+describe("_onKeyDown furniture shortcuts", () => {
+	let el: EverythingPresenceProPanel;
+	let a: any;
+
+	function makeEvent(
+		key: string,
+		opts: Partial<KeyboardEventInit> = {},
+	): KeyboardEvent {
+		const ev = new KeyboardEvent("keydown", {
+			key,
+			bubbles: true,
+			cancelable: true,
+			...opts,
+		});
+		return ev;
+	}
+
+	function addItem(): string {
+		a._addFurniture({
+			type: "svg" as const,
+			icon: "sofa-2-seat",
+			label: "Sofa",
+			defaultWidth: 600,
+			defaultHeight: 400,
+		});
+		return a._furniture[a._furniture.length - 1].id;
+	}
+
+	beforeEach(() => {
+		el = createPanel();
+		a = el as any;
+		a._view = "editor";
+		a._sidebarTab = "furniture";
+	});
+
+	it("ignores keys when not in editor furniture view", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._view = "live";
+		a._onKeyDown(makeEvent("Backspace"));
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("ignores keys when no furniture is selected", () => {
+		addItem();
+		a._selectedFurnitureId = null;
+		a._onKeyDown(makeEvent("Backspace"));
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("ignores keys when target is an input element", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		const input = document.createElement("input");
+		const ev = new KeyboardEvent("keydown", {
+			key: "Backspace",
+			bubbles: true,
+			cancelable: true,
+		});
+		Object.defineProperty(ev, "target", { value: input });
+		a._onKeyDown(ev);
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("Backspace deletes selected furniture", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._onKeyDown(makeEvent("Backspace"));
+		expect(a._furniture).toHaveLength(0);
+		expect(a._selectedFurnitureId).toBeNull();
+	});
+
+	it("Delete key deletes selected furniture", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._onKeyDown(makeEvent("Delete"));
+		expect(a._furniture).toHaveLength(0);
+	});
+
+	it("Escape deselects furniture", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._onKeyDown(makeEvent("Escape"));
+		expect(a._selectedFurnitureId).toBeNull();
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("Ctrl+C copies selected furniture to clipboard", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._onKeyDown(makeEvent("c", { ctrlKey: true }));
+		expect(a._furnitureClipboard).not.toBeNull();
+		expect(a._furnitureClipboard.icon).toBe("sofa-2-seat");
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("Ctrl+X cuts selected furniture", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._onKeyDown(makeEvent("x", { ctrlKey: true }));
+		expect(a._furnitureClipboard).not.toBeNull();
+		expect(a._furnitureClipboard.icon).toBe("sofa-2-seat");
+		expect(a._furniture).toHaveLength(0);
+	});
+
+	it("Ctrl+V pastes from clipboard with offset", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		const origX = a._furniture[0].x;
+		const origY = a._furniture[0].y;
+		a._onKeyDown(makeEvent("c", { ctrlKey: true }));
+		a._onKeyDown(makeEvent("v", { ctrlKey: true }));
+		expect(a._furniture).toHaveLength(2);
+		const pasted = a._furniture[1];
+		expect(pasted.id).not.toBe(id);
+		expect(pasted.x).toBe(origX + 300);
+		expect(pasted.y).toBe(origY + 300);
+		expect(a._selectedFurnitureId).toBe(pasted.id);
+		expect(a._dirty).toBe(true);
+	});
+
+	it("Ctrl+V does nothing without clipboard", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._onKeyDown(makeEvent("v", { ctrlKey: true }));
+		expect(a._furniture).toHaveLength(1);
+	});
+
+	it("Meta+C works for macOS", () => {
+		const id = addItem();
+		a._selectedFurnitureId = id;
+		a._onKeyDown(makeEvent("c", { metaKey: true }));
+		expect(a._furnitureClipboard).not.toBeNull();
 	});
 });
