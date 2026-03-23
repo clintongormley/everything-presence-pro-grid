@@ -882,7 +882,7 @@ describe("editor rename dialog DOM events", () => {
 				new_entity_id: "binary_sensor.kitchen_presence",
 			},
 		];
-		const tpl = a._renderEditor();
+		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 
 		// Find skip/rename buttons in the dialog

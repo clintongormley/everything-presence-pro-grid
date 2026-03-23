@@ -1025,6 +1025,14 @@ export class EverythingPresenceProPanel extends LitElement {
 
 		if (ds.type === "move") {
 			const item = this._furniture.find((f) => f.id === ds.id);
+			// Compute visible grid bounds in room-relative mm
+			const bounds = this._getRoomBounds();
+			const roomCols = Math.ceil(this._roomWidth / GRID_CELL_MM);
+			const startCol = Math.floor((GRID_COLS - roomCols) / 2);
+			const visMinX = (bounds.minCol - startCol) * GRID_CELL_MM;
+			const visMaxX = (bounds.maxCol + 1 - startCol) * GRID_CELL_MM;
+			const visMinY = bounds.minRow * GRID_CELL_MM; // startRow = 0
+			const visMaxY = (bounds.maxRow + 1) * GRID_CELL_MM;
 			const pos = clampFurnitureMove(
 				ds.origX,
 				ds.origY,
@@ -1033,8 +1041,10 @@ export class EverythingPresenceProPanel extends LitElement {
 				cellPx,
 				item?.width ?? 0,
 				item?.height ?? 0,
-				this._roomWidth,
-				this._roomDepth,
+				visMinX,
+				visMaxX,
+				visMinY,
+				visMaxY,
 			);
 			this._updateFurniture(ds.id, pos);
 		} else if (ds.type === "resize" && ds.handle) {
@@ -3114,6 +3124,104 @@ export class EverythingPresenceProPanel extends LitElement {
 
 	// -- Render methods --
 
+	private _renderGlobalDialogs() {
+		return html`
+      ${this._showTemplateSave ? this._renderTemplateSaveDialog() : nothing}
+      ${this._showTemplateLoad ? this._renderTemplateLoadDialog() : nothing}
+      ${
+				this._showRenameDialog
+					? html`
+          <div class="template-dialog">
+            <div class="template-dialog-card" style="max-width: 520px;">
+              <h3>${this._localize("dialogs.update_entity_ids")}</h3>
+              <p class="overlay-help">${this._localize("dialogs.update_entity_ids_body")}</p>
+              <div style="max-height: 300px; overflow-y: auto; margin: 12px 0;">
+                ${this._pendingRenames.map((r) => {
+									const oldShort =
+										r.old_entity_id.split(".")[1] || r.old_entity_id;
+									const newShort =
+										r.new_entity_id.split(".")[1] || r.new_entity_id;
+									const platform = r.old_entity_id.split(".")[0] || "";
+									return html`
+                    <div style="
+                      padding: 8px 12px; margin: 4px 0;
+                      background: var(--secondary-background-color, #f5f5f5);
+                      border-radius: 8px; font-family: monospace; font-size: 12px;
+                    ">
+                      <div style="color: var(--secondary-text-color, #888); font-size: 11px; margin-bottom: 4px; font-family: var(--paper-font-body1_-_font-family, sans-serif);">
+                        ${platform}
+                      </div>
+                      <div style="text-decoration: line-through; color: var(--secondary-text-color, #888); word-break: break-all;">
+                        ${oldShort}
+                      </div>
+                      <div style="font-weight: 500; word-break: break-all; margin-top: 2px;">
+                        → ${newShort}
+                      </div>
+                    </div>
+                  `;
+								})}
+              </div>
+              <div class="template-dialog-actions">
+                <button class="wizard-btn wizard-btn-back"
+                  @click=${this._dismissRenameDialog}
+                >${this._localize("common.skip")}</button>
+                <button class="wizard-btn wizard-btn-primary"
+                  @click=${this._applyRenames}
+                >${this._localize("common.rename")}</button>
+              </div>
+            </div>
+          </div>
+        `
+					: nothing
+			}
+      ${
+				this._showUnsavedDialog
+					? html`
+          <div class="template-dialog">
+            <div class="template-dialog-card">
+              <h3>${this._localize("dialogs.unsaved_changes")}</h3>
+              <p class="overlay-help">${this._localize("dialogs.unsaved_changes_body")}</p>
+              <div class="template-dialog-actions">
+                <button class="wizard-btn wizard-btn-back"
+                  @click=${() => {
+										this._showUnsavedDialog = false;
+										this._pendingNavigation = null;
+									}}
+                >${this._localize("common.cancel")}</button>
+                <button class="wizard-btn wizard-btn-primary" style="background: var(--error-color, #f44336);"
+                  @click=${this._discardAndNavigate}
+                >${this._localize("common.discard")}</button>
+              </div>
+            </div>
+          </div>
+        `
+					: nothing
+			}
+      ${
+				this._showDeleteCalibrationDialog
+					? html`
+          <div class="template-dialog">
+            <div class="template-dialog-card">
+              <h3>${this._localize("dialogs.delete_calibration_title")}</h3>
+              <p class="overlay-help">${this._localize("dialogs.delete_calibration_body")}</p>
+              <div class="template-dialog-actions">
+                <button class="wizard-btn wizard-btn-back"
+                  @click=${() => {
+										this._showDeleteCalibrationDialog = false;
+									}}
+                >${this._localize("common.cancel")}</button>
+                <button class="wizard-btn wizard-btn-primary" style="background: var(--error-color, #f44336);"
+                  @click=${this._deleteCalibration}
+                >${this._localize("common.delete")}</button>
+              </div>
+            </div>
+          </div>
+        `
+					: nothing
+			}
+    `;
+	}
+
 	render() {
 		if (this._loading) {
 			return html`<div class="loading-container">${this._localize("common.loading")}</div>`;
@@ -3127,39 +3235,16 @@ export class EverythingPresenceProPanel extends LitElement {
 			return this._renderWizard();
 		}
 
+		let content;
 		if (this._view === "settings") {
-			return this._renderSettings();
+			content = this._renderSettings();
+		} else if (this._view === "editor" && this._perspective) {
+			content = this._renderEditor();
+		} else {
+			content = this._renderLiveOverview();
 		}
 
-		if (this._view === "editor" && this._perspective) {
-			return this._renderEditor();
-		}
-
-		return html`
-      ${this._renderLiveOverview()}
-      ${
-				this._showDeleteCalibrationDialog
-					? html`
-        <div class="template-dialog">
-          <div class="template-dialog-card">
-            <h3>${this._localize("dialogs.delete_calibration_title")}</h3>
-            <p class="overlay-help">${this._localize("dialogs.delete_calibration_body")}</p>
-            <div class="template-dialog-actions">
-              <button class="wizard-btn wizard-btn-back"
-                @click=${() => {
-									this._showDeleteCalibrationDialog = false;
-								}}
-              >${this._localize("common.cancel")}</button>
-              <button class="wizard-btn wizard-btn-primary" style="background: var(--error-color, #f44336);"
-                @click=${this._deleteCalibration}
-              >${this._localize("common.delete")}</button>
-            </div>
-          </div>
-        </div>
-      `
-					: nothing
-			}
-    `;
+		return html`${content}${this._renderGlobalDialogs()}`;
 	}
 
 	private async _deleteCalibration(): Promise<void> {
@@ -4644,77 +4729,6 @@ export class EverythingPresenceProPanel extends LitElement {
         </div>
 
 
-        ${this._showTemplateSave ? this._renderTemplateSaveDialog() : nothing}
-        ${this._showTemplateLoad ? this._renderTemplateLoadDialog() : nothing}
-        ${
-					this._showRenameDialog
-						? html`
-          <div class="template-dialog">
-            <div class="template-dialog-card" style="max-width: 520px;">
-              <h3>${this._localize("dialogs.update_entity_ids")}</h3>
-              <p class="overlay-help">${this._localize("dialogs.update_entity_ids_body")}</p>
-              <div style="max-height: 300px; overflow-y: auto; margin: 12px 0;">
-                ${this._pendingRenames.map((r) => {
-									const oldShort =
-										r.old_entity_id.split(".")[1] || r.old_entity_id;
-									const newShort =
-										r.new_entity_id.split(".")[1] || r.new_entity_id;
-									const platform = r.old_entity_id.split(".")[0] || "";
-									return html`
-                    <div style="
-                      padding: 8px 12px; margin: 4px 0;
-                      background: var(--secondary-background-color, #f5f5f5);
-                      border-radius: 8px; font-family: monospace; font-size: 12px;
-                    ">
-                      <div style="color: var(--secondary-text-color, #888); font-size: 11px; margin-bottom: 4px; font-family: var(--paper-font-body1_-_font-family, sans-serif);">
-                        ${platform}
-                      </div>
-                      <div style="text-decoration: line-through; color: var(--secondary-text-color, #888); word-break: break-all;">
-                        ${oldShort}
-                      </div>
-                      <div style="font-weight: 500; word-break: break-all; margin-top: 2px;">
-                        → ${newShort}
-                      </div>
-                    </div>
-                  `;
-								})}
-              </div>
-              <div class="template-dialog-actions">
-                <button class="wizard-btn wizard-btn-back"
-                  @click=${this._dismissRenameDialog}
-                >${this._localize("common.skip")}</button>
-                <button class="wizard-btn wizard-btn-primary"
-                  @click=${this._applyRenames}
-                >${this._localize("common.rename")}</button>
-              </div>
-            </div>
-          </div>
-        `
-						: nothing
-				}
-        ${
-					this._showUnsavedDialog
-						? html`
-          <div class="template-dialog">
-            <div class="template-dialog-card">
-              <h3>${this._localize("dialogs.unsaved_changes")}</h3>
-              <p class="overlay-help">${this._localize("dialogs.unsaved_changes_body")}</p>
-              <div class="template-dialog-actions">
-                <button class="wizard-btn wizard-btn-back"
-                  @click=${() => {
-										this._showUnsavedDialog = false;
-										this._pendingNavigation = null;
-									}}
-                >${this._localize("common.cancel")}</button>
-                <button class="wizard-btn wizard-btn-primary" style="background: var(--error-color, #f44336);"
-                  @click=${this._discardAndNavigate}
-                >${this._localize("common.discard")}</button>
-              </div>
-            </div>
-          </div>
-        `
-						: nothing
-				}
       </div>
     `;
 	}
@@ -5582,6 +5596,7 @@ export class EverythingPresenceProPanel extends LitElement {
 									const configs = [...this._zoneConfigs];
 									configs[i] = { ...zone, name: val };
 									this._zoneConfigs = configs;
+									this._dirty = true;
 								}}
                 @click=${(e: Event) => {
 									e.stopPropagation();

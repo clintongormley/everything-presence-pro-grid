@@ -106,8 +106,8 @@ export function pxToMm(px: number, cellPx: number): number {
 /**
  * Compute clamped move position for a furniture item being dragged.
  *
- * Clamps the position so the item cannot move more than half its size outside
- * the room boundary.
+ * Clamps the position so the item stays within the given bounds.
+ * The bounds represent the visible grid area in room-relative mm.
  *
  * @param origX Original X position (mm)
  * @param origY Original Y position (mm)
@@ -116,8 +116,10 @@ export function pxToMm(px: number, cellPx: number): number {
  * @param cellPx Current cell pixel size
  * @param itemWidth Item width in mm
  * @param itemHeight Item height in mm
- * @param roomWidth Room width in mm
- * @param roomDepth Room depth in mm
+ * @param minX Minimum X bound (mm, room-relative)
+ * @param maxX Maximum X bound (mm, room-relative)
+ * @param minY Minimum Y bound (mm, room-relative)
+ * @param maxY Maximum Y bound (mm, room-relative)
  * @returns Clamped { x, y } position in mm
  */
 export function clampFurnitureMove(
@@ -128,20 +130,16 @@ export function clampFurnitureMove(
 	cellPx: number,
 	itemWidth: number,
 	itemHeight: number,
-	roomWidth: number,
-	roomDepth: number,
+	minX: number,
+	maxX: number,
+	minY: number,
+	maxY: number,
 ): { x: number; y: number } {
 	const dxMm = pxToMm(dxPx, cellPx);
 	const dyMm = pxToMm(dyPx, cellPx);
 	return {
-		x: Math.max(
-			-itemWidth / 2,
-			Math.min(roomWidth - itemWidth / 2, origX + dxMm),
-		),
-		y: Math.max(
-			-itemHeight / 2,
-			Math.min(roomDepth - itemHeight / 2, origY + dyMm),
-		),
+		x: Math.max(minX, Math.min(maxX - itemWidth, origX + dxMm)),
+		y: Math.max(minY, Math.min(maxY - itemHeight, origY + dyMm)),
 	};
 }
 

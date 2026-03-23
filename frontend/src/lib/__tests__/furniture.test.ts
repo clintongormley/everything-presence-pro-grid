@@ -193,13 +193,25 @@ describe("pxToMm", () => {
 
 describe("clampFurnitureMove", () => {
 	it("returns unclamped position within bounds", () => {
-		const result = clampFurnitureMove(500, 500, 0, 0, 28, 600, 400, 3000, 4000);
+		const result = clampFurnitureMove(
+			500,
+			500,
+			0,
+			0,
+			28,
+			600,
+			400,
+			0,
+			3000,
+			0,
+			4000,
+		);
 		expect(result.x).toBe(500);
 		expect(result.y).toBe(500);
 	});
 
-	it("clamps to minimum -width/2", () => {
-		// Large negative drag
+	it("clamps to minimum bounds", () => {
+		// Large negative drag with negative min bounds (padding area)
 		const result = clampFurnitureMove(
 			0,
 			0,
@@ -208,14 +220,16 @@ describe("clampFurnitureMove", () => {
 			28,
 			600,
 			400,
-			3000,
-			4000,
+			-300,
+			3300,
+			-300,
+			4300,
 		);
-		expect(result.x).toBe(-300); // -600/2
-		expect(result.y).toBe(-200); // -400/2
+		expect(result.x).toBe(-300);
+		expect(result.y).toBe(-300);
 	});
 
-	it("clamps to maximum roomWidth - width/2", () => {
+	it("clamps to maximum bounds - itemSize", () => {
 		// Large positive drag
 		const result = clampFurnitureMove(
 			2000,
@@ -225,16 +239,30 @@ describe("clampFurnitureMove", () => {
 			28,
 			600,
 			400,
-			3000,
-			4000,
+			-300,
+			3300,
+			-300,
+			4300,
 		);
-		expect(result.x).toBe(2700); // 3000 - 600/2
-		expect(result.y).toBe(3800); // 4000 - 400/2
+		expect(result.x).toBe(2700); // 3300 - 600
+		expect(result.y).toBe(3900); // 4300 - 400
 	});
 
 	it("converts pixel delta to mm correctly", () => {
 		// Move 29px at cellPx=28 → 300mm
-		const result = clampFurnitureMove(0, 0, 29, 29, 28, 100, 100, 6000, 6000);
+		const result = clampFurnitureMove(
+			0,
+			0,
+			29,
+			29,
+			28,
+			100,
+			100,
+			0,
+			6000,
+			0,
+			6000,
+		);
 		expect(result.x).toBeCloseTo(300);
 		expect(result.y).toBeCloseTo(300);
 	});

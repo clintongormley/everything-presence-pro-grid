@@ -390,32 +390,41 @@ async def websocket_set_room_layout(
                     updates["name"] = friendly
                 if updates:
                     registry.async_update_entity(ent, **updates)
-
-                # Track entity_id renames if name-based ID differs
-                if zone_name:
-                    slug = zone_name.lower().replace(" ", "_")
-                    # Get device name for entity_id prefix
-                    dev_reg = dr.async_get(hass)
-                    device_entry = dev_reg.async_get(ent_entry.device_id) if ent_entry.device_id else None
-                    device_slug = (
-                        (device_entry.name_by_user or device_entry.name or "epp").lower().replace(" ", "_")
-                        if device_entry
-                        else "epp"
-                    )
-                    desired_id = f"{platform}.{device_slug}_{slug}_{entity_suffix}"
-                    if ent != desired_id:
-                        entity_id_renames.append(
-                            {
-                                "old_entity_id": ent,
-                                "new_entity_id": desired_id,
-                            }
-                        )
+            elif occupied:
+                # Slot occupied but reporting off — update friendly name, keep disabled
+                friendly = f"{zone_name} {entity_suffix.replace('_', ' ')}"
+                updates: dict[str, Any] = {}
+                if ent_entry.disabled_by is None:
+                    updates["disabled_by"] = entity_registry.RegistryEntryDisabler.INTEGRATION
+                if ent_entry.name != friendly:
+                    updates["name"] = friendly
+                if updates:
+                    registry.async_update_entity(ent, **updates)
             else:
-                # Disable: slot empty or reporting toggle off
+                # Disable: slot empty
                 if ent_entry.disabled_by is None:
                     registry.async_update_entity(
                         ent,
                         disabled_by=entity_registry.RegistryEntryDisabler.INTEGRATION,
+                    )
+
+            # Track entity_id renames for any occupied slot
+            if occupied and zone_name:
+                slug = zone_name.lower().replace(" ", "_")
+                dev_reg = dr.async_get(hass)
+                device_entry = dev_reg.async_get(ent_entry.device_id) if ent_entry.device_id else None
+                device_slug = (
+                    (device_entry.name_by_user or device_entry.name or "epp").lower().replace(" ", "_")
+                    if device_entry
+                    else "epp"
+                )
+                desired_id = f"{platform}.{device_slug}_{slug}_{entity_suffix}"
+                if ent != desired_id:
+                    entity_id_renames.append(
+                        {
+                            "old_entity_id": ent,
+                            "new_entity_id": desired_id,
+                        }
                     )
 
     connection.send_result(
