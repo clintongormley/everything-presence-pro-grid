@@ -219,12 +219,14 @@ class TestEntityManagement:
         assert ent0 is not None
         assert ent0.disabled_by is None
 
-        # Zone 1 (Entrance) should be enabled
+        # Zone 1 (Entrance) should be enabled and renamed
         ent1 = ent_reg.async_get("binary_sensor.epp_zone_1_occupancy")
         assert ent1 is not None
         assert ent1.disabled_by is None
+        assert ent1.name == "Entrance"
 
-        # Zone 2 (Armchair) should be enabled
+        # Zone 2 (Armchair) should be enabled and renamed
         ent2 = ent_reg.async_get("binary_sensor.epp_zone_2_occupancy")
         assert ent2 is not None
         assert ent2.disabled_by is None
+        assert ent2.name == "Armchair"
