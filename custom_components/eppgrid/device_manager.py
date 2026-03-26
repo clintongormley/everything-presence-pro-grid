@@ -135,6 +135,7 @@ class DeviceManager:
         self._store = store
         self.devices: dict[str, ManagedDevice] = {}
         self._unsub_listeners: list[Any] = []
+        self._pushing: set[str] = set()
 
     async def async_start(self) -> None:
         """Start discovery and event listeners."""
@@ -203,10 +204,10 @@ class DeviceManager:
         if old_state.state != STATE_UNAVAILABLE or new_state.state == STATE_UNAVAILABLE:
             return
 
-        # Check if this entity belongs to a managed device
+        # Check if this entity belongs to a managed ESPHome device
         ent_reg = er.async_get(self._hass)
         entry = ent_reg.async_get(event.data.get("entity_id", ""))
-        if entry is None or entry.device_id is None:
+        if entry is None or entry.platform != "esphome" or entry.device_id is None:
             return
 
         dev_reg = dr.async_get(self._hass)
@@ -220,8 +221,14 @@ class DeviceManager:
 
     async def _on_device_available(self, mac: str) -> None:
         """Push stored config when a managed device comes online."""
-        _LOGGER.info("Device %s became available, pushing config", mac)
-        await self._push_config_to_device(mac)
+        if mac in self._pushing:
+            return
+        self._pushing.add(mac)
+        try:
+            _LOGGER.info("Device %s became available, pushing config", mac)
+            await self._push_config_to_device(mac)
+        finally:
+            self._pushing.discard(mac)
 
     async def _push_config_to_device(self, mac: str) -> None:
         """Open a temporary connection, push config, and close."""
@@ -234,7 +241,7 @@ class DeviceManager:
             await conn.async_connect()
             await conn.async_push_config(config)
         except Exception:
-            _LOGGER.warning("Failed to push config to %s (%s)", dev.name, mac)
+            _LOGGER.warning("Failed to push config to %s (%s)", dev.name, mac, exc_info=True)
         finally:
             await conn.async_disconnect()
 
