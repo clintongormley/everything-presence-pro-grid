@@ -51,22 +51,3 @@ ENTRY_POINT_ZONE_TYPES = {ZONE_TYPE_ENTRANCE}
 RAW_FPS = 10
 
 
-def threshold_to_frame_count(threshold: int) -> int:
-    """Convert 1-9 threshold to minimum hit-count needed.
-
-    Threshold N = need N frames to confirm presence.
-    """
-    return max(1, threshold)
-
-
-# ESPHome entity name patterns for EP Pro
-TARGET_X_PATTERN = "target_{n}_x"
-TARGET_Y_PATTERN = "target_{n}_y"
-TARGET_SPEED_PATTERN = "target_{n}_speed"
-TARGET_ACTIVE_PATTERN = "target_{n}_active"
-STATIC_PRESENCE_PATTERN = "mmwave"
-PIR_PATTERN = "pir"
-ILLUMINANCE_PATTERN = "illuminance"
-TEMPERATURE_PATTERN = "temperature"
-HUMIDITY_PATTERN = "humidity"
-CO2_PATTERN = "co2"
