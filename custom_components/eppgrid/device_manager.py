@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
+import re
 from dataclasses import dataclass
 from typing import Any
 
@@ -18,6 +19,31 @@ from .const import DEFAULT_PORT, MAX_ZONES
 from .storage import EPPGridStore
 
 _LOGGER = logging.getLogger(__name__)
+
+# Regex to extract the ESPHome object_id from a unique_id
+# Format: esphome_{mac_hex_12}_{object_id} or {mac_hex_12}_{object_id}
+_ESPHOME_UID_RE = re.compile(r"^(?:esphome_)?[0-9a-f]{12}_(.+)$")
+
+# ESPHome entity object_ids to keep enabled
+_KEEP_ENTITIES = frozenset({
+    "humidity", "illuminance", "temperature", "co2",
+    "mmwave_presence", "occupancy", "static_presence",
+    "tracking_presence", "motion",
+    "zone_engine_version",
+})
+
+# Entity object_ids to leave alone (user will decide later)
+_DEFER_ENTITIES = frozenset({
+    "firmware_update",
+    "led", "led_brightness", "led_mode",
+    "relay_contact_mode", "relay_output", "relay_trigger_mode",
+    "restart_device", "reboot_tracking_sensor",
+})
+
+# Entity renames applied on discovery
+_ENTITY_RENAMES = {
+    "motion": "Motion Presence",
+}
 
 
 class DeviceConnection:
@@ -190,7 +216,10 @@ class DeviceManager:
             )
             _LOGGER.info("Discovered zone engine device: %s (%s)", device.name, mac)
 
-            # Apply entity management: disable unconfigured zone entities
+            # Manage all device entities: disable old firmware, rename
+            await self.async_manage_device_entities(mac)
+
+            # Apply zone entity management
             config = self._store.get_device(mac)
             zone_slots = (
                 config.get("room_layout", {}).get("zone_slots", [None] * MAX_ZONES)
@@ -293,6 +322,50 @@ class DeviceManager:
             })
         return result
 
+    async def async_manage_device_entities(self, mac: str) -> None:
+        """Disable old firmware entities and rename on discovery."""
+        dev = self.devices.get(mac)
+        if dev is None or dev.device_id is None:
+            return
+
+        ent_reg = er.async_get(self._hass)
+        disabled_count = 0
+
+        for entry in ent_reg.entities.values():
+            if entry.device_id != dev.device_id or entry.platform != "esphome":
+                continue
+
+            obj_id = _extract_esphome_object_id(entry.unique_id)
+            if obj_id is None:
+                continue
+
+            # Zone entities handled by async_update_zone_entities
+            if re.match(r"zone_\d+_occupancy", obj_id):
+                continue
+
+            if obj_id in _KEEP_ENTITIES:
+                # Apply rename if needed
+                if obj_id in _ENTITY_RENAMES:
+                    ent_reg.async_update_entity(
+                        entry.entity_id, name=_ENTITY_RENAMES[obj_id]
+                    )
+            elif obj_id in _DEFER_ENTITIES:
+                continue  # don't touch — user will decide later
+            else:
+                # Disable old firmware / unnecessary entities
+                if entry.disabled_by is None:
+                    ent_reg.async_update_entity(
+                        entry.entity_id,
+                        disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+                    )
+                    disabled_count += 1
+
+        if disabled_count:
+            _LOGGER.info(
+                "Disabled %d old firmware entities for %s (%s)",
+                disabled_count, dev.name, mac,
+            )
+
     async def async_update_zone_entities(
         self, mac: str, zone_slots: list[dict[str, Any] | None]
     ) -> None:
@@ -340,6 +413,12 @@ class DeviceManager:
             ):
                 return entry.entity_id
         return None
+
+
+def _extract_esphome_object_id(unique_id: str) -> str | None:
+    """Extract the object_id from an ESPHome unique_id."""
+    m = _ESPHOME_UID_RE.match(unique_id)
+    return m.group(1) if m else None
 
 
 def _extract_mac(device: dr.DeviceEntry) -> str | None:
