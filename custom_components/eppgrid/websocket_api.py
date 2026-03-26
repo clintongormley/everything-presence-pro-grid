@@ -23,8 +23,6 @@ def async_register_websocket_commands(
         return
     _REGISTERED.add(DOMAIN)
 
-    hass.data.setdefault(f"{DOMAIN}_manager_ref", manager)
-
     websocket_api.async_register_command(hass, websocket_list_devices)
     websocket_api.async_register_command(hass, websocket_get_config)
     websocket_api.async_register_command(hass, websocket_set_setup)

@@ -37,10 +37,9 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if store.sidebar_panel:
         await _register_panel(hass)
 
+    hass.data[DOMAIN] = manager
     async_register_websocket_commands(hass, manager)
     await manager.async_start()
-
-    hass.data[DOMAIN] = manager
     return True
 
 
