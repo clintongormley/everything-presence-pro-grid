@@ -107,6 +107,12 @@ async def websocket_set_setup(
     # Clear room layout when calibration changes (grid dimensions may differ)
     device_config.pop("room_layout", None)
     await manager._store.async_save()
+
+    # Enable zone 0 now that device is calibrated
+    from .const import MAX_ZONES
+    zone_slots = device_config.get("room_layout", {}).get("zone_slots", [None] * MAX_ZONES)
+    await manager.async_update_zone_entities(mac, zone_slots)
+
     connection.send_result(msg["id"])
 
 

@@ -212,9 +212,15 @@ class TestEntityManagement:
             mac="AA:BB:CC:DD:EE:FF", name="EPP", device_id=device.id
         )
 
+        # Store calibration so zone 0 is enabled
+        await manager._store.async_load()
+        manager._store.devices["AA:BB:CC:DD:EE:FF"] = {
+            "calibration": {"perspective": [1.0] * 8, "room_width": 3000.0, "room_depth": 4000.0},
+        }
+
         await manager.async_update_zone_entities("AA:BB:CC:DD:EE:FF", zone_slots)
 
-        # Zone 0 (rest of room) should be enabled
+        # Zone 0 (rest of room) should be enabled when calibrated
         ent0 = ent_reg.async_get("binary_sensor.epp_zone_0_occupancy")
         assert ent0 is not None
         assert ent0.disabled_by is None

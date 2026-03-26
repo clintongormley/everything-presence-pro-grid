@@ -190,6 +190,14 @@ class DeviceManager:
             )
             _LOGGER.info("Discovered zone engine device: %s (%s)", device.name, mac)
 
+            # Apply entity management: disable unconfigured zone entities
+            config = self._store.get_device(mac)
+            zone_slots = (
+                config.get("room_layout", {}).get("zone_slots", [None] * MAX_ZONES)
+                if config else [None] * MAX_ZONES
+            )
+            await self.async_update_zone_entities(mac, zone_slots)
+
     @callback
     def _on_entity_registry_updated(self, event: Any) -> None:
         """Handle entity registry changes — re-discover on new entities."""
@@ -294,7 +302,8 @@ class DeviceManager:
             return
 
         ent_reg = er.async_get(self._hass)
-        has_named_zones = any(z is not None for z in zone_slots)
+        config = self._store.get_device(mac)
+        is_calibrated = config is not None and "calibration" in config
 
         for i in range(8):  # zones 0-7
             entity_id = self._find_zone_entity(ent_reg, dev.device_id, i)
@@ -302,8 +311,8 @@ class DeviceManager:
                 continue
 
             if i == 0:
-                # Zone 0 "rest of room" — enable if any named zones exist
-                if has_named_zones:
+                # Zone 0 "rest of room" — enable if device is calibrated
+                if is_calibrated:
                     ent_reg.async_update_entity(entity_id, disabled_by=None)
                 else:
                     ent_reg.async_update_entity(
