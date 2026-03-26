@@ -1,830 +1,247 @@
-"""WebSocket API for Everything Presence Pro."""
-
+"""WebSocket API for EPP Grid frontend."""
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
-from homeassistant.core import HomeAssistant
-from homeassistant.core import callback
-from homeassistant.helpers import device_registry as dr
-from homeassistant.helpers import entity_registry
+from homeassistant.core import HomeAssistant, callback
 
-from .calibration import SensorTransform
 from .const import DOMAIN
-from .const import MAX_TARGETS
-from .const import MAX_ZONES
-from .const import ZONE_TYPE_DEFAULTS
-from .const import ZONE_TYPE_NORMAL
-from .coordinator import SIGNAL_DISPLAY_UPDATED
-from .coordinator import EPPGridCoordinator
-from .zone_engine import DisplayTarget
-from .zone_engine import ProcessingResult
-from .zone_engine import TargetResult
-from .zone_engine import Zone
+
+_LOGGER = logging.getLogger(__name__)
 
 _REGISTERED: set[str] = set()
 
 
-def _get_coordinator(hass: HomeAssistant, entry_id: str) -> EPPGridCoordinator | None:
-    """Look up the coordinator for a config entry."""
-    entry = hass.config_entries.async_get_entry(entry_id)
-    if entry is None:
-        return None
-    return entry.runtime_data
-
-
-@callback
-def async_register_websocket_commands(hass: HomeAssistant) -> None:
-    """Register WebSocket commands for Everything Presence Pro."""
+def async_register_websocket_commands(
+    hass: HomeAssistant, manager: Any
+) -> None:
+    """Register WebSocket commands."""
     if DOMAIN in _REGISTERED:
         return
     _REGISTERED.add(DOMAIN)
 
-    websocket_api.async_register_command(hass, websocket_list_entries)
+    hass.data.setdefault(f"{DOMAIN}_manager_ref", manager)
+
+    websocket_api.async_register_command(hass, websocket_list_devices)
     websocket_api.async_register_command(hass, websocket_get_config)
-    websocket_api.async_register_command(hass, websocket_set_zones)
-    websocket_api.async_register_command(hass, websocket_set_room_layout)
     websocket_api.async_register_command(hass, websocket_set_setup)
-    websocket_api.async_register_command(hass, websocket_subscribe_raw_targets)
-    websocket_api.async_register_command(hass, websocket_subscribe_grid_targets)
-    websocket_api.async_register_command(hass, websocket_rename_zone_entities)
-    websocket_api.async_register_command(hass, websocket_set_reporting)
-    websocket_api.async_register_command(hass, websocket_set_dev_mode)
-    websocket_api.async_register_command(hass, websocket_start_recording)
-    websocket_api.async_register_command(hass, websocket_stop_recording)
+    websocket_api.async_register_command(hass, websocket_set_room_layout)
+    websocket_api.async_register_command(hass, websocket_list_templates)
+    websocket_api.async_register_command(hass, websocket_save_template)
+    websocket_api.async_register_command(hass, websocket_delete_template)
+    websocket_api.async_register_command(hass, websocket_apply_template)
 
 
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/list_entries",
-    }
-)
+def _get_manager(hass: HomeAssistant) -> Any:
+    """Get the device manager."""
+    return hass.data.get(DOMAIN)
+
+
+# -- list_devices --
+
+@websocket_api.websocket_command({vol.Required("type"): "eppgrid/list_devices"})
 @callback
-def websocket_list_entries(
+def websocket_list_devices(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Return all configured Everything Presence Pro entries."""
-    entries = hass.config_entries.async_entries(DOMAIN)
-    dev_reg = dr.async_get(hass)
-    result = []
-    for e in entries:
-        device = dev_reg.async_get_device(identifiers={(DOMAIN, e.entry_id)})
-        device_name = device.name_by_user or device.name if device else None
-        result.append(
-            {
-                "entry_id": e.entry_id,
-                "title": device_name or e.title,
-                "has_perspective": bool(e.options.get("config", {}).get("calibration", {}).get("perspective")),
-                "has_layout": bool(e.options.get("config", {}).get("room_layout")),
-            }
-        )
-    connection.send_result(msg["id"], result)
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/set_setup",
-        vol.Required("entry_id"): str,
-        vol.Required("perspective"): vol.All([vol.Coerce(float)], vol.Length(min=8, max=8)),
-        vol.Required("room_width"): vol.Coerce(float),
-        vol.Required("room_depth"): vol.Coerce(float),
-    }
-)
-@websocket_api.async_response
-async def websocket_set_setup(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
-    """Persist perspective transform and room dimensions for an entry."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Config entry not found")
+    """List discovered EPP devices."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
-
-    entry = hass.config_entries.async_get_entry(msg["entry_id"])
-    if entry is None:
-        connection.send_error(msg["id"], "not_found", "Config entry not found")
-        return
-
-    transform = SensorTransform(
-        perspective=msg["perspective"],
-        room_width=msg["room_width"],
-        room_depth=msg["room_depth"],
-    )
-    coordinator.set_sensor_transform(transform)
-
-    # Clear existing room layout and zones since grid dimensions may change
-    coordinator.set_room_layout({})
-    coordinator.set_zones([])
-
-    config = dict(entry.options.get("config", {}))
-    config["calibration"] = transform.to_dict()
-    # Clear layout data
-    config.pop("room_layout", None)
-    config.pop("zones", None)
-    # Save grid dimensions
-    grid = coordinator.zone_engine.grid
-    config["grid"] = grid.to_base64()
-    config["grid_origin_x"] = grid.origin_x
-    config["grid_origin_y"] = grid.origin_y
-    config["grid_cols"] = grid.cols
-    config["grid_rows"] = grid.rows
-
-    hass.config_entries.async_update_entry(entry, options={**entry.options, "config": config})
-
-    # Push perspective + grid to firmware device
-    await coordinator._push_perspective_to_device()
-    await coordinator._push_grid_to_device()
-
-    connection.send_result(msg["id"])
+    connection.send_result(msg["id"], {"devices": manager.list_devices()})
 
 
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/get_config",
-        vol.Required("entry_id"): str,
-    }
-)
+# -- get_config --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/get_config",
+    vol.Required("mac"): str,
+})
 @callback
 def websocket_get_config(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Handle get_config command."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Config entry not found")
+    """Get stored config for a device."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
+    config = manager._store.get_device(msg["mac"])
+    connection.send_result(msg["id"], {"config": config})
 
-    connection.send_result(msg["id"], coordinator.get_config_data())
 
+# -- set_setup (perspective calibration) --
 
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/set_zones",
-        vol.Required("entry_id"): str,
-        vol.Required("zones"): [
-            {
-                vol.Required("id"): vol.Coerce(int),
-                vol.Required("name"): str,
-                vol.Required("type"): vol.In(["normal", "entrance", "thoroughfare", "rest", "custom"]),
-                vol.Optional("color", default=""): str,
-                vol.Optional("trigger"): vol.All(int, vol.Range(min=0, max=9)),
-                vol.Optional("renew"): vol.All(int, vol.Range(min=0, max=9)),
-                vol.Optional("timeout"): vol.Coerce(float),
-                vol.Optional("handoff_timeout"): vol.Coerce(float),
-                vol.Optional("entry_point"): bool,
-            }
-        ],
-    }
-)
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/set_setup",
+    vol.Required("mac"): str,
+    vol.Required("perspective"): vol.All([vol.Coerce(float)], vol.Length(min=8, max=8)),
+    vol.Required("room_width"): vol.Coerce(float),
+    vol.Required("room_depth"): vol.Coerce(float),
+})
 @websocket_api.async_response
-async def websocket_set_zones(
+async def websocket_set_setup(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Handle set_zones command."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Config entry not found")
+    """Save perspective calibration for a device."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
-
-    zones = []
-    for z in msg["zones"]:
-        ztype = z.get("type", ZONE_TYPE_NORMAL)
-        defaults = ZONE_TYPE_DEFAULTS.get(ztype, ZONE_TYPE_DEFAULTS[ZONE_TYPE_NORMAL])
-        zones.append(
-            Zone(
-                id=z["id"],
-                name=z["name"],
-                type=ztype,
-                color=z.get("color", ""),
-                trigger=z.get("trigger", defaults["trigger"]),
-                renew=z.get("renew", defaults["renew"]),
-                timeout=z.get("timeout", defaults["timeout"]),
-                handoff_timeout=z.get("handoff_timeout", defaults["handoff_timeout"]),
-                entry_point=z.get("entry_point", False),
-            )
-        )
-
-    coordinator.set_zones(zones)
-
-    # Persist to config entry options
-    entry = hass.config_entries.async_get_entry(msg["entry_id"])
-    if entry is not None:
-        config = dict(entry.options.get("config", {}))
-        config["zones"] = [
-            {
-                "id": z.id,
-                "name": z.name,
-                "type": z.type,
-                "color": z.color,
-                "trigger": z.trigger,
-                "renew": z.renew,
-                "timeout": z.timeout,
-                "handoff_timeout": z.handoff_timeout,
-                "entry_point": z.entry_point,
-            }
-            for z in zones
-        ]
-        hass.config_entries.async_update_entry(entry, options={**entry.options, "config": config})
-
+    mac = msg["mac"]
+    device_config = manager._store.devices.setdefault(mac, {})
+    device_config["calibration"] = {
+        "perspective": msg["perspective"],
+        "room_width": msg["room_width"],
+        "room_depth": msg["room_depth"],
+    }
+    # Clear room layout when calibration changes (grid dimensions may differ)
+    device_config.pop("room_layout", None)
+    await manager._store.async_save()
     connection.send_result(msg["id"])
 
 
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/set_room_layout",
-        vol.Required("entry_id"): str,
-        vol.Required("grid_bytes"): [int],
-        vol.Optional("zone_slots", default=[None] * MAX_ZONES): vol.All(
-            [
-                vol.Any(
-                    None,
-                    {
-                        vol.Required("name"): str,
-                        vol.Required("color"): str,
-                        vol.Required("type"): vol.In(["normal", "entrance", "thoroughfare", "rest", "custom"]),
-                        vol.Optional("trigger"): vol.All(int, vol.Range(min=0, max=9)),
-                        vol.Optional("renew"): vol.All(int, vol.Range(min=0, max=9)),
-                        vol.Optional("timeout"): vol.Coerce(float),
-                        vol.Optional("handoff_timeout"): vol.Coerce(float),
-                        vol.Optional("entry_point"): bool,
-                    },
-                )
-            ],
-            vol.Length(min=MAX_ZONES, max=MAX_ZONES),
-        ),
-        vol.Optional("room_type", default="normal"): vol.In(["normal", "entrance", "thoroughfare", "rest", "custom"]),
-        vol.Optional("room_trigger"): vol.All(int, vol.Range(min=0, max=9)),
-        vol.Optional("room_renew"): vol.All(int, vol.Range(min=0, max=9)),
-        vol.Optional("room_timeout"): vol.Coerce(float),
-        vol.Optional("room_handoff_timeout"): vol.Coerce(float),
-        vol.Optional("room_entry_point"): bool,
-        vol.Optional("furniture", default=[]): [
-            {
-                vol.Optional("type", default="icon"): str,
-                vol.Required("icon"): str,
-                vol.Required("label"): str,
-                vol.Required("x"): vol.Coerce(float),
-                vol.Required("y"): vol.Coerce(float),
-                vol.Required("width"): vol.Coerce(float),
-                vol.Required("height"): vol.Coerce(float),
-                vol.Required("rotation"): vol.Coerce(float),
-                vol.Optional("lockAspect", default=False): bool,
-            }
-        ],
-    }
-)
+# -- set_room_layout --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/set_room_layout",
+    vol.Required("mac"): str,
+    vol.Required("grid_bytes"): [int],
+    vol.Required("zone_slots"): list,
+    vol.Required("room_type"): str,
+    vol.Optional("room_trigger"): vol.Coerce(int),
+    vol.Optional("room_renew"): vol.Coerce(int),
+    vol.Optional("room_timeout"): vol.Coerce(float),
+    vol.Optional("room_handoff_timeout"): vol.Coerce(float),
+    vol.Optional("room_entry_point", default=False): bool,
+    vol.Optional("furniture", default=[]): list,
+})
 @websocket_api.async_response
 async def websocket_set_room_layout(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Handle set_room_layout command."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Config entry not found")
+    """Save room layout, zones, and furniture for a device."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
-
-    # Build Zone objects from slot map (filter out empty slots)
-    zone_slots = msg["zone_slots"]
-    zones = []
-    for i, z in enumerate(zone_slots):
-        if z is None:
-            continue
-        ztype = z.get("type", ZONE_TYPE_NORMAL)
-        defaults = ZONE_TYPE_DEFAULTS.get(ztype, ZONE_TYPE_DEFAULTS[ZONE_TYPE_NORMAL])
-        zones.append(
-            Zone(
-                id=i + 1,
-                name=z["name"],
-                type=ztype,
-                color=z.get("color", ""),
-                trigger=z.get("trigger", defaults["trigger"]),
-                renew=z.get("renew", defaults["renew"]),
-                timeout=z.get("timeout", defaults["timeout"]),
-                handoff_timeout=z.get("handoff_timeout", defaults["handoff_timeout"]),
-                entry_point=z.get("entry_point", False),
-            )
-        )
-    coordinator.set_zones(zones)
-
-    layout = {
+    mac = msg["mac"]
+    device_config = manager._store.devices.setdefault(mac, {})
+    device_config["room_layout"] = {
         "grid_bytes": msg["grid_bytes"],
+        "zone_slots": msg["zone_slots"],
         "room_type": msg["room_type"],
         "room_trigger": msg.get("room_trigger"),
         "room_renew": msg.get("room_renew"),
         "room_timeout": msg.get("room_timeout"),
         "room_handoff_timeout": msg.get("room_handoff_timeout"),
         "room_entry_point": msg.get("room_entry_point", False),
-        "zone_slots": zone_slots,
-        "furniture": msg["furniture"],
+        "furniture": msg.get("furniture", []),
     }
+    await manager._store.async_save()
 
-    coordinator.set_room_layout(layout)
+    # Push config to device if connected
+    dev = manager.devices.get(mac)
+    if dev and dev.host:
+        await manager._push_config_to_device(mac)
 
-    # Persist to config entry options
-    entry = hass.config_entries.async_get_entry(msg["entry_id"])
-    if entry is not None:
-        config = dict(entry.options.get("config", {}))
-        config["room_layout"] = layout
-        hass.config_entries.async_update_entry(entry, options={**entry.options, "config": config})
+    # Update ESPHome entity enable/disable/rename
+    await manager.async_update_zone_entities(mac, msg["zone_slots"])
 
-    # Push grid + zones to firmware device
-    await coordinator._push_grid_to_device()
-    await coordinator._push_zones_to_device()
-
-    # Enable/disable zone entities based on slot occupancy AND reporting toggles
-    registry = entity_registry.async_get(hass)
-    entry_id = msg["entry_id"]
-    entity_id_renames: list[dict[str, str]] = []
-    reporting = config.get("reporting", {})
-
-    # Zone 0 "rest of room" — enable if zone_presence/zone_target_count reporting is on
-    zone0_entities = [
-        (f"{entry_id}_rest_of_room", "binary_sensor", "zone_presence"),
-        (f"{entry_id}_rest_of_room_count", "sensor", "zone_target_count"),
-    ]
-    for unique_id, platform, report_key in zone0_entities:
-        ent = registry.async_get_entity_id(platform, DOMAIN, unique_id)
-        if ent is None:
-            continue
-        ent_entry = registry.async_get(ent)
-        if ent_entry is None:
-            continue
-        should_enable = reporting.get(report_key, report_key == "zone_presence")
-        if should_enable and ent_entry.disabled_by is not None:
-            registry.async_update_entity(ent, disabled_by=None)
-        elif not should_enable and ent_entry.disabled_by is None:
-            registry.async_update_entity(
-                ent,
-                disabled_by=entity_registry.RegistryEntryDisabler.INTEGRATION,
-            )
-
-    for slot in range(1, MAX_ZONES + 1):
-        zone_cfg = zone_slots[slot - 1]
-        occupied = zone_cfg is not None
-        zone_name = zone_cfg["name"] if zone_cfg else None
-
-        suffixes = [
-            (f"_zone_{slot}", "binary_sensor", "occupancy", "zone_presence"),
-            (f"_zone_{slot}_count", "sensor", "target_count", "zone_target_count"),
-        ]
-        for uid_suffix, platform, entity_suffix, report_key in suffixes:
-            unique_id = f"{entry_id}{uid_suffix}"
-            ent = registry.async_get_entity_id(platform, DOMAIN, unique_id)
-            if ent is None:
-                continue
-            ent_entry = registry.async_get(ent)
-            if ent_entry is None:
-                continue
-
-            # Only enable if slot is occupied AND reporting toggle is on
-            report_enabled = reporting.get(report_key, report_key == "zone_presence")
-            should_enable = occupied and report_enabled
-
-            if should_enable:
-                # Enable and update friendly name
-                friendly = f"{zone_name} {entity_suffix.replace('_', ' ')}"
-                updates: dict[str, Any] = {}
-                if ent_entry.disabled_by is not None:
-                    updates["disabled_by"] = None
-                if ent_entry.name != friendly:
-                    updates["name"] = friendly
-                if updates:
-                    registry.async_update_entity(ent, **updates)
-            elif occupied:
-                # Slot occupied but reporting off — update friendly name, keep disabled
-                friendly = f"{zone_name} {entity_suffix.replace('_', ' ')}"
-                updates: dict[str, Any] = {}
-                if ent_entry.disabled_by is None:
-                    updates["disabled_by"] = entity_registry.RegistryEntryDisabler.INTEGRATION
-                if ent_entry.name != friendly:
-                    updates["name"] = friendly
-                if updates:
-                    registry.async_update_entity(ent, **updates)
-            else:
-                # Disable: slot empty
-                if ent_entry.disabled_by is None:
-                    registry.async_update_entity(
-                        ent,
-                        disabled_by=entity_registry.RegistryEntryDisabler.INTEGRATION,
-                    )
-
-            # Track entity_id renames for any occupied slot
-            if occupied and zone_name:
-                slug = zone_name.lower().replace(" ", "_")
-                dev_reg = dr.async_get(hass)
-                device_entry = dev_reg.async_get(ent_entry.device_id) if ent_entry.device_id else None
-                device_slug = (
-                    (device_entry.name_by_user or device_entry.name or "epp").lower().replace(" ", "_")
-                    if device_entry
-                    else "epp"
-                )
-                desired_id = f"{platform}.{device_slug}_{slug}_{entity_suffix}"
-                if ent != desired_id:
-                    entity_id_renames.append(
-                        {
-                            "old_entity_id": ent,
-                            "new_entity_id": desired_id,
-                        }
-                    )
-
-    connection.send_result(
-        msg["id"],
-        {
-            "entity_id_renames": entity_id_renames,
-        },
-    )
+    connection.send_result(msg["id"])
 
 
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/subscribe_raw_targets",
-        vol.Required("entry_id"): str,
-    }
-)
+# -- Template commands --
+
+@websocket_api.websocket_command({vol.Required("type"): "eppgrid/list_templates"})
+@callback
+def websocket_list_templates(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """List saved room templates."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+    connection.send_result(msg["id"], {"templates": manager._store.templates})
+
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/save_template",
+    vol.Required("name"): str,
+    vol.Required("template"): dict,
+})
 @websocket_api.async_response
-async def websocket_subscribe_raw_targets(
+async def websocket_save_template(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Handle subscribe_raw_targets — 5 Hz smoothed sensor-space positions."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Config entry not found")
+    """Save a room template."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
-
-    def _build_payload() -> dict[str, Any]:
-        snap = coordinator.last_display_snapshot
-        targets = snap.targets if snap else [DisplayTarget()] * MAX_TARGETS
-        raw_list = [{"raw_x": t.raw_x, "raw_y": t.raw_y} for t in targets]
-        return {"targets": raw_list}
-
-    @callback
-    def _forward() -> None:
-        connection.send_message(websocket_api.event_message(msg["id"], _build_payload()))
-
-    coordinator.increment_display_subscribers()
-
+    manager._store.templates[msg["name"]] = msg["template"]
+    await manager._store.async_save()
     connection.send_result(msg["id"])
-    connection.send_message(websocket_api.event_message(msg["id"], _build_payload()))
-
-    from homeassistant.helpers.dispatcher import async_dispatcher_connect
-
-    unsub = async_dispatcher_connect(
-        hass,
-        f"{SIGNAL_DISPLAY_UPDATED}_{msg['entry_id']}",
-        _forward,
-    )
-
-    @callback
-    def _unsub_all() -> None:
-        unsub()
-        coordinator.decrement_display_subscribers()
-
-    connection.subscriptions[msg["id"]] = _unsub_all
 
 
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/subscribe_grid_targets",
-        vol.Required("entry_id"): str,
-        vol.Optional("source", default="firmware"): vol.In(["firmware", "python"]),
-    }
-)
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/delete_template",
+    vol.Required("name"): str,
+})
 @websocket_api.async_response
-async def websocket_subscribe_grid_targets(
+async def websocket_delete_template(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Handle subscribe_grid_targets — 5 Hz grid positions + cached 1 Hz state."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Config entry not found")
+    """Delete a room template."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
-
-    source = msg.get("source", "firmware")
-
-    def _pick_result() -> ProcessingResult:
-        """Select the zone engine result based on source preference."""
-        if source == "python":
-            return coordinator.python_result
-        if coordinator.has_firmware_zone_engine:
-            return coordinator.firmware_result or ProcessingResult()
-        return coordinator.python_result
-
-    def _build_payload() -> dict[str, Any]:
-        snap = coordinator.last_display_snapshot
-        display = snap.targets if snap else [DisplayTarget()] * MAX_TARGETS
-        result = _pick_result()
-        ztargets = list(result.targets) if result else []
-        while len(ztargets) < MAX_TARGETS:
-            ztargets.append(TargetResult())
-        return {
-            "targets": [
-                {
-                    "x": d.x,
-                    "y": d.y,
-                    "signal": min(d.frame_count, 9) if d.active else 0,
-                    "status": t.status.value,
-                }
-                for d, t in zip(display, ztargets, strict=False)
-            ],
-            "sensors": {
-                "occupancy": coordinator.device_occupied,
-                "static_presence": coordinator.static_present,
-                "motion_presence": coordinator.pir_motion,
-                "target_presence": coordinator.target_present,
-                "illuminance": coordinator.illuminance,
-                "temperature": coordinator.temperature,
-                "humidity": coordinator.humidity,
-                "co2": coordinator.co2,
-            },
-            "zones": {
-                "frame_count": result.frame_count,
-                "occupancy": result.zone_occupancy,
-                "target_counts": result.zone_target_counts,
-                "debug_log": result.debug_log,
-            },
-        }
-
-    @callback
-    def _forward() -> None:
-        connection.send_message(websocket_api.event_message(msg["id"], _build_payload()))
-
-    coordinator.increment_display_subscribers()
-
+    manager._store.templates.pop(msg["name"], None)
+    await manager._store.async_save()
     connection.send_result(msg["id"])
-    connection.send_message(websocket_api.event_message(msg["id"], _build_payload()))
-
-    from homeassistant.helpers.dispatcher import async_dispatcher_connect
-
-    unsub = async_dispatcher_connect(
-        hass,
-        f"{SIGNAL_DISPLAY_UPDATED}_{msg['entry_id']}",
-        _forward,
-    )
-
-    @callback
-    def _unsub_all() -> None:
-        unsub()
-        coordinator.decrement_display_subscribers()
-
-    connection.subscriptions[msg["id"]] = _unsub_all
 
 
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/rename_zone_entities",
-        vol.Required("entry_id"): str,
-        vol.Required("renames"): [
-            {
-                vol.Required("old_entity_id"): str,
-                vol.Required("new_entity_id"): str,
-            }
-        ],
-    }
-)
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/apply_template",
+    vol.Required("mac"): str,
+    vol.Required("template_name"): str,
+})
 @websocket_api.async_response
-async def websocket_rename_zone_entities(
+async def websocket_apply_template(
     hass: HomeAssistant,
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Batch-rename zone entity IDs via the entity registry."""
-    registry = entity_registry.async_get(hass)
-    errors: list[str] = []
-    for rename in msg["renames"]:
-        old_id = rename["old_entity_id"]
-        new_id = rename["new_entity_id"]
-        entry = registry.async_get(old_id)
-        if entry is None:
-            errors.append(f"{old_id} not found")
-            continue
-        if registry.async_get(new_id) is not None:
-            errors.append(f"{new_id} already exists")
-            continue
-        registry.async_update_entity(old_id, new_entity_id=new_id)
-
-    connection.send_result(msg["id"], {"errors": errors})
-
-
-# Reporting entity unique_id suffixes and their platforms
-_REPORTING_ENTITIES: dict[str, list[tuple[str, str]]] = {
-    # Room level
-    "room_occupancy": [("_occupancy", "binary_sensor")],
-    "room_static_presence": [("_static_presence", "binary_sensor")],
-    "room_motion_presence": [("_motion", "binary_sensor")],
-    "room_target_presence": [("_target_presence", "binary_sensor")],
-    "room_target_count": [("_target_count", "sensor")],
-    # Zone level (handled separately per slot)
-    # Target level (expanded per target index)
-    "target_xy_sensor": [(f"_target_{i + 1}_xy_sensor", "sensor") for i in range(MAX_TARGETS)],
-    "target_xy": [(f"_target_{i + 1}_xy", "sensor") for i in range(MAX_TARGETS)],
-    "target_active": [(f"_target_{i + 1}_active", "binary_sensor") for i in range(MAX_TARGETS)],
-    "target_distance": [(f"_target_{i + 1}_distance", "sensor") for i in range(MAX_TARGETS)],
-    "target_angle": [(f"_target_{i + 1}_angle", "sensor") for i in range(MAX_TARGETS)],
-    "target_speed": [(f"_target_{i + 1}_speed", "sensor") for i in range(MAX_TARGETS)],
-    "target_resolution": [(f"_target_{i + 1}_resolution", "sensor") for i in range(MAX_TARGETS)],
-    # Environmental
-    "env_illuminance": [("_illuminance", "sensor")],
-    "env_humidity": [("_humidity", "sensor")],
-    "env_temperature": [("_temperature", "sensor")],
-    "env_co2": [("_co2", "sensor")],
-}
-
-# Zone-level reporting keys
-_ZONE_REPORTING: dict[str, list[tuple[str, str]]] = {
-    "zone_presence": [("_zone_{slot}", "binary_sensor")],
-    "zone_target_count": [("_zone_{slot}_count", "sensor")],
-}
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/set_reporting",
-        vol.Required("entry_id"): str,
-        vol.Required("reporting"): dict,
-        vol.Optional("offsets"): {
-            vol.Optional("illuminance"): vol.Coerce(float),
-            vol.Optional("temperature"): vol.Coerce(float),
-            vol.Optional("humidity"): vol.Coerce(float),
-        },
-    }
-)
-@callback
-def websocket_set_reporting(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
-    """Enable/disable reporting entities and save offsets."""
-    entry = hass.config_entries.async_get_entry(msg["entry_id"])
-    if entry is None:
-        connection.send_error(msg["id"], "not_found", "Entry not found")
+    """Apply a template to a device."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
-
-    registry = entity_registry.async_get(hass)
-    entry_id = msg["entry_id"]
-    reporting: dict[str, bool] = msg["reporting"]
-    offsets: dict[str, float] = msg.get("offsets", {})
-
-    # Save reporting settings and offsets to config entry options
-    config = dict(entry.options.get("config", {}))
-    config["reporting"] = reporting
-    if offsets:
-        config["offsets"] = offsets
-    hass.config_entries.async_update_entry(entry, options={**entry.options, "config": config})
-
-    # Apply offsets to coordinator immediately
-    coordinator = _get_coordinator(hass, entry_id)
-    if coordinator and offsets:
-        coordinator.set_offsets(offsets)
-
-    # Enable/disable room and target-level entities
-    for key, enabled in reporting.items():
-        if key in _REPORTING_ENTITIES:
-            for uid_suffix, platform in _REPORTING_ENTITIES[key]:
-                unique_id = f"{entry_id}{uid_suffix}"
-                ent = registry.async_get_entity_id(platform, DOMAIN, unique_id)
-                if ent is None:
-                    continue
-                ent_entry = registry.async_get(ent)
-                if ent_entry is None:
-                    continue
-                if enabled and ent_entry.disabled_by is not None:
-                    registry.async_update_entity(ent, disabled_by=None)
-                elif not enabled and ent_entry.disabled_by is None:
-                    registry.async_update_entity(
-                        ent,
-                        disabled_by=entity_registry.RegistryEntryDisabler.INTEGRATION,
-                    )
-
-        # Zone-level entities: zone 0 (rest of room) + slots 1-7
-        if key in _ZONE_REPORTING:
-            # Zone 0 "rest of room"
-            zone0_map = {
-                "zone_presence": ("_rest_of_room", "binary_sensor"),
-                "zone_target_count": ("_rest_of_room_count", "sensor"),
-            }
-            if key in zone0_map:
-                uid_suffix, platform = zone0_map[key]
-                unique_id = f"{entry_id}{uid_suffix}"
-                ent = registry.async_get_entity_id(platform, DOMAIN, unique_id)
-                if ent is not None:
-                    ent_entry = registry.async_get(ent)
-                    if ent_entry is not None:
-                        if enabled and ent_entry.disabled_by is not None:
-                            registry.async_update_entity(ent, disabled_by=None)
-                        elif not enabled and ent_entry.disabled_by is None:
-                            registry.async_update_entity(
-                                ent,
-                                disabled_by=entity_registry.RegistryEntryDisabler.INTEGRATION,
-                            )
-
-            # Named zones 1-7
-            room_layout = config.get("room_layout", {})
-            zone_slots = room_layout.get("zone_slots", [])
-            for slot in range(1, MAX_ZONES + 1):
-                slot_cfg = zone_slots[slot - 1] if slot - 1 < len(zone_slots) else None
-                slot_occupied = slot_cfg is not None
-                for uid_template, platform in _ZONE_REPORTING[key]:
-                    uid_suffix = uid_template.format(slot=slot)
-                    unique_id = f"{entry_id}{uid_suffix}"
-                    ent = registry.async_get_entity_id(platform, DOMAIN, unique_id)
-                    if ent is None:
-                        continue
-                    ent_entry = registry.async_get(ent)
-                    if ent_entry is None:
-                        continue
-                    # Only enable if both the toggle is on AND the slot has a zone
-                    should_enable = enabled and slot_occupied
-                    if should_enable and ent_entry.disabled_by is not None:
-                        registry.async_update_entity(ent, disabled_by=None)
-                    elif not should_enable and ent_entry.disabled_by is None:
-                        registry.async_update_entity(
-                            ent,
-                            disabled_by=entity_registry.RegistryEntryDisabler.INTEGRATION,
-                        )
-
+    template = manager._store.templates.get(msg["template_name"])
+    if template is None:
+        connection.send_error(msg["id"], "not_found", "Template not found")
+        return
+    device_config = manager._store.devices.setdefault(msg["mac"], {})
+    device_config["room_layout"] = dict(template)
+    await manager._store.async_save()
     connection.send_result(msg["id"])
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/set_dev_mode",
-        vol.Required("entry_id"): str,
-        vol.Required("enabled"): bool,
-    }
-)
-@callback
-def websocket_set_dev_mode(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
-    """Set dev mode on/off."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Entry not found")
-        return
-    coordinator.set_dev_mode(msg["enabled"])
-    connection.send_result(msg["id"])
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/start_recording",
-        vol.Required("entry_id"): str,
-        vol.Required("filename"): str,
-    }
-)
-@callback
-def websocket_start_recording(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
-    """Start recording raw LD2450 frames to a JSONL file."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Entry not found")
-        return
-    import os
-
-    path = os.path.join(hass.config.config_dir, msg["filename"])
-    coordinator.start_recording(path)
-    connection.send_result(msg["id"], {"path": path})
-
-
-@websocket_api.websocket_command(
-    {
-        vol.Required("type"): "eppgrid/stop_recording",
-        vol.Required("entry_id"): str,
-    }
-)
-@callback
-def websocket_stop_recording(
-    hass: HomeAssistant,
-    connection: websocket_api.ActiveConnection,
-    msg: dict[str, Any],
-) -> None:
-    """Stop recording and return path to recorded file."""
-    coordinator = _get_coordinator(hass, msg["entry_id"])
-    if coordinator is None:
-        connection.send_error(msg["id"], "not_found", "Entry not found")
-        return
-    path = coordinator.stop_recording()
-    connection.send_result(msg["id"], {"path": path})
