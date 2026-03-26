@@ -32,9 +32,16 @@ class DeviceConnection:
 
     async def async_connect(self) -> None:
         """Connect to the device and cache available services."""
-        self._client = APIClient(self._host, self._port, "", noise_psk=self._noise_psk)
-        await self._client.connect(login=True)
-        _entities, services = await self._client.list_entities_services()
+        if self.connected:
+            return
+        client = APIClient(self._host, self._port, "", noise_psk=self._noise_psk)
+        try:
+            await client.connect(login=True)
+            _entities, services = await client.list_entities_services()
+        except Exception:
+            await client.disconnect()
+            raise
+        self._client = client
         self._services = {s.name: s for s in services}
         self.connected = True
         _LOGGER.debug("Connected to %s", self._host)
