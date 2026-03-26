@@ -114,6 +114,20 @@ class DeviceConnection:
             })
             _LOGGER.info("Pushed %d zones to %s", len(named), self._host)
 
+        # Push device settings
+        for key, action_name in (
+            ("env_calibration", "epp_set_env_calibration"),
+            ("motion_timeout", "epp_set_motion_timeout"),
+            ("tracking", "epp_set_tracking"),
+            ("static_presence", "epp_set_static_presence"),
+        ):
+            data = config.get(key)
+            if data:
+                service = self._services.get(action_name)
+                if service:
+                    await self._client.execute_service(service, data)
+                    _LOGGER.info("Pushed %s to %s", key, self._host)
+
 
 @dataclass
 class ManagedDevice:
