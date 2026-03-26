@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant, State
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.eppgrid.device_manager import DeviceConnection, DeviceManager, ManagedDevice
@@ -163,3 +164,67 @@ class TestAutoConfigPush:
         with patch.object(manager, "_push_config_to_device", new_callable=AsyncMock) as mock_push:
             await manager._on_device_available("AA:BB:CC:DD:EE:FF")
             mock_push.assert_called_once_with("AA:BB:CC:DD:EE:FF")
+
+
+class TestEntityManagement:
+    async def test_enable_zone_entities(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """Configuring zones enables corresponding ESPHome entities."""
+        from pytest_homeassistant_custom_component.common import MockConfigEntry
+
+        ent_reg = er.async_get(hass)
+        dev_reg = dr.async_get(hass)
+
+        esphome_entry = MockConfigEntry(
+            domain="esphome",
+            entry_id="esphome_entry_1",
+            data={"host": "192.168.1.50"},
+            title="EPP",
+        )
+        esphome_entry.add_to_hass(hass)
+
+        device = dev_reg.async_get_or_create(
+            config_entry_id="esphome_entry_1",
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP",
+        )
+
+        # Create disabled ESPHome zone occupancy entities
+        for i in range(3):
+            ent_reg.async_get_or_create(
+                domain="binary_sensor",
+                platform="esphome",
+                unique_id=f"esphome_aabbccddeeff_zone_{i}_occupancy",
+                suggested_object_id=f"epp_zone_{i}_occupancy",
+                config_entry=esphome_entry,
+                device_id=device.id,
+                disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+            )
+
+        zone_slots = [
+            {"name": "Entrance", "type": "entrance"},
+            {"name": "Armchair", "type": "normal"},
+            None, None, None, None, None,
+        ]
+
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
+            mac="AA:BB:CC:DD:EE:FF", name="EPP", device_id=device.id
+        )
+
+        await manager.async_update_zone_entities("AA:BB:CC:DD:EE:FF", zone_slots)
+
+        # Zone 0 (rest of room) should be enabled
+        ent0 = ent_reg.async_get("binary_sensor.epp_zone_0_occupancy")
+        assert ent0 is not None
+        assert ent0.disabled_by is None
+
+        # Zone 1 (Entrance) should be enabled
+        ent1 = ent_reg.async_get("binary_sensor.epp_zone_1_occupancy")
+        assert ent1 is not None
+        assert ent1.disabled_by is None
+
+        # Zone 2 (Armchair) should be enabled
+        ent2 = ent_reg.async_get("binary_sensor.epp_zone_2_occupancy")
+        assert ent2 is not None
+        assert ent2.disabled_by is None

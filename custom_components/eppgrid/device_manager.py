@@ -259,6 +259,53 @@ class DeviceManager:
             })
         return result
 
+    async def async_update_zone_entities(
+        self, mac: str, zone_slots: list[dict[str, Any] | None]
+    ) -> None:
+        """Enable/disable and rename ESPHome zone occupancy entities for a device."""
+        dev = self.devices.get(mac)
+        if dev is None or dev.device_id is None:
+            return
+
+        ent_reg = er.async_get(self._hass)
+        has_named_zones = any(z is not None for z in zone_slots)
+
+        for i in range(8):  # zones 0-7
+            entity_id = self._find_zone_entity(ent_reg, dev.device_id, i)
+            if entity_id is None:
+                continue
+
+            if i == 0:
+                # Zone 0 "rest of room" — enable if any named zones exist
+                if has_named_zones:
+                    ent_reg.async_update_entity(entity_id, disabled_by=None)
+                else:
+                    ent_reg.async_update_entity(
+                        entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
+                    )
+            elif i <= len(zone_slots) and zone_slots[i - 1] is not None:
+                # Named zone — enable and rename
+                zone = zone_slots[i - 1]
+                ent_reg.async_update_entity(entity_id, disabled_by=None, name=zone["name"])
+            else:
+                # Unused zone — disable
+                ent_reg.async_update_entity(
+                    entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
+                )
+
+    def _find_zone_entity(
+        self, ent_reg: er.EntityRegistry, device_id: str, zone_index: int
+    ) -> str | None:
+        """Find the ESPHome zone occupancy entity_id for a device and zone index."""
+        for entry in ent_reg.entities.values():
+            if (
+                entry.device_id == device_id
+                and entry.platform == "esphome"
+                and f"zone_{zone_index}_occupancy" in entry.unique_id
+            ):
+                return entry.entity_id
+        return None
+
 
 def _extract_mac(device: dr.DeviceEntry) -> str | None:
     """Extract MAC address from device connections, normalised to uppercase."""
