@@ -80,6 +80,20 @@ epp:
 # Enable logging
 logger:
 
+globals:
+  - id: env_temp_offset
+    type: float
+    initial_value: '0'
+  - id: env_humidity_offset
+    type: float
+    initial_value: '0'
+  - id: env_illuminance_offset
+    type: float
+    initial_value: '0'
+  - id: motion_timeout
+    type: float
+    initial_value: '10'
+
 # Enable Home Assistant API
 api:
   id: api_id
@@ -118,6 +132,84 @@ api:
       then:
         - lambda: |-
             id(epp_component).set_zones(zones_json);
+    - action: epp_set_env_calibration
+      variables:
+        temperature_offset: float
+        humidity_offset: float
+        illuminance_offset: float
+      then:
+        - lambda: |-
+            id(env_temp_offset) = temperature_offset;
+            id(env_humidity_offset) = humidity_offset;
+            id(env_illuminance_offset) = illuminance_offset;
+            id(shtc3_sensor).update();
+            id(illuminance_sensor).update();
+    - action: epp_set_motion_timeout
+      variables:
+        timeout: float
+      then:
+        - lambda: |-
+            id(motion_timeout) = timeout;
+    - action: epp_set_tracking
+      variables:
+        max_range: float
+      then:
+        - lambda: |-
+            id(tracking_max_range) = max_range;
+    - action: epp_set_static_presence
+      variables:
+        min_range: float
+        max_range: float
+        trigger_range: float
+        sustain_sensitivity: int
+        trigger_sensitivity: int
+        timeout: float
+        on_delay: float
+        led_enabled: bool
+      then:
+        - uart.write:
+            id: uart_bus_dfrobot
+            data: "sensorStop\r\n"
+        - delay: 1s
+        - uart.write:
+            id: uart_bus_dfrobot
+            data: !lambda |-
+              auto ms = str_sprintf("setRange %.1f %.1f\r\n", min_range, max_range);
+              return std::vector<unsigned char>(ms.begin(), ms.end());
+        - delay: 1s
+        - uart.write:
+            id: uart_bus_dfrobot
+            data: !lambda |-
+              auto ms = str_sprintf("setTrigRange %.1f\r\n", trigger_range);
+              return std::vector<unsigned char>(ms.begin(), ms.end());
+        - delay: 1s
+        - uart.write:
+            id: uart_bus_dfrobot
+            data: !lambda |-
+              auto ms = str_sprintf("setSensitivity %d %d\r\n", sustain_sensitivity, trigger_sensitivity);
+              return std::vector<unsigned char>(ms.begin(), ms.end());
+        - delay: 1s
+        - uart.write:
+            id: uart_bus_dfrobot
+            data: !lambda |-
+              auto ms = str_sprintf("setLatency %.2f %.0f\r\n", on_delay, timeout);
+              return std::vector<unsigned char>(ms.begin(), ms.end());
+        - delay: 1s
+        - uart.write:
+            id: uart_bus_dfrobot
+            data: !lambda |-
+              return led_enabled
+                ? std::vector<unsigned char>{'s','e','t','L','e','d','M','o','d','e',' ','1',' ','0','\r','\n'}
+                : std::vector<unsigned char>{'s','e','t','L','e','d','M','o','d','e',' ','1',' ','1','\r','\n'};
+        - delay: 1s
+        - uart.write:
+            id: uart_bus_dfrobot
+            data: "saveConfig\r\n"
+        - delay: 1s
+        - uart.write:
+            id: uart_bus_dfrobot
+            data: "sensorStart\r\n"
+        - delay: 1s
     - action: get_build_flags
       then:
         - api.respond:
@@ -205,24 +297,27 @@ sensor:
     temperature:
       name: Temperature
       id: temperature_sensor
+      disabled_by_default: true
       filters:
-        - lambda: "return x + id(env_temperature_offset).state;"
+        - lambda: "return x + id(env_temp_offset);"
     humidity:
       name: Humidity
       id: humidity_sensor
+      disabled_by_default: true
       filters:
-        - lambda: "return x + id(env_humidity_offset).state;"
+        - lambda: "return x + id(env_humidity_offset);"
     address: 0x70
     update_interval: 30s
   
   - platform: bh1750
     name: Illuminance
     id: illuminance_sensor
+    disabled_by_default: true
     i2c_id: bus_a
     address: 0x23
     update_interval: 2s
     filters:
-      - lambda: "return x + id(env_illuminance_offset).state;"
+      - lambda: "return x + id(env_illuminance_offset);"
       - or:
           - throttle: 30s
           - delta: 2
@@ -237,13 +332,14 @@ i2c:
 
 binary_sensor:
   - platform: gpio
-    name: Motion
+    name: "Motion Presence"
     id: pir_motion
     device_class: motion
+    disabled_by_default: true
     pin:
       number: GPIO36
     filters:
-      - delayed_off: !lambda 'return id(pir_off_delay).state * 1000.0;'
+      - delayed_off: !lambda 'return id(motion_timeout) * 1000.0;'
     on_state:
       then:
         - lambda: |-
@@ -262,8 +358,6 @@ binary_sensor:
     name: Occupancy
     id: occupancy
     device_class: occupancy
-    filters:
-      - delayed_off: !lambda 'return id(occupancy_off_delay).state * 1000.0;'
     lambda: |-
       if (id(dfrobot_presence).state || id(pir_motion).state || id(epp_zone_tracking).state) {
         return true;
@@ -292,8 +386,7 @@ binary_sensor:
     name: mmWave Presence
     id: mmwave_occupancy
     device_class: occupancy
-    filters:
-      - delayed_off: !lambda 'return id(occupancy_off_delay).state * 1000.0;'
+    disabled_by_default: true
     lambda: |-
       return id(dfrobot_presence).state || id(epp_zone_tracking).state;
 
@@ -432,42 +525,6 @@ select:
     on_value:
       then:
         - script.execute: control_leds
-
-  - platform: template
-    id: firmware_network
-    name: Network Type
-    icon: "mdi:network"
-    entity_category: diagnostic
-    optimistic: true
-    restore_value: true
-    options:
-      - "WiFi"
-      - "Ethernet"
-    initial_option: "Ethernet"
-
-  - platform: template
-    id: firmware_co2
-    name: CO2 Sensor
-    icon: "mdi:molecule-co2"
-    entity_category: diagnostic
-    optimistic: true
-    restore_value: true
-    options:
-      - "Disabled"
-      - "Enabled"
-    initial_option: "Disabled"
-
-  - platform: template
-    id: firmware_ble
-    name: Bluetooth Proxy
-    icon: "mdi:bluetooth"
-    entity_category: diagnostic
-    optimistic: true
-    restore_value: true
-    options:
-      - "Disabled"
-      - "Enabled"
-    initial_option: "Disabled"
 
 script:
   - id: update_relay_state
@@ -785,147 +842,8 @@ number:
             then:
               - script.execute: control_leds
 
-  - platform: template
-    name: Occupancy Timeout
-    icon: mdi:clock-end
-    entity_category: config
-    id: occupancy_off_delay
-    min_value: 1
-    max_value: 600
-    initial_value: 15
-    optimistic: true
-    step: 5
-    restore_value: true
-    unit_of_measurement: seconds
-    mode: slider
-
-  - platform: template
-    name: Motion Timeout
-    icon: mdi:clock-end
-    entity_category: config
-    id: pir_off_delay
-    min_value: 1
-    max_value: 120
-    initial_value: 10
-    optimistic: true
-    step: 1
-    restore_value: true
-    unit_of_measurement: seconds
-    mode: slider
-
-  - platform: template
-    name: "Temperature Calibration"
-    id: env_temperature_offset
-    unit_of_measurement: "°C"
-    min_value: -20
-    max_value: 20
-    step: 0.1
-    mode: box
-    update_interval: never
-    optimistic: true
-    restore_value: true
-    initial_value: 0
-    icon: "mdi:thermometer"
-    entity_category: config
-    on_value:
-      - lambda: 'id(shtc3_sensor).update();'
-
-  - platform: template
-    name: "Humidity Calibration"
-    id: env_humidity_offset
-    unit_of_measurement: "%"
-    min_value: -50
-    max_value: 50
-    step: 0.1
-    mode: box
-    update_interval: never
-    optimistic: true
-    restore_value: true
-    initial_value: 0
-    icon: "mdi:water-percent"
-    entity_category: config
-    on_value:
-      - lambda: 'id(shtc3_sensor).update();'
-
-  - platform: template
-    name: "Illuminance Calibration"
-    id: env_illuminance_offset
-    unit_of_measurement: "lx"
-    min_value: -50
-    max_value: 50
-    step: 1
-    mode: box
-    update_interval: never
-    optimistic: true
-    restore_value: true
-    initial_value: 0
-    icon: "mdi:brightness-5"
-    entity_category: config
-    on_value:
-      - lambda: 'id(illuminance_sensor).update();'
-
 button:
   - platform: restart
     name: "Restart Device"
     entity_category: config
 
-  - platform: template
-    name: "Apply Update"
-    entity_category: diagnostic
-    on_press:
-      - logger.log: "Applying firmware update based on selected configuration"
-      - lambda: |-
-          // Build manifest URL based on selected options
-          std::string base_url = "https://docs.everythingsmart.io/update/everything-presence-pro/everything-presence-pro-";
-
-          // Add network type (required, lowercase)
-          std::string network = id(firmware_network).current_option();
-          std::transform(network.begin(), network.end(), network.begin(), ::tolower);
-          base_url += network;
-
-          // Add features in alphabetical order (ble before co2)
-          if (id(firmware_ble).current_option() == "Enabled") {
-            base_url += "-ble";
-          }
-
-          if (id(firmware_co2).current_option() == "Enabled") {
-            base_url += "-co2";
-          }
-
-          base_url += "-manifest.json";
-
-          ESP_LOGI("firmware", "Switching to manifest: %s", base_url.c_str());
-          id(update_http_request).set_source_url(base_url.c_str());
-      - component.update: update_http_request
-      - delay: 2s
-      - update.perform:
-          id: update_http_request
-          force_update: true
-      - logger.log: "Applying firmware update based on selected configuration - using http fallback"
-      - lambda: |-
-          // Build manifest URL based on selected options
-          std::string base_url = "http://docs.everythingsmart.io/update/everything-presence-pro/everything-presence-pro-";
-
-          // Add network type (required, lowercase)
-          std::string network = id(firmware_network).current_option();
-          std::transform(network.begin(), network.end(), network.begin(), ::tolower);
-          base_url += network;
-
-          // Add features in alphabetical order (ble before co2)
-          if (id(firmware_ble).current_option() == "Enabled") {
-            base_url += "-ble";
-          }
-
-          if (id(firmware_co2).current_option() == "Enabled") {
-            base_url += "-co2";
-          }
-
-          base_url += "-manifest.json";
-
-          ESP_LOGI("firmware", "Switching to manifest: %s", base_url.c_str());
-          id(update_http_request).set_source_url(base_url.c_str());
-      - component.update: update_http_request
-      - delay: 2s
-      - update.perform:
-          id: update_http_request
-          force_update: true
