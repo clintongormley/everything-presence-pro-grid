@@ -4,7 +4,8 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from homeassistant.core import HomeAssistant
+from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.core import HomeAssistant, State
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.eppgrid.device_manager import DeviceConnection, DeviceManager, ManagedDevice
@@ -139,3 +140,26 @@ class TestDeviceConnection:
             }
             await conn.async_push_config(config)
             assert client.execute_service.call_count == 3
+
+
+class TestAutoConfigPush:
+    async def test_push_on_device_available(
+        self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
+    ) -> None:
+        """Config is pushed when a managed device becomes available."""
+        await store.async_load()
+        store.devices["AA:BB:CC:DD:EE:FF"] = {
+            "name": "Test",
+            "calibration": {"perspective": [1.0] * 8, "room_width": 3000.0, "room_depth": 4000.0},
+            "room_layout": {"grid_bytes": [1] * 400, "zone_slots": [None] * 7, "room_type": "normal"},
+        }
+
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
+            mac="AA:BB:CC:DD:EE:FF",
+            name="Test",
+            host="192.168.1.100",
+        )
+
+        with patch.object(manager, "_push_config_to_device", new_callable=AsyncMock) as mock_push:
+            await manager._on_device_available("AA:BB:CC:DD:EE:FF")
+            mock_push.assert_called_once_with("AA:BB:CC:DD:EE:FF")

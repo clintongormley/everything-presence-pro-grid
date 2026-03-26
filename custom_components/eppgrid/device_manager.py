@@ -9,7 +9,8 @@ from typing import Any
 
 from aioesphomeapi import APIClient
 from aioesphomeapi import UserService
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import STATE_UNAVAILABLE
+from homeassistant.core import HomeAssistant, State, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -143,6 +144,10 @@ class DeviceManager:
                 er.EVENT_ENTITY_REGISTRY_UPDATED, self._on_entity_registry_updated
             )
         )
+        # Listen for state changes to detect device availability
+        self._unsub_listeners.append(
+            self._hass.bus.async_listen("state_changed", self._on_state_changed)
+        )
 
     async def async_stop(self) -> None:
         """Stop listeners and close connections."""
@@ -187,6 +192,51 @@ class DeviceManager:
         """Handle entity registry changes — re-discover on new entities."""
         if event.data.get("action") == "create":
             self._hass.async_create_task(self.async_discover())
+
+    @callback
+    def _on_state_changed(self, event: Any) -> None:
+        """Detect when a managed device becomes available."""
+        new_state: State | None = event.data.get("new_state")
+        old_state: State | None = event.data.get("old_state")
+        if new_state is None or old_state is None:
+            return
+        if old_state.state != STATE_UNAVAILABLE or new_state.state == STATE_UNAVAILABLE:
+            return
+
+        # Check if this entity belongs to a managed device
+        ent_reg = er.async_get(self._hass)
+        entry = ent_reg.async_get(event.data.get("entity_id", ""))
+        if entry is None or entry.device_id is None:
+            return
+
+        dev_reg = dr.async_get(self._hass)
+        device = dev_reg.async_get(entry.device_id)
+        if device is None:
+            return
+
+        mac = _extract_mac(device)
+        if mac and mac in self.devices:
+            self._hass.async_create_task(self._on_device_available(mac))
+
+    async def _on_device_available(self, mac: str) -> None:
+        """Push stored config when a managed device comes online."""
+        _LOGGER.info("Device %s became available, pushing config", mac)
+        await self._push_config_to_device(mac)
+
+    async def _push_config_to_device(self, mac: str) -> None:
+        """Open a temporary connection, push config, and close."""
+        dev = self.devices.get(mac)
+        config = self._store.get_device(mac)
+        if dev is None or dev.host is None or config is None:
+            return
+        conn = DeviceConnection(dev.host)
+        try:
+            await conn.async_connect()
+            await conn.async_push_config(config)
+        except Exception:
+            _LOGGER.warning("Failed to push config to %s (%s)", dev.name, mac)
+        finally:
+            await conn.async_disconnect()
 
     def list_devices(self) -> list[dict[str, Any]]:
         """Return serializable list of managed devices for the frontend."""
