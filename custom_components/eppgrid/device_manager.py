@@ -136,6 +136,8 @@ class DeviceManager:
         self.devices: dict[str, ManagedDevice] = {}
         self._unsub_listeners: list[Any] = []
         self._pushing: set[str] = set()
+        self._active_connections: dict[str, DeviceConnection] = {}
+        self._connection_refcount: dict[str, int] = {}
 
     async def async_start(self) -> None:
         """Start discovery and event listeners."""
@@ -244,6 +246,30 @@ class DeviceManager:
             _LOGGER.warning("Failed to push config to %s (%s)", dev.name, mac, exc_info=True)
         finally:
             await conn.async_disconnect()
+
+    async def async_get_or_create_connection(self, mac: str) -> DeviceConnection | None:
+        """Get or create a live connection for the calibration UI."""
+        dev = self.devices.get(mac)
+        if dev is None or dev.host is None:
+            return None
+        if mac not in self._active_connections:
+            conn = DeviceConnection(dev.host)
+            await conn.async_connect()
+            self._active_connections[mac] = conn
+            self._connection_refcount[mac] = 0
+        self._connection_refcount[mac] += 1
+        return self._active_connections[mac]
+
+    async def async_release_connection(self, mac: str) -> None:
+        """Release a reference to a live connection. Disconnects when last ref released."""
+        if mac not in self._connection_refcount:
+            return
+        self._connection_refcount[mac] -= 1
+        if self._connection_refcount[mac] <= 0:
+            conn = self._active_connections.pop(mac, None)
+            self._connection_refcount.pop(mac, None)
+            if conn is not None:
+                await conn.async_disconnect()
 
     def list_devices(self) -> list[dict[str, Any]]:
         """Return serializable list of managed devices for the frontend."""

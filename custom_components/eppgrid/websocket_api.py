@@ -31,6 +31,7 @@ def async_register_websocket_commands(
     websocket_api.async_register_command(hass, websocket_save_template)
     websocket_api.async_register_command(hass, websocket_delete_template)
     websocket_api.async_register_command(hass, websocket_apply_template)
+    websocket_api.async_register_command(hass, websocket_subscribe_grid_targets)
 
 
 def _get_manager(hass: HomeAssistant) -> Any:
@@ -243,3 +244,54 @@ async def websocket_apply_template(
     device_config["room_layout"] = dict(template)
     await manager._store.async_save()
     connection.send_result(msg["id"])
+
+
+# -- subscribe_grid_targets --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/subscribe_grid_targets",
+    vol.Required("mac"): str,
+})
+@websocket_api.async_response
+async def websocket_subscribe_grid_targets(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Stream target positions and zone state from device."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+
+    mac = msg["mac"]
+    device_conn = await manager.async_get_or_create_connection(mac)
+    if device_conn is None:
+        connection.send_error(msg["id"], "not_found", "Device not available")
+        return
+
+    @callback
+    def _on_state(state: Any) -> None:
+        """Forward device state to frontend."""
+        from aioesphomeapi import BinarySensorState, SensorState, TextSensorState
+
+        data: dict[str, Any] = {}
+        if isinstance(state, TextSensorState):
+            data = {"type": "text", "key": state.key, "state": state.state}
+        elif isinstance(state, BinarySensorState):
+            data = {"type": "binary", "key": state.key, "state": state.state}
+        elif isinstance(state, SensorState):
+            data = {"type": "sensor", "key": state.key, "state": state.state}
+        if data:
+            connection.send_message(
+                websocket_api.event_message(msg["id"], data)
+            )
+
+    device_conn.subscribe_states(_on_state)
+    connection.send_result(msg["id"])
+
+    @callback
+    def _unsub() -> None:
+        hass.async_create_task(manager.async_release_connection(mac))
+
+    connection.subscriptions[msg["id"]] = _unsub
