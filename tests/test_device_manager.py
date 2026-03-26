@@ -1,13 +1,13 @@
 """Tests for EPP Grid device manager."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.eppgrid.device_manager import DeviceManager, ManagedDevice
+from custom_components.eppgrid.device_manager import DeviceConnection, DeviceManager, ManagedDevice
 from custom_components.eppgrid.storage import EPPGridStore
 
 
@@ -81,3 +81,61 @@ class TestDiscovery:
         )
         await manager.async_discover()
         assert manager.devices == {}
+
+
+class TestDeviceConnection:
+    async def test_connect_and_disconnect(self) -> None:
+        """Connection opens and closes cleanly."""
+        with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
+            client = AsyncMock()
+            client.connect = AsyncMock()
+            client.disconnect = AsyncMock()
+            client.list_entities_services = AsyncMock(return_value=([], []))
+            client.subscribe_states = MagicMock()
+            mock_cls.return_value = client
+
+            conn = DeviceConnection("192.168.1.100", 6053)
+            await conn.async_connect()
+            assert conn.connected is True
+
+            await conn.async_disconnect()
+            assert conn.connected is False
+            client.disconnect.assert_called_once()
+
+    async def test_push_config(self) -> None:
+        """Config push calls the three ESPHome service actions."""
+        with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
+            client = AsyncMock()
+            client.connect = AsyncMock()
+            client.disconnect = AsyncMock()
+            # Build mock services with .name attribute set correctly
+            # (MagicMock(name=...) sets the mock repr name, NOT the .name attribute)
+            svc_perspective = MagicMock()
+            svc_perspective.name = "epp_set_perspective"
+            svc_grid = MagicMock()
+            svc_grid.name = "epp_set_grid"
+            svc_zones = MagicMock()
+            svc_zones.name = "epp_set_zones"
+            mock_services = [svc_perspective, svc_grid, svc_zones]
+            client.list_entities_services = AsyncMock(return_value=([], mock_services))
+            client.subscribe_states = MagicMock()
+            client.execute_service = AsyncMock()
+            mock_cls.return_value = client
+
+            conn = DeviceConnection("192.168.1.100", 6053)
+            await conn.async_connect()
+
+            config = {
+                "calibration": {
+                    "perspective": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0],
+                    "room_width": 3000.0,
+                    "room_depth": 4000.0,
+                },
+                "room_layout": {
+                    "grid_bytes": [1] * 400,
+                    "zone_slots": [None] * 7,
+                    "room_type": "normal",
+                },
+            }
+            await conn.async_push_config(config)
+            assert client.execute_service.call_count == 3
