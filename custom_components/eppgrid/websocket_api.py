@@ -7,6 +7,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant.components import websocket_api
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
 
@@ -32,6 +33,11 @@ def async_register_websocket_commands(
     websocket_api.async_register_command(hass, websocket_delete_template)
     websocket_api.async_register_command(hass, websocket_apply_template)
     websocket_api.async_register_command(hass, websocket_subscribe_grid_targets)
+    websocket_api.async_register_command(hass, websocket_set_entity_enabled)
+    websocket_api.async_register_command(hass, websocket_set_env_calibration)
+    websocket_api.async_register_command(hass, websocket_set_motion_timeout)
+    websocket_api.async_register_command(hass, websocket_set_tracking)
+    websocket_api.async_register_command(hass, websocket_set_static_presence)
 
 
 def _get_manager(hass: HomeAssistant) -> Any:
@@ -301,3 +307,154 @@ async def websocket_subscribe_grid_targets(
         hass.async_create_task(manager.async_release_connection(mac))
 
     connection.subscriptions[msg["id"]] = _unsub
+
+
+# -- set_entity_enabled --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/set_entity_enabled",
+    vol.Required("mac"): str,
+    vol.Required("entity_id"): str,
+    vol.Required("enabled"): bool,
+})
+@callback
+def websocket_set_entity_enabled(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Enable or disable an ESPHome entity on a managed device."""
+    ent_reg = er.async_get(hass)
+    if msg["enabled"]:
+        ent_reg.async_update_entity(msg["entity_id"], disabled_by=None)
+    else:
+        ent_reg.async_update_entity(
+            msg["entity_id"], disabled_by=er.RegistryEntryDisabler.INTEGRATION
+        )
+    connection.send_result(msg["id"])
+
+
+# -- set_env_calibration --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/set_env_calibration",
+    vol.Required("mac"): str,
+    vol.Required("temperature_offset"): vol.Coerce(float),
+    vol.Required("humidity_offset"): vol.Coerce(float),
+    vol.Required("illuminance_offset"): vol.Coerce(float),
+})
+@websocket_api.async_response
+async def websocket_set_env_calibration(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Save environment calibration offsets."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+    mac = msg["mac"]
+    device_config = manager._store.devices.setdefault(mac, {})
+    device_config["env_calibration"] = {
+        "temperature_offset": msg["temperature_offset"],
+        "humidity_offset": msg["humidity_offset"],
+        "illuminance_offset": msg["illuminance_offset"],
+    }
+    await manager._store.async_save()
+    await manager._push_config_to_device(mac)
+    connection.send_result(msg["id"])
+
+
+# -- set_motion_timeout --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/set_motion_timeout",
+    vol.Required("mac"): str,
+    vol.Required("timeout"): vol.Coerce(float),
+})
+@websocket_api.async_response
+async def websocket_set_motion_timeout(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Save motion timeout."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+    mac = msg["mac"]
+    device_config = manager._store.devices.setdefault(mac, {})
+    device_config["motion_timeout"] = {"timeout": msg["timeout"]}
+    await manager._store.async_save()
+    await manager._push_config_to_device(mac)
+    connection.send_result(msg["id"])
+
+
+# -- set_tracking --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/set_tracking",
+    vol.Required("mac"): str,
+    vol.Required("max_range"): vol.Coerce(float),
+})
+@websocket_api.async_response
+async def websocket_set_tracking(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Save tracking sensor configuration."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+    mac = msg["mac"]
+    device_config = manager._store.devices.setdefault(mac, {})
+    device_config["tracking"] = {"max_range": msg["max_range"]}
+    await manager._store.async_save()
+    await manager._push_config_to_device(mac)
+    connection.send_result(msg["id"])
+
+
+# -- set_static_presence --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/set_static_presence",
+    vol.Required("mac"): str,
+    vol.Required("min_range"): vol.Coerce(float),
+    vol.Required("max_range"): vol.Coerce(float),
+    vol.Required("trigger_range"): vol.Coerce(float),
+    vol.Required("sustain_sensitivity"): vol.Coerce(int),
+    vol.Required("trigger_sensitivity"): vol.Coerce(int),
+    vol.Required("timeout"): vol.Coerce(float),
+    vol.Required("on_delay"): vol.Coerce(float),
+    vol.Required("led_enabled"): bool,
+})
+@websocket_api.async_response
+async def websocket_set_static_presence(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Save static presence sensor configuration."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+    mac = msg["mac"]
+    device_config = manager._store.devices.setdefault(mac, {})
+    device_config["static_presence"] = {
+        "min_range": msg["min_range"],
+        "max_range": msg["max_range"],
+        "trigger_range": msg["trigger_range"],
+        "sustain_sensitivity": msg["sustain_sensitivity"],
+        "trigger_sensitivity": msg["trigger_sensitivity"],
+        "timeout": msg["timeout"],
+        "on_delay": msg["on_delay"],
+        "led_enabled": msg["led_enabled"],
+    }
+    await manager._store.async_save()
+    await manager._push_config_to_device(mac)
+    connection.send_result(msg["id"])
