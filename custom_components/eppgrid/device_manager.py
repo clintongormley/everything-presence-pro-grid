@@ -71,6 +71,8 @@ class DeviceConnection:
 
     def _dispatch_state(self, state: Any) -> None:
         """Fan out state updates to all subscribers."""
+        _LOGGER.debug("Dispatching state to %d subscribers: key=%s type=%s",
+                      len(self._state_subscribers), getattr(state, 'key', '?'), type(state).__name__)
         for cb in self._state_subscribers:
             cb(state)
 
