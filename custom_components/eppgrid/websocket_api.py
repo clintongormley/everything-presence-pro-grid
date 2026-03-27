@@ -39,6 +39,7 @@ def async_register_websocket_commands(
     websocket_api.async_register_command(hass, websocket_set_motion_timeout)
     websocket_api.async_register_command(hass, websocket_set_tracking)
     websocket_api.async_register_command(hass, websocket_set_static_presence)
+    websocket_api.async_register_command(hass, websocket_set_pipeline)
 
 
 def _get_manager(hass: HomeAssistant) -> Any:
@@ -582,6 +583,38 @@ async def websocket_set_static_presence(
         "timeout": msg["timeout"],
         "on_delay": msg["on_delay"],
         "led_enabled": msg["led_enabled"],
+    }
+    await manager._store.async_save()
+    await manager._push_config_to_device(mac)
+    connection.send_result(msg["id"])
+
+
+# -- set_pipeline --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/set_pipeline",
+    vol.Required("mac"): str,
+    vol.Required("display_interval_ms"): vol.All(vol.Coerce(int), vol.Range(min=50, max=1000)),
+    vol.Required("zone_publish_interval_ms"): vol.All(vol.Coerce(int), vol.Range(min=100, max=2000)),
+    vol.Required("window_duration_ms"): vol.All(vol.Coerce(int), vol.Range(min=200, max=2000)),
+})
+@websocket_api.async_response
+async def websocket_set_pipeline(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Save pipeline settings."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+    mac = msg["mac"]
+    device_config = manager._store.devices.setdefault(mac, {})
+    device_config["pipeline"] = {
+        "display_interval": msg["display_interval_ms"],
+        "zone_publish_interval": msg["zone_publish_interval_ms"],
+        "window_duration": msg["window_duration_ms"],
     }
     await manager._store.async_save()
     await manager._push_config_to_device(mac)

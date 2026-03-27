@@ -123,6 +123,7 @@ class DeviceConnection:
             ("motion_timeout", "epp_set_motion_timeout"),
             ("tracking", "epp_set_tracking"),
             ("static_presence", "epp_set_static_presence"),
+            ("pipeline", "epp_set_pipeline"),
         ):
             data = config.get(key)
             if data:
