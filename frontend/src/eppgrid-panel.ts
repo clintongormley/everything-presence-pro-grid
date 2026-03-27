@@ -814,7 +814,7 @@ export class EPPGridPanel extends LitElement {
 							frame_count: event.zones.frame_count ?? 0,
 						};
 						if (this._showBackendDebugLog && event.zones.debug_log) {
-							const body = event.zones.debug_log;
+							const body = this._enrichDebugLog(event.zones.debug_log);
 							if (body !== this._backendDebugLogPrev) {
 								this._backendDebugLogPrev = body;
 								const ts = new Date().toLocaleTimeString("en-GB", {
@@ -5080,13 +5080,8 @@ export class EPPGridPanel extends LitElement {
 			}
 		}
 
-		// Build debug log line (mirrors backend zone_engine._tick logging)
+		// Build raw debug log (same format as firmware)
 		if (this._showDebugLog) {
-			const getZoneName = (zid: number): string => {
-				if (zid === 0) return "Room";
-				const cfg = this._zoneConfigs[zid - 1];
-				return cfg ? cfg.name : `Zone ${zid}`;
-			};
 			const targetParts: string[] = [];
 			for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
 				const t = this._targets[i];
@@ -5094,43 +5089,62 @@ export class EPPGridPanel extends LitElement {
 				const sig = t.signal;
 				if (sig <= 0) continue;
 				const zid = targetZoneCurr[i];
-				const zname = zid !== null ? getZoneName(zid) : "outside";
-				const conf =
-					zid !== null && (zoneConfirmed.get(zid) ?? false) ? "Y" : "N";
-				targetParts.push(
-					`T${i}: signal=${sig} zone='${zname}' confirmed=${conf}`,
-				);
+				const s = targetResults[i]?.status === "pending" ? "P" : "A";
+				targetParts.push(`T${i}:Z${zid ?? 0}:${s}:${sig}`);
 			}
 			const zoneParts: string[] = [];
 			for (const zid of allZoneIds) {
 				const st = this._localZoneState.get(zid);
 				if (st?.occupied) {
-					const state = st.pendingSince !== null ? "pending" : "occupied";
-					const n = st.confirmedTargets.size;
-					zoneParts.push(`${getZoneName(zid)}: ${state} (${n})`);
+					const state = st.pendingSince !== null ? "P" : "O";
+					zoneParts.push(`Z${zid}:${state}:${st.confirmedTargets.size}`);
 				}
 			}
-			const body = `${targetParts.length ? targetParts.join(", ") : "no targets"} | ${zoneParts.length ? zoneParts.join(", ") : "all clear"}`;
-			if (body === this._debugLogPrev)
-				return { occupancy, targets: targetResults };
-			this._debugLogPrev = body;
-			const ts = new Date().toLocaleTimeString("en-GB", {
-				hour12: false,
-				hour: "2-digit",
-				minute: "2-digit",
-				second: "2-digit",
-				fractionalSecondDigits: 1,
-			});
-			this._debugLogLines.push(`${ts} ${body}`);
-			if (this._debugLogLines.length > EPPGridPanel._DEBUG_LOG_MAX) {
-				this._debugLogLines = this._debugLogLines.slice(
-					-EPPGridPanel._DEBUG_LOG_MAX,
-				);
+			const raw = `${targetParts.join(" ")}|${zoneParts.join(" ")}`;
+			const body = this._enrichDebugLog(raw);
+			if (body !== this._debugLogPrev) {
+				this._debugLogPrev = body;
+				const ts = new Date().toLocaleTimeString("en-GB", {
+					hour12: false, hour: "2-digit", minute: "2-digit",
+					second: "2-digit", fractionalSecondDigits: 1,
+				});
+				this._debugLogLines.push(`${ts} ${body}`);
+				if (this._debugLogLines.length > EPPGridPanel._DEBUG_LOG_MAX) {
+					this._debugLogLines = this._debugLogLines.slice(-EPPGridPanel._DEBUG_LOG_MAX);
+				}
+				this.requestUpdate();
 			}
-			this.requestUpdate();
 		}
 
 		return { occupancy, targets: targetResults };
+	}
+
+	/** Enrich a raw debug log string (from firmware or frontend zone engine)
+	 *  by replacing zone IDs with zone names.
+	 *  Raw format: "T0:Z1:A:5 T1:Z0:P:3|Z0:O:1 Z1:O:1"
+	 *  Enriched:   "T0→Entrance(active,5) T1→Room(pending,3) | Entrance: occupied(1)"
+	 */
+	private _enrichDebugLog(raw: string): string {
+		const zoneName = (zid: number): string => {
+			if (zid === 0) return "Room";
+			const cfg = this._zoneConfigs[zid - 1];
+			return cfg ? cfg.name : `Zone ${zid}`;
+		};
+		const statusName: Record<string, string> = { A: "active", P: "pending", O: "occupied" };
+		const [targetPart, zonePart] = raw.split("|");
+		const targets = (targetPart || "").trim().split(/\s+/).filter(Boolean).map(s => {
+			const [t, z, st, sig] = s.split(":");
+			const zid = parseInt(z?.replace("Z", "") ?? "0");
+			return `${t}→${zoneName(zid)}(${statusName[st] ?? st},${sig})`;
+		});
+		const zones = (zonePart || "").trim().split(/\s+/).filter(Boolean).map(s => {
+			const [z, st, cnt] = s.split(":");
+			const zid = parseInt(z?.replace("Z", "") ?? "0");
+			return `${zoneName(zid)}: ${statusName[st] ?? st}(${cnt})`;
+		});
+		const tStr = targets.length ? targets.join(" ") : "no targets";
+		const zStr = zones.length ? zones.join(", ") : "all clear";
+		return `${tStr} | ${zStr}`;
 	}
 
 	/** Compute rgba overlay colour per zone based on hit counts. */

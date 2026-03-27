@@ -146,12 +146,13 @@ void EPPComponent::loop() {
           "],\"tracking\":%s},\"frame_count\":%d,\"debug_log\":\"",
           result.device_tracking_present ? "true" : "false",
           result.frame_count);
-      // Build debug log: "T0→Z1(A,5) T1→Z0(P,3)"
+      // Build debug log: "T0:Z1:A:5 T1:Z0:P:3|Z0:O:1 Z1:O:1"
+      // Targets part
+      bool first_target = true;
       for (int i = 0; i < result.target_count && i < NUM_TARGETS; i++) {
         if (result.targets[i].status == TargetStatus::INACTIVE) continue;
         const char *s = result.targets[i].status == TargetStatus::ACTIVE ? "A" : "P";
-        // Find which zone this target is in by checking grid cell
-        int zone = 0;  // default: rest of room
+        int zone = 0;
         if (result.targets[i].x != 0.0f || result.targets[i].y != 0.0f) {
           auto cell = grid_.xy_to_cell(result.targets[i].x, result.targets[i].y);
           if (cell >= 0 && cell < GRID_CELL_COUNT) {
@@ -159,10 +160,18 @@ void EPPComponent::loop() {
           }
         }
         pos += snprintf(json + pos, sizeof(json) - pos,
-            "T%d>Z%d(%s,%d) ", i, zone, s, result.targets[i].signal);
+            "%sT%d:Z%d:%s:%d", first_target ? "" : " ", i, zone, s, result.targets[i].signal);
+        first_target = false;
       }
-      // Trim trailing space and close string + object
-      if (pos > 0 && json[pos-1] == ' ') pos--;
+      // Zones part
+      pos += snprintf(json + pos, sizeof(json) - pos, "|");
+      bool first_zone = true;
+      for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
+        if (!result.zone_occupancy[i]) continue;
+        pos += snprintf(json + pos, sizeof(json) - pos,
+            "%sZ%d:O:%d", first_zone ? "" : " ", i, result.zone_target_counts[i]);
+        first_zone = false;
+      }
       pos += snprintf(json + pos, sizeof(json) - pos, "\"}");
       zone_state_sensor_->publish_state(json);
     }
