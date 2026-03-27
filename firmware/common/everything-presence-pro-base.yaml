@@ -35,7 +35,7 @@ epp:
     entity_category: diagnostic
   zone_occupancy:
     zone_0:
-      name: "Zone 0 Occupancy"
+      name: "Rest of Room Occupancy"
       device_class: occupancy
       disabled_by_default: true
     zone_1:
