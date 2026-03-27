@@ -24,94 +24,143 @@ void EPPComponent::setup() {
 }
 
 void EPPComponent::loop() {
-  if (!frame_ready_)
-    return;
+  if (!frame_ready_) return;
   frame_ready_ = false;
   frame_count_++;
 
-  // Apply perspective transform to get room-space coordinates.
-  // Gate out targets with y==0 — the LD2450 reports this transiently
-  // before it has a range fix, producing a bogus initial position.
-  TargetInput inputs[MAX_TARGETS];
+  uint32_t now = esphome::millis();
+  float ts = now / 1000.0f;
+
+  // === PROCESSING PIPELINE (runs every frame) ===
+
+  // Stage 1: Feed raw positions into rolling median
+  TargetInput raw_inputs[NUM_TARGETS];
   for (int i = 0; i < NUM_TARGETS; i++) {
-    if (targets_[i].detected && targets_[i].y != 0.0f) {
-      auto [rx, ry] = transform_.apply(targets_[i].x, targets_[i].y);
-      inputs[i] = {rx, ry, true};
+    raw_inputs[i] = {targets_[i].x, targets_[i].y,
+                     targets_[i].detected && targets_[i].y != 0.0f};
+  }
+  window_.feed(raw_inputs, NUM_TARGETS, now);
+
+  // Stage 2: Get smoothed raw, transform to grid coordinates
+  const auto &win = window_.output();
+  TargetInput grid_inputs[NUM_TARGETS];
+  for (int i = 0; i < NUM_TARGETS; i++) {
+    if (win.targets[i].active) {
+      auto [rx, ry] = transform_.apply(
+          win.targets[i].median_x, win.targets[i].median_y);
+      grid_inputs[i] = {rx, ry, true};
     } else {
-      inputs[i] = {0.0f, 0.0f, false};
+      grid_inputs[i] = {0.0f, 0.0f, false};
     }
   }
 
-  // Feed through tumbling window
-  float ts = esphome::millis() / 1000.0f;
-  bool ticked = window_.feed(inputs, MAX_TARGETS, ts);
+  // Stage 3: Zone engine tick — uses transformed positions + frame counts
+  WindowOutput zone_input;
+  zone_input.total_frames = win.total_frames;
+  for (int i = 0; i < NUM_TARGETS; i++) {
+    zone_input.targets[i].active = win.targets[i].active;
+    zone_input.targets[i].frame_count = win.targets[i].frame_count;
+    zone_input.targets[i].median_x = grid_inputs[i].x;
+    zone_input.targets[i].median_y = grid_inputs[i].y;
+  }
+  const auto &result = zone_engine_.tick(zone_input, ts);
+  last_zone_result_ = result;
 
-  if (ticked) {
-    const auto &result = zone_engine_.tick(window_.output(), ts);
+  // === PUBLISH THROTTLES (do not affect processing) ===
 
-    // Log state transitions
+  // Display publish (default 5Hz / 200ms)
+  if (now - last_display_publish_ms_ >= display_interval_ms_) {
+    last_display_publish_ms_ = now;
+
+    // Publish raw target positions (pre-transform, smoothed)
+    for (int i = 0; i < NUM_TARGETS; i++) {
+      if (raw_target_sensors_[i] != nullptr) {
+        if (win.targets[i].active) {
+          char buf[32];
+          snprintf(buf, sizeof(buf), "%.0f,%.0f",
+                   win.targets[i].median_x,
+                   win.targets[i].median_y);
+          raw_target_sensors_[i]->publish_state(buf);
+        } else {
+          raw_target_sensors_[i]->publish_state("");
+        }
+      }
+    }
+
+    // Publish grid target positions (post-transform)
+    for (int i = 0; i < NUM_TARGETS; i++) {
+      if (target_position_sensors_[i] != nullptr) {
+        if (grid_inputs[i].active) {
+          char buf[32];
+          snprintf(buf, sizeof(buf), "%.0f,%.0f",
+                   grid_inputs[i].x, grid_inputs[i].y);
+          target_position_sensors_[i]->publish_state(buf);
+        } else {
+          target_position_sensors_[i]->publish_state("");
+        }
+      }
+    }
+  }
+
+  // Zone state publish (default 1Hz / 1000ms)
+  if (now - last_zone_publish_ms_ >= zone_publish_interval_ms_) {
+    last_zone_publish_ms_ = now;
+
+    // Publish zone occupancy binary sensors
+    for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
+      if (zone_occupancy_sensors_[i] != nullptr)
+        zone_occupancy_sensors_[i]->publish_state(result.zone_occupancy[i]);
+    }
+
+    // Publish device tracking
+    if (device_tracking_sensor_ != nullptr)
+      device_tracking_sensor_->publish_state(result.device_tracking_present);
+
+    // Publish zone state as compact JSON
+    if (zone_state_sensor_ != nullptr) {
+      char json[256];
+      int pos = snprintf(json, sizeof(json),
+          "{\"targets\":[");
+      for (int i = 0; i < NUM_TARGETS; i++) {
+        const char *status_str = "inactive";
+        if (i < result.target_count) {
+          switch (result.targets[i].status) {
+            case TargetStatus::ACTIVE: status_str = "active"; break;
+            case TargetStatus::PENDING: status_str = "pending"; break;
+            default: break;
+          }
+        }
+        int signal = (i < result.target_count) ? result.targets[i].signal : 0;
+        pos += snprintf(json + pos, sizeof(json) - pos,
+            "%s{\"signal\":%d,\"status\":\"%s\"}",
+            i > 0 ? "," : "", signal, status_str);
+      }
+      pos += snprintf(json + pos, sizeof(json) - pos,
+          "],\"zones\":{\"occupancy\":[");
+      for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
+        pos += snprintf(json + pos, sizeof(json) - pos,
+            "%s%s", i > 0 ? "," : "",
+            result.zone_occupancy[i] ? "true" : "false");
+      }
+      pos += snprintf(json + pos, sizeof(json) - pos,
+          "],\"tracking\":%s},\"frame_count\":%d}",
+          result.device_tracking_present ? "true" : "false",
+          result.frame_count);
+      zone_state_sensor_->publish_state(json);
+    }
+
+    // State transition logging
     if (result.device_tracking_present != prev_tracking_) {
-      ESP_LOGI(TAG, "Tracking: %s", result.device_tracking_present ? "present" : "clear");
+      ESP_LOGI(TAG, "Tracking: %s",
+               result.device_tracking_present ? "present" : "clear");
       prev_tracking_ = result.device_tracking_present;
     }
     for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
       if (result.zone_occupancy[i] != prev_zone_occ_[i]) {
-        ESP_LOGI(TAG, "Zone %d: %s", i, result.zone_occupancy[i] ? "occupied" : "clear");
+        ESP_LOGI(TAG, "Zone %d: %s", i,
+                 result.zone_occupancy[i] ? "occupied" : "clear");
         prev_zone_occ_[i] = result.zone_occupancy[i];
       }
-    }
-
-    // Log target activity
-    for (int i = 0; i < result.target_count && i < MAX_TARGETS; i++) {
-      if (result.targets[i].status != epp::TargetStatus::INACTIVE) {
-        ESP_LOGD(TAG, "T%d: (%.0f,%.0f) signal=%d status=%d",
-                 i, result.targets[i].x, result.targets[i].y,
-                 result.targets[i].signal, static_cast<int>(result.targets[i].status));
-      }
-    }
-
-    // Publish device tracking binary sensor
-    if (device_tracking_sensor_ != nullptr) {
-      device_tracking_sensor_->publish_state(result.device_tracking_present);
-    }
-
-    // Publish zone occupancy binary sensors
-    for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
-      if (zone_occupancy_sensors_[i] != nullptr) {
-        zone_occupancy_sensors_[i]->publish_state(result.zone_occupancy[i]);
-      }
-    }
-
-    // Publish target position text sensors as "x,y,signal,status"
-    for (int i = 0; i < result.target_count && i < MAX_TARGETS; i++) {
-      if (target_position_sensors_[i] != nullptr) {
-        char buf[64];
-        const char *status_str = "inactive";
-        switch (result.targets[i].status) {
-          case epp::TargetStatus::ACTIVE:
-            status_str = "active";
-            break;
-          case epp::TargetStatus::PENDING:
-            status_str = "pending";
-            break;
-          default:
-            break;
-        }
-        snprintf(buf, sizeof(buf), "%.0f,%.0f,%d,%s",
-                 result.targets[i].x, result.targets[i].y,
-                 result.targets[i].signal, status_str);
-        target_position_sensors_[i]->publish_state(buf);
-      }
-    }
-
-    // Log periodically
-    if (frame_count_ % 100 == 0) {
-      ESP_LOGD(TAG, "Zone tick: tracking=%d, occ=[%d,%d,%d,%d,%d,%d,%d,%d]",
-               result.device_tracking_present,
-               result.zone_occupancy[0], result.zone_occupancy[1],
-               result.zone_occupancy[2], result.zone_occupancy[3],
-               result.zone_occupancy[4], result.zone_occupancy[5],
-               result.zone_occupancy[6], result.zone_occupancy[7]);
     }
   }
 }

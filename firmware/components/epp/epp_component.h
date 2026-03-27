@@ -6,6 +6,7 @@
 
 #include "epp_calibration.h"
 #include "epp_grid.h"
+#include "epp_rolling_window.h"
 #include "epp_tumbling_window.h"
 #include "epp_zone_engine.h"
 
@@ -50,6 +51,16 @@ class EPPComponent : public esphome::Component {
     if (index >= 0 && index < MAX_TARGETS)
       target_position_sensors_[index] = sensor;
   }
+  void set_raw_target_sensor(int index, esphome::text_sensor::TextSensor *sensor) {
+    if (index >= 0 && index < NUM_TARGETS)
+      raw_target_sensors_[index] = sensor;
+  }
+  void set_zone_state_sensor(esphome::text_sensor::TextSensor *sensor) {
+    zone_state_sensor_ = sensor;
+  }
+  void set_window_duration(uint32_t ms) { window_.set_window_duration(ms); }
+  void set_display_interval(uint32_t ms) { display_interval_ms_ = ms; }
+  void set_zone_publish_interval(uint32_t ms) { zone_publish_interval_ms_ = ms; }
 
  protected:
   static constexpr int NUM_TARGETS = 3;
@@ -63,7 +74,7 @@ class EPPComponent : public esphome::Component {
   // Zone engine pipeline
   SensorTransform transform_;
   Grid grid_;
-  TumblingWindow window_;
+  RollingWindow window_{1000};
   ZoneEngine zone_engine_;
 
   // NVS persistence
@@ -88,6 +99,23 @@ class EPPComponent : public esphome::Component {
   esphome::text_sensor::TextSensor *firmware_version_sensor_{nullptr};
   esphome::binary_sensor::BinarySensor *zone_occupancy_sensors_[MAX_ZONE_SLOTS]{};
   esphome::text_sensor::TextSensor *target_position_sensors_[MAX_TARGETS]{};
+
+  // Raw target text sensors (pre-transform, post-median)
+  esphome::text_sensor::TextSensor *raw_target_sensors_[NUM_TARGETS]{};
+
+  // Zone state text sensor (JSON at 1Hz)
+  esphome::text_sensor::TextSensor *zone_state_sensor_{nullptr};
+
+  // Publish throttle intervals (ms)
+  uint32_t display_interval_ms_ = 200;
+  uint32_t zone_publish_interval_ms_ = 1000;
+
+  // Publish throttle timestamps
+  uint32_t last_display_publish_ms_ = 0;
+  uint32_t last_zone_publish_ms_ = 0;
+
+  // Cached zone result
+  ProcessingResult last_zone_result_{};
 };
 
 }  // namespace epp
