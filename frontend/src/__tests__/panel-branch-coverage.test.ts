@@ -8,6 +8,8 @@ import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
+import "../components/epp-settings-view.js";
+import type { EppSettingsView } from "../components/epp-settings-view.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -104,6 +106,23 @@ function createPanel() {
 	a._fovCache = null;
 	a._fovPerspective = null;
 	a._localize = setupLocalize();
+	return el;
+}
+
+function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+	const el = document.createElement("epp-settings-view") as EppSettingsView;
+	el.grid = initGridFromRoom(3000, 4000);
+	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+	el.roomWidth = 3000;
+	el.roomDepth = 4000;
+	el.openAccordions = new Set();
+	el.reportingConfig = {};
+	el.offsetsConfig = {};
+	if (overrides) {
+		for (const [k, v] of Object.entries(overrides)) {
+			(el as any)[k] = v;
+		}
+	}
 	return el;
 }
 
@@ -731,22 +750,26 @@ describe("_renderSaveCancelButtons save handler branch", () => {
 // =========================================================
 describe("_renderDetectionRanges auto range edge cases", () => {
 	it("target auto with zero autoRange", () => {
-		const a = createPanel() as any;
-		a._targetAutoRange = true;
-		a._roomWidth = 0;
-		a._roomDepth = 0;
-		a._perspective = null;
-		const tpl = a._renderDetectionRanges();
+		const sv = createSettingsView({
+			targetAutoRange: true,
+			roomWidth: 0,
+			roomDepth: 0,
+			perspective: null,
+			grid: new Uint8Array(GRID_CELL_COUNT),
+		});
+		const tpl = (sv as any).renderDetectionRanges();
 		expect(tpl).toBeDefined();
 	});
 
 	it("static auto with zero autoRange", () => {
-		const a = createPanel() as any;
-		a._staticAutoRange = true;
-		a._roomWidth = 0;
-		a._roomDepth = 0;
-		a._perspective = null;
-		const tpl = a._renderDetectionRanges();
+		const sv = createSettingsView({
+			staticAutoRange: true,
+			roomWidth: 0,
+			roomDepth: 0,
+			perspective: null,
+			grid: new Uint8Array(GRID_CELL_COUNT),
+		});
+		const tpl = (sv as any).renderDetectionRanges();
 		expect(tpl).toBeDefined();
 	});
 });
@@ -756,9 +779,8 @@ describe("_renderDetectionRanges auto range edge cases", () => {
 // =========================================================
 describe("_renderReporting fallback branches", () => {
 	it("uses fallback values when reporting config is empty", () => {
-		const a = createPanel() as any;
-		a._reportingConfig = {};
-		const tpl = a._renderReporting();
+		const sv = createSettingsView({ reportingConfig: {} });
+		const tpl = (sv as any).renderReporting();
 		expect(tpl).toBeDefined();
 	});
 });
@@ -977,11 +999,11 @@ describe("furniture overlay all handle events", () => {
 // =========================================================
 describe("_infoTip DOM click handler", () => {
 	it("click toggles tooltip display", () => {
-		const a = createPanel() as any;
+		const sv = createSettingsView() as any;
 
 		// Create mock shadowRoot that will be used by the handler
 		const tooltips: HTMLElement[] = [];
-		Object.defineProperty(a, "shadowRoot", {
+		Object.defineProperty(sv, "shadowRoot", {
 			value: {
 				querySelectorAll: (sel: string) => {
 					if (sel === ".setting-info-tooltip") return tooltips;
@@ -991,7 +1013,7 @@ describe("_infoTip DOM click handler", () => {
 			configurable: true,
 		});
 
-		const tpl = a._infoTip("Test tip");
+		const tpl = sv.infoTip("Test tip");
 		const c = document.createElement("div");
 		document.body.appendChild(c);
 		render(tpl, c);

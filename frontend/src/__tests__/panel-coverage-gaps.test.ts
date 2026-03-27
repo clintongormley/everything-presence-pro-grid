@@ -10,6 +10,8 @@ import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
+import "../components/epp-settings-view.js";
+import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import {
 	CELL_ROOM_BIT,
@@ -105,6 +107,23 @@ function createPanel(): EPPGridPanel {
 	a._templateName = "";
 	a._fovCache = null;
 	a._fovPerspective = null;
+	return el;
+}
+
+function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+	const el = document.createElement("epp-settings-view") as EppSettingsView;
+	el.grid = initGridFromRoom(3000, 4000);
+	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+	el.roomWidth = 3000;
+	el.roomDepth = 4000;
+	el.openAccordions = new Set();
+	el.reportingConfig = {};
+	el.offsetsConfig = {};
+	if (overrides) {
+		for (const [k, v] of Object.entries(overrides)) {
+			(el as any)[k] = v;
+		}
+	}
 	return el;
 }
 
@@ -383,9 +402,8 @@ describe("_renderLiveOverview menu branches", () => {
 // =========================================================
 describe("_renderDetectionRanges branches", () => {
 	it("renders with auto range and static auto range toggling", () => {
-		const a = createPanel() as any;
-		a._staticAutoRange = true;
-		const tpl = a._renderDetectionRanges();
+		const sv = createSettingsView({ staticAutoRange: true });
+		const tpl = (sv as any).renderDetectionRanges();
 		const c = renderTo(tpl);
 
 		// Find static auto range toggle
@@ -394,15 +412,14 @@ describe("_renderDetectionRanges branches", () => {
 			const staticCb = checkboxes[1] as HTMLInputElement;
 			staticCb.checked = false;
 			staticCb.dispatchEvent(new Event("change"));
-			expect(a._staticAutoRange).toBe(false);
+			expect(sv.staticAutoRange).toBe(false);
 		}
 		document.body.removeChild(c);
 	});
 
 	it("static min distance slider updates", () => {
-		const a = createPanel() as any;
-		a._staticAutoRange = false;
-		const tpl = a._renderDetectionRanges();
+		const sv = createSettingsView({ staticAutoRange: false });
+		const tpl = (sv as any).renderDetectionRanges();
 		const c = renderTo(tpl);
 
 		const ranges = c.querySelectorAll(".setting-range");
@@ -422,9 +439,8 @@ describe("_renderDetectionRanges branches", () => {
 	});
 
 	it("static max distance slider updates", () => {
-		const a = createPanel() as any;
-		a._staticAutoRange = false;
-		const tpl = a._renderDetectionRanges();
+		const sv = createSettingsView({ staticAutoRange: false });
+		const tpl = (sv as any).renderDetectionRanges();
 		const c = renderTo(tpl);
 
 		const ranges = c.querySelectorAll(".setting-range");
@@ -448,8 +464,8 @@ describe("_renderDetectionRanges branches", () => {
 // =========================================================
 describe("_renderSensitivities DOM events", () => {
 	it("all range inputs fire input handler without error", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderSensitivities();
+		const sv = createSettingsView();
+		const tpl = (sv as any).renderSensitivities();
 		const c = renderTo(tpl);
 
 		const ranges = c.querySelectorAll(".setting-range");
@@ -474,9 +490,8 @@ describe("_renderSensitivities DOM events", () => {
 // =========================================================
 describe("_renderEnvOffset null reading branch", () => {
 	it("handles null reading with adjusted display as dash", () => {
-		const a = createPanel() as any;
-		a._offsetsConfig = {};
-		const tpl = a._renderEnvOffset(
+		const sv = createSettingsView({ offsetsConfig: {} });
+		const tpl = (sv as any).renderEnvOffset(
 			"Test",
 			null,
 			"test_key",
@@ -492,15 +507,14 @@ describe("_renderEnvOffset null reading branch", () => {
 		// Should render with dash for adjusted value
 		const valueSpan = c.querySelector(".setting-value");
 		if (valueSpan) {
-			expect(valueSpan.textContent).toContain("—");
+			expect(valueSpan.textContent).toContain("\u2014");
 		}
 		document.body.removeChild(c);
 	});
 
 	it("fires input handler with null reading", () => {
-		const a = createPanel() as any;
-		a._offsetsConfig = {};
-		const tpl = a._renderEnvOffset(
+		const sv = createSettingsView({ offsetsConfig: {} });
+		const tpl = (sv as any).renderEnvOffset(
 			"Test",
 			null,
 			"test_key",
@@ -517,8 +531,8 @@ describe("_renderEnvOffset null reading branch", () => {
 		if (range && range.nextElementSibling) {
 			range.value = "5";
 			range.dispatchEvent(new Event("input"));
-			// With null reading, adjusted should show "—"
-			expect(range.nextElementSibling.textContent).toBe("—");
+			// With null reading, adjusted should show em-dash
+			expect(range.nextElementSibling.textContent).toBe("\u2014");
 		}
 		document.body.removeChild(c);
 	});
@@ -1086,14 +1100,14 @@ describe("_renderVisibleCells uses backend occupancy in live view", () => {
 
 describe("settings slider input handlers", () => {
 	it("static max distance slider clamps below min", () => {
-		const a = createPanel() as any;
-		a._view = "settings";
-		a._staticAutoRange = false;
-		a._staticMinDistance = 2;
-		a._staticMaxDistance = 10;
-		a._targetAutoRange = false;
-		a._targetMaxDistance = 4;
-		const tpl = a._renderDetectionRanges();
+		const sv = createSettingsView({
+			staticAutoRange: false,
+			staticMinDistance: 2,
+			staticMaxDistance: 10,
+			targetAutoRange: false,
+			targetMaxDistance: 4,
+		});
+		const tpl = (sv as any).renderDetectionRanges();
 		const c = document.createElement("div");
 		render(tpl, c);
 
@@ -1106,7 +1120,7 @@ describe("settings slider input handlers", () => {
 			staticMax.value = "1";
 			staticMax.dispatchEvent(new Event("input"));
 			// Value should be clamped to staticMinDistance + 0.1
-			expect(a._staticMaxDistance).toBeGreaterThanOrEqual(a._staticMinDistance);
+			expect(sv.staticMaxDistance).toBeGreaterThanOrEqual(sv.staticMinDistance);
 		}
 	});
 });

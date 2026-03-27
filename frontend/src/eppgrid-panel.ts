@@ -90,6 +90,7 @@ import "./components/epp-zone-sidebar.js";
 import "./components/epp-furniture-sidebar.js";
 import "./components/epp-furniture-overlay.js";
 import "./components/epp-grid.js";
+import "./components/epp-settings-view.js";
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
@@ -2846,370 +2847,43 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _renderSettings() {
-		const sections: { id: string; label: string; icon: string }[] = [
-			{
-				id: "reporting",
-				label: "settings.entities",
-				icon: "mdi:format-list-checks",
-			},
-			{
-				id: "detection",
-				label: "settings.detection_ranges",
-				icon: "mdi:signal-distance-variant",
-			},
-			{
-				id: "sensitivity",
-				label: "settings.sensor_calibration",
-				icon: "mdi:tune-vertical",
-			},
-		];
-
 		return html`
       <div class="panel">
         ${this._renderHeader()}
-        <div class="settings-container" @input=${() => {
-					this._dirty = true;
-				}} @change=${() => {
-					this._dirty = true;
-				}}>
-          <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 500;">${this._localize("settings.title")}</h2>
-          ${sections.map((s) => {
-						const open = this._openAccordions.has(s.id);
-						return html`
-              <div class="accordion">
-                <button class="accordion-header" ?data-open=${open} @click=${() => this._toggleAccordion(s.id)}>
-                  <ha-icon icon=${s.icon}></ha-icon>
-                  <span class="accordion-title">${this._localize(s.label)}</span>
-                  <ha-icon class="accordion-chevron" icon="mdi:chevron-down" ?data-open=${open}></ha-icon>
-                </button>
-                ${
-									open
-										? html`
-                  <div class="accordion-body">
-                    ${this._renderSettingsSection(s.id)}
-                  </div>
-                `
-										: nothing
-								}
-              </div>
-            `;
-					})}
-          ${this._renderSaveCancelButtons()}
-        </div>
-      </div>
-    `;
-	}
-
-	private _renderSettingsSection(id: string) {
-		switch (id) {
-			case "detection":
-				return this._renderDetectionRanges();
-			case "sensitivity":
-				return this._renderSensitivities();
-			case "reporting":
-				return this._renderReporting();
-			default:
-				return nothing;
-		}
-	}
-
-	private _renderEnvOffset(
-		label: string,
-		reading: number | null,
-		offsetKey: string,
-		min: number,
-		max: number,
-		step: number,
-		unit: string,
-		precision: number,
-		tip: string,
-	) {
-		const savedOffsets: Record<string, number> =
-			(this as any)._offsetsConfig || {};
-		const offset = savedOffsets[offsetKey] ?? 0;
-		// reading already has the saved offset applied by the coordinator,
-		// so subtract it to get the raw value
-		const raw = reading != null ? reading - offset : null;
-		const adjusted = raw != null ? (raw + offset).toFixed(precision) : "—";
-		return html`
-      <div class="setting-row">
-        <label>${label}</label>
-        <span class="setting-input-unit"><input type="range" class="setting-range" data-offset-key=${offsetKey} .value=${String(offset)} min=${min} max=${max} step=${step} @input=${(
-					e: Event,
-				) => {
-					const el = e.target as HTMLInputElement;
-					const off = parseFloat(el.value);
-					const val = raw != null ? (raw + off).toFixed(precision) : "—";
-					el.nextElementSibling!.textContent = val;
-				}} /><span class="setting-value">${adjusted}</span> ${unit}</span>
-        ${this._infoTip(tip)}
-      </div>
-    `;
-	}
-
-	private _infoTip(text: string) {
-		return html`<span class="setting-info"
-      @click=${(e: Event) => {
-				e.stopPropagation();
-				const icon = e.currentTarget as HTMLElement;
-				const tip = icon.querySelector(".setting-info-tooltip") as HTMLElement;
-				if (!tip) return;
-				const wasOpen = tip.style.display === "block";
-				// Close any other open tooltips
-				this.shadowRoot!.querySelectorAll(".setting-info-tooltip").forEach(
-					(t) => {
-						(t as HTMLElement).style.display = "none";
-					},
-				);
-				if (wasOpen) return;
-				const rect = icon.getBoundingClientRect();
-				tip.style.display = "block";
-				tip.style.left = `${Math.max(8, Math.min(rect.right - 240, window.innerWidth - 256))}px`;
-				tip.style.top = `${rect.bottom + 6}px`;
-			}}
-    ><ha-icon icon="mdi:help-circle-outline"></ha-icon><span class="setting-info-tooltip">${text}</span></span>`;
-	}
-
-	private _renderDetectionRanges() {
-		const autoRange = this._autoDetectionRange();
-		const metrics = this._getGridRoomMetrics();
-		const targetVal = this._targetAutoRange
-			? autoRange > 0
-				? Math.min(autoRange, 6)
-				: 6
-			: this._targetMaxDistance;
-		const staticMaxVal = this._staticAutoRange
-			? autoRange > 0
-				? Math.min(autoRange, 16)
-				: 16
-			: this._staticMaxDistance;
-		const autoStyle = "opacity: 0.5; pointer-events: none;";
-		return html`
-      <div class="settings-section">
-        ${metrics ? html`<p style="font-size: 13px; color: var(--secondary-text-color, #757575); margin: 0 0 12px;">${this._localize("settings.furthest_point")} <span style="font-weight: 700; color: var(--error-color, #db4437);">${metrics.furthestM}m</span></p>` : nothing}
-        <div class="setting-group">
-          <h4>${this._localize("settings.target_sensor")}</h4>
-          <div class="setting-row">
-            <label>${this._localize("settings.auto")}</label>
-            <label class="toggle-switch">
-              <input type="checkbox" ?checked=${this._targetAutoRange}
-                @change=${(e: Event) => {
-									const checked = (e.target as HTMLInputElement).checked;
-									if (!checked) {
-										this._targetMaxDistance = targetVal;
-									}
-									this._targetAutoRange = checked;
-								}} />
-              <span class="toggle-slider"></span>
-            </label>
-            ${this._infoTip(this._localize("info.target_auto_range"))}
-          </div>
-          <div class="setting-row" style="${this._targetAutoRange ? autoStyle : ""}">
-            <label>${this._localize("settings.max_distance")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(targetVal)} min="0.5" max="6" step="0.1"
-              @input=${(e: Event) => {
-								const el = e.target as HTMLInputElement;
-								this._targetMaxDistance = Number(el.value);
-								el.nextElementSibling!.textContent = el.value;
-							}} /><span class="setting-value">${targetVal}</span><span class="setting-unit">m</span></span>
-            ${this._infoTip(this._localize("info.target_max_distance"))}
-          </div>
-        </div>
-        <div class="setting-group">
-          <h4>${this._localize("settings.static_sensor")}</h4>
-          <div class="setting-row">
-            <label>${this._localize("settings.auto")}</label>
-            <label class="toggle-switch">
-              <input type="checkbox" ?checked=${this._staticAutoRange}
-                @change=${(e: Event) => {
-									const checked = (e.target as HTMLInputElement).checked;
-									if (!checked) {
-										this._staticMaxDistance = staticMaxVal;
-									}
-									this._staticAutoRange = checked;
-								}} />
-              <span class="toggle-slider"></span>
-            </label>
-            ${this._infoTip(this._localize("info.target_auto_range"))}
-          </div>
-          <div class="setting-row" style="${this._staticAutoRange ? autoStyle : ""}">
-            <label>${this._localize("settings.min_distance")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(this._staticAutoRange ? 0.3 : this._staticMinDistance)} min="0.3" max="16" step="0.1"
-              @input=${(e: Event) => {
-								const el = e.target as HTMLInputElement;
-								let v = Number(el.value);
-								if (v >= this._staticMaxDistance) {
-									v = this._staticMaxDistance - 0.1;
-									el.value = String(v);
-								}
-								this._staticMinDistance = v;
-								el.nextElementSibling!.textContent = String(v);
-							}} /><span class="setting-value">${this._staticAutoRange ? 0.3 : this._staticMinDistance}</span><span class="setting-unit">m</span></span>
-            ${this._infoTip(this._localize("info.static_min_distance"))}
-          </div>
-          <div class="setting-row" style="${this._staticAutoRange ? autoStyle : ""}">
-            <label>${this._localize("settings.max_distance")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(staticMaxVal)} min="2.4" max="16" step="0.1"
-              @input=${(e: Event) => {
-								const el = e.target as HTMLInputElement;
-								let v = Number(el.value);
-								if (v <= this._staticMinDistance) {
-									v = this._staticMinDistance + 0.1;
-									el.value = String(v);
-								}
-								this._staticMaxDistance = v;
-								el.nextElementSibling!.textContent = String(v);
-							}} /><span class="setting-value">${staticMaxVal}</span><span class="setting-unit">m</span></span>
-            ${this._infoTip(this._localize("info.static_max_distance"))}
-          </div>
-        </div>
-      </div>
-    `;
-	}
-
-	private _renderSensitivities() {
-		return html`
-      <div class="settings-section">
-        <div class="setting-group">
-          <h4>${this._localize("settings.motion_sensor")}</h4>
-          <div class="setting-row">
-            <label>${this._localize("settings.presence_timeout")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" value="5" min="0" max="120" step="1" @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							el.nextElementSibling!.textContent = el.value;
-						}} /><span class="setting-value">5</span><span class="setting-unit">s</span></span>
-            ${this._infoTip(this._localize("info.motion_timeout"))}
-          </div>
-        </div>
-        <div class="setting-group">
-          <h4>${this._localize("settings.static_sensor")}</h4>
-          <div class="setting-row">
-            <label>${this._localize("settings.presence_timeout")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" value="30" min="0" max="120" step="1" @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							el.nextElementSibling!.textContent = el.value;
-						}} /><span class="setting-value">30</span><span class="setting-unit">s</span></span>
-            ${this._infoTip(this._localize("info.static_timeout"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("settings.trigger_threshold")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" min="0" max="9" value="3" @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							el.nextElementSibling!.textContent = el.value;
-						}} /><span class="setting-value">3</span><span class="setting-unit"></span></span>
-            ${this._infoTip(this._localize("info.trigger_threshold"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("settings.renew_threshold")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" min="0" max="9" value="3" @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							el.nextElementSibling!.textContent = el.value;
-						}} /><span class="setting-value">3</span><span class="setting-unit"></span></span>
-            ${this._infoTip(this._localize("info.renew_threshold"))}
-          </div>
-        </div>
-        <div class="setting-group">
-          <h4>${this._localize("settings.environmental")}</h4>
-          ${this._renderEnvOffset(this._localize("settings.illuminance_offset"), this._sensorState.illuminance, "illuminance", -500, 500, 1, "lux", 0, this._localize("info.illuminance_offset"))}
-          ${this._renderEnvOffset(this._localize("settings.humidity_offset"), this._sensorState.humidity, "humidity", -50, 50, 0.1, "%", 1, this._localize("info.humidity_offset"))}
-          ${this._renderEnvOffset(this._localize("settings.temperature_offset"), this._sensorState.temperature, "temperature", -20, 20, 0.1, "°C", 1, this._localize("info.temperature_offset"))}
-        </div>
-      </div>
-    `;
-	}
-
-	private _renderReporting() {
-		// Load saved reporting state from config
-		const saved: Record<string, boolean> = (this as any)._reportingConfig || {};
-		const isOn = (key: string, fallback: boolean) => saved[key] ?? fallback;
-
-		return html`
-      <div class="settings-section">
-        <div class="setting-group">
-          <h4>${this._localize("entities.room_level")}</h4>
-          <div class="setting-row">
-            <label>${this._localize("entities.occupancy")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="room_occupancy" ?checked=${isOn("room_occupancy", true)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.room_occupancy"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.static_presence")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="room_static_presence" ?checked=${isOn("room_static_presence", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.room_static"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.motion_presence")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="room_motion_presence" ?checked=${isOn("room_motion_presence", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.room_motion"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.target_presence")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="room_target_presence" ?checked=${isOn("room_target_presence", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.room_target_presence"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.target_count")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="room_target_count" ?checked=${isOn("room_target_count", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.room_target_count"))}
-          </div>
-        </div>
-        <div class="setting-group">
-          <h4>${this._localize("entities.zone_level")}</h4>
-          <div class="setting-row">
-            <label>${this._localize("entities.zone_presence")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="zone_presence" ?checked=${isOn("zone_presence", true)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.zone_presence"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.target_count")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="zone_target_count" ?checked=${isOn("zone_target_count", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.zone_target_count"))}
-          </div>
-        </div>
-        <div class="setting-group">
-          <h4>${this._localize("entities.target_level")}</h4>
-          <div class="setting-row">
-            <label>${this._localize("entities.xy")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="target_xy" ?checked=${isOn("target_xy", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.xy"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.active")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="target_active" ?checked=${isOn("target_active", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.active"))}
-          </div>
-        </div>
-        <div class="setting-group">
-          <h4>${this._localize("settings.environmental")}</h4>
-          <div class="setting-row">
-            <label>${this._localize("entities.illuminance")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="env_illuminance" ?checked=${isOn("env_illuminance", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.illuminance"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.humidity")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="env_humidity" ?checked=${isOn("env_humidity", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.humidity"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.temperature")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="env_temperature" ?checked=${isOn("env_temperature", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.temperature"))}
-          </div>
-          <div class="setting-row">
-            <label>${this._localize("entities.co2")}</label>
-            <label class="toggle-switch"><input type="checkbox" data-report-key="env_co2" ?checked=${isOn("env_co2", false)} /><span class="toggle-slider"></span></label>
-            ${this._infoTip(this._localize("info.co2"))}
-          </div>
-        </div>
+        <epp-settings-view
+          .sensorState=${this._sensorState}
+          .targetAutoRange=${this._targetAutoRange}
+          .targetMaxDistance=${this._targetMaxDistance}
+          .staticAutoRange=${this._staticAutoRange}
+          .staticMinDistance=${this._staticMinDistance}
+          .staticMaxDistance=${this._staticMaxDistance}
+          .openAccordions=${this._openAccordions}
+          .perspective=${this._perspective}
+          .roomWidth=${this._roomWidth}
+          .roomDepth=${this._roomDepth}
+          .grid=${this._grid}
+          .saving=${this._saving}
+          .dirty=${this._dirty}
+          .reportingConfig=${(this as any)._reportingConfig || {}}
+          .offsetsConfig=${(this as any)._offsetsConfig || {}}
+          .localize=${this._localize}
+          @accordion-toggle=${(e: CustomEvent) => {
+						this._openAccordions = e.detail;
+					}}
+          @setting-change=${(e: CustomEvent) => {
+						const { key, value } = e.detail;
+						(this as any)["_" + key] = value;
+					}}
+          @dirty=${() => {
+						this._dirty = true;
+					}}
+          @save=${this._saveSettings}
+          @cancel=${() => {
+						this._dirty = false;
+						this._view = "live";
+						this._loadDeviceConfig(this._selectedMac);
+					}}
+        ></epp-settings-view>
       </div>
     `;
 	}

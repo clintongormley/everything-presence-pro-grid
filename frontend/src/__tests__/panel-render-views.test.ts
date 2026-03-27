@@ -4,6 +4,8 @@ import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
+import "../components/epp-settings-view.js";
+import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import type { EppZoneSidebar } from "../components/epp-zone-sidebar.js";
 import {
@@ -100,6 +102,23 @@ function createPanel(): EPPGridPanel {
 	a._templateName = "";
 	a._fovCache = null;
 	a._fovPerspective = null;
+	return el;
+}
+
+function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+	const el = document.createElement("epp-settings-view") as EppSettingsView;
+	el.grid = new Uint8Array(GRID_CELL_COUNT);
+	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+	el.roomWidth = 3000;
+	el.roomDepth = 4000;
+	el.openAccordions = new Set();
+	el.reportingConfig = {};
+	el.offsetsConfig = {};
+	if (overrides) {
+		for (const [k, v] of Object.entries(overrides)) {
+			(el as any)[k] = v;
+		}
+	}
 	return el;
 }
 
@@ -542,70 +561,64 @@ describe("_renderSettings", () => {
 	});
 });
 
-describe("_renderSettingsSection", () => {
+describe("_renderSettingsSection (via EppSettingsView)", () => {
 	it("renders detection section", () => {
-		const a = createPanel() as any;
-		const result = a._renderSettingsSection("detection");
+		const sv = createSettingsView() as any;
+		const result = sv.renderSettingsSection("detection");
 		expect(result).toBeDefined();
 	});
 
 	it("renders sensitivity section", () => {
-		const a = createPanel() as any;
-		const result = a._renderSettingsSection("sensitivity");
+		const sv = createSettingsView() as any;
+		const result = sv.renderSettingsSection("sensitivity");
 		expect(result).toBeDefined();
 	});
 
 	it("renders reporting section", () => {
-		const a = createPanel() as any;
-		const result = a._renderSettingsSection("reporting");
+		const sv = createSettingsView() as any;
+		const result = sv.renderSettingsSection("reporting");
 		expect(result).toBeDefined();
 	});
 
 	it("returns nothing for unknown section", () => {
-		const a = createPanel() as any;
-		const result = a._renderSettingsSection("unknown");
+		const sv = createSettingsView() as any;
+		const result = sv.renderSettingsSection("unknown");
 		expect(result).toBeDefined();
 	});
 });
 
-describe("_renderDetectionRanges", () => {
+describe("_renderDetectionRanges (via EppSettingsView)", () => {
 	it("renders with auto range enabled", () => {
-		const a = createPanel() as any;
-		a._targetAutoRange = true;
-		a._staticAutoRange = true;
-		const result = a._renderDetectionRanges();
+		const sv = createSettingsView({ targetAutoRange: true, staticAutoRange: true });
+		const result = (sv as any).renderDetectionRanges();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with auto range disabled", () => {
-		const a = createPanel() as any;
-		a._targetAutoRange = false;
-		a._staticAutoRange = false;
-		const result = a._renderDetectionRanges();
+		const sv = createSettingsView({ targetAutoRange: false, staticAutoRange: false });
+		const result = (sv as any).renderDetectionRanges();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with grid room metrics", () => {
-		const a = createPanel() as any;
-		a._grid = initGridFromRoom(3000, 4000);
-		const result = a._renderDetectionRanges();
+		const sv = createSettingsView({ grid: initGridFromRoom(3000, 4000) });
+		const result = (sv as any).renderDetectionRanges();
 		expect(result).toBeDefined();
 	});
 });
 
-describe("_renderSensitivities", () => {
+describe("_renderSensitivities (via EppSettingsView)", () => {
 	it("renders sensitivity section with sensor state", () => {
-		const a = createPanel() as any;
-		const result = a._renderSensitivities();
+		const sv = createSettingsView();
+		const result = (sv as any).renderSensitivities();
 		expect(result).toBeDefined();
 	});
 });
 
-describe("_renderEnvOffset", () => {
+describe("_renderEnvOffset (via EppSettingsView)", () => {
 	it("renders offset control with a reading", () => {
-		const a = createPanel() as any;
-		a._offsetsConfig = { illuminance: 10 };
-		const result = a._renderEnvOffset(
+		const sv = createSettingsView({ offsetsConfig: { illuminance: 10 } });
+		const result = (sv as any).renderEnvOffset(
 			"Illuminance offset",
 			150,
 			"illuminance",
@@ -620,15 +633,15 @@ describe("_renderEnvOffset", () => {
 	});
 
 	it("renders offset control with null reading", () => {
-		const a = createPanel() as any;
-		const result = a._renderEnvOffset(
+		const sv = createSettingsView();
+		const result = (sv as any).renderEnvOffset(
 			"Temperature offset",
 			null,
 			"temperature",
 			-20,
 			20,
 			0.1,
-			"°C",
+			"\u00b0C",
 			1,
 			"Adjust temperature.",
 		);
@@ -636,9 +649,8 @@ describe("_renderEnvOffset", () => {
 	});
 
 	it("renders with no saved offset", () => {
-		const a = createPanel() as any;
-		a._offsetsConfig = {};
-		const result = a._renderEnvOffset(
+		const sv = createSettingsView({ offsetsConfig: {} });
+		const result = (sv as any).renderEnvOffset(
 			"Humidity offset",
 			45,
 			"humidity",
@@ -653,29 +665,29 @@ describe("_renderEnvOffset", () => {
 	});
 });
 
-describe("_infoTip", () => {
+describe("_infoTip (via EppSettingsView)", () => {
 	it("returns defined result", () => {
-		const a = createPanel() as any;
-		const result = a._infoTip("Some tip text");
+		const sv = createSettingsView();
+		const result = (sv as any).infoTip("Some tip text");
 		expect(result).toBeDefined();
 	});
 });
 
-describe("_renderReporting", () => {
+describe("_renderReporting (via EppSettingsView)", () => {
 	it("renders reporting toggles", () => {
-		const a = createPanel() as any;
-		a._reportingConfig = {
-			room_occupancy: true,
-			room_static_presence: false,
-		};
-		const result = a._renderReporting();
+		const sv = createSettingsView({
+			reportingConfig: {
+				room_occupancy: true,
+				room_static_presence: false,
+			},
+		});
+		const result = (sv as any).renderReporting();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with empty reporting config", () => {
-		const a = createPanel() as any;
-		a._reportingConfig = {};
-		const result = a._renderReporting();
+		const sv = createSettingsView({ reportingConfig: {} });
+		const result = (sv as any).renderReporting();
 		expect(result).toBeDefined();
 	});
 });

@@ -10,6 +10,8 @@ import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
+import "../components/epp-settings-view.js";
+import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import {
 	CELL_ROOM_BIT,
@@ -110,6 +112,23 @@ let container: HTMLDivElement;
 afterEach(() => {
 	if (container?.isConnected) document.body.removeChild(container);
 });
+
+function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+	const el = document.createElement("epp-settings-view") as EppSettingsView;
+	el.grid = initGridFromRoom(3000, 4000);
+	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+	el.roomWidth = 3000;
+	el.roomDepth = 4000;
+	el.openAccordions = new Set();
+	el.reportingConfig = {};
+	el.offsetsConfig = {};
+	if (overrides) {
+		for (const [k, v] of Object.entries(overrides)) {
+			(el as any)[k] = v;
+		}
+	}
+	return el;
+}
 
 function renderTo(template: any): HTMLDivElement {
 	container = document.createElement("div");
@@ -445,51 +464,58 @@ describe("_renderSaveCancelButtons DOM events", () => {
 	});
 });
 
-describe("_renderSettings DOM events", () => {
+describe("_renderSettings DOM events (via EppSettingsView)", () => {
 	it("accordion header click toggles", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderSettings();
+		const sv = createSettingsView();
+		const tpl = sv.render();
 		const c = renderTo(tpl);
 
 		const headers = c.querySelectorAll(".accordion-header");
 		if (headers.length > 0) {
 			(headers[0] as HTMLElement).click();
-			expect(a._openAccordions.size).toBe(1);
+			expect(sv.openAccordions.size).toBe(1);
 		}
 	});
 
-	it("settings container input sets dirty", () => {
-		const a = createPanel() as any;
-		a._dirty = false;
-		const tpl = a._renderSettings();
+	it("settings container input fires dirty event", () => {
+		const sv = createSettingsView();
+		const tpl = sv.render();
 		const c = renderTo(tpl);
+
+		let dirtyFired = false;
+		sv.addEventListener("dirty", () => {
+			dirtyFired = true;
+		});
 
 		const container = c.querySelector(".settings-container") as HTMLElement;
 		if (container) {
 			container.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(a._dirty).toBe(true);
+			expect(dirtyFired).toBe(true);
 		}
 	});
 
-	it("settings container change sets dirty", () => {
-		const a = createPanel() as any;
-		a._dirty = false;
-		const tpl = a._renderSettings();
+	it("settings container change fires dirty event", () => {
+		const sv = createSettingsView();
+		const tpl = sv.render();
 		const c = renderTo(tpl);
+
+		let dirtyFired = false;
+		sv.addEventListener("dirty", () => {
+			dirtyFired = true;
+		});
 
 		const container = c.querySelector(".settings-container") as HTMLElement;
 		if (container) {
 			container.dispatchEvent(new Event("change", { bubbles: true }));
-			expect(a._dirty).toBe(true);
+			expect(dirtyFired).toBe(true);
 		}
 	});
 });
 
 describe("_renderDetectionRanges DOM events", () => {
 	it("target auto range toggle changes state", () => {
-		const a = createPanel() as any;
-		a._targetAutoRange = true;
-		const tpl = a._renderDetectionRanges();
+		const sv = createSettingsView({ targetAutoRange: true });
+		const tpl = (sv as any).renderDetectionRanges();
 		const c = renderTo(tpl);
 
 		const checkboxes = c.querySelectorAll('input[type="checkbox"]');
@@ -497,14 +523,13 @@ describe("_renderDetectionRanges DOM events", () => {
 			const cb = checkboxes[0] as HTMLInputElement;
 			cb.checked = false;
 			cb.dispatchEvent(new Event("change"));
-			expect(a._targetAutoRange).toBe(false);
+			expect(sv.targetAutoRange).toBe(false);
 		}
 	});
 
 	it("max distance slider updates state", () => {
-		const a = createPanel() as any;
-		a._targetAutoRange = false;
-		const tpl = a._renderDetectionRanges();
+		const sv = createSettingsView({ targetAutoRange: false });
+		const tpl = (sv as any).renderDetectionRanges();
 		const c = renderTo(tpl);
 
 		const ranges = c.querySelectorAll(".setting-range");
@@ -516,7 +541,7 @@ describe("_renderDetectionRanges DOM events", () => {
 			span.textContent = "6";
 			range.parentNode?.insertBefore(span, range.nextSibling);
 			range.dispatchEvent(new Event("input"));
-			expect(a._targetMaxDistance).toBe(4.5);
+			expect(sv.targetMaxDistance).toBe(4.5);
 		}
 	});
 });
@@ -1301,8 +1326,8 @@ describe("_renderEditor DOM events", () => {
 
 describe("_renderSensitivities DOM events", () => {
 	it("range inputs update next sibling text", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderSensitivities();
+		const sv = createSettingsView();
+		const tpl = (sv as any).renderSensitivities();
 		const c = renderTo(tpl);
 
 		const ranges = c.querySelectorAll(".setting-range");
@@ -1320,9 +1345,8 @@ describe("_renderSensitivities DOM events", () => {
 
 describe("_renderEnvOffset DOM events", () => {
 	it("offset range input updates preview", () => {
-		const a = createPanel() as any;
-		a._offsetsConfig = { illuminance: 0 };
-		const tpl = a._renderEnvOffset(
+		const sv = createSettingsView({ offsetsConfig: { illuminance: 0 } });
+		const tpl = (sv as any).renderEnvOffset(
 			"Illuminance",
 			100,
 			"illuminance",
