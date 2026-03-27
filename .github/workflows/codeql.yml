@@ -11,10 +11,19 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        language: [python, javascript-typescript]
+        include:
+          - language: python
+          - language: javascript-typescript
+          - language: c-cpp
     steps:
       - uses: actions/checkout@v5
       - uses: github/codeql-action/init@v3
         with:
           languages: ${{ matrix.language }}
+      - name: Build C++ (required for CodeQL)
+        if: matrix.language == 'c-cpp'
+        run: |
+          cd firmware/lib/epp_zone_engine
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug -DEPP_BUILD_TOOLS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
+          cmake --build build
       - uses: github/codeql-action/analyze@v3
