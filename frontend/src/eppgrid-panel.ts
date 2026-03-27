@@ -87,6 +87,7 @@ import { DeviceController } from "./controllers/device-controller.js";
 import { GridStateController } from "./controllers/grid-state-controller.js";
 import { TargetController } from "./controllers/target-controller.js";
 import "./components/epp-live-sidebar.js";
+import "./components/epp-zone-sidebar.js";
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
@@ -1025,33 +1026,6 @@ export class EPPGridPanel extends LitElement {
       margin: 0;
     }
 
-    .zone-name-input {
-      flex: 1;
-      border: none;
-      border-bottom: 1px solid var(--divider-color, #e0e0e0);
-      background: transparent;
-      font-size: 14px;
-      color: var(--primary-text-color, #212121);
-      padding: 2px 4px;
-      min-width: 0;
-    }
-
-    .zone-name-input:focus {
-      outline: none;
-      border-bottom: 1px solid var(--primary-color, #03a9f4);
-    }
-
-    .sensitivity-select {
-      padding: 2px 4px;
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: 4px;
-      font-size: 12px;
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color, #212121);
-      cursor: pointer;
-      flex-shrink: 0;
-    }
-
     /* Furniture overlay */
     .furniture-overlay {
       position: absolute;
@@ -1267,16 +1241,6 @@ export class EPPGridPanel extends LitElement {
       color: var(--primary-text-color, #212121);
     }
 
-    .zone-color-picker {
-      width: 24px;
-      height: 24px;
-      border: none;
-      padding: 0;
-      cursor: pointer;
-      border-radius: 4px;
-      flex-shrink: 0;
-    }
-
     .targets-overlay {
       position: absolute;
       top: 0;
@@ -1361,101 +1325,6 @@ export class EPPGridPanel extends LitElement {
       margin: 0;
       font-size: 16px;
       font-weight: 500;
-    }
-
-    .zone-item {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 6px 8px;
-      border-radius: 8px;
-      cursor: pointer;
-      border: 2px solid var(--divider-color, #e0e0e0);
-      transition: border-color 0.2s;
-    }
-
-    .zone-item:hover {
-      background: var(--secondary-background-color, #f5f5f5);
-    }
-
-    .zone-item.active {
-      border-color: var(--primary-color, #03a9f4);
-    }
-
-    .zone-item-row {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .zone-settings-row {
-      padding-left: 24px;
-      gap: 6px;
-    }
-
-    .zone-separator {
-      border: none;
-      border-top: 1px solid var(--divider-color, #e0e0e0);
-      margin: 4px 0;
-      flex-shrink: 0;
-    }
-
-    .zone-scroll-area {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      overflow-y: auto;
-      flex: 1;
-      min-height: 0;
-    }
-
-    .zone-setting-label {
-      font-size: 11px;
-      color: var(--secondary-text-color, #757575);
-    }
-
-    .zone-color-dot {
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      flex-shrink: 0;
-    }
-
-    .zone-name {
-      flex: 1;
-      font-size: 14px;
-    }
-
-    .zone-remove-btn {
-      background: none;
-      border: none;
-      color: var(--secondary-text-color, #757575);
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 4px;
-    }
-
-    .zone-remove-btn:hover {
-      color: var(--error-color, #f44336);
-    }
-
-    .add-zone-btn {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      padding: 10px;
-      border: 2px dashed var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      background: none;
-      color: var(--primary-color, #03a9f4);
-      cursor: pointer;
-      font-size: 14px;
-      transition: background 0.2s;
-    }
-
-    .add-zone-btn:hover {
-      background: var(--secondary-background-color, #f5f5f5);
     }
 
     .panel-header {
@@ -3608,7 +3477,45 @@ export class EPPGridPanel extends LitElement {
             <div class="sidebar-title">${this._sidebarTab === "furniture" ? this._localize("sidebar.furniture") : this._localize("sidebar.detection_zones")}</div>
             ${
 							this._sidebarTab === "zones"
-								? this._renderZoneSidebar()
+								? html`<epp-zone-sidebar
+									.zoneConfigs=${this._zoneConfigs}
+									.activeZone=${this._activeZone}
+									.roomType=${this._roomType}
+									.roomTrigger=${this._roomTrigger}
+									.roomRenew=${this._roomRenew}
+									.roomTimeout=${this._roomTimeout}
+									.roomHandoffTimeout=${this._roomHandoffTimeout}
+									.roomEntryPoint=${this._roomEntryPoint}
+									.localZoneState=${this._zoneEngineState.localZoneState}
+									.localize=${this._localize}
+									@zone-select=${(e: CustomEvent) => {
+										this._activeZone = e.detail.zone;
+									}}
+									@zone-add=${() => {
+										this._addZone();
+									}}
+									@zone-remove=${(e: CustomEvent) => {
+										this._removeZone(e.detail.slot);
+									}}
+									@zone-config-change=${(e: CustomEvent) => {
+										const { index, updates } = e.detail;
+										const configs = [...this._zoneConfigs];
+										configs[index] = { ...configs[index]!, ...updates };
+										this._zoneConfigs = configs;
+									}}
+									@room-config-change=${(e: CustomEvent) => {
+										const { updates } = e.detail;
+										if (updates.roomType !== undefined) this._roomType = updates.roomType;
+										if (updates.roomTrigger !== undefined) this._roomTrigger = updates.roomTrigger;
+										if (updates.roomRenew !== undefined) this._roomRenew = updates.roomRenew;
+										if (updates.roomTimeout !== undefined) this._roomTimeout = updates.roomTimeout;
+										if (updates.roomHandoffTimeout !== undefined) this._roomHandoffTimeout = updates.roomHandoffTimeout;
+										if (updates.roomEntryPoint !== undefined) this._roomEntryPoint = updates.roomEntryPoint;
+									}}
+									@dirty=${() => {
+										this._dirty = true;
+									}}
+								></epp-zone-sidebar>`
 								: this._renderFurnitureSidebar()
 						}
             ${this._renderSaveCancelButtons()}
@@ -3810,237 +3717,6 @@ export class EPPGridPanel extends LitElement {
 		);
 	}
 
-	private _renderBoundaryTypeControls() {
-		const isCustom = this._roomType === "custom";
-		const defaults =
-			ZONE_TYPE_DEFAULTS[this._roomType] || ZONE_TYPE_DEFAULTS.normal;
-		const trigger = isCustom ? this._roomTrigger : defaults.trigger;
-		const renew = isCustom ? this._roomRenew : defaults.renew;
-		const timeout = isCustom ? this._roomTimeout : defaults.timeout;
-		const handoffTimeout = isCustom
-			? this._roomHandoffTimeout
-			: defaults.handoff_timeout;
-		const rowStyle = `width: 100%; display: flex; align-items: center; gap: 4px; font-size: 12px; opacity: ${isCustom ? 1 : 0.5};`;
-		return html`
-      <div class="zone-item-row zone-settings-row" style="flex-wrap: wrap; gap: 3px; padding: 4px 8px;">
-        <div style="width: 100%; display: flex; align-items: center; gap: 4px;">
-          <label style="width: 80px; flex-shrink: 0; font-size: 12px;">${this._localize("zones.type")}</label>
-          <select
-            class="sensitivity-select" style="flex: 1; min-width: 0;"
-            .value=${this._roomType}
-            @change=${(e: Event) => {
-							const val = (e.target as HTMLSelectElement)
-								.value as ZoneConfig["type"];
-							const d = ZONE_TYPE_DEFAULTS[val] || ZONE_TYPE_DEFAULTS.normal;
-							this._roomType = val;
-							this._roomTrigger = d.trigger;
-							this._roomRenew = d.renew;
-							this._roomTimeout = d.timeout;
-							this._roomHandoffTimeout = d.handoff_timeout;
-							this._dirty = true;
-						}}
-            @click=${(e: Event) => e.stopPropagation()}
-          >
-            <option value="normal">${this._localize("zones.normal")}</option>
-            <option value="entrance">${this._localize("zones.entrance")}</option>
-            <option value="thoroughfare">${this._localize("zones.thoroughfare")}</option>
-            <option value="rest">${this._localize("zones.rest_area")}</option>
-            <option value="custom">${this._localize("zones.custom")}</option>
-          </select>
-        </div>
-        <div style="${rowStyle}">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.trigger")}</label>
-          <input type="range" min="1" max="9" style="flex: 1; min-width: 0;" .value=${String(trigger)} ?disabled=${!isCustom}
-            @input=${(e: Event) => {
-							this._roomTrigger = Number((e.target as HTMLInputElement).value);
-							this._dirty = true;
-						}}
-            @click=${(e: Event) => e.stopPropagation()} />
-          <span style="width: 10px; text-align: right; flex-shrink: 0;">${trigger}</span>
-        </div>
-        <div style="${rowStyle}">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.renew")}</label>
-          <input type="range" min="1" max="9" style="flex: 1; min-width: 0;" .value=${String(renew)} ?disabled=${!isCustom}
-            @input=${(e: Event) => {
-							this._roomRenew = Number((e.target as HTMLInputElement).value);
-							this._dirty = true;
-						}}
-            @click=${(e: Event) => e.stopPropagation()} />
-          <span style="width: 10px; text-align: right; flex-shrink: 0;">${renew}</span>
-        </div>
-        <div style="${rowStyle}">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.presence_timeout")}</label>
-          <span style="flex: 1;"></span>
-          <input type="number" min="1" max="300" style="width: 48px; text-align: right; font: inherit; font-size: 12px;" .value=${String(timeout)} ?disabled=${!isCustom}
-            @input=${(e: Event) => {
-							const v = Number((e.target as HTMLInputElement).value);
-							if (v > 0) {
-								this._roomTimeout = v;
-								this._dirty = true;
-							}
-						}}
-            @click=${(e: Event) => e.stopPropagation()} />
-          <span style="width: 10px; text-align: right; flex-shrink: 0; font-size: 12px;">${this._localize("zones.seconds_suffix")}</span>
-        </div>
-        <div style="${rowStyle}">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.handoff_timeout")}</label>
-          <span style="flex: 1;"></span>
-          <input type="number" min="1" max="300" style="width: 48px; text-align: right; font: inherit; font-size: 12px;" .value=${String(handoffTimeout)} ?disabled=${!isCustom}
-            @input=${(e: Event) => {
-							const v = Number((e.target as HTMLInputElement).value);
-							if (v > 0) {
-								this._roomHandoffTimeout = v;
-								this._dirty = true;
-							}
-						}}
-            @click=${(e: Event) => e.stopPropagation()} />
-          <span style="width: 10px; text-align: right; flex-shrink: 0; font-size: 12px;">${this._localize("zones.seconds_suffix")}</span>
-        </div>
-        <div style="width: 100%; display: flex; align-items: center; gap: 4px; font-size: 12px; opacity: ${isCustom ? 1 : 0.5};">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.entry_point")}</label>
-          <span style="flex: 1;"></span>
-          <label class="toggle-switch">
-            <input type="checkbox" ?checked=${isCustom ? this._roomEntryPoint : false} ?disabled=${!isCustom}
-              @change=${(e: Event) => {
-								this._roomEntryPoint = (e.target as HTMLInputElement).checked;
-								this._dirty = true;
-							}}
-              @click=${(e: Event) => e.stopPropagation()}
-            />
-            <span class="toggle-slider"></span>
-          </label>
-          <span style="width: 10px;"></span>
-        </div>
-      </div>
-    `;
-	}
-
-	private _renderZoneTypeControls(zone: ZoneConfig, index: number) {
-		const isCustom = zone.type === "custom";
-		const defaults = ZONE_TYPE_DEFAULTS[zone.type] || ZONE_TYPE_DEFAULTS.normal;
-		const trigger = zone.trigger ?? defaults.trigger;
-		const renew = zone.renew ?? defaults.renew;
-		const timeout = zone.timeout ?? defaults.timeout;
-		const handoffTimeout = zone.handoff_timeout ?? defaults.handoff_timeout;
-		const rowStyle = `width: 100%; display: flex; align-items: center; gap: 4px; font-size: 12px; opacity: ${isCustom ? 1 : 0.5};`;
-		return html`
-      <div class="zone-item-row zone-settings-row" style="flex-wrap: wrap; gap: 3px; padding: 4px 8px;">
-        <div style="width: 100%; display: flex; align-items: center; gap: 4px;">
-          <label style="width: 80px; flex-shrink: 0; font-size: 12px;">${this._localize("zones.type")}</label>
-          <select
-            class="sensitivity-select" style="flex: 1; min-width: 0;"
-            .value=${zone.type}
-            @change=${(e: Event) => {
-							const val = (e.target as HTMLSelectElement)
-								.value as ZoneConfig["type"];
-							const d = ZONE_TYPE_DEFAULTS[val] || ZONE_TYPE_DEFAULTS.normal;
-							const configs = [...this._zoneConfigs];
-							configs[index] = {
-								...zone,
-								type: val,
-								trigger: d.trigger,
-								renew: d.renew,
-								timeout: d.timeout,
-								handoff_timeout: d.handoff_timeout,
-							};
-							this._zoneConfigs = configs;
-							this._dirty = true;
-						}}
-            @click=${(e: Event) => e.stopPropagation()}
-          >
-            <option value="normal">${this._localize("zones.normal")}</option>
-            <option value="entrance">${this._localize("zones.entrance")}</option>
-            <option value="thoroughfare">${this._localize("zones.thoroughfare")}</option>
-            <option value="rest">${this._localize("zones.rest_area")}</option>
-            <option value="custom">${this._localize("zones.custom")}</option>
-          </select>
-        </div>
-        <div style="${rowStyle}">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.trigger")}</label>
-          <input type="range" min="1" max="9" style="flex: 1; min-width: 0;" .value=${String(trigger)} ?disabled=${!isCustom}
-            @input=${(e: Event) => {
-							const configs = [...this._zoneConfigs];
-							configs[index] = {
-								...zone,
-								trigger: Number((e.target as HTMLInputElement).value),
-							};
-							this._zoneConfigs = configs;
-							this._dirty = true;
-						}}
-            @click=${(e: Event) => e.stopPropagation()} />
-          <span style="width: 10px; text-align: right; flex-shrink: 0;">${trigger}</span>
-        </div>
-        <div style="${rowStyle}">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.renew")}</label>
-          <input type="range" min="1" max="9" style="flex: 1; min-width: 0;" .value=${String(renew)} ?disabled=${!isCustom}
-            @input=${(e: Event) => {
-							const configs = [...this._zoneConfigs];
-							configs[index] = {
-								...zone,
-								renew: Number((e.target as HTMLInputElement).value),
-							};
-							this._zoneConfigs = configs;
-							this._dirty = true;
-						}}
-            @click=${(e: Event) => e.stopPropagation()} />
-          <span style="width: 10px; text-align: right; flex-shrink: 0;">${renew}</span>
-        </div>
-        <div style="${rowStyle}">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.presence_timeout")}</label>
-          <span style="flex: 1;"></span>
-          <input type="number" min="1" max="300" style="width: 48px; text-align: right; font: inherit; font-size: 12px; margin-right: 0;" .value=${String(timeout)} ?disabled=${!isCustom}
-            @input=${(e: Event) => {
-							const v = Number((e.target as HTMLInputElement).value);
-							if (v > 0) {
-								const configs = [...this._zoneConfigs];
-								configs[index] = { ...zone, timeout: v };
-								this._zoneConfigs = configs;
-								this._dirty = true;
-							}
-						}}
-            @click=${(e: Event) => e.stopPropagation()} />
-          <span style="width: 10px; text-align: right; flex-shrink: 0; font-size: 12px;">${this._localize("zones.seconds_suffix")}</span>
-        </div>
-        <div style="${rowStyle}">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.handoff_timeout")}</label>
-          <span style="flex: 1;"></span>
-          <input type="number" min="1" max="300" style="width: 48px; text-align: right; font: inherit; font-size: 12px; margin-right: 0;" .value=${String(handoffTimeout)} ?disabled=${!isCustom}
-            @input=${(e: Event) => {
-							const v = Number((e.target as HTMLInputElement).value);
-							if (v > 0) {
-								const configs = [...this._zoneConfigs];
-								configs[index] = { ...zone, handoff_timeout: v };
-								this._zoneConfigs = configs;
-								this._dirty = true;
-							}
-						}}
-            @click=${(e: Event) => e.stopPropagation()} />
-          <span style="width: 10px; text-align: right; flex-shrink: 0; font-size: 12px;">${this._localize("zones.seconds_suffix")}</span>
-        </div>
-        <div style="width: 100%; display: flex; align-items: center; gap: 4px; font-size: 12px; opacity: ${isCustom ? 1 : 0.5};">
-          <label style="width: 80px; flex-shrink: 0;">${this._localize("zones.entry_point")}</label>
-          <span style="flex: 1;"></span>
-          <label class="toggle-switch">
-            <input type="checkbox" ?checked=${isCustom ? (zone.entry_point ?? false) : zone.type === "entrance"} ?disabled=${!isCustom}
-              @change=${(e: Event) => {
-								const configs = [...this._zoneConfigs];
-								configs[index] = {
-									...zone,
-									entry_point: (e.target as HTMLInputElement).checked,
-								};
-								this._zoneConfigs = configs;
-								this._dirty = true;
-							}}
-              @click=${(e: Event) => e.stopPropagation()}
-            />
-            <span class="toggle-slider"></span>
-          </label>
-          <span style="width: 10px;"></span>
-        </div>
-      </div>
-    `;
-	}
-
 	private _renderBackendDebugLog() {
 		return html`
       <div style="margin-top: 8px; min-width: 0;">
@@ -4143,118 +3819,6 @@ export class EPPGridPanel extends LitElement {
         `
 						: nothing
 				}
-      </div>
-    `;
-	}
-
-	private _renderZoneSidebar() {
-		return html`
-      <div class="zone-scroll-area">
-      <!-- Room -->
-      <div
-        class="zone-item ${this._activeZone === 0 ? "active" : ""}"
-        @click=${() => {
-					this._activeZone = 0;
-				}}
-      >
-        <div class="zone-item-row">
-          <div class="zone-color-dot" style="background: #fff; border: 1px solid #ccc;${this._zoneEngineState.localZoneState.get(0)?.occupied ? " box-shadow: 0 0 6px 2px #999;" : ""}"></div>
-          <span class="zone-name">${this._localize("sidebar.room")}</span>
-        </div>
-        ${
-					this._activeZone === 0
-						? html`
-          ${this._renderBoundaryTypeControls()}
-        `
-						: nothing
-				}
-      </div>
-
-      <hr class="zone-separator"/>
-      <!-- Named zones 1..N -->
-      ${this._zoneConfigs.map((zone, i) => {
-				if (zone === null) return nothing;
-				const slot = i + 1;
-				return html`
-          <div
-            class="zone-item ${this._activeZone === slot ? "active" : ""}"
-            @click=${() => {
-							this._activeZone = slot;
-						}}
-          >
-            <div class="zone-item-row">
-              ${
-								this._activeZone === slot
-									? html`
-                <input
-                  type="color"
-                  class="zone-color-picker"
-                  style="width: 16px; height: 16px; border-radius: 50%;${this._zoneEngineState.localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"
-                  .value=${zone.color}
-                  @input=${(e: Event) => {
-										const val = (e.target as HTMLInputElement).value;
-										const configs = [...this._zoneConfigs];
-										configs[i] = { ...zone, color: val };
-										this._zoneConfigs = configs;
-										this._dirty = true;
-									}}
-                  @click=${(e: Event) => e.stopPropagation()}
-                />
-              `
-									: html`
-                <div class="zone-color-dot" style="background: ${zone.color};${this._zoneEngineState.localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"></div>
-              `
-							}
-              <input
-                class="zone-name-input"
-                type="text"
-                .value=${zone.name}
-                @input=${(e: Event) => {
-									const val = (e.target as HTMLInputElement).value;
-									const configs = [...this._zoneConfigs];
-									configs[i] = { ...zone, name: val };
-									this._zoneConfigs = configs;
-									this._dirty = true;
-								}}
-                @click=${(e: Event) => {
-									e.stopPropagation();
-									this._activeZone = slot;
-								}}
-                @focus=${() => {
-									this._activeZone = slot;
-								}}
-              />
-              <button
-                class="zone-remove-btn"
-                @click=${(e: Event) => {
-									e.stopPropagation();
-									this._removeZone(slot);
-								}}
-              >
-                <ha-icon icon="mdi:close"></ha-icon>
-              </button>
-            </div>
-            ${
-							this._activeZone === slot
-								? html`
-              ${this._renderZoneTypeControls(zone, i)}
-            `
-								: nothing
-						}
-          </div>
-        `;
-			})}
-
-      ${
-				this._zoneConfigs.some((z) => z === null)
-					? html`
-          <button class="add-zone-btn" @click=${this._addZone}>
-            <ha-icon icon="mdi:plus"></ha-icon>
-            ${this._localize("sidebar.add_zone")}
-          </button>
-        `
-					: nothing
-			}
       </div>
     `;
 	}

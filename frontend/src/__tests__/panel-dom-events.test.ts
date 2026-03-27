@@ -8,6 +8,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
+import "../components/epp-zone-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	GRID_CELL_COUNT,
@@ -519,114 +520,162 @@ describe("_renderDetectionRanges DOM events", () => {
 });
 
 describe("_renderBoundaryTypeControls DOM events", () => {
+	function createSidebar(overrides: Record<string, any> = {}) {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.activeZone = 0;
+		el.roomType = "normal";
+		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
+		el.roomRenew = ZONE_TYPE_DEFAULTS.normal.renew;
+		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
+		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
+		el.roomEntryPoint = false;
+		el.localZoneState = new Map();
+		el.localize = (k: string) => k;
+		Object.assign(el, overrides);
+		return el;
+	}
+
 	it("room type select changes type", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderBoundaryTypeControls();
+		const s = createSidebar();
+		const tpl = (s as any)._renderBoundaryTypeControls();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("dirty", (e: Event) => events.push(e as CustomEvent));
 
 		const select = c.querySelector(".sensitivity-select") as HTMLSelectElement;
 		if (select) {
 			select.value = "entrance";
-			select.dispatchEvent(new Event("change"));
-			expect(a._roomType).toBe("entrance");
-			expect(a._dirty).toBe(true);
+			select.dispatchEvent(new Event("change", { bubbles: true }));
+			expect(events.some(e => e.type === "room-config-change" && e.detail.updates.roomType === "entrance")).toBe(true);
+			expect(events.some(e => e.type === "dirty")).toBe(true);
 		}
 	});
 
 	it("trigger range input updates", () => {
-		const a = createPanel() as any;
-		a._roomType = "custom";
-		const tpl = a._renderBoundaryTypeControls();
+		const s = createSidebar({ roomType: "custom" });
+		const tpl = (s as any)._renderBoundaryTypeControls();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const ranges = c.querySelectorAll('input[type="range"]');
 		if (ranges.length > 0) {
 			const range = ranges[0] as HTMLInputElement;
 			range.value = "7";
-			range.dispatchEvent(new Event("input"));
-			expect(a._roomTrigger).toBe(7);
+			range.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.roomTrigger === 7)).toBe(true);
 		}
 	});
 
 	it("renew range input updates", () => {
-		const a = createPanel() as any;
-		a._roomType = "custom";
-		const tpl = a._renderBoundaryTypeControls();
+		const s = createSidebar({ roomType: "custom" });
+		const tpl = (s as any)._renderBoundaryTypeControls();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const ranges = c.querySelectorAll('input[type="range"]');
 		if (ranges.length >= 2) {
 			const range = ranges[1] as HTMLInputElement;
 			range.value = "4";
-			range.dispatchEvent(new Event("input"));
-			expect(a._roomRenew).toBe(4);
+			range.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.roomRenew === 4)).toBe(true);
 		}
 	});
 
 	it("presence timeout number input updates", () => {
-		const a = createPanel() as any;
-		a._roomType = "custom";
-		const tpl = a._renderBoundaryTypeControls();
+		const s = createSidebar({ roomType: "custom" });
+		const tpl = (s as any)._renderBoundaryTypeControls();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const numbers = c.querySelectorAll('input[type="number"]');
 		if (numbers.length > 0) {
 			const input = numbers[0] as HTMLInputElement;
 			input.value = "15";
-			input.dispatchEvent(new Event("input"));
-			expect(a._roomTimeout).toBe(15);
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.roomTimeout === 15)).toBe(true);
 		}
 	});
 
 	it("handoff timeout number input updates", () => {
-		const a = createPanel() as any;
-		a._roomType = "custom";
-		const tpl = a._renderBoundaryTypeControls();
+		const s = createSidebar({ roomType: "custom" });
+		const tpl = (s as any)._renderBoundaryTypeControls();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const numbers = c.querySelectorAll('input[type="number"]');
 		if (numbers.length >= 2) {
 			const input = numbers[1] as HTMLInputElement;
 			input.value = "5";
-			input.dispatchEvent(new Event("input"));
-			expect(a._roomHandoffTimeout).toBe(5);
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.roomHandoffTimeout === 5)).toBe(true);
 		}
 	});
 
 	it("entry point checkbox toggles", () => {
-		const a = createPanel() as any;
-		a._roomType = "custom";
-		const tpl = a._renderBoundaryTypeControls();
+		const s = createSidebar({ roomType: "custom" });
+		const tpl = (s as any)._renderBoundaryTypeControls();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const toggles = c.querySelectorAll('.toggle-switch input[type="checkbox"]');
 		if (toggles.length > 0) {
 			const last = toggles[toggles.length - 1] as HTMLInputElement;
 			last.checked = true;
-			last.dispatchEvent(new Event("change"));
-			expect(a._roomEntryPoint).toBe(true);
+			last.dispatchEvent(new Event("change", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.roomEntryPoint === true)).toBe(true);
 		}
 	});
 });
 
 describe("_renderZoneTypeControls DOM events", () => {
+	function createSidebar(overrides: Record<string, any> = {}) {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.activeZone = 0;
+		el.roomType = "normal";
+		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
+		el.roomRenew = ZONE_TYPE_DEFAULTS.normal.renew;
+		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
+		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
+		el.roomEntryPoint = false;
+		el.localZoneState = new Map();
+		el.localize = (k: string) => k;
+		Object.assign(el, overrides);
+		return el;
+	}
+
 	it("zone type select changes zone config", () => {
-		const a = createPanel() as any;
+		const s = createSidebar();
 		const zone = { name: "Z1", color: "#ff0000", type: "normal" as const };
-		a._zoneConfigs[0] = zone;
-		const tpl = a._renderZoneTypeControls(zone, 0);
+		const tpl = (s as any)._renderZoneTypeControls(zone, 0);
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const select = c.querySelector(".sensitivity-select") as HTMLSelectElement;
 		if (select) {
 			select.value = "rest";
-			select.dispatchEvent(new Event("change"));
-			expect(a._zoneConfigs[0].type).toBe("rest");
+			select.dispatchEvent(new Event("change", { bubbles: true }));
+			expect(events.some(e => e.detail.index === 0 && e.detail.updates.type === "rest")).toBe(true);
 		}
 	});
 
 	it("zone trigger input updates zone config", () => {
-		const a = createPanel() as any;
+		const s = createSidebar();
 		const zone = {
 			name: "Z1",
 			color: "#ff0000",
@@ -636,21 +685,23 @@ describe("_renderZoneTypeControls DOM events", () => {
 			timeout: 10,
 			handoff_timeout: 3,
 		};
-		a._zoneConfigs[0] = zone;
-		const tpl = a._renderZoneTypeControls(zone, 0);
+		const tpl = (s as any)._renderZoneTypeControls(zone, 0);
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const ranges = c.querySelectorAll('input[type="range"]');
 		if (ranges.length > 0) {
 			const range = ranges[0] as HTMLInputElement;
 			range.value = "8";
-			range.dispatchEvent(new Event("input"));
-			expect(a._zoneConfigs[0].trigger).toBe(8);
+			range.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.trigger === 8)).toBe(true);
 		}
 	});
 
 	it("zone renew input updates", () => {
-		const a = createPanel() as any;
+		const s = createSidebar();
 		const zone = {
 			name: "Z1",
 			color: "#ff0000",
@@ -660,21 +711,23 @@ describe("_renderZoneTypeControls DOM events", () => {
 			timeout: 10,
 			handoff_timeout: 3,
 		};
-		a._zoneConfigs[0] = zone;
-		const tpl = a._renderZoneTypeControls(zone, 0);
+		const tpl = (s as any)._renderZoneTypeControls(zone, 0);
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const ranges = c.querySelectorAll('input[type="range"]');
 		if (ranges.length >= 2) {
 			const range = ranges[1] as HTMLInputElement;
 			range.value = "6";
-			range.dispatchEvent(new Event("input"));
-			expect(a._zoneConfigs[0].renew).toBe(6);
+			range.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.renew === 6)).toBe(true);
 		}
 	});
 
 	it("zone timeout input updates", () => {
-		const a = createPanel() as any;
+		const s = createSidebar();
 		const zone = {
 			name: "Z1",
 			color: "#ff0000",
@@ -684,21 +737,23 @@ describe("_renderZoneTypeControls DOM events", () => {
 			timeout: 10,
 			handoff_timeout: 3,
 		};
-		a._zoneConfigs[0] = zone;
-		const tpl = a._renderZoneTypeControls(zone, 0);
+		const tpl = (s as any)._renderZoneTypeControls(zone, 0);
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const numbers = c.querySelectorAll('input[type="number"]');
 		if (numbers.length > 0) {
 			const input = numbers[0] as HTMLInputElement;
 			input.value = "20";
-			input.dispatchEvent(new Event("input"));
-			expect(a._zoneConfigs[0].timeout).toBe(20);
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.timeout === 20)).toBe(true);
 		}
 	});
 
 	it("zone handoff timeout input updates", () => {
-		const a = createPanel() as any;
+		const s = createSidebar();
 		const zone = {
 			name: "Z1",
 			color: "#ff0000",
@@ -708,143 +763,178 @@ describe("_renderZoneTypeControls DOM events", () => {
 			timeout: 10,
 			handoff_timeout: 3,
 		};
-		a._zoneConfigs[0] = zone;
-		const tpl = a._renderZoneTypeControls(zone, 0);
+		const tpl = (s as any)._renderZoneTypeControls(zone, 0);
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const numbers = c.querySelectorAll('input[type="number"]');
 		if (numbers.length >= 2) {
 			const input = numbers[1] as HTMLInputElement;
 			input.value = "7";
-			input.dispatchEvent(new Event("input"));
-			expect(a._zoneConfigs[0].handoff_timeout).toBe(7);
+			input.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.handoff_timeout === 7)).toBe(true);
 		}
 	});
 
 	it("zone entry point toggle updates", () => {
-		const a = createPanel() as any;
+		const s = createSidebar();
 		const zone = { name: "Z1", color: "#ff0000", type: "custom" as const };
-		a._zoneConfigs[0] = zone;
-		const tpl = a._renderZoneTypeControls(zone, 0);
+		const tpl = (s as any)._renderZoneTypeControls(zone, 0);
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const toggles = c.querySelectorAll('.toggle-switch input[type="checkbox"]');
 		if (toggles.length > 0) {
 			const last = toggles[toggles.length - 1] as HTMLInputElement;
 			last.checked = true;
-			last.dispatchEvent(new Event("change"));
-			expect(a._zoneConfigs[0].entry_point).toBe(true);
+			last.dispatchEvent(new Event("change", { bubbles: true }));
+			expect(events.some(e => e.detail.updates.entry_point === true)).toBe(true);
 		}
 	});
 });
 
 describe("_renderZoneSidebar DOM events", () => {
+	function createSidebar(overrides: Record<string, any> = {}) {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.activeZone = 0;
+		el.roomType = "normal";
+		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
+		el.roomRenew = ZONE_TYPE_DEFAULTS.normal.renew;
+		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
+		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
+		el.roomEntryPoint = false;
+		el.localZoneState = new Map();
+		el.localize = (k: string) => k;
+		Object.assign(el, overrides);
+		return el;
+	}
+
 	it("boundary zone click", () => {
-		const a = createPanel() as any;
-		a._activeZone = null;
-		const tpl = a._renderZoneSidebar();
+		const s = createSidebar({ activeZone: null });
+		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-select", (e: Event) => events.push(e as CustomEvent));
 
 		const zoneItems = c.querySelectorAll(".zone-item");
 		if (zoneItems.length > 0) {
 			(zoneItems[0] as HTMLElement).click();
-			expect(a._activeZone).toBe(0);
+			expect(events.some(e => e.detail.zone === 0)).toBe(true);
 		}
 	});
 
 	it("named zone click", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: "#ff0000", type: "normal" };
-		const tpl = a._renderZoneSidebar();
+		const s = createSidebar();
+		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-select", (e: Event) => events.push(e as CustomEvent));
 
 		const zoneItems = c.querySelectorAll(".zone-item");
 		if (zoneItems.length > 1) {
 			(zoneItems[1] as HTMLElement).click();
-			expect(a._activeZone).toBe(1);
+			expect(events.some(e => e.detail.zone === 1)).toBe(true);
 		}
 	});
 
 	it("add zone button exists", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderZoneSidebar();
+		const s = createSidebar();
+		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
 		const addBtn = c.querySelector(".add-zone-btn") as HTMLElement;
 		expect(addBtn).not.toBeNull();
-		// Cannot click directly due to lit method binding; tested via _addZone() in panel-zones.test.ts
 	});
 
 	it("zone remove button", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: "#ff0000", type: "normal" };
-		a._activeZone = 1;
-		const tpl = a._renderZoneSidebar();
+		const s = createSidebar({ activeZone: 1 });
+		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-remove", (e: Event) => events.push(e as CustomEvent));
 
 		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
 		if (removeBtn) {
 			removeBtn.click();
-			expect(a._zoneConfigs[0]).toBeNull();
+			expect(events.some(e => e.detail.slot === 1)).toBe(true);
 		}
 	});
 
 	it("zone name input focus", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: "#ff0000", type: "normal" };
-		a._activeZone = 0;
-		const tpl = a._renderZoneSidebar();
+		const s = createSidebar({ activeZone: 0 });
+		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-select", (e: Event) => events.push(e as CustomEvent));
 
 		const nameInput = c.querySelector(".zone-name-input") as HTMLInputElement;
 		if (nameInput) {
-			nameInput.dispatchEvent(new Event("focus"));
-			expect(a._activeZone).toBe(1);
+			nameInput.dispatchEvent(new Event("focus", { bubbles: true }));
+			expect(events.some(e => e.detail.zone === 1)).toBe(true);
 		}
 	});
 
 	it("zone name input click sets active", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: "#ff0000", type: "normal" };
-		a._activeZone = 0;
-		const tpl = a._renderZoneSidebar();
+		const s = createSidebar({ activeZone: 0 });
+		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-select", (e: Event) => events.push(e as CustomEvent));
 
 		const nameInput = c.querySelector(".zone-name-input") as HTMLInputElement;
 		if (nameInput) {
 			nameInput.click();
-			expect(a._activeZone).toBe(1);
+			expect(events.some(e => e.detail.zone === 1)).toBe(true);
 		}
 	});
 
 	it("zone name input changes name", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: "#ff0000", type: "normal" };
-		const tpl = a._renderZoneSidebar();
+		const s = createSidebar();
+		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const nameInput = c.querySelector(".zone-name-input") as HTMLInputElement;
 		if (nameInput) {
 			nameInput.value = "Kitchen";
-			nameInput.dispatchEvent(new Event("input"));
-			expect(a._zoneConfigs[0].name).toBe("Kitchen");
+			nameInput.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.index === 0 && e.detail.updates.name === "Kitchen")).toBe(true);
 		}
 	});
 
 	it("zone color picker input", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: "#ff0000", type: "normal" };
-		a._activeZone = 1;
-		const tpl = a._renderZoneSidebar();
+		const s = createSidebar({ activeZone: 1 });
+		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
+
+		const events: CustomEvent[] = [];
+		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
 
 		const colorPicker = c.querySelector(
 			".zone-color-picker",
 		) as HTMLInputElement;
 		if (colorPicker) {
 			colorPicker.value = "#00ff00";
-			colorPicker.dispatchEvent(new Event("input"));
-			expect(a._zoneConfigs[0].color).toBe("#00ff00");
+			colorPicker.dispatchEvent(new Event("input", { bubbles: true }));
+			expect(events.some(e => e.detail.index === 0 && e.detail.updates.color === "#00ff00")).toBe(true);
 		}
 	});
 });

@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
+import "../components/epp-zone-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -949,10 +950,18 @@ describe("render view branching", () => {
 // =========================================================
 describe("stopPropagation handlers in zone sidebar", () => {
 	it("color picker click event has stopPropagation", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: "#ff0000", type: "normal" };
-		a._activeZone = 1;
-		const tpl = a._renderZoneSidebar();
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		el.activeZone = 1;
+		el.roomType = "normal";
+		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
+		el.roomRenew = ZONE_TYPE_DEFAULTS.normal.renew;
+		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
+		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
+		el.roomEntryPoint = false;
+		el.localZoneState = new Map();
+		el.localize = (k: string) => k;
+		const tpl = el._renderZoneSidebar();
 		const c = renderTo(tpl);
 
 		const colorPicker = c.querySelector(

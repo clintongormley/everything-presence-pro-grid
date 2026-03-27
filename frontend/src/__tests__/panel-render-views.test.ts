@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
+import "../components/epp-zone-sidebar.js";
+import type { EppZoneSidebar } from "../components/epp-zone-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -908,40 +910,47 @@ describe("_renderVisibleCells", () => {
 	});
 });
 
-describe("_renderBoundaryTypeControls", () => {
+describe("epp-zone-sidebar renders boundary type controls", () => {
 	it("renders for normal type", () => {
-		const a = createPanel() as any;
-		a._roomType = "normal";
-		const result = a._renderBoundaryTypeControls();
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.roomType = "normal";
+		el.activeZone = 0;
+		el.zoneConfigs = new Array(7).fill(null);
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders for custom type", () => {
-		const a = createPanel() as any;
-		a._roomType = "custom";
-		const result = a._renderBoundaryTypeControls();
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.roomType = "custom";
+		el.activeZone = 0;
+		el.zoneConfigs = new Array(7).fill(null);
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders for entrance type", () => {
-		const a = createPanel() as any;
-		a._roomType = "entrance";
-		const result = a._renderBoundaryTypeControls();
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.roomType = "entrance";
+		el.activeZone = 0;
+		el.zoneConfigs = new Array(7).fill(null);
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 });
 
-describe("_renderZoneTypeControls", () => {
+describe("epp-zone-sidebar renders zone type controls", () => {
 	it("renders for normal zone", () => {
-		const a = createPanel() as any;
-		const zone = { name: "Zone 1", color: "#ff0000", type: "normal" };
-		const result = a._renderZoneTypeControls(zone, 0);
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = [{ name: "Zone 1", color: "#ff0000", type: "normal" }, ...new Array(6).fill(null)];
+		el.activeZone = 1;
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders for custom zone with explicit thresholds", () => {
-		const a = createPanel() as any;
-		const zone = {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = [{
 			name: "Zone 1",
 			color: "#ff0000",
 			type: "custom",
@@ -950,67 +959,72 @@ describe("_renderZoneTypeControls", () => {
 			timeout: 15,
 			handoff_timeout: 5,
 			entry_point: true,
-		};
-		const result = a._renderZoneTypeControls(zone, 0);
+		}, ...new Array(6).fill(null)];
+		el.activeZone = 1;
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 });
 
-describe("_renderZoneSidebar", () => {
+describe("epp-zone-sidebar renders zone sidebar", () => {
 	it("renders with no zones configured", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs = new Array(7).fill(null);
-		const result = a._renderZoneSidebar();
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with zones configured", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.zoneConfigs[0] = {
 			name: "Kitchen",
 			color: ZONE_COLORS[0],
 			type: "normal",
 		};
-		a._zoneConfigs[1] = {
+		el.zoneConfigs[1] = {
 			name: "Living",
 			color: ZONE_COLORS[1],
 			type: "entrance",
 		};
-		a._activeZone = 1;
-		const result = a._renderZoneSidebar();
+		el.activeZone = 1;
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with active boundary zone", () => {
-		const a = createPanel() as any;
-		a._activeZone = 0;
-		const result = a._renderZoneSidebar();
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.activeZone = 0;
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with zone occupancy glow", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
-		a._activeZone = 1;
-		a._zoneEngineState.localZoneState.set(1, {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
+		el.activeZone = 1;
+		el.localZoneState = new Map([[1, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set(),
-		});
-		const result = a._renderZoneSidebar();
+		}]]);
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with all zones full (no add button)", () => {
-		const a = createPanel() as any;
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
 		for (let i = 0; i < 7; i++) {
-			a._zoneConfigs[i] = {
+			el.zoneConfigs[i] = {
 				name: `Zone ${i + 1}`,
 				color: ZONE_COLORS[i % ZONE_COLORS.length],
 				type: "normal",
 			};
 		}
-		const result = a._renderZoneSidebar();
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 });

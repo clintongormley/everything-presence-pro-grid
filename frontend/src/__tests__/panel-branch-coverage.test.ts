@@ -7,6 +7,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
+import "../components/epp-zone-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -801,13 +802,22 @@ describe("epp-live-sidebar env sensor branches", () => {
 // =========================================================
 describe("_renderZoneSidebar boundary occupancy glow", () => {
 	it("renders boundary with occupancy glow", () => {
-		const a = createPanel() as any;
-		a._zoneEngineState.localZoneState.set(0, {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.activeZone = 0;
+		el.roomType = "normal";
+		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
+		el.roomRenew = ZONE_TYPE_DEFAULTS.normal.renew;
+		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
+		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
+		el.roomEntryPoint = false;
+		el.localZoneState = new Map([[0, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set(),
-		});
-		const tpl = a._renderZoneSidebar();
+		}]]);
+		el.localize = (k: string) => k;
+		const tpl = el._renderZoneSidebar();
 		expect(tpl).toBeDefined();
 	});
 });
@@ -816,10 +826,25 @@ describe("_renderZoneSidebar boundary occupancy glow", () => {
 // stopPropagation handlers on boundary/zone type controls
 // =========================================================
 describe("stopPropagation handlers coverage", () => {
+	function createSidebar(overrides: Record<string, any> = {}) {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.activeZone = 0;
+		el.roomType = "normal";
+		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
+		el.roomRenew = ZONE_TYPE_DEFAULTS.normal.renew;
+		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
+		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
+		el.roomEntryPoint = false;
+		el.localZoneState = new Map();
+		el.localize = (k: string) => k;
+		Object.assign(el, overrides);
+		return el;
+	}
+
 	it("boundary type select click calls stopPropagation", () => {
-		const a = createPanel() as any;
-		a._roomType = "custom";
-		const tpl = a._renderBoundaryTypeControls();
+		const s = createSidebar({ roomType: "custom" });
+		const tpl = (s as any)._renderBoundaryTypeControls();
 		const c = document.createElement("div");
 		document.body.appendChild(c);
 		render(tpl, c);
@@ -854,7 +879,7 @@ describe("stopPropagation handlers coverage", () => {
 	});
 
 	it("zone type controls click calls stopPropagation", () => {
-		const a = createPanel() as any;
+		const s = createSidebar();
 		const zone = {
 			name: "Z1",
 			color: "#ff0000",
@@ -864,8 +889,7 @@ describe("stopPropagation handlers coverage", () => {
 			timeout: 10,
 			handoff_timeout: 3,
 		};
-		a._zoneConfigs[0] = zone;
-		const tpl = a._renderZoneTypeControls(zone, 0);
+		const tpl = (s as any)._renderZoneTypeControls(zone, 0);
 		const c = document.createElement("div");
 		document.body.appendChild(c);
 		render(tpl, c);
@@ -1401,27 +1425,43 @@ describe("live grid hit count and signal", () => {
 // =========================================================
 describe("zone sidebar occupancy glow branch", () => {
 	it("zone color dot shows glow when zone is occupied", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
-		a._activeZone = 0; // boundary selected, not zone 1
-		a._zoneEngineState.localZoneState.set(1, {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = [{ name: "Z1", color: ZONE_COLORS[0], type: "normal" }, null, null, null, null, null, null];
+		el.activeZone = 0; // boundary selected, not zone 1
+		el.roomType = "normal";
+		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
+		el.roomRenew = ZONE_TYPE_DEFAULTS.normal.renew;
+		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
+		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
+		el.roomEntryPoint = false;
+		el.localZoneState = new Map([[1, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set(),
-		});
+		}]]);
+		el.localize = (k: string) => k;
 
-		const tpl = a._renderZoneSidebar();
+		const tpl = el._renderZoneSidebar();
 		expect(tpl).toBeDefined();
 	});
 
 	it("boundary dot shows glow when boundary zone occupied", () => {
-		const a = createPanel() as any;
-		a._zoneEngineState.localZoneState.set(0, {
+		const el = document.createElement("epp-zone-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.activeZone = 0;
+		el.roomType = "normal";
+		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
+		el.roomRenew = ZONE_TYPE_DEFAULTS.normal.renew;
+		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
+		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
+		el.roomEntryPoint = false;
+		el.localZoneState = new Map([[0, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set(),
-		});
-		const tpl = a._renderZoneSidebar();
+		}]]);
+		el.localize = (k: string) => k;
+		const tpl = el._renderZoneSidebar();
 		expect(tpl).toBeDefined();
 	});
 });
