@@ -1,0 +1,361 @@
+import { render } from "lit";
+import { describe, expect, it, vi } from "vitest";
+import "../../components/epp-furniture-overlay.js";
+import type { EppFurnitureOverlay } from "../../components/epp-furniture-overlay.js";
+import type { FurnitureItem } from "../../lib/furniture.js";
+
+function renderTo(tpl: any): HTMLDivElement {
+	const container = document.createElement("div");
+	document.body.appendChild(container);
+	render(tpl, container);
+	return container;
+}
+
+function createOverlay(
+	overrides: Record<string, any> = {},
+): EppFurnitureOverlay {
+	const el = document.createElement(
+		"epp-furniture-overlay",
+	) as any;
+	el.furniture = [];
+	el.selectedFurnitureId = null;
+	el.roomWidth = 3000;
+	el.cellPx = 28;
+	el.minCol = 0;
+	el.minRow = 0;
+	el.visCols = 20;
+	el.visRows = 20;
+	el.sidebarTab = "furniture";
+	el.localize = (k: string) => k;
+	Object.assign(el, overrides);
+	return el as EppFurnitureOverlay;
+}
+
+const SAMPLE_FURNITURE: FurnitureItem = {
+	id: "f1",
+	type: "svg",
+	icon: "armchair",
+	label: "Chair",
+	x: 100,
+	y: 200,
+	width: 800,
+	height: 800,
+	rotation: 0,
+	lockAspect: false,
+};
+
+const ICON_FURNITURE: FurnitureItem = {
+	id: "f2",
+	type: "icon",
+	icon: "mdi:desk",
+	label: "Desk",
+	x: 100,
+	y: 200,
+	width: 1400,
+	height: 700,
+	rotation: 45,
+	lockAspect: false,
+};
+
+describe("epp-furniture-overlay element", () => {
+	it("is registered as a custom element", () => {
+		const Ctor = customElements.get("epp-furniture-overlay");
+		expect(Ctor).toBeDefined();
+	});
+
+	it("can be created via document.createElement", () => {
+		const el = document.createElement("epp-furniture-overlay");
+		expect(el).toBeInstanceOf(HTMLElement);
+	});
+
+	it("renders nothing when furniture is empty", () => {
+		const el = createOverlay();
+		const result = (el as any).render();
+		// Lit's nothing sentinel
+		expect(result).toBeDefined();
+	});
+
+	it("renders furniture items with svg type", () => {
+		const el = createOverlay({ furniture: [SAMPLE_FURNITURE] });
+		const result = (el as any).render();
+		expect(result).toBeDefined();
+	});
+
+	it("renders furniture items with icon type", () => {
+		const el = createOverlay({ furniture: [ICON_FURNITURE] });
+		const result = (el as any).render();
+		expect(result).toBeDefined();
+	});
+
+	it("renders non-interactive when sidebarTab is not furniture", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			sidebarTab: "zones",
+		});
+		const result = (el as any).render();
+		expect(result).toBeDefined();
+	});
+
+	it("renders selected furniture with handles", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+		const result = (el as any).render();
+		expect(result).toBeDefined();
+	});
+});
+
+describe("epp-furniture-overlay DOM rendering", () => {
+	it("renders all 8 resize handles when selected", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const handles = c.querySelectorAll(".furn-handle");
+		expect(handles.length).toBe(8);
+
+		document.body.removeChild(c);
+	});
+
+	it("renders rotate stem and handle when selected", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const stem = c.querySelector(".furn-rotate-stem");
+		const handle = c.querySelector(".furn-rotate-handle");
+		expect(stem).not.toBeNull();
+		expect(handle).not.toBeNull();
+
+		document.body.removeChild(c);
+	});
+
+	it("renders delete button when selected", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const deleteBtn = c.querySelector(".furn-delete-btn");
+		expect(deleteBtn).not.toBeNull();
+
+		document.body.removeChild(c);
+	});
+
+	it("does not render handles when not selected", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: null,
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const handles = c.querySelectorAll(".furn-handle");
+		expect(handles.length).toBe(0);
+
+		document.body.removeChild(c);
+	});
+
+	it("applies non-interactive class when sidebarTab is not furniture", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			sidebarTab: "zones",
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const overlay = c.querySelector(".furniture-overlay");
+		expect(overlay?.classList.contains("non-interactive")).toBe(true);
+
+		document.body.removeChild(c);
+	});
+
+	it("does not apply non-interactive class when sidebarTab is furniture", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			sidebarTab: "furniture",
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const overlay = c.querySelector(".furniture-overlay");
+		expect(overlay?.classList.contains("non-interactive")).toBe(false);
+
+		document.body.removeChild(c);
+	});
+
+	it("positions furniture items correctly based on room coordinates", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			cellPx: 28,
+			minCol: 0,
+			minRow: 0,
+			roomWidth: 3000,
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const item = c.querySelector(".furniture-item") as HTMLElement;
+		expect(item).not.toBeNull();
+		if (item) {
+			expect(item.style.transform).toContain("rotate(0deg)");
+		}
+
+		document.body.removeChild(c);
+	});
+});
+
+describe("epp-furniture-overlay events", () => {
+	it("fires furniture-select on item pointerdown", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: null,
+		});
+
+		const selectHandler = vi.fn();
+		el.addEventListener("furniture-select", selectHandler);
+
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const item = c.querySelector(".furniture-item") as HTMLElement;
+		if (item) {
+			item.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					clientX: 500,
+					clientY: 300,
+					bubbles: true,
+				}),
+			);
+			expect(selectHandler).toHaveBeenCalledTimes(1);
+			expect(selectHandler.mock.calls[0][0].detail).toBe("f1");
+		}
+
+		document.body.removeChild(c);
+	});
+
+	it("fires furniture-pointer-down with move type on item pointerdown", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+		});
+
+		const ptrHandler = vi.fn();
+		el.addEventListener("furniture-pointer-down", ptrHandler);
+
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const item = c.querySelector(".furniture-item") as HTMLElement;
+		if (item) {
+			item.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					clientX: 500,
+					clientY: 300,
+					bubbles: true,
+				}),
+			);
+			expect(ptrHandler).toHaveBeenCalledTimes(1);
+			const detail = ptrHandler.mock.calls[0][0].detail;
+			expect(detail.id).toBe("f1");
+			expect(detail.type).toBe("move");
+		}
+
+		document.body.removeChild(c);
+	});
+
+	it("fires furniture-pointer-down with resize type on handle pointerdown", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+
+		const ptrHandler = vi.fn();
+		el.addEventListener("furniture-pointer-down", ptrHandler);
+
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const handle = c.querySelector(".furn-handle-se") as HTMLElement;
+		if (handle) {
+			handle.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					clientX: 500,
+					clientY: 300,
+					bubbles: true,
+				}),
+			);
+			expect(ptrHandler).toHaveBeenCalled();
+			const detail = ptrHandler.mock.calls[0][0].detail;
+			expect(detail.id).toBe("f1");
+			expect(detail.type).toBe("resize");
+			expect(detail.handle).toBe("se");
+		}
+
+		document.body.removeChild(c);
+	});
+
+	it("fires furniture-pointer-down with rotate type on rotate handle", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+
+		const ptrHandler = vi.fn();
+		el.addEventListener("furniture-pointer-down", ptrHandler);
+
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const rotateHandle = c.querySelector(".furn-rotate-handle") as HTMLElement;
+		if (rotateHandle) {
+			rotateHandle.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					clientX: 500,
+					clientY: 300,
+					bubbles: true,
+				}),
+			);
+			expect(ptrHandler).toHaveBeenCalled();
+			const detail = ptrHandler.mock.calls[0][0].detail;
+			expect(detail.id).toBe("f1");
+			expect(detail.type).toBe("rotate");
+		}
+
+		document.body.removeChild(c);
+	});
+
+	it("fires furniture-delete on delete button pointerdown", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+
+		const deleteHandler = vi.fn();
+		el.addEventListener("furniture-delete", deleteHandler);
+
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const deleteBtn = c.querySelector(".furn-delete-btn") as HTMLElement;
+		if (deleteBtn) {
+			deleteBtn.dispatchEvent(
+				new PointerEvent("pointerdown", {
+					bubbles: true,
+				}),
+			);
+			expect(deleteHandler).toHaveBeenCalledTimes(1);
+			expect(deleteHandler.mock.calls[0][0].detail).toBe("f1");
+		}
+
+		document.body.removeChild(c);
+	});
+});

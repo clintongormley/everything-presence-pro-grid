@@ -11,7 +11,6 @@ import {
 } from "./styles.js";
 import { property, state } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import {
 	applyPaintToCell,
 	clearZoneFromGrid,
@@ -82,13 +81,14 @@ import {
 import { setupLocalize } from "./localize.js";
 
 import type { Target, RawTarget, DeviceInfo, WizardCorner, SetupStep } from "./types.js";
-import { FLOOR_PLAN_SVGS, CORNER_LABELS, CORNER_OFFSET_LABELS, CAPTURE_DURATION_S, TARGET_COLORS, FOV_HALF_ANGLE, FOV_X_EXTENT } from "./constants.js";
+import { CORNER_LABELS, CORNER_OFFSET_LABELS, CAPTURE_DURATION_S, TARGET_COLORS, FOV_HALF_ANGLE, FOV_X_EXTENT } from "./constants.js";
 import { DeviceController } from "./controllers/device-controller.js";
 import { GridStateController } from "./controllers/grid-state-controller.js";
 import { TargetController } from "./controllers/target-controller.js";
 import "./components/epp-live-sidebar.js";
 import "./components/epp-zone-sidebar.js";
 import "./components/epp-furniture-sidebar.js";
+import "./components/epp-furniture-overlay.js";
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
@@ -1027,127 +1027,7 @@ export class EPPGridPanel extends LitElement {
       margin: 0;
     }
 
-    /* Furniture overlay */
-    .furniture-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      pointer-events: none;
-      z-index: 15;
-    }
-
-    .furniture-overlay.non-interactive {
-      pointer-events: none !important;
-    }
-
-    .furniture-overlay.non-interactive .furniture-item {
-      pointer-events: none !important;
-      opacity: 0.6;
-    }
-
-    .furniture-item {
-      position: absolute;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      border: 1px solid rgba(0, 0, 0, 0.3);
-      border-radius: 4px;
-      background: transparent;
-      pointer-events: auto;
-      cursor: grab;
-      transform-origin: center center;
-      user-select: none;
-    }
-
-    .furniture-item:hover {
-      border-color: var(--primary-color, #03a9f4);
-    }
-
-    .furniture-item.selected {
-      outline: 2px solid var(--primary-color, #03a9f4);
-      outline-offset: -1px;
-      box-shadow: 0 0 8px rgba(3, 169, 244, 0.4);
-      z-index: 10;
-    }
-
-    .furniture-item ha-icon {
-      color: rgba(0, 0, 0, 0.6);
-      pointer-events: none;
-    }
-
-    .furn-svg {
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-
-    .furn-handle {
-      position: absolute;
-      width: 8px;
-      height: 8px;
-      background: var(--primary-color, #03a9f4);
-      border: 1px solid #fff;
-      border-radius: 2px;
-      pointer-events: auto;
-      z-index: 2;
-    }
-
-    .furn-handle-n { top: -4px; left: 50%; transform: translateX(-50%); cursor: n-resize; }
-    .furn-handle-s { bottom: -4px; left: 50%; transform: translateX(-50%); cursor: s-resize; }
-    .furn-handle-e { right: -4px; top: 50%; transform: translateY(-50%); cursor: e-resize; }
-    .furn-handle-w { left: -4px; top: 50%; transform: translateY(-50%); cursor: w-resize; }
-    .furn-handle-ne { top: -4px; right: -4px; cursor: ne-resize; }
-    .furn-handle-nw { top: -4px; left: -4px; cursor: nw-resize; }
-    .furn-handle-se { bottom: -4px; right: -4px; cursor: se-resize; }
-    .furn-handle-sw { bottom: -4px; left: -4px; cursor: sw-resize; }
-
-    .furn-rotate-stem {
-      position: absolute;
-      top: -32px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 2px;
-      height: 32px;
-      background: var(--primary-color, #03a9f4);
-      pointer-events: none;
-    }
-
-    .furn-rotate-handle {
-      position: absolute;
-      top: -48px;
-      left: 50%;
-      transform: translateX(-50%);
-      width: 20px;
-      height: 20px;
-      background: var(--primary-color, #03a9f4);
-      border: 2px solid #fff;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: grab;
-      pointer-events: auto;
-      color: #fff;
-    }
-
-    .furn-delete-btn {
-      position: absolute;
-      top: -24px;
-      right: -4px;
-      width: 20px;
-      height: 20px;
-      background: var(--error-color, #f44336);
-      border: 1px solid #fff;
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      pointer-events: auto;
-      color: #fff;
-    }
+    /* Furniture overlay styles moved to epp-furniture-overlay component */
 
     .targets-overlay {
       position: absolute;
@@ -3765,75 +3645,30 @@ export class EPPGridPanel extends LitElement {
 	) {
 		if (!this._furniture.length) return nothing;
 
-		// Room starts at startCol in the grid
-		const roomCols = Math.ceil(this._roomWidth / GRID_CELL_MM);
-		const startCol = Math.floor((GRID_COLS - roomCols) / 2);
-		const step = cellPx + 1; // px per cell including gap
-
-		const interactive = this._sidebarTab === "furniture";
 		return html`
-      <div class="furniture-overlay ${interactive ? "" : "non-interactive"}">
-        ${this._furniture.map((item) => {
-					// Convert mm to grid-relative px, then adjust for visible bounds
-					const leftPx =
-						(startCol - minCol) * step + this._mmToPx(item.x, cellPx);
-					const topPx = (0 - minRow) * step + this._mmToPx(item.y, cellPx);
-					const wPx = this._mmToPx(item.width, cellPx);
-					const hPx = this._mmToPx(item.height, cellPx);
-					const selected = this._selectedFurnitureId === item.id;
-
-					return html`
-            <div
-              class="furniture-item ${selected ? "selected" : ""}"
-              data-id="${item.id}"
-              style="
-                left: ${leftPx}px; top: ${topPx}px;
-                width: ${wPx}px; height: ${hPx}px;
-                transform: rotate(${item.rotation}deg);
-              "
-              @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "move")}
-            >
-              ${
-								item.type === "svg" && FLOOR_PLAN_SVGS[item.icon]
-									? svg`<svg viewBox="${FLOOR_PLAN_SVGS[item.icon].viewBox}" preserveAspectRatio="none" class="furn-svg">
-                    ${unsafeSVG(FLOOR_PLAN_SVGS[item.icon].content)}
-                  </svg>`
-									: html`<ha-icon icon="${item.icon}" style="--mdc-icon-size: ${Math.min(wPx, hPx) * 0.6}px;"></ha-icon>`
-							}
-              ${
-								selected
-									? html`
-                <!-- Resize handles -->
-                <div class="furn-handle furn-handle-n" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "resize", "n")}></div>
-                <div class="furn-handle furn-handle-s" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "resize", "s")}></div>
-                <div class="furn-handle furn-handle-e" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "resize", "e")}></div>
-                <div class="furn-handle furn-handle-w" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "resize", "w")}></div>
-                <div class="furn-handle furn-handle-ne" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "resize", "ne")}></div>
-                <div class="furn-handle furn-handle-nw" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "resize", "nw")}></div>
-                <div class="furn-handle furn-handle-se" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "resize", "se")}></div>
-                <div class="furn-handle furn-handle-sw" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "resize", "sw")}></div>
-                <!-- Rotate handle with stem -->
-                <div class="furn-rotate-stem"></div>
-                <div class="furn-rotate-handle" @pointerdown=${(e: PointerEvent) => this._onFurniturePointerDown(e, item.id, "rotate")}>
-                  <ha-icon icon="mdi:rotate-right" style="--mdc-icon-size: 14px;"></ha-icon>
-                </div>
-                <!-- Delete button -->
-                <div class="furn-delete-btn" @pointerdown=${(
-									e: PointerEvent,
-								) => {
-									e.stopPropagation();
-									this._removeFurniture(item.id);
-								}}>
-                  <ha-icon icon="mdi:close" style="--mdc-icon-size: 14px;"></ha-icon>
-                </div>
-              `
-									: nothing
-							}
-            </div>
-          `;
-				})}
-      </div>
-    `;
+			<epp-furniture-overlay
+				.furniture=${this._furniture}
+				.selectedFurnitureId=${this._selectedFurnitureId}
+				.roomWidth=${this._roomWidth}
+				.cellPx=${cellPx}
+				.minCol=${minCol}
+				.minRow=${minRow}
+				.visCols=${visCols}
+				.visRows=${visRows}
+				.sidebarTab=${this._sidebarTab}
+				.localize=${this._localize}
+				@furniture-select=${(e: CustomEvent) => {
+					this._selectedFurnitureId = e.detail;
+				}}
+				@furniture-pointer-down=${(e: CustomEvent) => {
+					const { e: ptrEvent, id, type, handle } = e.detail;
+					this._onFurniturePointerDown(ptrEvent, id, type, handle);
+				}}
+				@furniture-delete=${(e: CustomEvent) => {
+					this._removeFurniture(e.detail);
+				}}
+			></epp-furniture-overlay>
+		`;
 	}
 
 }

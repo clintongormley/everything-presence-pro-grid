@@ -950,18 +950,21 @@ describe("furniture overlay all handle events", () => {
 			.spyOn(window, "addEventListener")
 			.mockImplementation(() => {});
 
-		const handles = c.querySelectorAll(".furn-handle");
-		handles.forEach((h: any) => {
-			h.dispatchEvent(
-				new PointerEvent("pointerdown", { clientX: 500, clientY: 300 }),
-			);
-		});
+		const overlay = c.querySelector("epp-furniture-overlay") as any;
+		if (overlay?.shadowRoot) {
+			const handles = overlay.shadowRoot.querySelectorAll(".furn-handle");
+			handles.forEach((h: any) => {
+				h.dispatchEvent(
+					new PointerEvent("pointerdown", { clientX: 500, clientY: 300, bubbles: true, composed: true }),
+				);
+			});
 
-		const rotateHandle = c.querySelector(".furn-rotate-handle");
-		if (rotateHandle) {
-			rotateHandle.dispatchEvent(
-				new PointerEvent("pointerdown", { clientX: 500, clientY: 300 }),
-			);
+			const rotateHandle = overlay.shadowRoot.querySelector(".furn-rotate-handle");
+			if (rotateHandle) {
+				rotateHandle.dispatchEvent(
+					new PointerEvent("pointerdown", { clientX: 500, clientY: 300, bubbles: true, composed: true }),
+				);
+			}
 		}
 
 		addSpy.mockRestore();
