@@ -259,19 +259,21 @@ class DeviceManager:
             self._pushing.discard(mac)
 
     async def _push_config_to_device(self, mac: str) -> None:
-        """Open a temporary connection, push config, and close."""
-        dev = self.devices.get(mac)
+        """Push config using the shared connection pool."""
         config = self._store.get_device(mac)
-        if dev is None or dev.host is None or config is None:
+        if config is None:
             return
-        conn = DeviceConnection(dev.host)
+        conn = await self.async_get_or_create_connection(mac)
+        if conn is None:
+            return
         try:
-            await conn.async_connect()
             await conn.async_push_config(config)
         except Exception:
-            _LOGGER.warning("Failed to push config to %s (%s)", dev.name, mac, exc_info=True)
+            dev = self.devices.get(mac)
+            name = dev.name if dev else mac
+            _LOGGER.warning("Failed to push config to %s (%s)", name, mac, exc_info=True)
         finally:
-            await conn.async_disconnect()
+            await self.async_release_connection(mac)
 
     async def async_get_or_create_connection(self, mac: str) -> DeviceConnection | None:
         """Get or create a live connection for the calibration UI."""
