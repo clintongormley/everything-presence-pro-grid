@@ -22,37 +22,22 @@ The median smoother is the single source of truth. Everything downstream consume
 
 ## Firmware Changes
 
-### Rolling Median Smoother (new, in epp component)
+### Two-stage TumblingWindow pipeline
 
-A 200ms rolling median that outputs at 5Hz (every 200ms). Accumulates the ~2 raw frames per window and computes median x,y per target. Simpler than the 1s tumbling window — just needs a small circular buffer.
+Reuse the existing `TumblingWindow` class (which already does 10Hz accumulation + median computation) with two instances at different intervals:
 
 ```cpp
-struct MedianSmoother {
-    static constexpr int WINDOW_FRAMES = 3;  // ~2 frames at 10Hz per 200ms window
-    float xs[MAX_TARGETS][WINDOW_FRAMES];
-    float ys[MAX_TARGETS][WINDOW_FRAMES];
-    bool detected[MAX_TARGETS][WINDOW_FRAMES];
-    int count = 0;
-    uint32_t last_emit_ms = 0;
-
-    void accumulate(const ParsedTarget targets[], int n);
-    bool should_emit(uint32_t now_ms);  // true every 200ms
-    void emit(ParsedTarget output[]);   // median of accumulated samples
-    void reset();
-};
+TumblingWindow display_window_{0.2f};  // 5Hz output — display smoothing
+TumblingWindow window_{1.0f};          // 1Hz output — zone engine (existing)
 ```
+
+The `display_window_` accumulates raw LD2450 frames at 10Hz and emits median positions every 200ms. Its output feeds both the raw target publication and (after perspective transform) the grid target publication and the zone engine's `window_`.
 
 ### epp_component.h additions
 
 ```cpp
-// 5Hz median smoother for display
-MedianSmoother smoother_;
-
-// Smoothed raw positions (pre-transform) — published at 5Hz
-ParsedTarget smoothed_raw_[NUM_TARGETS]{};
-
-// Smoothed transformed positions — published at 5Hz
-ParsedTarget smoothed_grid_[NUM_TARGETS]{};
+// 5Hz display smoother (feeds raw + transformed publishing)
+TumblingWindow display_window_{0.2f};
 
 // Text sensor pointers for raw target positions
 esphome::text_sensor::TextSensor *raw_target_sensors_[NUM_TARGETS]{};
@@ -63,7 +48,7 @@ void set_raw_target_sensor(int index, esphome::text_sensor::TextSensor *sensor);
 
 ### epp_component.cpp loop() changes
 
-Current `loop()` does: transform → tumbling window → zone tick (1Hz) → publish everything.
+Current `loop()` does: transform at 10Hz → feed tumbling window → zone tick (1Hz) → publish everything at 1Hz.
 
 New `loop()`:
 
@@ -73,23 +58,27 @@ void EPPComponent::loop() {
     frame_ready_ = false;
     frame_count_++;
 
-    uint32_t now = esphome::millis();
-    float ts = now / 1000.0f;
+    float ts = esphome::millis() / 1000.0f;
 
-    // Accumulate raw frame into median smoother
-    smoother_.accumulate(targets_, NUM_TARGETS);
+    // Feed raw targets into 5Hz display window
+    TargetInput raw_inputs[NUM_TARGETS];
+    for (int i = 0; i < NUM_TARGETS; i++) {
+        raw_inputs[i] = {targets_[i].x, targets_[i].y,
+                         targets_[i].detected && targets_[i].y != 0.0f};
+    }
+    bool display_ticked = display_window_.feed(raw_inputs, NUM_TARGETS, ts);
 
-    // 5Hz: emit smoothed positions
-    if (smoother_.should_emit(now)) {
-        smoother_.emit(smoothed_raw_);
+    if (display_ticked) {
+        const auto &display = display_window_.output();
 
-        // Publish raw target positions (pre-transform)
+        // Publish raw target positions (pre-transform, 5Hz)
         for (int i = 0; i < NUM_TARGETS; i++) {
             if (raw_target_sensors_[i] != nullptr) {
-                if (smoothed_raw_[i].detected && smoothed_raw_[i].y != 0.0f) {
+                if (display.targets[i].active) {
                     char buf[32];
                     snprintf(buf, sizeof(buf), "%.0f,%.0f",
-                             smoothed_raw_[i].x, smoothed_raw_[i].y);
+                             display.targets[i].median_x,
+                             display.targets[i].median_y);
                     raw_target_sensors_[i]->publish_state(buf);
                 } else {
                     raw_target_sensors_[i]->publish_state("");
@@ -98,26 +87,25 @@ void EPPComponent::loop() {
         }
 
         // Transform smoothed raw → grid coordinates
-        TargetInput inputs[MAX_TARGETS];
+        TargetInput grid_inputs[NUM_TARGETS];
         for (int i = 0; i < NUM_TARGETS; i++) {
-            if (smoothed_raw_[i].detected && smoothed_raw_[i].y != 0.0f) {
+            if (display.targets[i].active) {
                 auto [rx, ry] = transform_.apply(
-                    smoothed_raw_[i].x, smoothed_raw_[i].y);
-                inputs[i] = {rx, ry, true};
-                smoothed_grid_[i] = {rx, ry, true};
+                    display.targets[i].median_x,
+                    display.targets[i].median_y);
+                grid_inputs[i] = {rx, ry, true};
             } else {
-                inputs[i] = {0.0f, 0.0f, false};
-                smoothed_grid_[i] = {0.0f, 0.0f, false};
+                grid_inputs[i] = {0.0f, 0.0f, false};
             }
         }
 
-        // Publish transformed target positions (x,y only, 5Hz)
+        // Publish transformed target positions (5Hz)
         for (int i = 0; i < NUM_TARGETS; i++) {
             if (target_position_sensors_[i] != nullptr) {
-                if (smoothed_grid_[i].detected) {
+                if (grid_inputs[i].active) {
                     char buf[32];
                     snprintf(buf, sizeof(buf), "%.0f,%.0f",
-                             smoothed_grid_[i].x, smoothed_grid_[i].y);
+                             grid_inputs[i].x, grid_inputs[i].y);
                     target_position_sensors_[i]->publish_state(buf);
                 } else {
                     target_position_sensors_[i]->publish_state("");
@@ -125,37 +113,41 @@ void EPPComponent::loop() {
             }
         }
 
-        // Feed tumbling window with transformed coordinates
-        window_.feed(inputs, MAX_TARGETS, ts);
-    }
+        // Feed 1Hz zone engine window with transformed coordinates
+        bool zone_ticked = window_.feed(grid_inputs, NUM_TARGETS, ts);
 
-    // 1Hz: zone engine tick (from tumbling window)
-    // The tumbling window accumulates the 5Hz inputs and ticks at ~1s
-    if (window_.ticked()) {
-        const auto &result = zone_engine_.tick(window_.output(), ts);
+        if (zone_ticked) {
+            const auto &result = zone_engine_.tick(window_.output(), ts);
 
-        // Publish zone occupancy binary sensors
-        for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
-            if (zone_occupancy_sensors_[i] != nullptr)
-                zone_occupancy_sensors_[i]->publish_state(result.zone_occupancy[i]);
+            // Publish zone occupancy binary sensors
+            for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
+                if (zone_occupancy_sensors_[i] != nullptr)
+                    zone_occupancy_sensors_[i]->publish_state(result.zone_occupancy[i]);
+            }
+
+            // Publish device tracking
+            if (device_tracking_sensor_ != nullptr)
+                device_tracking_sensor_->publish_state(result.device_tracking_present);
+
+            // State transition logging
+            if (result.device_tracking_present != prev_tracking_) {
+                ESP_LOGI(TAG, "Tracking: %s",
+                         result.device_tracking_present ? "present" : "clear");
+                prev_tracking_ = result.device_tracking_present;
+            }
+            for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
+                if (result.zone_occupancy[i] != prev_zone_occ_[i]) {
+                    ESP_LOGI(TAG, "Zone %d: %s", i,
+                             result.zone_occupancy[i] ? "occupied" : "clear");
+                    prev_zone_occ_[i] = result.zone_occupancy[i];
+                }
+            }
         }
-
-        // Publish device tracking
-        if (device_tracking_sensor_ != nullptr)
-            device_tracking_sensor_->publish_state(result.device_tracking_present);
-
-        // Cache latest zone result for grid target events
-        // (signal and status are updated at 1Hz, positions at 5Hz)
-        last_result_ = result;
     }
 }
 ```
 
-**Note:** The tumbling window interface needs a small change — currently `feed()` returns `bool ticked` and you must call `output()` in the same call. We need to either:
-- Split into `feed()` + `ticked()` + `output()`, or
-- Continue calling `feed()` at 5Hz instead of 10Hz (which changes the window's sample count but the zone engine is designed for this — it uses frame_count, not fixed sample assumptions)
-
-The simplest approach: feed the tumbling window at 5Hz (from the smoother output) instead of 10Hz. The zone engine's `threshold_to_frame_count` uses the actual frame count from the window, so reducing from ~10 to ~5 frames per window doesn't break anything — the thresholds just need to be calibrated for the new rate.
+**Key change:** The 1Hz tumbling window now receives ~5 samples per second (from the 5Hz display window output) instead of ~10. The zone engine uses `frame_count` from the window output, so thresholds scale automatically — no re-tuning needed.
 
 ### ESPHome YAML changes
 
