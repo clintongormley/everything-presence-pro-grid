@@ -82,12 +82,12 @@ interface RawTarget {
 	raw_y: number | null;
 }
 
-interface EntryInfo {
-	entry_id: string;
-	title: string;
-	room_name: string;
-	has_perspective: boolean;
-	has_layout: boolean;
+interface DeviceInfo {
+	mac: string;
+	name: string;
+	host: string | null;
+	available: boolean;
+	configured: boolean;
 }
 
 interface WizardCorner {
@@ -485,8 +485,8 @@ export class EPPGridPanel extends LitElement {
 	@state() private _templateName = "";
 
 	// Multi-device support
-	@state() private _entries: EntryInfo[] = [];
-	@state() private _selectedEntryId = "";
+	@state() private _devices: DeviceInfo[] = [];
+	@state() private _selectedMac = "";
 	@state() private _loading = true;
 
 	// Setup wizard — perspective corner marking
@@ -671,7 +671,7 @@ export class EPPGridPanel extends LitElement {
 
 	updated(changedProps: PropertyValues): void {
 		if (changedProps.has("hass") && this.hass) {
-			if (this._loading && !this._entries.length) {
+			if (this._loading && !this._devices.length) {
 				this._initialize();
 			}
 		}
@@ -688,46 +688,45 @@ export class EPPGridPanel extends LitElement {
 	private async _initialize(): Promise<void> {
 		if (!this.hass) return;
 		this._loading = true;
-		await this._loadEntries();
-		if (this._selectedEntryId) {
-			await this._loadEntryConfig(this._selectedEntryId);
+		await this._loadDevices();
+		if (this._selectedMac) {
+			await this._loadDeviceConfig(this._selectedMac);
 		}
 		this._loading = false;
 	}
 
-	private async _loadEntries(): Promise<void> {
+	private async _loadDevices(): Promise<void> {
 		try {
 			const result = await this.hass.callWS({
-				type: "eppgrid/list_entries",
+				type: "eppgrid/list_devices",
 			});
-			// Sort alphabetically by title
-			this._entries = (result as EntryInfo[]).sort((a, b) =>
-				(a.title || "").localeCompare(b.title || ""),
+			this._devices = ((result as any).devices as DeviceInfo[]).sort((a, b) =>
+				(a.name || "").localeCompare(b.name || ""),
 			);
 		} catch {
-			this._entries = [];
+			this._devices = [];
 			return;
 		}
 
-		const stored = localStorage.getItem("epp_selected_entry");
+		const stored = localStorage.getItem("epp_selected_mac");
 		const match =
-			stored && this._entries.find((e: EntryInfo) => e.entry_id === stored);
-		this._selectedEntryId = match
+			stored && this._devices.find((d: DeviceInfo) => d.mac === stored);
+		this._selectedMac = match
 			? stored!
-			: (this._entries[0]?.entry_id ?? "");
+			: (this._devices[0]?.mac ?? "");
 	}
 
-	private async _loadEntryConfig(entryId: string): Promise<void> {
+	private async _loadDeviceConfig(mac: string): Promise<void> {
 		try {
-			const config = await this.hass.callWS({
+			const result = await this.hass.callWS({
 				type: "eppgrid/get_config",
-				entry_id: entryId,
+				mac,
 			});
-			this._applyConfig(config);
+			this._applyConfig((result as any).config);
 		} catch {
-			// Entry may not be ready yet
+			// Device may not be ready yet
 		}
-		this._subscribeTargets(entryId);
+		this._subscribeTargets(mac);
 	}
 
 	private _applyConfig(config: any): void {
@@ -757,9 +756,9 @@ export class EPPGridPanel extends LitElement {
 		(this as any)._offsetsConfig = parsed.offsetsConfig;
 	}
 
-	private _subscribeTargets(entryId: string): void {
+	private _subscribeTargets(mac: string): void {
 		this._unsubscribeTargets();
-		if (!this.hass || !entryId) return;
+		if (!this.hass || !mac) return;
 
 		const conn = this.hass.connection;
 
@@ -818,13 +817,13 @@ export class EPPGridPanel extends LitElement {
 				},
 				{
 					type: "eppgrid/subscribe_grid_targets",
-					entry_id: entryId,
+					mac,
 				},
 			)
 			.then((unsub: () => void) => {
 				this._unsubTargets = unsub;
 			});
-		this._subscribeDisplay(entryId);
+		this._subscribeDisplay(mac);
 	}
 
 	private _unsubscribeTargets(): void {
@@ -837,28 +836,10 @@ export class EPPGridPanel extends LitElement {
 		this._rawTargets = [];
 	}
 
-	private _subscribeDisplay(entryId: string): void {
+	private _subscribeDisplay(_mac: string): void {
 		this._unsubscribeDisplay();
-		if (!this.hass || !entryId) return;
-
-		const conn = this.hass.connection;
-
-		conn
-			.subscribeMessage(
-				(event: any) => {
-					this._rawTargets = (event.targets || []).map((t: any) => ({
-						raw_x: t.raw_x,
-						raw_y: t.raw_y,
-					}));
-				},
-				{
-					type: "eppgrid/subscribe_raw_targets",
-					entry_id: entryId,
-				},
-			)
-			.then((unsub: () => void) => {
-				this._unsubDisplay = unsub;
-			});
+		// TODO: Raw target display will be reimplemented using target position
+		// text sensors from the epp component via subscribe_grid_targets
 	}
 
 	private _unsubscribeDisplay(): void {
@@ -1198,7 +1179,7 @@ export class EPPGridPanel extends LitElement {
 		try {
 			const result = await this.hass.callWS({
 				type: "eppgrid/set_room_layout",
-				entry_id: this._selectedEntryId,
+				mac: this._selectedMac,
 				grid_bytes: Array.from(this._grid),
 				room_type: this._roomType,
 				room_trigger: this._roomTrigger,
@@ -1249,33 +1230,9 @@ export class EPPGridPanel extends LitElement {
 	private async _saveSettings(): Promise<void> {
 		this._saving = true;
 		try {
-			// Collect reporting toggle states
-			const container = this.shadowRoot!.querySelector(".settings-container");
-			if (!container) return;
-			const reporting: Record<string, boolean> = {};
-			container
-				.querySelectorAll<HTMLInputElement>("[data-report-key]")
-				.forEach((el) => {
-					reporting[el.dataset.reportKey!] = el.checked;
-				});
-
-			// Collect offset values
-			const offsets: Record<string, number> = {};
-			container
-				.querySelectorAll<HTMLInputElement>("[data-offset-key]")
-				.forEach((el) => {
-					offsets[el.dataset.offsetKey!] = parseFloat(el.value);
-				});
-
-			await this.hass.callWS({
-				type: "eppgrid/set_reporting",
-				entry_id: this._selectedEntryId,
-				reporting,
-				offsets,
-			});
-
-			(this as any)._reportingConfig = reporting;
-			(this as any)._offsetsConfig = offsets;
+			// TODO: Settings page will be reimplemented using the new
+			// set_env_calibration, set_motion_timeout, set_tracking,
+			// set_static_presence websocket commands
 			this._dirty = false;
 			this._view = "live";
 		} finally {
@@ -1286,20 +1243,10 @@ export class EPPGridPanel extends LitElement {
 	// -- Entity rename --
 
 	private async _applyRenames(): Promise<void> {
-		if (!this._pendingRenames.length) return;
-		try {
-			const result = await this.hass.callWS({
-				type: "eppgrid/rename_zone_entities",
-				entry_id: this._selectedEntryId,
-				renames: this._pendingRenames,
-			});
-			if (result.errors?.length) {
-				console.warn("Entity rename errors:", result.errors);
-			}
-		} finally {
-			this._showRenameDialog = false;
-			this._pendingRenames = [];
-		}
+		// Zone entity renames are now handled automatically by set_room_layout
+		// via async_update_zone_entities on the backend
+		this._showRenameDialog = false;
+		this._pendingRenames = [];
 	}
 
 	private _dismissRenameDialog(): void {
@@ -1490,12 +1437,12 @@ export class EPPGridPanel extends LitElement {
 
 	private async _onDeviceChange(e: Event): Promise<void> {
 		const select = e.target as HTMLSelectElement;
-		const entryId = select.value;
+		const mac = select.value;
 		this._guardNavigation(async () => {
 			this._unsubscribeTargets();
-			this._selectedEntryId = entryId;
-			localStorage.setItem("epp_selected_entry", entryId);
-			await this._loadEntryConfig(entryId);
+			this._selectedMac = mac;
+			localStorage.setItem("epp_selected_mac", mac);
+			await this._loadDeviceConfig(mac);
 		});
 	}
 
@@ -1646,7 +1593,7 @@ export class EPPGridPanel extends LitElement {
 		try {
 			await this.hass.callWS({
 				type: "eppgrid/set_setup",
-				entry_id: this._selectedEntryId,
+				mac: this._selectedMac,
 				perspective: this._perspective,
 				room_width: this._wizardRoomWidth,
 				room_depth: this._wizardRoomDepth,
@@ -3307,7 +3254,7 @@ export class EPPGridPanel extends LitElement {
 			return html`<div class="loading-container">${this._localize("common.loading")}</div>`;
 		}
 
-		if (!this._entries.length) {
+		if (!this._devices.length) {
 			return html`<div class="loading-container">${this._localize("common.loading")}</div>`;
 		}
 
@@ -3343,16 +3290,17 @@ export class EPPGridPanel extends LitElement {
 		try {
 			await this.hass.callWS({
 				type: "eppgrid/set_setup",
-				entry_id: this._selectedEntryId,
+				mac: this._selectedMac,
 				perspective: [0, 0, 0, 0, 0, 0, 0, 0],
 				room_width: 0,
 				room_depth: 0,
 			});
 			await this.hass.callWS({
 				type: "eppgrid/set_room_layout",
-				entry_id: this._selectedEntryId,
+				mac: this._selectedMac,
 				grid_bytes: Array.from(this._grid),
 				zone_slots: this._zoneConfigs.map(() => null),
+				room_type: "normal",
 				furniture: [],
 			});
 		} catch (e) {
@@ -3381,21 +3329,21 @@ export class EPPGridPanel extends LitElement {
       <div class="panel-header">
         <select
           class="device-select"
-          .value=${this._selectedEntryId}
+          .value=${this._selectedMac}
           @change=${(e: Event) => {
 						const val = (e.target as HTMLSelectElement).value;
 						if (val === "__add__") {
 							window.open("/config/integrations/integration/eppgrid", "_blank");
-							(e.target as HTMLSelectElement).value = this._selectedEntryId;
+							(e.target as HTMLSelectElement).value = this._selectedMac;
 							return;
 						}
 						this._onDeviceChange(e);
 					}}
         >
-          ${this._entries.map(
-						(e) => html`
-              <option value=${e.entry_id}>
-                ${e.title}${e.room_name ? ` \u2014 ${e.room_name}` : ""}
+          ${this._devices.map(
+						(d) => html`
+              <option value=${d.mac}>
+                ${d.name}
               </option>
             `,
 					)}
@@ -3854,7 +3802,7 @@ export class EPPGridPanel extends LitElement {
           @click=${() => {
 						this._dirty = false;
 						this._view = "live";
-						this._loadEntryConfig(this._selectedEntryId);
+						this._loadDeviceConfig(this._selectedMac);
 					}}
         >${this._localize("common.cancel")}</button>
         <button class="wizard-btn wizard-btn-primary"
