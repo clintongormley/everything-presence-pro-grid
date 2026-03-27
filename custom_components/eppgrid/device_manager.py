@@ -199,6 +199,7 @@ class DeviceManager:
 
             host = _extract_host(device, entry.config_entry_id, self._hass)
 
+            is_new = mac not in self.devices
             self.devices[mac] = ManagedDevice(
                 mac=mac,
                 name=device.name_by_user or device.name or "EPP Device",
@@ -206,21 +207,37 @@ class DeviceManager:
                 esphome_config_entry_id=entry.config_entry_id,
                 device_id=device.id,
             )
-            _LOGGER.info("Discovered zone engine device: %s (%s)", device.name, mac)
 
-            # Apply zone entity management
-            config = self._store.get_device(mac)
-            zone_slots = (
-                config.get("room_layout", {}).get("zone_slots", [None] * MAX_ZONES)
-                if config else [None] * MAX_ZONES
-            )
-            await self.async_update_zone_entities(mac, zone_slots)
+            if is_new:
+                _LOGGER.info("Discovered zone engine device: %s (%s)", device.name, mac)
+                # Apply zone entity management on first discovery only
+                config = self._store.get_device(mac)
+                zone_slots = (
+                    config.get("room_layout", {}).get("zone_slots", [None] * MAX_ZONES)
+                    if config else [None] * MAX_ZONES
+                )
+                await self.async_update_zone_entities(mac, zone_slots)
 
     @callback
     def _on_entity_registry_updated(self, event: Any) -> None:
-        """Handle entity registry changes — re-discover on new entities."""
-        if event.data.get("action") == "create":
-            self._hass.async_create_task(self.async_discover())
+        """Handle entity registry changes — re-discover on new entities only."""
+        if event.data.get("action") != "create":
+            return
+        # Only re-discover for genuinely new entities, not our own enable/disable/rename
+        entity_id = event.data.get("entity_id", "")
+        ent_reg = er.async_get(self._hass)
+        entry = ent_reg.async_get(entity_id)
+        if entry is None or entry.platform != "esphome":
+            return
+        # Skip if this entity's device is already discovered
+        if entry.device_id:
+            dev_reg = dr.async_get(self._hass)
+            device = dev_reg.async_get(entry.device_id)
+            if device:
+                mac = _extract_mac(device)
+                if mac and mac in self.devices:
+                    return
+        self._hass.async_create_task(self.async_discover())
 
     @callback
     def _on_state_changed(self, event: Any) -> None:
@@ -325,8 +342,12 @@ class DeviceManager:
         config = self._store.get_device(mac)
         is_calibrated = config is not None and "calibration" in config
 
+        _LOGGER.info("Updating zone entities for %s (device_id=%s, calibrated=%s, slots=%s)",
+                     mac, dev.device_id, is_calibrated, zone_slots)
+
         for i in range(8):  # zones 0-7
             entity_id = self._find_zone_entity(ent_reg, dev.device_id, i)
+            _LOGGER.debug("Zone %d: entity_id=%s", i, entity_id)
             if entity_id is None:
                 continue
 
