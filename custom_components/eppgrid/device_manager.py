@@ -30,6 +30,8 @@ class DeviceConnection:
         self._client: APIClient | None = None
         self._services: dict[str, UserService] = {}
         self._entities: list = []
+        self._state_subscribers: list[Any] = []
+        self._states_subscribed: bool = False
         self.connected: bool = False
 
     async def async_connect(self) -> None:
@@ -56,12 +58,21 @@ class DeviceConnection:
         self._client = None
         self._services.clear()
         self._entities = []
+        self._state_subscribers.clear()
+        self._states_subscribed = False
         self.connected = False
 
-    def subscribe_states(self, callback: Any) -> None:
-        """Subscribe to all entity state changes on this connection."""
-        if self._client is not None:
-            self._client.subscribe_states(callback)
+    def subscribe_states(self, cb: Any) -> None:
+        """Add a state subscriber. All subscribers receive every state update."""
+        self._state_subscribers.append(cb)
+        if not self._states_subscribed and self._client is not None:
+            self._states_subscribed = True
+            self._client.subscribe_states(self._dispatch_state)
+
+    def _dispatch_state(self, state: Any) -> None:
+        """Fan out state updates to all subscribers."""
+        for cb in self._state_subscribers:
+            cb(state)
 
     async def async_push_config(self, config: dict[str, Any]) -> None:
         """Push perspective, grid, and zones to the device."""
