@@ -10,6 +10,7 @@ import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-live-view.js";
 import type { EppLiveView } from "../components/epp-live-view.js";
+import "../components/epp-editor-view.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
@@ -1260,46 +1261,50 @@ describe("render delete calibration dialog event", () => {
 });
 
 describe("_renderEditor DOM events", () => {
-	it("editor panel click deselects active zone", () => {
+	it("editor panel click deselects active zone via event", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._activeZone = 2;
 		const tpl = a._renderEditor();
 		const c = renderTo(tpl);
 
-		const panel = c.querySelector(".panel") as HTMLElement;
-		if (panel) {
-			panel.click();
-			expect(a._activeZone).toBeNull();
-		}
+		const editorView = c.querySelector("epp-editor-view") as HTMLElement;
+		expect(editorView).not.toBeNull();
+		// Dispatch the custom event that the component fires on panel click
+		editorView.dispatchEvent(
+			new CustomEvent("editor-panel-click", { bubbles: true, composed: true }),
+		);
+		expect(a._activeZone).toBeNull();
 	});
 
-	it("grid container click deselects furniture", () => {
+	it("grid container click deselects furniture via event", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._selectedFurnitureId = "f1";
 		const tpl = a._renderEditor();
 		const c = renderTo(tpl);
 
-		const gridContainer = c.querySelector(".grid-container") as HTMLElement;
-		if (gridContainer) {
-			gridContainer.click();
-			expect(a._selectedFurnitureId).toBeNull();
-		}
+		const editorView = c.querySelector("epp-editor-view") as HTMLElement;
+		expect(editorView).not.toBeNull();
+		// Dispatch the custom event that the component fires on grid container click
+		editorView.dispatchEvent(
+			new CustomEvent("editor-grid-container-click", {
+				bubbles: true,
+				composed: true,
+			}),
+		);
+		expect(a._selectedFurnitureId).toBeNull();
 	});
 
-	it("grid mouseup and mouseleave are bound", () => {
+	it("renders epp-editor-view with epp-grid inside", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		const tpl = a._renderEditor();
 		const c = renderTo(tpl);
 
-		// After extracting to <epp-grid>, the .grid div is inside the
-		// component's shadow DOM.  Verify the epp-grid element is present.
-		const eppGrid = c.querySelector("epp-grid");
-		expect(eppGrid).not.toBeNull();
-		// mouseup/mouseleave use method refs that have `this` binding issues in external render
-		// Tested via _onCellMouseUp() directly in panel-settings.test.ts
+		// The epp-editor-view element should be rendered
+		const editorView = c.querySelector("epp-editor-view");
+		expect(editorView).not.toBeNull();
 	});
 
 	it("unsaved dialog cancel", () => {
@@ -1307,7 +1312,8 @@ describe("_renderEditor DOM events", () => {
 		a._view = "editor";
 		a._showUnsavedDialog = true;
 		a._pendingNavigation = () => {};
-		const tpl = a._renderEditor();
+		// Unsaved dialog is rendered by _renderGlobalDialogs, not _renderEditor
+		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 
 		// Find cancel button inside unsaved dialog

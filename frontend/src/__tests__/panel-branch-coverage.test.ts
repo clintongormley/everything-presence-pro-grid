@@ -6,6 +6,7 @@ import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import "../components/epp-editor-view.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-settings-view.js";

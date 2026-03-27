@@ -84,6 +84,7 @@ import "./components/epp-zone-sidebar.js";
 import "./components/epp-furniture-sidebar.js";
 import "./components/epp-furniture-overlay.js";
 import "./components/epp-grid.js";
+import "./components/epp-editor-view.js";
 import "./components/epp-settings-view.js";
 import "./components/epp-wizard.js";
 
@@ -1894,141 +1895,117 @@ export class EPPGridPanel extends LitElement {
 			roomOccupied;
 
 		return html`
-      <div class="panel" @click=${(e: Event) => {
-				if (this._justPainted) return;
-				const el = e.target as HTMLElement;
-				if (!el.closest(".grid") && !el.closest(".zone-sidebar")) {
+      <epp-editor-view
+        .sidebarTab=${this._sidebarTab}
+        .zoneConfigs=${this._zoneConfigs}
+        .activeZone=${this._activeZone}
+        .roomType=${this._roomType}
+        .roomTrigger=${this._roomTrigger}
+        .roomRenew=${this._roomRenew}
+        .roomTimeout=${this._roomTimeout}
+        .roomHandoffTimeout=${this._roomHandoffTimeout}
+        .roomEntryPoint=${this._roomEntryPoint}
+        .localZoneState=${this._zoneEngineState.localZoneState}
+        .furniture=${this._furniture}
+        .selectedFurnitureId=${this._selectedFurnitureId}
+        .hass=${this.hass}
+        .showCustomIconPicker=${this._showCustomIconPicker}
+        .customIconValue=${this._customIconValue}
+        .localize=${this._localize}
+        .headerTemplate=${this._renderHeader()}
+        .gridTemplate=${html`
+          <epp-grid
+            .grid=${this._grid}
+            .zoneConfigs=${this._zoneConfigs}
+            .targets=${this._targets}
+            .roomWidth=${this._roomWidth}
+            .roomDepth=${this._roomDepth}
+            .perspective=${this._perspective}
+            .furniture=${this._furniture}
+            .selectedFurnitureId=${this._selectedFurnitureId}
+            .sidebarTab=${this._sidebarTab}
+            .editable=${true}
+            .activeZone=${this._activeZone}
+            .showHitCounts=${this._showHitCounts}
+            .occupancy=${editorOccupancy}
+            .targetPrevXY=${this._zoneEngineState.targetPrevXY}
+            .heatmapColors=${this._showHitCounts ? this._computeHeatmapColors() : null}
+            .localize=${this._localize}
+            .maxGridPx=${520}
+            .frozenBounds=${this._frozenBounds}
+            @cell-paint=${(e: CustomEvent) => {
+							const { index, action } = e.detail;
+							if (action === "down") this._onCellMouseDown(index);
+							else if (action === "enter") this._onCellMouseEnter(index);
+							else if (action === "up") this._onCellMouseUp();
+						}}
+            @furniture-select=${(e: CustomEvent) => {
+							this._selectedFurnitureId = e.detail;
+						}}
+            @furniture-pointer-down=${(e: CustomEvent) => {
+							const { e: ptrEvent, id, type, handle } = e.detail;
+							this._onFurniturePointerDown(ptrEvent, id, type, handle);
+						}}
+            @furniture-delete=${(e: CustomEvent) => {
+							this._removeFurniture(e.detail);
+						}}
+          ></epp-grid>
+        `}
+        .debugLogTemplate=${this._sidebarTab === "zones" ? this._renderDebugLog() : nothing}
+        .saveCancelTemplate=${this._renderSaveCancelButtons()}
+        @editor-panel-click=${() => {
+					if (this._justPainted) return;
 					this._activeZone = null;
-				}
-			}}>
-        ${this._renderHeader()}
-
-        <div class="editor-layout">
-          <div style="flex: 1; min-width: 0;">
-            ${nothing}
-            <!-- Grid -->
-            <div class="grid-container" @click=${(e: Event) => {
-							if (!(e.target as HTMLElement).closest(".furniture-item")) {
-								this._selectedFurnitureId = null;
-							}
-						}}>
-            <epp-grid
-              .grid=${this._grid}
-              .zoneConfigs=${this._zoneConfigs}
-              .targets=${this._targets}
-              .roomWidth=${this._roomWidth}
-              .roomDepth=${this._roomDepth}
-              .perspective=${this._perspective}
-              .furniture=${this._furniture}
-              .selectedFurnitureId=${this._selectedFurnitureId}
-              .sidebarTab=${this._sidebarTab}
-              .editable=${true}
-              .activeZone=${this._activeZone}
-              .showHitCounts=${this._showHitCounts}
-              .occupancy=${editorOccupancy}
-              .targetPrevXY=${this._zoneEngineState.targetPrevXY}
-              .heatmapColors=${this._showHitCounts ? this._computeHeatmapColors() : null}
-              .localize=${this._localize}
-              .maxGridPx=${520}
-              .frozenBounds=${this._frozenBounds}
-              @cell-paint=${(e: CustomEvent) => {
-								const { index, action } = e.detail;
-								if (action === "down") this._onCellMouseDown(index);
-								else if (action === "enter") this._onCellMouseEnter(index);
-								else if (action === "up") this._onCellMouseUp();
-							}}
-              @furniture-select=${(e: CustomEvent) => {
-								this._selectedFurnitureId = e.detail;
-							}}
-              @furniture-pointer-down=${(e: CustomEvent) => {
-								const { e: ptrEvent, id, type, handle } = e.detail;
-								this._onFurniturePointerDown(ptrEvent, id, type, handle);
-							}}
-              @furniture-delete=${(e: CustomEvent) => {
-								this._removeFurniture(e.detail);
-							}}
-            ></epp-grid>
-          </div>
-            ${this._sidebarTab === "zones" ? this._renderDebugLog() : nothing}
-          </div>
-
-          <!-- Sidebar -->
-          <div class="zone-sidebar">
-            <div class="sidebar-title">${this._sidebarTab === "furniture" ? this._localize("sidebar.furniture") : this._localize("sidebar.detection_zones")}</div>
-            ${
-							this._sidebarTab === "zones"
-								? html`<epp-zone-sidebar
-									.zoneConfigs=${this._zoneConfigs}
-									.activeZone=${this._activeZone}
-									.roomType=${this._roomType}
-									.roomTrigger=${this._roomTrigger}
-									.roomRenew=${this._roomRenew}
-									.roomTimeout=${this._roomTimeout}
-									.roomHandoffTimeout=${this._roomHandoffTimeout}
-									.roomEntryPoint=${this._roomEntryPoint}
-									.localZoneState=${this._zoneEngineState.localZoneState}
-									.localize=${this._localize}
-									@zone-select=${(e: CustomEvent) => {
-										this._activeZone = e.detail.zone;
-									}}
-									@zone-add=${() => {
-										this._addZone();
-									}}
-									@zone-remove=${(e: CustomEvent) => {
-										this._removeZone(e.detail.slot);
-									}}
-									@zone-config-change=${(e: CustomEvent) => {
-										const { index, updates } = e.detail;
-										const configs = [...this._zoneConfigs];
-										configs[index] = { ...configs[index]!, ...updates };
-										this._zoneConfigs = configs;
-									}}
-									@room-config-change=${(e: CustomEvent) => {
-										const { updates } = e.detail;
-										if (updates.roomType !== undefined) this._roomType = updates.roomType;
-										if (updates.roomTrigger !== undefined) this._roomTrigger = updates.roomTrigger;
-										if (updates.roomRenew !== undefined) this._roomRenew = updates.roomRenew;
-										if (updates.roomTimeout !== undefined) this._roomTimeout = updates.roomTimeout;
-										if (updates.roomHandoffTimeout !== undefined) this._roomHandoffTimeout = updates.roomHandoffTimeout;
-										if (updates.roomEntryPoint !== undefined) this._roomEntryPoint = updates.roomEntryPoint;
-									}}
-									@dirty=${() => {
-										this._dirty = true;
-									}}
-								></epp-zone-sidebar>`
-								: html`<epp-furniture-sidebar
-									.furniture=${this._furniture}
-									.selectedFurnitureId=${this._selectedFurnitureId}
-									.hass=${this.hass}
-									.localize=${this._localize}
-									.showCustomIconPicker=${this._showCustomIconPicker}
-									.customIconValue=${this._customIconValue}
-									@furniture-add=${(e: CustomEvent) => {
-										this._addFurniture(e.detail);
-									}}
-									@furniture-add-custom=${(e: CustomEvent) => {
-										this._addCustomFurniture(e.detail);
-									}}
-									@furniture-remove=${(e: CustomEvent) => {
-										this._removeFurniture(e.detail);
-									}}
-									@furniture-update=${(e: CustomEvent) => {
-										this._updateFurniture(e.detail.id, e.detail.updates);
-									}}
-									@custom-icon-toggle=${() => {
-										this._showCustomIconPicker = !this._showCustomIconPicker;
-									}}
-									@custom-icon-change=${(e: CustomEvent) => {
-										this._customIconValue = e.detail;
-									}}
-								></epp-furniture-sidebar>`
-						}
-            ${this._renderSaveCancelButtons()}
-          </div>
-        </div>
-
-
-      </div>
+				}}
+        @editor-grid-container-click=${() => {
+					this._selectedFurnitureId = null;
+				}}
+        @zone-select=${(e: CustomEvent) => {
+					this._activeZone = e.detail.zone;
+				}}
+        @zone-add=${() => {
+					this._addZone();
+				}}
+        @zone-remove=${(e: CustomEvent) => {
+					this._removeZone(e.detail.slot);
+				}}
+        @zone-config-change=${(e: CustomEvent) => {
+					const { index, updates } = e.detail;
+					const configs = [...this._zoneConfigs];
+					configs[index] = { ...configs[index]!, ...updates };
+					this._zoneConfigs = configs;
+				}}
+        @room-config-change=${(e: CustomEvent) => {
+					const { updates } = e.detail;
+					if (updates.roomType !== undefined) this._roomType = updates.roomType;
+					if (updates.roomTrigger !== undefined) this._roomTrigger = updates.roomTrigger;
+					if (updates.roomRenew !== undefined) this._roomRenew = updates.roomRenew;
+					if (updates.roomTimeout !== undefined) this._roomTimeout = updates.roomTimeout;
+					if (updates.roomHandoffTimeout !== undefined) this._roomHandoffTimeout = updates.roomHandoffTimeout;
+					if (updates.roomEntryPoint !== undefined) this._roomEntryPoint = updates.roomEntryPoint;
+				}}
+        @dirty=${() => {
+					this._dirty = true;
+				}}
+        @furniture-add=${(e: CustomEvent) => {
+					this._addFurniture(e.detail);
+				}}
+        @furniture-add-custom=${(e: CustomEvent) => {
+					this._addCustomFurniture(e.detail);
+				}}
+        @furniture-remove=${(e: CustomEvent) => {
+					this._removeFurniture(e.detail);
+				}}
+        @furniture-update=${(e: CustomEvent) => {
+					this._updateFurniture(e.detail.id, e.detail.updates);
+				}}
+        @custom-icon-toggle=${() => {
+					this._showCustomIconPicker = !this._showCustomIconPicker;
+				}}
+        @custom-icon-change=${(e: CustomEvent) => {
+					this._customIconValue = e.detail;
+				}}
+      ></epp-editor-view>
     `;
 	}
 
