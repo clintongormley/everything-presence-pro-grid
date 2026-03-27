@@ -7,20 +7,19 @@ Implement the target data streaming pipeline so the frontend gets structured eve
 ## Pipeline
 
 ```
-LD2450 UART (10Hz raw frames)
+LD2450 UART (~10Hz, may vary)
   → epp component feed_targets()
-    → raw rolling median (1s window, computed every frame at 10Hz)
-      → perspective transform (10Hz)
-        → grid rolling median (1s window, computed every frame at 10Hz)
-          → zone engine tick (10Hz)
+    → rolling median (1s time-based window, computed every frame)
+      → perspective transform (every frame)
+        → zone engine tick (every frame, counts frames per zone)
 
 Publishing (output throttles, do not affect processing):
-  → raw median  → publish at display_interval (default 5Hz)   ←── subscribe_raw_targets
-  → grid median → publish at display_interval (default 5Hz)   ←── subscribe_grid_targets (positions)
-  → zone results → publish at zone_interval (default 1Hz)     ←── subscribe_grid_targets (state)
+  → raw median      → display_interval (default 5Hz)  ←── subscribe_raw_targets
+  → transformed pos → display_interval (default 5Hz)  ←── subscribe_grid_targets (positions)
+  → zone results    → zone_publish_interval (default 1Hz)  ←── subscribe_grid_targets (state)
 ```
 
-Two rolling medians in cascade: the first smooths raw sensor noise, the perspective transform runs on smoothed data, then the second smooths any transform-induced noise. The zone engine receives fully smoothed grid coordinates at 10Hz for maximum detection precision. Publish rates are purely output throttles.
+One rolling median smooths raw sensor noise. The perspective transform and zone engine run on every frame at whatever rate the LD2450 produces data (~10Hz nominal, but may vary). The zone engine counts frames per zone using the actual frame count within the window — no assumption of a fixed frame rate. Publish rates are purely output throttles.
 
 ## Configurable Rates
 
@@ -87,24 +86,25 @@ Stores under `device_config["pipeline"]`, pushed via `epp_set_pipeline` API acti
 
 ### Replace TumblingWindow with RollingWindow
 
-The existing `TumblingWindow` resets after each tick, losing accumulated data. A `RollingWindow` maintains a circular buffer of the last ~1s of frames and computes median over the current buffer contents at any time.
+The existing `TumblingWindow` resets after each tick, losing accumulated data. A `RollingWindow` maintains a circular buffer of recent frames and computes median over frames within a time-based window.
 
 ```cpp
 class RollingWindow {
 public:
     explicit RollingWindow(float window_s = 1.0f);
 
-    /// Feed a frame (called at 10Hz). Updates internal buffer.
+    /// Feed a frame with its timestamp. Expires frames older than window_s.
     void feed(const TargetInput targets[], int target_count, float timestamp);
 
     /// Compute current output (median of frames within window).
-    /// Can be called at any rate — always reflects latest state.
+    /// Always valid after at least one feed() call.
     WindowOutput output() const;
 
+    void set_window_duration(float seconds) { window_s_ = seconds; }
     void reset();
 
 private:
-    static constexpr int MAX_FRAMES = 12;  // 1s at 10Hz + margin
+    static constexpr int MAX_FRAMES = 16;  // generous margin for variable frame rates
 
     struct Frame {
         TargetInput targets[MAX_TARGETS];
@@ -120,27 +120,26 @@ private:
 };
 ```
 
-The `WindowOutput` struct stays the same (`TargetWindow` with `median_x`, `median_y`, `frame_count`, `active`). The zone engine's interface is unchanged — it still receives `WindowOutput` from `window.output()`.
+The `WindowOutput` struct stays the same (`TargetWindow` with `median_x`, `median_y`, `frame_count`, `active`). The zone engine's interface is unchanged.
+
+**Time-based expiry:** Frames are expired by timestamp, not count. If the LD2450 runs slightly fast (11Hz) or slow (8Hz), the window always contains ~1 second of data. `frame_count` per target reflects the actual number of active frames in the window, which the zone engine uses for threshold detection — it scales automatically regardless of frame rate.
 
 **Key difference from TumblingWindow:**
 - Tumbling: `feed()` returns `true` on tick, output is only valid then, buffer resets
-- Rolling: `feed()` always updates, `output()` is always valid, buffer slides
-
-The rolling window computes `frame_count` per target as the number of frames where that target was active within the window. This is what the zone engine uses for threshold detection — it scales automatically.
+- Rolling: `feed()` always updates, `output()` is always valid, old frames slide out by timestamp
 
 ### epp_component.h changes
 
 ```cpp
-// Two-stage rolling median pipeline
-RollingWindow raw_window_{1.0f};    // smooths raw sensor-space positions
-RollingWindow grid_window_{1.0f};   // smooths transformed room-space positions
+// Rolling median pipeline
+RollingWindow window_{1.0f};  // smooths raw sensor-space positions
 
 // Raw target text sensors (pre-transform)
 esphome::text_sensor::TextSensor *raw_target_sensors_[NUM_TARGETS]{};
 
 // Configurable publish intervals (ms) — output throttles only
-uint32_t display_interval_ms_ = 200;    // default 5Hz
-uint32_t zone_publish_interval_ms_ = 1000; // default 1Hz
+uint32_t display_interval_ms_ = 200;       // default 5Hz
+uint32_t zone_publish_interval_ms_ = 1000;  // default 1Hz
 
 // Publish throttle timestamps
 uint32_t last_display_publish_ms_ = 0;
@@ -150,10 +149,7 @@ uint32_t last_zone_publish_ms_ = 0;
 TickResult last_zone_result_{};
 
 void set_raw_target_sensor(int index, esphome::text_sensor::TextSensor *sensor);
-void set_window_duration(float seconds) {
-    raw_window_ = RollingWindow(seconds);
-    grid_window_ = RollingWindow(seconds);
-}
+void set_window_duration(float seconds) { window_.set_window_duration(seconds); }
 void set_display_interval(uint32_t ms) { display_interval_ms_ = ms; }
 void set_zone_publish_interval(uint32_t ms) { zone_publish_interval_ms_ = ms; }
 ```
@@ -169,35 +165,40 @@ void EPPComponent::loop() {
     uint32_t now = esphome::millis();
     float ts = now / 1000.0f;
 
-    // === 10Hz PROCESSING PIPELINE (runs every frame) ===
+    // === PROCESSING PIPELINE (runs every frame, ~10Hz) ===
 
-    // Stage 1: Feed raw positions into raw rolling median
+    // Stage 1: Feed raw positions into rolling median
     TargetInput raw_inputs[NUM_TARGETS];
     for (int i = 0; i < NUM_TARGETS; i++) {
         raw_inputs[i] = {targets_[i].x, targets_[i].y,
                          targets_[i].detected && targets_[i].y != 0.0f};
     }
-    raw_window_.feed(raw_inputs, NUM_TARGETS, ts);
+    window_.feed(raw_inputs, NUM_TARGETS, ts);
 
-    // Stage 2: Transform smoothed raw → grid coordinates
-    const auto &raw_out = raw_window_.output();
+    // Stage 2: Get smoothed raw median, transform to grid coordinates
+    const auto &win = window_.output();
     TargetInput grid_inputs[NUM_TARGETS];
     for (int i = 0; i < NUM_TARGETS; i++) {
-        if (raw_out.targets[i].active) {
+        if (win.targets[i].active) {
             auto [rx, ry] = transform_.apply(
-                raw_out.targets[i].median_x, raw_out.targets[i].median_y);
+                win.targets[i].median_x, win.targets[i].median_y);
             grid_inputs[i] = {rx, ry, true};
         } else {
             grid_inputs[i] = {0.0f, 0.0f, false};
         }
     }
 
-    // Stage 3: Feed transformed positions into grid rolling median
-    grid_window_.feed(grid_inputs, NUM_TARGETS, ts);
-
-    // Stage 4: Zone engine tick (runs every frame at 10Hz)
-    const auto &grid_out = grid_window_.output();
-    const auto &result = zone_engine_.tick(grid_out, ts);
+    // Stage 3: Zone engine tick — uses transformed positions + frame counts
+    // Build WindowOutput with transformed coords but raw frame counts
+    WindowOutput zone_input;
+    zone_input.total_frames = win.total_frames;
+    for (int i = 0; i < NUM_TARGETS; i++) {
+        zone_input.targets[i].active = win.targets[i].active;
+        zone_input.targets[i].frame_count = win.targets[i].frame_count;
+        zone_input.targets[i].median_x = grid_inputs[i].x;
+        zone_input.targets[i].median_y = grid_inputs[i].y;
+    }
+    const auto &result = zone_engine_.tick(zone_input, ts);
     last_zone_result_ = result;
 
     // === PUBLISH THROTTLES (do not affect processing) ===
@@ -206,14 +207,14 @@ void EPPComponent::loop() {
     if (now - last_display_publish_ms_ >= display_interval_ms_) {
         last_display_publish_ms_ = now;
 
-        // Publish raw target positions (pre-transform)
+        // Publish raw target positions (pre-transform, smoothed)
         for (int i = 0; i < NUM_TARGETS; i++) {
             if (raw_target_sensors_[i] != nullptr) {
-                if (raw_out.targets[i].active) {
+                if (win.targets[i].active) {
                     char buf[32];
                     snprintf(buf, sizeof(buf), "%.0f,%.0f",
-                             raw_out.targets[i].median_x,
-                             raw_out.targets[i].median_y);
+                             win.targets[i].median_x,
+                             win.targets[i].median_y);
                     raw_target_sensors_[i]->publish_state(buf);
                 } else {
                     raw_target_sensors_[i]->publish_state("");
@@ -224,11 +225,10 @@ void EPPComponent::loop() {
         // Publish grid target positions (post-transform)
         for (int i = 0; i < NUM_TARGETS; i++) {
             if (target_position_sensors_[i] != nullptr) {
-                if (grid_out.targets[i].active) {
+                if (grid_inputs[i].active) {
                     char buf[32];
                     snprintf(buf, sizeof(buf), "%.0f,%.0f",
-                             grid_out.targets[i].median_x,
-                             grid_out.targets[i].median_y);
+                             grid_inputs[i].x, grid_inputs[i].y);
                     target_position_sensors_[i]->publish_state(buf);
                 } else {
                     target_position_sensors_[i]->publish_state("");
