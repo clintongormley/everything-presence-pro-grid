@@ -63,6 +63,7 @@ async def to_code(config):
         cg.add(var.set_firmware_version_sensor(sens))
 
     # Zone occupancy binary sensors (zones 0-7)
+    # Force stable object_id "zone_N_occupancy" regardless of display name
     if CONF_ZONE_OCCUPANCY in config:
         zone_conf = config[CONF_ZONE_OCCUPANCY]
         for i in range(8):

@@ -354,7 +354,9 @@ class DeviceManager:
             if i == 0:
                 # Zone 0 "rest of room" — enable if device is calibrated
                 if is_calibrated:
-                    ent_reg.async_update_entity(entity_id, disabled_by=None)
+                    ent_reg.async_update_entity(
+                        entity_id, disabled_by=None, name="Rest of Room Occupancy"
+                    )
                 else:
                     ent_reg.async_update_entity(
                         entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
@@ -373,14 +375,11 @@ class DeviceManager:
         self, ent_reg: er.EntityRegistry, device_id: str, zone_index: int
     ) -> str | None:
         """Find the ESPHome zone occupancy entity_id for a device and zone index."""
-        patterns = [f"zone_{zone_index}_occupancy"]
-        if zone_index == 0:
-            patterns.append("rest_of_room_occupancy")
         for entry in ent_reg.entities.values():
             if (
                 entry.device_id == device_id
                 and entry.platform == "esphome"
-                and any(p in entry.unique_id for p in patterns)
+                and f"zone_{zone_index}_occupancy" in entry.unique_id
             ):
                 return entry.entity_id
         return None
