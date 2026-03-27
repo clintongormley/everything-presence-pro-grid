@@ -1034,7 +1034,7 @@ const he={attribute:!0,type:String,converter:b,reflect:!1,hasChanged:v},de=(e=he
         </div>
       </div>
     `}_renderBackendDebugLog(){return G`
-      <div style="margin-top: 8px;">
+      <div style="margin-top: 8px; min-width: 0;">
         <button
           class="live-section-header live-section-link"
           style="font-size: 12px; gap: 4px;"
@@ -2515,6 +2515,7 @@ const he={attribute:!0,type:String,converter:b,reflect:!1,hasChanged:v},de=(e=he
     .debug-log-container {
       max-height: 200px;
       overflow-y: auto;
+      overflow-x: hidden;
       background: var(--card-background-color, #1e1e1e);
       border: 1px solid var(--divider-color, #333);
       border-radius: 6px;

@@ -2852,6 +2852,7 @@ export class EPPGridPanel extends LitElement {
     .debug-log-container {
       max-height: 200px;
       overflow-y: auto;
+      overflow-x: hidden;
       background: var(--card-background-color, #1e1e1e);
       border: 1px solid var(--divider-color, #333);
       border-radius: 6px;
@@ -5419,7 +5420,7 @@ export class EPPGridPanel extends LitElement {
 
 	private _renderBackendDebugLog() {
 		return html`
-      <div style="margin-top: 8px;">
+      <div style="margin-top: 8px; min-width: 0;">
         <button
           class="live-section-header live-section-link"
           style="font-size: 12px; gap: 4px;"
