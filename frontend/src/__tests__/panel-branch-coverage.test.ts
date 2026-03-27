@@ -6,6 +6,7 @@ import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import "../components/epp-live-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -80,7 +81,6 @@ function createPanel() {
 	a._roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
 	a._roomEntryPoint = false;
 	a._showHitCounts = false;
-	a._expandedSensorInfo = null;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
@@ -763,12 +763,12 @@ describe("_renderReporting fallback branches", () => {
 });
 
 // =========================================================
-// _renderLiveSidebar: env sensor partial branches
+// epp-live-sidebar: env sensor partial branches
 // =========================================================
-describe("_renderLiveSidebar env sensor branches", () => {
+describe("epp-live-sidebar env sensor branches", () => {
 	it("renders with only illuminance available", () => {
-		const a = createPanel() as any;
-		a._sensorState = {
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.sensorState = {
 			occupancy: true,
 			static_presence: true,
 			motion_presence: true,
@@ -778,19 +778,20 @@ describe("_renderLiveSidebar env sensor branches", () => {
 			humidity: null,
 			co2: null,
 		};
-		const tpl = a._renderLiveSidebar();
+		const tpl = el.render();
 		expect(tpl).toBeDefined();
 	});
 
 	it("renders zone with target count = 1 (singular)", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
-		a._zoneState = {
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
+		el.zoneState = {
 			occupancy: { 1: true },
 			target_counts: { 1: 1 },
 			frame_count: 10,
 		};
-		const tpl = a._renderLiveSidebar();
+		const tpl = el.render();
 		expect(tpl).toBeDefined();
 	});
 });
@@ -1293,18 +1294,19 @@ describe("save cancel buttons: saving state branch", () => {
 });
 
 // =========================================================
-// _renderLiveSidebar: zone with target_counts singular/plural
+// epp-live-sidebar: zone with target_counts singular/plural
 // =========================================================
-describe("_renderLiveSidebar target count branches", () => {
+describe("epp-live-sidebar target count branches", () => {
 	it("renders zone with 0 targets", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
-		a._zoneState = {
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
+		el.zoneState = {
 			occupancy: { 1: false },
 			target_counts: { 1: 0 },
 			frame_count: 10,
 		};
-		const tpl = a._renderLiveSidebar();
+		const tpl = el.render();
 		expect(tpl).toBeDefined();
 	});
 });

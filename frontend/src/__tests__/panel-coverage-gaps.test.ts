@@ -7,6 +7,7 @@ import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import "../components/epp-live-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -80,7 +81,6 @@ function createPanel(): EPPGridPanel {
 	a._roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
 	a._roomEntryPoint = false;
 	a._showHitCounts = false;
-	a._expandedSensorInfo = null;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
@@ -522,29 +522,31 @@ describe("_renderEnvOffset null reading branch", () => {
 });
 
 // =========================================================
-// _renderLiveSidebar zone sensor info toggle
+// epp-live-sidebar zone sensor info toggle
 // =========================================================
-describe("_renderLiveSidebar zone info toggles", () => {
+describe("epp-live-sidebar zone info toggles", () => {
 	it("toggles zone sensor info", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = {
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.zoneConfigs[0] = {
 			name: "Kitchen",
 			color: ZONE_COLORS[0],
 			type: "normal",
 		};
-		a._zoneState = {
+		el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+		el.zoneState = {
 			occupancy: { 1: true },
 			target_counts: { 1: 2 },
 			frame_count: 50,
 		};
-		const tpl = a._renderLiveSidebar();
+		const tpl = el.render();
 		const c = renderTo(tpl);
 
 		const infoBtns = c.querySelectorAll(".live-sensor-info-btn");
 		// Zone info should be beyond first 4 sensor buttons (occupancy, static, motion, target)
 		if (infoBtns.length > 4) {
 			(infoBtns[4] as HTMLElement).click();
-			expect(a._expandedSensorInfo).toBe("zone_1");
+			expect(el._expandedSensorInfo).toBe("zone_1");
 		}
 		document.body.removeChild(c);
 	});

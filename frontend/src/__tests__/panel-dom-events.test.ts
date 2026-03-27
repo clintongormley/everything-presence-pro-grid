@@ -7,6 +7,7 @@ import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import "../components/epp-live-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	GRID_CELL_COUNT,
@@ -77,7 +78,6 @@ function createPanel(): EPPGridPanel {
 	a._roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
 	a._roomEntryPoint = false;
 	a._showHitCounts = false;
-	a._expandedSensorInfo = null;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
@@ -157,16 +157,13 @@ describe("_renderLiveOverview DOM events", () => {
 		}
 	});
 
-	it("sensor info button toggles info", () => {
+	it("live overview renders epp-live-sidebar component", () => {
 		const a = createPanel() as any;
 		const tpl = a._renderLiveOverview();
 		const c = renderTo(tpl);
 
-		const infoBtn = c.querySelector(".live-sensor-info-btn") as HTMLElement;
-		if (infoBtn) {
-			infoBtn.click();
-			expect(a._expandedSensorInfo).not.toBeNull();
-		}
+		const sidebar = c.querySelector("epp-live-sidebar");
+		expect(sidebar).not.toBeNull();
 	});
 
 	it("detection zones link navigates", () => {
@@ -185,31 +182,39 @@ describe("_renderLiveOverview DOM events", () => {
 	});
 });
 
-describe("_renderLiveSidebar DOM events", () => {
+describe("epp-live-sidebar DOM events", () => {
 	it("sensor info buttons toggle", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderLiveSidebar();
+		const el = document.createElement("epp-live-sidebar") as any;
+		const tpl = el.render();
 		const c = renderTo(tpl);
 
 		const infoBtns = c.querySelectorAll(".live-sensor-info-btn");
 		if (infoBtns.length > 0) {
 			(infoBtns[0] as HTMLElement).click();
-			expect(a._expandedSensorInfo).not.toBeNull();
+			expect(el._expandedSensorInfo).not.toBeNull();
 			(infoBtns[0] as HTMLElement).click();
-			expect(a._expandedSensorInfo).toBeNull();
+			expect(el._expandedSensorInfo).toBeNull();
 		}
 	});
 
-	it("add zones link works when no zones configured", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs = new Array(7).fill(null);
-		const tpl = a._renderLiveSidebar();
+	it("detection zones link fires view-change event", () => {
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+		const tpl = el.render();
 		const c = renderTo(tpl);
 
-		const addLink = c.querySelector(".live-nav-link") as HTMLElement;
-		if (addLink) {
-			addLink.click();
-			expect(a._view).toBe("editor");
+		let detail: any = null;
+		el.addEventListener("view-change", (e: CustomEvent) => {
+			detail = e.detail;
+		});
+
+		const link = c.querySelector(".live-section-link") as HTMLElement;
+		if (link) {
+			link.click();
+			expect(detail).not.toBeNull();
+			expect(detail.view).toBe("editor");
+			expect(detail.sidebarTab).toBe("zones");
 		}
 	});
 });

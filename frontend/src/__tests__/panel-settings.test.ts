@@ -66,7 +66,6 @@ function createPanel(): EPPGridPanel {
 	a._roomHandoffTimeout = 3;
 	a._roomEntryPoint = false;
 	a._showHitCounts = false;
-	a._expandedSensorInfo = null;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";

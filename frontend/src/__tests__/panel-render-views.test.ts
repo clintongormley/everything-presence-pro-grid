@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import "../components/epp-live-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -74,7 +75,6 @@ function createPanel(): EPPGridPanel {
 	a._roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
 	a._roomEntryPoint = false;
 	a._showHitCounts = false;
-	a._expandedSensorInfo = null;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
@@ -1089,55 +1089,57 @@ describe("_renderFurnitureOverlay", () => {
 	});
 });
 
-describe("_renderLiveSidebar", () => {
+describe("epp-live-sidebar via panel", () => {
 	it("renders live sidebar with basic sensors", () => {
-		const a = createPanel() as any;
-		const result = a._renderLiveSidebar();
+		const el = document.createElement("epp-live-sidebar") as any;
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with zone occupancy", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs[0] = {
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		el.zoneConfigs[0] = {
 			name: "Kitchen",
 			color: ZONE_COLORS[0],
 			type: "normal",
 		};
-		a._zoneState = {
+		el.zoneState = {
 			occupancy: { 1: true },
 			target_counts: { 1: 2 },
 			frame_count: 50,
 		};
-		const result = a._renderLiveSidebar();
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with no env sensors", () => {
-		const a = createPanel() as any;
-		a._sensorState = {
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.sensorState = {
 			occupancy: false,
 			static_presence: false,
 			motion_presence: false,
+			target_presence: false,
 			illuminance: null,
 			temperature: null,
 			humidity: null,
 			co2: null,
 		};
-		const result = a._renderLiveSidebar();
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with expanded sensor info", () => {
-		const a = createPanel() as any;
-		a._expandedSensorInfo = "occupancy";
-		const result = a._renderLiveSidebar();
+		const el = document.createElement("epp-live-sidebar") as any;
+		el._expandedSensorInfo = "occupancy";
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 
 	it("renders without configured zones (still shows rest-of-room)", () => {
-		const a = createPanel() as any;
-		a._zoneConfigs = new Array(7).fill(null);
-		const result = a._renderLiveSidebar();
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.zoneConfigs = new Array(7).fill(null);
+		const result = el.render();
 		expect(result).toBeDefined();
 	});
 });

@@ -6,6 +6,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import "../components/epp-live-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -79,7 +80,6 @@ function createPanel(): EPPGridPanel {
 	a._roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
 	a._roomEntryPoint = false;
 	a._showHitCounts = false;
-	a._expandedSensorInfo = null;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
@@ -859,42 +859,60 @@ describe("render delete calibration dialog inline handler", () => {
 });
 
 // ========================
-// _renderLiveSidebar inline handlers
+// epp-live-sidebar inline handlers
 // ========================
-describe("_renderLiveSidebar inline handlers", () => {
+describe("epp-live-sidebar inline handlers", () => {
 	it("sensor info toggle expands/collapses", () => {
-		const a = createPanel() as any;
+		const el = document.createElement("epp-live-sidebar") as any;
 		const id = "occupancy";
-		// Replicate handler (line 5383-5385)
-		a._expandedSensorInfo = a._expandedSensorInfo === id ? null : id;
-		expect(a._expandedSensorInfo).toBe("occupancy");
+		// Replicate handler logic
+		el._expandedSensorInfo = el._expandedSensorInfo === id ? null : id;
+		expect(el._expandedSensorInfo).toBe("occupancy");
 
-		a._expandedSensorInfo = a._expandedSensorInfo === id ? null : id;
-		expect(a._expandedSensorInfo).toBeNull();
+		el._expandedSensorInfo = el._expandedSensorInfo === id ? null : id;
+		expect(el._expandedSensorInfo).toBeNull();
 	});
 
-	it("detection zones link navigates to editor", () => {
-		const a = createPanel() as any;
-		// Replicate handler (line 5403-5405)
-		a._view = "editor";
-		a._sidebarTab = "zones";
-		expect(a._view).toBe("editor");
+	it("detection zones link fires view-change event", () => {
+		const el = document.createElement("epp-live-sidebar") as any;
+		let detail: any = null;
+		el.addEventListener("view-change", (e: CustomEvent) => {
+			detail = e.detail;
+		});
+		el.dispatchEvent(
+			new CustomEvent("view-change", {
+				detail: { view: "editor", sidebarTab: "zones" },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+		expect(detail.view).toBe("editor");
+		expect(detail.sidebarTab).toBe("zones");
 	});
 
 	it("zone sensor info toggle", () => {
-		const a = createPanel() as any;
+		const el = document.createElement("epp-live-sidebar") as any;
 		const id = "zone_1";
-		// Replicate handler (line 5416-5418)
-		a._expandedSensorInfo = a._expandedSensorInfo === id ? null : id;
-		expect(a._expandedSensorInfo).toBe("zone_1");
+		// Replicate handler logic
+		el._expandedSensorInfo = el._expandedSensorInfo === id ? null : id;
+		expect(el._expandedSensorInfo).toBe("zone_1");
 	});
 
-	it("add zones button navigates", () => {
-		const a = createPanel() as any;
-		// Replicate handler (line 5434-5436)
-		a._view = "editor";
-		a._sidebarTab = "zones";
-		expect(a._view).toBe("editor");
+	it("add zones button navigates via view-change event", () => {
+		const el = document.createElement("epp-live-sidebar") as any;
+		let detail: any = null;
+		el.addEventListener("view-change", (e: CustomEvent) => {
+			detail = e.detail;
+		});
+		el.dispatchEvent(
+			new CustomEvent("view-change", {
+				detail: { view: "editor", sidebarTab: "zones" },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+		expect(detail.view).toBe("editor");
+		expect(detail.sidebarTab).toBe("zones");
 	});
 });
 
