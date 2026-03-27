@@ -364,8 +364,7 @@ class DeviceManager:
         config = self._store.get_device(mac)
         is_calibrated = config is not None and "calibration" in config
 
-        _LOGGER.info("Updating zone entities for %s (device_id=%s, calibrated=%s, slots=%s)",
-                     mac, dev.device_id, is_calibrated, zone_slots)
+        _LOGGER.debug("Updating zone entities for %s (calibrated=%s)", mac, is_calibrated)
 
         for i in range(8):  # zones 0-7
             entity_id = self._find_zone_entity(ent_reg, dev.device_id, i)

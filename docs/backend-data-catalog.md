@@ -1,392 +1,221 @@
 # Backend Data Catalog
 
-Data required from the backend (today Python, future firmware) for each functional area.
+Data flows between firmware, integration, and frontend.
 
-## 1. HA Entities
+## Architecture
 
-All data comes from ESPHome API subscriptions via the coordinator.
+```
+ESPHome firmware (ESP32)
+  ├── LD2450 UART → rolling median → perspective transform → zone engine
+  ├── SEN0609 GPIO → static presence
+  ├── SHTC3/BH1750 → temperature, humidity, illuminance
+  └── publishes ESPHome entities + text sensor streams
 
-### Environmental Sensors
+HA Integration (eppgrid)
+  ├── discovers ESPHome devices with zone_engine_version
+  ├── opens aioesphomeapi connection for frontend sessions
+  ├── subscribe_states → fans out to subscription handlers
+  ├── stores config in EPPGridStore → pushes to device via API actions
+  └── manages ESPHome entity enable/disable/rename
 
-| Data | Type | Source |
-|------|------|--------|
-| `illuminance` | float (lux) | BH1750 sensor + offset |
-| `temperature` | float (°C) | SHTC3 sensor + offset |
-| `humidity` | float (%) | SHTC3 sensor + offset |
-| `co2` | float (ppm) | SCD40 sensor (optional) |
+Frontend (eppgrid-panel.ts)
+  ├── subscribe_device → opens session connection
+  ├── subscribe_grid_targets → structured events (positions, zones, sensors)
+  ├── subscribe_raw_targets → raw sensor-space positions
+  └── commands: set_setup, set_room_layout, set_env_calibration, etc.
+```
 
-### Room-Level Presence
+## 1. ESPHome Entities
 
-| Data | Type | Source |
-|------|------|--------|
-| `occupancy` | bool | PIR OR static OR tracking (combined) |
-| `motion` | bool | PIR sensor |
-| `static_presence` | bool | mmWave sensor |
-| `target_presence` | bool | any active tracked target |
-| `target_count` | int | count of active targets (0-3) |
+All entities are created by ESPHome firmware with `disabled_by_default` where appropriate. The integration manages enable/disable/rename.
 
-### Per-Target (x3)
+### Enabled by Default
 
-| Data | Type | Source |
-|------|------|--------|
-| `xy_sensor` | string "{x},{y}" (mm) | raw LD2450 coordinates |
-| `xy` | string "{x},{y}" (mm) | perspective-transformed coordinates |
-| `distance` | float (mm) | Euclidean distance from sensor |
-| `angle` | float (°) | bearing from sensor |
-| `speed` | float (mm/s) | LD2450 velocity |
-| `resolution` | float (mm) | LD2450 resolution quality |
-| `active` | bool | target being tracked |
+| Entity | Type | Source |
+|--------|------|--------|
+| Occupancy | binary_sensor | PIR OR static OR tracking (combined) |
+| Zone Engine Version | text_sensor | firmware version string |
 
-**Zero-range gating:** The LD2450 transiently reports `y=0` before it has a range fix. The coordinator gates these out — targets with `y=0` are treated as inactive in both `subscribe_grid_targets` and `subscribe_raw_targets`, preventing bogus initial positions.
+### Disabled by Default
 
-### Per-Zone (x8: zone 0 "rest of room" + zones 1-7)
+| Entity | Type | Source |
+|--------|------|--------|
+| Temperature | sensor | SHTC3 + calibration offset |
+| Humidity | sensor | SHTC3 + calibration offset |
+| Illuminance | sensor | BH1750 + calibration offset |
+| Motion Presence | binary_sensor | PIR sensor |
+| Static Presence | binary_sensor | SEN0609 GPIO |
+| Tracking Presence | binary_sensor | LD2450 any-target-detected |
+| mmWave Presence | binary_sensor | static OR tracking combined |
+| Zone 0-7 Occupancy | binary_sensor | zone engine per-zone state |
+| Zone Tracking | binary_sensor | zone engine device-level tracking |
+| Target 0-2 Position | text_sensor | "x,y,status" post-transform |
+| Raw Target 0-2 | text_sensor | "x,y" pre-transform (sensor-space) |
+| Zone State | text_sensor | JSON with zone engine tick results |
 
-| Data | Type | Source |
-|------|------|--------|
-| zone occupancy | bool | zone engine state machine |
-| zone target count | int | zone engine |
+## 2. Live Streaming
 
-### Reporting Toggles
+Two websocket subscriptions, both using the same device session connection.
 
-18 boolean flags in `config.reporting` controlling which entities get created:
+### `subscribe_device` — session lifecycle
 
-- Room level: `room_occupancy`, `room_static_presence`, `room_motion_presence`, `room_target_presence`, `room_target_count`
-- Target level: `target_xy_sensor`, `target_xy`, `target_active`, `target_distance`, `target_angle`, `target_speed`, `target_resolution`
-- Zone level: `zone_presence`, `zone_target_count`
-- Environmental: `env_illuminance`, `env_humidity`, `env_temperature`, `env_co2`
+Opens the aioesphomeapi connection. Closes on unsubscribe.
 
-### Sensor Offsets
+**Request:** `{ "type": "eppgrid/subscribe_device", "mac": str }`
 
-3 floats: `illuminance`, `temperature`, `humidity` — additive corrections.
+### `subscribe_raw_targets` — calibration & FOV overlay
 
----
+Parses Raw Target text sensor updates into structured events.
 
-## 2. Live Overview
-
-The live overview uses two independent websocket subscriptions at 5 Hz, each writing to its own frontend array:
-
-- `subscribe_grid_targets` → `_targets[]` — grid view with calibrated room-space positions and zone state
-- `subscribe_raw_targets` → `_rawTargets[]` — FOV overlay and calibration wizard with smoothed sensor-space positions
-
-These are never merged. Each subscription writes directly to its own array to avoid cross-subscription lag.
-
-See [section 5](#subscriptions-live-data) for API details.
-
-### `_targets[]` (up to 3, from `subscribe_grid_targets`)
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `x` | float (mm) | calibrated room-space, rolling median smoothed |
-| `y` | float (mm) | calibrated room-space, rolling median smoothed |
-| `signal` | int 0-9 | raw sensor signal strength — always non-zero when sensor tracks |
-| `status` | string | `"active"`, `"pending"`, or `"inactive"` — room-gated (cached, 1Hz) |
-
-### `_rawTargets[]` (up to 3, from `subscribe_raw_targets`)
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `raw_x` | float\|null (mm) | sensor-space, rolling median smoothed; `null` when inactive |
-| `raw_y` | float\|null (mm) | sensor-space, rolling median smoothed; `null` when inactive |
-
-Used by: FOV overlay (uncalibrated view), calibration wizard corner capture, mini sensor view.
-
-### `sensors`
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `occupancy` | bool | combined PIR OR static OR tracking |
-| `static_presence` | bool | mmWave |
-| `motion_presence` | bool | PIR |
-| `target_presence` | bool | any target actively tracked |
-| `illuminance` | float\|null | with offset, clamped >= 0 |
-| `temperature` | float\|null | with offset |
-| `humidity` | float\|null | with offset |
-| `co2` | float\|null | optional sensor |
-
-### `zones`
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `occupancy` | dict[zone_id -> bool] | state != CLEAR |
-| `target_counts` | dict[zone_id -> int 0-9] | best signal in zone |
-| `frame_count` | int | max(window_total, 10) |
-| `debug_log` | string | human-readable tick summary for debug panel |
-
-Update cadence: zone engine ticks every ~1s (tumbling window); `x`/`y` positions push at 5 Hz.
-
----
-
-## 3. Room Calibration
-
-The calibration wizard uses `subscribe_raw_targets` (5 Hz) for smoothed raw target positions. See [section 5](#subscriptions-live-data) for API details. Calibration results are saved via `set_setup`.
-
-### From sensor (live during wizard, via `subscribe_raw_targets`)
-
-| Data | Type | Notes |
-|------|------|-------|
-| `raw_x` | float (mm) | per-target, range +/-6000, rolling median smoothed; `null` when inactive |
-| `raw_y` | float (mm) | per-target, range 0-6000, rolling median smoothed; `null` when inactive |
-
-Target count is derived frontend-side by filtering for non-null positions (must be exactly 1 for capture).
-
-### Wizard captures (frontend-computed)
-
-| Data | Type | Notes |
-|------|------|-------|
-| 4 corner positions | (raw_x, raw_y) per corner | median of ~2-5s samples |
-| offset_side per corner | int (0.1mm units) | horizontal edge offset |
-| offset_fb per corner | int (0.1mm units) | front-back edge offset |
-
-### Outputs (saved via `set_setup`)
-
-| Data | Type | Notes |
-|------|------|-------|
-| `perspective` | float[8] | homography coefficients [a,b,c,d,e,f,g,h] |
-| `room_width` | float (mm) | computed from corner distances |
-| `room_depth` | float (mm) | computed from corner distances |
-
-The perspective transform is solved entirely in the frontend (`solvePerspective()`) and sent to the backend. The backend applies it at runtime: `rx = (a*sx + b*sy + c) / (g*sx + h*sy + 1)`.
-
----
-
-## 4. Detection Zones
-
-This area requires strict Python/JS sync. The frontend replicates the backend model for live preview before saving.
-
-### Zone Config (per zone, up to 7)
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `id` | int 1-7 | slot index |
-| `name` | str | user label |
-| `type` | enum | normal, entrance, thoroughfare, rest, custom |
-| `color` | str | hex color |
-| `trigger` | int 0-9 | frames needed to confirm presence |
-| `renew` | int 0-9 | frames needed to maintain presence |
-| `timeout` | float (s) | PENDING -> CLEAR delay |
-| `handoff_timeout` | float (s) | accelerated timeout when target moves zones |
-| `entry_point` | bool | allows targets to appear without continuity |
-
-### Grid (20x20 = 400 cells)
-
-| Field | Type | Notes |
-|-------|------|-------|
-| cell byte | uint8 | bit 0: room flag, bits 1-3: zone ID (0-7) |
-| `origin_x`, `origin_y` | float (mm) | grid origin in room-space |
-
-### Zone Engine Logic (must match in both Python and JS)
-
-| Algorithm | Key Parameters |
-|-----------|---------------|
-| Tumbling window | 1s window, median position per target |
-| Target -> cell mapping | `xy_to_cell()` with origin offset |
-| Room gating (per-target) | target must map to a cell with the room flag set; see below |
-| Continuity check | Chebyshev distance <= 5 cells |
-| Entry point gating | 2 consecutive ticks at `min(threshold + 2, 8)` for non-entry zones |
-| Threshold conversion | `max(1, threshold)` -> frame count |
-| State machine | CLEAR/OCCUPIED/PENDING with trigger/renew/timeout |
-| Handoff | pending_since adjusted by `timeout - handoff_timeout` |
-
-### Per-Target Room Gating
-
-The zone engine (both backend and frontend replica) gates each target by the room grid. This determines per-target display status and is separate from zone occupancy:
-
-- **Active**: target maps to a cell with the room flag set → render solid at current position
-- **Pending**: target fails room gating but is still tracked → render faded. If its position is still within the visible grid (including non-room cells), render at its current position; if it has moved off-grid or is no longer tracked, render at its last position inside the room grid
-- **Inactive**: target stays outside long enough to time out → hide
-
-The backend produces `status` in `subscribe_grid_targets` for the live overview. The detection zone editor **overwrites** this backend `status` because the user may have unsaved grid/zone changes. The frontend zone engine recalculates per-target status using the current (possibly unsaved) grid, then overwrites `_targets[].status`. Both the live overview and zone editor use the same rendering logic (`_renderTargetDots`) — the only difference is where `status` comes from (backend vs frontend zone engine).
-
-Pending target display position (`_targetPrevXY`) is a frontend-only concern. It stores the last in-room position (room-space mm). When a pending target's current position is still on the visible grid (even on non-room cells), the renderer uses that current position for the faded dot. When the position is off-grid or no longer available, the renderer falls back to `_targetPrevXY`. The backend API always sends raw DisplayBuffer x/y — it never sends zone engine positions.
-
-### Room-Level Settings
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `room_type` | str | zone type for "rest of room" |
-| `room_trigger` | int 0-9 | |
-| `room_renew` | int 0-9 | |
-| `room_timeout` | float | |
-| `room_handoff_timeout` | float | |
-| `room_entry_point` | bool | |
-
-### Furniture (visual only)
-
-| Field | Type |
-|-------|------|
-| `icon` | str (MDI or SVG key) |
-| `label` | str |
-| `x`, `y` | float (mm) |
-| `width`, `height` | float (mm) |
-| `rotation` | float (degrees) |
-| `lockAspect` | bool |
-
----
-
-## 5. WebSocket API
-
-All frontend-backend communication uses HA websocket commands under the `eppgrid/` namespace. Defined in `websocket_api.py`.
-
-### Subscriptions (live data)
-
-#### `subscribe_raw_targets` — calibration & FOV overlay
-
-Used by the room calibration wizard and the FOV overlay on the live overview screen. Pushes at up to 5 Hz via the DisplayBuffer rolling median. Only active when at least one subscriber is connected (opt-in to avoid unnecessary work).
-
-**Request:** `{ "type": "eppgrid/subscribe_raw_targets", "entry_id": str }`
+**Request:** `{ "type": "eppgrid/subscribe_raw_targets", "mac": str }`
 
 **Event payload:**
+```json
+{
+    "targets": [
+        {"raw_x": 1234.0, "raw_y": -567.0},
+        {"raw_x": null, "raw_y": null},
+        {"raw_x": null, "raw_y": null}
+    ]
+}
+```
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `targets[].raw_x` | float (mm) | sensor-space, rolling median smoothed; `null` when inactive |
-| `targets[].raw_y` | float (mm) | sensor-space, rolling median smoothed; `null` when inactive |
+### `subscribe_grid_targets` — live overview & zone editor
 
-No `target_count` field — the frontend derives the count by filtering for non-null positions. Raw positions are always available when the sensor detects a target, even if the target falls outside the calibrated room grid. This is what makes room calibration work — targets are visible before/during calibration when no room grid exists yet.
+Parses Target Position, Zone State, and sensor entity updates into structured events.
 
-**Used by:** room calibration wizard, FOV overlay.
-
-#### `subscribe_grid_targets` — live overview grid & zone editor
-
-Used by the live overview grid view and the detection zone editor. Pushes positions at up to 5 Hz; zone state (`signal`, `status`) is cached from the zone engine and updates at ~1 Hz.
-
-**Request:** `{ "type": "eppgrid/subscribe_grid_targets", "entry_id": str }`
+**Request:** `{ "type": "eppgrid/subscribe_grid_targets", "mac": str }`
 
 **Event payload:**
+```json
+{
+    "targets": [
+        {"x": 1500.0, "y": 2000.0, "signal": 5, "status": "active"},
+        {"x": null, "y": null, "signal": 0, "status": "inactive"},
+        {"x": null, "y": null, "signal": 0, "status": "inactive"}
+    ],
+    "sensors": {
+        "occupancy": true,
+        "static_presence": false,
+        "motion_presence": false,
+        "target_presence": true,
+        "temperature": 22.5,
+        "humidity": 45.0,
+        "illuminance": 120.0,
+        "co2": null
+    },
+    "zones": {
+        "occupancy": {"0": true, "1": false},
+        "target_counts": {},
+        "frame_count": 10,
+        "debug_log": "T0:Z1:A:9|Z1:O:9"
+    }
+}
+```
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `targets[].x` | float (mm) | calibrated room-space, rolling median smoothed — NOT room-gated (always populated when sensor tracks) |
-| `targets[].y` | float (mm) | calibrated room-space, rolling median smoothed — NOT room-gated |
-| `targets[].signal` | int 0-9 | raw sensor signal strength — always non-zero when sensor tracks |
-| `targets[].status` | string | `"active"`, `"pending"`, or `"inactive"` — room-gated by backend (cached, 1 Hz) |
-| `sensors` | object | see [section 2 sensors table](#sensors) |
-| `zones` | object | see [section 2 zones table](#zones) |
+**Data rates:**
+- Target positions: 5Hz (from firmware display_interval)
+- Zone state + signal/status: 1Hz (from firmware zone_publish_interval)
+- Sensor values: on change
 
-`x`/`y` and `signal` are always populated when the sensor is tracking, regardless of room gating. `status` is room-gated by the backend zone engine. The detection zone editor overwrites `status` using its own zone engine against the unsaved grid.
+## 3. Commands
 
-**Used by:** live overview grid, detection zone editor.
+### `list_devices`
 
-### Commands (one-shot)
+Returns discovered EPP devices.
 
-#### `list_entries`
+**Request:** `{ "type": "eppgrid/list_devices" }`
+**Response:** `{ "devices": [{"mac", "name", "host", "available", "configured"}] }`
 
-Returns all configured EPP devices with setup status flags.
+### `get_config`
 
-**Request:** `{ "type": "eppgrid/list_entries" }`
+Returns stored config for a device.
 
-**Response:**
+**Request:** `{ "type": "eppgrid/get_config", "mac": str }`
+**Response:** `{ "config": {...} }` — calibration, room_layout, env_calibration, etc.
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `[].entry_id` | str | config entry ID |
-| `[].title` | str | device name (user-set or default) |
-| `[].has_perspective` | bool | calibration completed |
-| `[].has_layout` | bool | room layout saved |
+### `set_setup`
 
-#### `get_config`
+Saves perspective calibration. Clears room layout. Pushes to device.
 
-Returns the full config for a device (calibration, zones, grid, layout, reporting, offsets).
+**Request:** `{ "type": "eppgrid/set_setup", "mac": str, "perspective": float[8], "room_width": float, "room_depth": float }`
 
-**Request:** `{ "type": "eppgrid/get_config", "entry_id": str }`
+### `set_room_layout`
 
-**Response:** the coordinator's `get_config_data()` dict — contains calibration, grid, zones, room_layout, reporting, and offsets.
+Saves grid, zones, room settings, furniture. Pushes to device. Updates zone entity enable/disable/rename.
 
-#### `set_setup`
+**Request:** `{ "type": "eppgrid/set_room_layout", "mac": str, "grid_bytes": int[], "zone_slots": list, "room_type": str, ... }`
 
-Saves perspective transform + room dimensions. Clears existing room layout and zones (grid dimensions change). Called at the end of the calibration wizard.
+### `set_entity_enabled`
 
-**Request:**
+Enables/disables an ESPHome entity.
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `entry_id` | str | |
-| `perspective` | float[8] | homography coefficients [a,b,c,d,e,f,g,h] |
-| `room_width` | float (mm) | |
-| `room_depth` | float (mm) | |
+**Request:** `{ "type": "eppgrid/set_entity_enabled", "mac": str, "entity_id": str, "enabled": bool }`
 
-**Side effects:** clears room_layout, zones; rebuilds grid; persists to config entry options.
+### Settings Commands
 
-#### `set_room_layout`
+All follow the same pattern: save to store, push to device via API action.
 
-Saves the grid cell painting, zone slot definitions, room-level settings, and furniture. This is the primary way zones are configured (replaces the older `set_zones`).
+| Command | Config Key | API Action |
+|---------|-----------|------------|
+| `set_env_calibration` | `env_calibration` | `epp_set_env_calibration` |
+| `set_motion_timeout` | `motion_timeout` | `epp_set_motion_timeout` |
+| `set_tracking` | `tracking` | `epp_set_tracking` |
+| `set_static_presence` | `static_presence` | `epp_set_static_presence` |
+| `set_pipeline` | `pipeline` | `epp_set_pipeline` |
 
-**Request:**
+### Template Commands
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `entry_id` | str | |
-| `grid_bytes` | int[] | 400 cell bytes (20x20) |
-| `zone_slots` | (object\|null)[8] | zone config per slot, null = empty |
-| `room_type` | str | zone type for "rest of room" (default: "normal") |
-| `room_trigger` | int 0-9 | optional |
-| `room_renew` | int 0-9 | optional |
-| `room_timeout` | float | optional |
-| `room_handoff_timeout` | float | optional |
-| `room_entry_point` | bool | optional |
-| `furniture` | object[] | visual-only furniture stickers |
+| Command | Description |
+|---------|------------|
+| `list_templates` | List saved room templates |
+| `save_template` | Save a room template |
+| `delete_template` | Delete a room template |
+| `apply_template` | Apply a template to a device |
 
-**Response:** `{ "entity_id_renames": [{ "old_entity_id", "new_entity_id" }] }` — suggested entity ID renames based on zone names.
+## 4. Firmware Data Pipeline
 
-**Side effects:** updates zone engine, persists layout, enables/disables zone entities based on slot occupancy and reporting toggles.
+```
+LD2450 UART (~10Hz)
+  → rolling median (1s window, computed every frame)
+    → perspective transform (every frame)
+      → zone engine (every frame, counts frames per zone)
 
-#### `set_zones`
+Publishing (output throttles):
+  → raw median      → 5Hz (Raw Target text sensors)
+  → grid positions  → 5Hz (Target Position text sensors, includes status)
+  → zone state      → 1Hz (Zone State JSON text sensor + binary sensors)
+```
 
-Sets zone definitions directly (without grid painting). Simpler than `set_room_layout` but doesn't handle grid cells or entity management.
+### Debug Log Format
 
-**Request:**
+Both firmware and frontend zone engine produce the same raw format:
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `entry_id` | str | |
-| `zones` | object[] | zone configs with id, name, type, thresholds |
+```
+T0:Z1:A:9 T1:Z0:P:3|Z0:O:9 Z1:P:3
+```
 
-#### `set_reporting`
+- Before `|`: targets — `T{idx}:Z{zone_id}:{A|P}:{signal}`
+- After `|`: zones — `Z{zone_id}:{O|P}:{signal}`
 
-Enables/disables reporting entities and saves sensor offsets.
+The frontend enricher replaces zone IDs with names for display.
 
-**Request:**
+## 5. Configuration Storage
 
-| Field | Type | Notes |
-|-------|------|-------|
-| `entry_id` | str | |
-| `reporting` | dict[str, bool] | 18 toggle keys (see [Reporting Toggles](#reporting-toggles)) |
-| `offsets` | dict | optional: `illuminance`, `temperature`, `humidity` floats |
+`EPPGridStore` persists per-device config keyed by MAC:
 
-**Side effects:** enables/disables entities in the entity registry, applies offsets to coordinator immediately.
+```python
+{
+    "AA:BB:CC:DD:EE:FF": {
+        "calibration": {"perspective": [8 floats], "room_width": float, "room_depth": float},
+        "room_layout": {"grid_bytes": [400 ints], "zone_slots": [...], "room_type": str, ...},
+        "env_calibration": {"temperature_offset": float, "humidity_offset": float, "illuminance_offset": float},
+        "motion_timeout": {"timeout": float},
+        "tracking": {"max_range": float},
+        "static_presence": {"min_range": float, "max_range": float, ...},
+        "pipeline": {"display_interval": int, "zone_publish_interval": int, "window_duration": int},
+    }
+}
+```
 
-#### `rename_zone_entities`
-
-Batch-renames zone entity IDs via the entity registry.
-
-**Request:**
-
-| Field | Type | Notes |
-|-------|------|-------|
-| `entry_id` | str | |
-| `renames` | object[] | `[{ "old_entity_id": str, "new_entity_id": str }]` |
-
-**Response:** `{ "errors": str[] }` — any rename failures.
-
-### Frontend screen -> API mapping
-
-| Screen | Subscriptions | Frontend array | Fields used | Commands |
-|--------|---------------|----------------|-------------|----------|
-| Device picker | — | — | — | `list_entries` |
-| Room calibration | `subscribe_raw_targets` | `_rawTargets` | `raw_x`, `raw_y` | `set_setup` |
-| Live overview (FOV) | `subscribe_raw_targets` | `_rawTargets` | `raw_x`, `raw_y` | — |
-| Live overview (grid) | `subscribe_grid_targets` | `_targets` | all fields | `get_config` |
-| Detection zone editor | `subscribe_grid_targets` | `_targets` | `x`, `y`, `signal` from backend; `status` overwritten by frontend zone engine using unsaved grid/zone config | `set_room_layout`, `rename_zone_entities` |
-| Reporting settings | — | — | — | `get_config`, `set_reporting` |
-
----
-
-## Cross-Cutting: Files That Must Stay in Sync
-
-| Python | JS/TS | What |
-|--------|-------|------|
-| `zone_engine.py` | `eppgrid-panel.ts` (~lines 4814-5050) | State machine, gating, handoff, continuity |
-| `const.py` | `zone-defaults.ts` | Zone type defaults, bit masks |
-| `calibration.py` | `perspective.ts` | Perspective transform |
-| `zone_engine.py` Grid class | `grid.ts` | Cell encoding, bit ops |
-| `zone_engine.py` `xy_to_cell` | `coordinates.ts` | Room -> grid mapping |
+All config is pushed to the device on save and on reconnect.
