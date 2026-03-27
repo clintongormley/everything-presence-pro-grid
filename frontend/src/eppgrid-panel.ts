@@ -5474,7 +5474,7 @@ export class EPPGridPanel extends LitElement {
 
 	private _renderDebugLog() {
 		return html`
-      <div style="padding: 0 16px; margin-top: 8px;">
+      <div style="margin-top: 8px; min-width: 0;">
         <button
           class="live-section-header live-section-link"
           style="font-size: 12px; gap: 4px;"

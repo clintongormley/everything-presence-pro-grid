@@ -1060,7 +1060,7 @@ const he={attribute:!0,type:String,converter:b,reflect:!1,hasChanged:v},de=(e=he
         `:V}
       </div>
     `}_renderDebugLog(){return G`
-      <div style="padding: 0 16px; margin-top: 8px;">
+      <div style="margin-top: 8px; min-width: 0;">
         <button
           class="live-section-header live-section-link"
           style="font-size: 12px; gap: 4px;"
