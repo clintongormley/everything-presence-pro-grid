@@ -403,11 +403,6 @@ export class EPPGridPanel extends LitElement {
 		centerY?: number;
 		startAngle?: number; // angle at drag start
 	} | null = null;
-	@state() private _pendingRenames: {
-		old_entity_id: string;
-		new_entity_id: string;
-	}[] = [];
-	@state() private _showRenameDialog = false;
 	@state() private _targets: Target[] = [];
 	@state() private _rawTargets: RawTarget[] = [];
 	@state() private _sensorState: {
@@ -1193,7 +1188,7 @@ export class EPPGridPanel extends LitElement {
 
 		this._saving = true;
 		try {
-			const result = await this.hass.callWS({
+			await this.hass.callWS({
 				type: "eppgrid/set_room_layout",
 				mac: this._selectedMac,
 				grid_bytes: Array.from(this._grid),
@@ -1231,13 +1226,6 @@ export class EPPGridPanel extends LitElement {
 			});
 			this._dirty = false;
 			this._view = "live";
-
-			// Show rename dialog if backend detected entity_id mismatches
-			const renames = result?.entity_id_renames || [];
-			if (renames.length > 0) {
-				this._pendingRenames = renames;
-				this._showRenameDialog = true;
-			}
 		} finally {
 			this._saving = false;
 		}
@@ -1254,20 +1242,6 @@ export class EPPGridPanel extends LitElement {
 		} finally {
 			this._saving = false;
 		}
-	}
-
-	// -- Entity rename --
-
-	private async _applyRenames(): Promise<void> {
-		// Zone entity renames are now handled automatically by set_room_layout
-		// via async_update_zone_entities on the backend
-		this._showRenameDialog = false;
-		this._pendingRenames = [];
-	}
-
-	private _dismissRenameDialog(): void {
-		this._showRenameDialog = false;
-		this._pendingRenames = [];
 	}
 
 	// -- Template management (localStorage) --
@@ -3171,52 +3145,6 @@ export class EPPGridPanel extends LitElement {
 		return html`
       ${this._showTemplateSave ? this._renderTemplateSaveDialog() : nothing}
       ${this._showTemplateLoad ? this._renderTemplateLoadDialog() : nothing}
-      ${
-				this._showRenameDialog
-					? html`
-          <div class="template-dialog">
-            <div class="template-dialog-card" style="max-width: 520px;">
-              <h3>${this._localize("dialogs.update_entity_ids")}</h3>
-              <p class="overlay-help">${this._localize("dialogs.update_entity_ids_body")}</p>
-              <div style="max-height: 300px; overflow-y: auto; margin: 12px 0;">
-                ${this._pendingRenames.map((r) => {
-									const oldShort =
-										r.old_entity_id.split(".")[1] || r.old_entity_id;
-									const newShort =
-										r.new_entity_id.split(".")[1] || r.new_entity_id;
-									const platform = r.old_entity_id.split(".")[0] || "";
-									return html`
-                    <div style="
-                      padding: 8px 12px; margin: 4px 0;
-                      background: var(--secondary-background-color, #f5f5f5);
-                      border-radius: 8px; font-family: monospace; font-size: 12px;
-                    ">
-                      <div style="color: var(--secondary-text-color, #888); font-size: 11px; margin-bottom: 4px; font-family: var(--paper-font-body1_-_font-family, sans-serif);">
-                        ${platform}
-                      </div>
-                      <div style="text-decoration: line-through; color: var(--secondary-text-color, #888); word-break: break-all;">
-                        ${oldShort}
-                      </div>
-                      <div style="font-weight: 500; word-break: break-all; margin-top: 2px;">
-                        → ${newShort}
-                      </div>
-                    </div>
-                  `;
-								})}
-              </div>
-              <div class="template-dialog-actions">
-                <button class="wizard-btn wizard-btn-back"
-                  @click=${this._dismissRenameDialog}
-                >${this._localize("common.skip")}</button>
-                <button class="wizard-btn wizard-btn-primary"
-                  @click=${this._applyRenames}
-                >${this._localize("common.rename")}</button>
-              </div>
-            </div>
-          </div>
-        `
-					: nothing
-			}
       ${
 				this._showUnsavedDialog
 					? html`
