@@ -86,12 +86,15 @@ import { setupLocalize } from "./localize.js";
 import type { Target, RawTarget, DeviceInfo, WizardCorner, SetupStep } from "./types.js";
 import { FLOOR_PLAN_SVGS, FURNITURE_CATALOG, CORNER_LABELS, CORNER_OFFSET_LABELS, CAPTURE_DURATION_S, TARGET_COLORS, DEBUG_LOG_MAX, FOV_HALF_ANGLE, FOV_X_EXTENT } from "./constants.js";
 import { DeviceController } from "./controllers/device-controller.js";
+import { GridStateController } from "./controllers/grid-state-controller.js";
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
 
 	// Device controller — owns WS subscriptions and device loading
 	private _deviceCtrl = new DeviceController(this);
+	// Grid state controller — owns zone/furniture/template/paint/save logic
+	private _gridCtrl = new GridStateController(this);
 	private _localize: (
 		key: string,
 		params?: Record<string, string | number>,
@@ -536,153 +539,51 @@ export class EPPGridPanel extends LitElement {
 	// -- Grid cell painting --
 
 	private _onCellMouseDown(index: number): void {
-		// Furniture tab: deselect furniture on grid click, no painting
-		if (this._sidebarTab === "furniture") {
-			this._selectedFurnitureId = null;
-			return;
-		}
-		if (this._activeZone === null) return;
-		this._isPainting = true;
-		this._frozenBounds = this._getRoomBounds();
-
-		this._paintAction = determinePaintAction(
-			this._grid[index],
-			this._activeZone,
-		);
-
-		this._applyPaintToCell(index);
-
-		// Listen on window so releasing outside the grid ends the paint
-		const onUp = () => {
-			this._onCellMouseUp();
-			window.removeEventListener("mouseup", onUp);
-		};
-		window.addEventListener("mouseup", onUp);
+		this._gridCtrl.onCellMouseDown(index);
 	}
 
 	private _onCellMouseEnter(index: number): void {
-		if (this._isPainting) {
-			this._applyPaintToCell(index);
-		}
+		this._gridCtrl.onCellMouseEnter(index);
 	}
 
 	private _onCellMouseUp(): void {
-		if (this._isPainting) {
-			// Flag to prevent the panel click handler from deselecting the zone
-			this._justPainted = true;
-			requestAnimationFrame(() => {
-				this._justPainted = false;
-			});
-		}
-		this._isPainting = false;
-		this._frozenBounds = null;
+		this._gridCtrl.onCellMouseUp();
 	}
 
 	private _applyPaintToCell(index: number): void {
-		if (this._activeZone === null) return;
-		const newValue = applyPaintToCell(
-			this._grid[index],
-			this._activeZone,
-			this._paintAction,
-		);
-		if (newValue === null) return; // no change (e.g. zone paint on outside cell)
-
-		this._grid = new Uint8Array(this._grid);
-		this._grid[index] = newValue;
-		this._dirty = true;
-
-		// Update room dimensions when boundary changes
-		if (this._activeZone === 0) {
-			this._updateRoomDimensionsFromGrid();
-		}
-
-		this.requestUpdate();
+		this._gridCtrl.applyPaintToCell(index);
 	}
 
 	private _updateRoomDimensionsFromGrid(): void {
-		const { roomWidth, roomDepth } = updateRoomDimensionsFromGrid(this._grid);
-		this._roomWidth = roomWidth;
-		this._roomDepth = roomDepth;
+		this._gridCtrl.updateRoomDimensionsFromGrid();
 	}
 
 	// -- Zone management --
 
 	private _addZone(): void {
-		const firstEmpty = this._zoneConfigs.findIndex((z) => z === null);
-		if (firstEmpty === -1) return; // All 7 slots full
-
-		// Pick first unused color
-		const usedColors = new Set(
-			this._zoneConfigs
-				.filter((z): z is ZoneConfig => z !== null)
-				.map((z) => z.color),
-		);
-		const color =
-			ZONE_COLORS.find((c) => !usedColors.has(c)) ??
-			ZONE_COLORS[firstEmpty % ZONE_COLORS.length];
-		const configs = [...this._zoneConfigs];
-		configs[firstEmpty] = {
-			name: `Zone ${firstEmpty + 1}`,
-			color,
-			type: "normal",
-		};
-		this._zoneConfigs = configs;
-		this._activeZone = firstEmpty + 1; // 1-based slot number
-		this._dirty = true;
+		this._gridCtrl.addZone();
 	}
 
 	private _removeZone(slot: number): void {
-		if (slot < 1 || slot > MAX_ZONES || this._zoneConfigs[slot - 1] === null)
-			return;
-		// Clear all grid cells with this zone back to zone 0
-		const cleared = clearZoneFromGrid(this._grid, slot);
-		if (cleared) this._grid = cleared;
-		// No renumbering — just null out the slot
-		const configs = [...this._zoneConfigs];
-		configs[slot - 1] = null;
-		this._zoneConfigs = configs;
-		if (this._activeZone === slot) {
-			this._activeZone = null;
-		}
-		this._dirty = true;
-		this.requestUpdate();
+		this._gridCtrl.removeZone(slot);
 	}
 
 	// -- Furniture management --
 
 	private _addFurniture(sticker: FurnitureSticker): void {
-		const id = `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
-		const item = createFurnitureItem(
-			sticker,
-			this._roomWidth,
-			this._roomDepth,
-			id,
-		);
-		this._furniture = [...this._furniture, item];
-		this._selectedFurnitureId = item.id;
-		this._dirty = true;
+		this._gridCtrl.addFurniture(sticker);
 	}
 
 	private _addCustomFurniture(icon: string): void {
-		this._addFurniture({
-			type: "icon",
-			icon,
-			label: "furniture.custom",
-			defaultWidth: 600,
-			defaultHeight: 600,
-			lockAspect: false,
-		});
+		this._gridCtrl.addCustomFurniture(icon);
 	}
 
 	private _removeFurniture(id: string): void {
-		this._furniture = removeFurnitureItem(this._furniture, id);
-		if (this._selectedFurnitureId === id) this._selectedFurnitureId = null;
-		this._dirty = true;
+		this._gridCtrl.removeFurniture(id);
 	}
 
 	private _updateFurniture(id: string, updates: Partial<FurnitureItem>): void {
-		this._furniture = updateFurnitureItem(this._furniture, id, updates);
-		this._dirty = true;
+		this._gridCtrl.updateFurniture(id, updates);
 	}
 
 	/** Convert mm in room-space to px in the visible grid */
@@ -701,125 +602,11 @@ export class EPPGridPanel extends LitElement {
 		type: "move" | "resize" | "rotate",
 		handle?: string,
 	): void {
-		e.preventDefault();
-		e.stopPropagation();
-		this._selectedFurnitureId = id;
-		const item = this._furniture.find((f) => f.id === id);
-		if (!item) return;
-
-		// For rotate, find the item's center on screen
-		let centerX = 0,
-			centerY = 0,
-			startAngle = 0;
-		if (type === "rotate") {
-			const el = this.shadowRoot?.querySelector(
-				`.furniture-item[data-id="${id}"]`,
-			) as HTMLElement | null;
-			if (el) {
-				const rect = el.getBoundingClientRect();
-				centerX = rect.left + rect.width / 2;
-				centerY = rect.top + rect.height / 2;
-				startAngle =
-					Math.atan2(e.clientY - centerY, e.clientX - centerX) *
-					(180 / Math.PI);
-			}
-		}
-
-		this._dragState = {
-			type,
-			id,
-			startX: e.clientX,
-			startY: e.clientY,
-			origX: item.x,
-			origY: item.y,
-			origW: item.width,
-			origH: item.height,
-			origRot: item.rotation,
-			handle,
-			centerX,
-			centerY,
-			startAngle,
-		};
-
-		const onMove = (ev: PointerEvent) => this._onFurnitureDrag(ev);
-		const onUp = () => {
-			this._dragState = null;
-			window.removeEventListener("pointermove", onMove);
-			window.removeEventListener("pointerup", onUp);
-		};
-		window.addEventListener("pointermove", onMove);
-		window.addEventListener("pointerup", onUp);
+		this._gridCtrl.onFurniturePointerDown(e, id, type, handle);
 	}
 
 	private _onFurnitureDrag(e: PointerEvent): void {
-		if (!this._dragState) return;
-		const ds = this._dragState;
-
-		// Get cellPx from the grid container
-		const gridEl = this.shadowRoot?.querySelector(
-			".grid",
-		) as HTMLElement | null;
-		if (!gridEl) return;
-		const cellPx = gridEl.firstElementChild
-			? (gridEl.firstElementChild as HTMLElement).offsetWidth
-			: 28;
-
-		const dx = e.clientX - ds.startX;
-		const dy = e.clientY - ds.startY;
-
-		if (ds.type === "move") {
-			const item = this._furniture.find((f) => f.id === ds.id);
-			// Compute visible grid bounds in room-relative mm
-			const bounds = this._getRoomBounds();
-			const roomCols = Math.ceil(this._roomWidth / GRID_CELL_MM);
-			const startCol = Math.floor((GRID_COLS - roomCols) / 2);
-			const visMinX = (bounds.minCol - startCol) * GRID_CELL_MM;
-			const visMaxX = (bounds.maxCol + 1 - startCol) * GRID_CELL_MM;
-			const visMinY = bounds.minRow * GRID_CELL_MM; // startRow = 0
-			const visMaxY = (bounds.maxRow + 1) * GRID_CELL_MM;
-			const pos = clampFurnitureMove(
-				ds.origX,
-				ds.origY,
-				dx,
-				dy,
-				cellPx,
-				item?.width ?? 0,
-				item?.height ?? 0,
-				visMinX,
-				visMaxX,
-				visMinY,
-				visMaxY,
-			);
-			this._updateFurniture(ds.id, pos);
-		} else if (ds.type === "resize" && ds.handle) {
-			const item = this._furniture.find((f) => f.id === ds.id);
-			const resized = computeFurnitureResize(
-				ds.handle,
-				dx,
-				dy,
-				cellPx,
-				ds.origX,
-				ds.origY,
-				ds.origW,
-				ds.origH,
-				item?.lockAspect ?? false,
-			);
-			this._updateFurniture(ds.id, resized);
-		} else if (ds.type === "rotate") {
-			const currentAngle =
-				Math.atan2(
-					e.clientY - (ds.centerY ?? 0),
-					e.clientX - (ds.centerX ?? 0),
-				) *
-				(180 / Math.PI);
-			this._updateFurniture(ds.id, {
-				rotation: computeFurnitureRotation(
-					ds.origRot,
-					ds.startAngle ?? 0,
-					currentAngle,
-				),
-			});
-		}
+		this._gridCtrl.onFurnitureDrag(e);
 	}
 
 	// -- Grid cell display helpers --
@@ -840,145 +627,29 @@ export class EPPGridPanel extends LitElement {
 
 	/** Save the current grid and zone config to the backend */
 	private async _applyLayout(): Promise<void> {
-		// Remove zones with zero painted cells
-		const zoneCellCounts = new Map<number, number>();
-		for (let i = 0; i < this._grid.length; i++) {
-			if (cellIsInside(this._grid[i])) {
-				const zid = cellZone(this._grid[i]);
-				if (zid > 0) {
-					zoneCellCounts.set(zid, (zoneCellCounts.get(zid) ?? 0) + 1);
-				}
-			}
-		}
-		for (let i = 0; i < this._zoneConfigs.length; i++) {
-			if (
-				this._zoneConfigs[i] !== null &&
-				(zoneCellCounts.get(i + 1) ?? 0) === 0
-			) {
-				this._zoneConfigs[i] = null;
-			}
-		}
-
-		this._saving = true;
-		try {
-			await this.hass.callWS({
-				type: "eppgrid/set_room_layout",
-				mac: this._selectedMac,
-				grid_bytes: Array.from(this._grid),
-				room_type: this._roomType,
-				room_trigger: this._roomTrigger,
-				room_renew: this._roomRenew,
-				room_timeout: this._roomTimeout,
-				room_handoff_timeout: this._roomHandoffTimeout,
-				room_entry_point: this._roomEntryPoint,
-				zone_slots: this._zoneConfigs.map((z) =>
-					z !== null
-						? {
-								name: z.name,
-								color: z.color,
-								type: z.type,
-								trigger: z.trigger,
-								renew: z.renew,
-								timeout: z.timeout,
-								handoff_timeout: z.handoff_timeout,
-								entry_point: z.entry_point,
-							}
-						: null,
-				),
-				furniture: this._furniture.map((f) => ({
-					type: f.type,
-					icon: f.icon,
-					label: f.label,
-					x: f.x,
-					y: f.y,
-					width: f.width,
-					height: f.height,
-					rotation: f.rotation,
-					lockAspect: f.lockAspect,
-				})),
-			});
-			this._dirty = false;
-			this._view = "live";
-		} finally {
-			this._saving = false;
-		}
+		return this._gridCtrl.applyLayout();
 	}
 
 	private async _saveSettings(): Promise<void> {
-		this._saving = true;
-		try {
-			// TODO: Settings page will be reimplemented using the new
-			// set_env_calibration, set_motion_timeout, set_tracking,
-			// set_static_presence websocket commands
-			this._dirty = false;
-			this._view = "live";
-		} finally {
-			this._saving = false;
-		}
+		return this._gridCtrl.saveSettings();
 	}
 
 	// -- Template management (localStorage) --
 
-	private _getTemplates(): {
-		name: string;
-		grid: number[];
-		zones: (ZoneConfig | null)[];
-		roomWidth: number;
-		roomDepth: number;
-		furniture?: FurnitureItem[];
-	}[] {
-		try {
-			return JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
-		} catch {
-			return [];
-		}
+	private _getTemplates() {
+		return this._gridCtrl.getTemplates();
 	}
 
 	private _saveTemplate(): void {
-		const name = this._templateName.trim();
-		if (!name) return;
-		const templates = this._getTemplates();
-		// Overwrite if same name exists
-		const existing = templates.findIndex((t) => t.name === name);
-		const entry = {
-			name,
-			grid: Array.from(this._grid),
-			zones: this._zoneConfigs.map((z) => (z !== null ? { ...z } : null)),
-			roomWidth: this._roomWidth,
-			roomDepth: this._roomDepth,
-			furniture: this._furniture.map((f) => ({ ...f })),
-		};
-		if (existing >= 0) {
-			templates[existing] = entry;
-		} else {
-			templates.push(entry);
-		}
-		localStorage.setItem("epp_layout_templates", JSON.stringify(templates));
-		this._showTemplateSave = false;
-		this._templateName = "";
+		this._gridCtrl.saveTemplate();
 	}
 
 	private _loadTemplate(name: string): void {
-		const templates = this._getTemplates();
-		const tmpl = templates.find((t) => t.name === name);
-		if (!tmpl) return;
-		this._grid = new Uint8Array(tmpl.grid);
-		// Pad to 7 slots for backwards compat with old packed templates
-		const zones = tmpl.zones || [];
-		this._zoneConfigs = Array.from(
-			{ length: MAX_ZONES },
-			(_, i) => zones[i] ?? null,
-		);
-		this._roomWidth = tmpl.roomWidth;
-		this._roomDepth = tmpl.roomDepth;
-		this._furniture = (tmpl.furniture || []).map((f: any) => ({ ...f }));
-		this._showTemplateLoad = false;
+		this._gridCtrl.loadTemplate(name);
 	}
 
 	private _deleteTemplate(name: string): void {
-		const templates = this._getTemplates().filter((t) => t.name !== name);
-		localStorage.setItem("epp_layout_templates", JSON.stringify(templates));
-		this.requestUpdate();
+		this._gridCtrl.deleteTemplate(name);
 	}
 
 	/** Initialize grid from room dimensions after wizard finishes */
