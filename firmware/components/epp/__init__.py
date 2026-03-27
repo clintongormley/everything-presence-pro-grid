@@ -9,7 +9,8 @@ from esphome.components import text_sensor
 from esphome.const import CONF_ID
 
 CODEOWNERS = ["@clintongormley"]
-DEPENDENCIES = ["binary_sensor", "text_sensor", "json"]
+DEPENDENCIES = ["json"]
+AUTO_LOAD = ["binary_sensor", "text_sensor"]
 
 epp_ns = cg.esphome_ns.namespace("epp")
 EPPComponent = epp_ns.class_("EPPComponent", cg.Component)
