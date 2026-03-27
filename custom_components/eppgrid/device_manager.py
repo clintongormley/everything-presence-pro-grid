@@ -197,7 +197,7 @@ class DeviceManager:
 
             self.devices[mac] = ManagedDevice(
                 mac=mac,
-                name=device.name or "EPP Device",
+                name=device.name_by_user or device.name or "EPP Device",
                 host=host,
                 esphome_config_entry_id=entry.config_entry_id,
                 device_id=device.id,
