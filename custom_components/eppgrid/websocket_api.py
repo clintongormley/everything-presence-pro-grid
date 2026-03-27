@@ -116,6 +116,9 @@ async def websocket_set_setup(
     device_config.pop("room_layout", None)
     await manager._store.async_save()
 
+    # Push calibration to device
+    await manager._push_config_to_device(mac)
+
     # Enable zone 0 now that device is calibrated
     from .const import MAX_ZONES
     zone_slots = device_config.get("room_layout", {}).get("zone_slots", [None] * MAX_ZONES)
