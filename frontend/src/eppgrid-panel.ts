@@ -5082,6 +5082,17 @@ export class EPPGridPanel extends LitElement {
 
 		// Build raw debug log (same format as firmware)
 		if (this._showDebugLog) {
+			// Compute best signal per zone (matches firmware zone_signal[])
+			const zoneSignal: Map<number, number> = new Map();
+			for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
+				const t = this._targets[i];
+				if (t.x == null || t.y == null || t.signal <= 0) continue;
+				const zid = targetZoneCurr[i];
+				if (zid !== null) {
+					zoneSignal.set(zid, Math.max(zoneSignal.get(zid) ?? 0, t.signal));
+				}
+			}
+
 			const targetParts: string[] = [];
 			for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
 				const t = this._targets[i];
@@ -5097,7 +5108,7 @@ export class EPPGridPanel extends LitElement {
 				const st = this._localZoneState.get(zid);
 				if (st?.occupied) {
 					const state = st.pendingSince !== null ? "P" : "O";
-					zoneParts.push(`Z${zid}:${state}:${st.confirmedTargets.size}`);
+					zoneParts.push(`Z${zid}:${state}:${zoneSignal.get(zid) ?? 0}`);
 				}
 			}
 			const raw = `${targetParts.join(" ")}|${zoneParts.join(" ")}`;
