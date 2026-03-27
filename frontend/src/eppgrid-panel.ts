@@ -67,35 +67,7 @@ import {
 } from "./lib/zone-defaults.js";
 import { setupLocalize } from "./localize.js";
 
-type TargetStatus = "active" | "pending" | "inactive";
-
-interface Target {
-	x: number;
-	y: number;
-	speed: number;
-	status: TargetStatus;
-	signal: number;
-}
-
-interface RawTarget {
-	raw_x: number | null;
-	raw_y: number | null;
-}
-
-interface DeviceInfo {
-	mac: string;
-	name: string;
-	host: string | null;
-	available: boolean;
-	configured: boolean;
-}
-
-interface WizardCorner {
-	raw_x: number;
-	raw_y: number;
-	offset_side: number;
-	offset_fb: number;
-}
+import type { Target, RawTarget, DeviceInfo, WizardCorner, TargetStatus, SetupStep } from "./types.js";
 
 // FurnitureItem and FurnitureSticker are imported from ./lib/furniture.js
 
@@ -166,8 +138,6 @@ const FLOOR_PLAN_SVGS: Record<string, { viewBox: string; content: string }> = {
 		content: `<rect x="75" y="30" width="150" height="80" rx="10" stroke="black" stroke-width="8" fill="none"/><path d="M 75 110 C 75 110, 50 160, 50 210 C 50 310, 125 360, 150 360 C 175 360, 250 310, 250 210 C 250 160, 225 110, 225 110 Z" stroke="black" stroke-width="8" fill="none"/><path d="M 100 150 C 100 150, 75 190, 75 220 C 75 300, 125 340, 150 340 C 175 340, 225 300, 225 220 C 225 190, 200 150, 200 150 Z" stroke="black" stroke-width="8" fill="none"/><circle cx="150" cy="70" r="15" stroke="black" stroke-width="8" fill="none"/>`,
 	},
 };
-
-type SetupStep = "guide" | "corners" | "preview";
 
 const FURNITURE_CATALOG: FurnitureSticker[] = [
 	// Floor plan SVGs (top-down, independently scalable)
