@@ -52,7 +52,7 @@ import {
 	MAX_ZONES,
 	updateRoomDimensionsFromGrid,
 } from "./lib/grid.js";
-import { computeHeatmapColors, getCellColor } from "./lib/heatmap.js";
+import { getCellColor } from "./lib/heatmap.js";
 import {
 	applyPerspective,
 	getInversePerspective,
@@ -76,17 +76,16 @@ import {
 	type ZoneConfig,
 } from "./lib/zone-defaults.js";
 import {
-	createZoneEngineState,
-	runLocalZoneEngine,
 	type ZoneEngineResult,
 	type ZoneEngineState,
 } from "./lib/zone-engine.js";
 import { setupLocalize } from "./localize.js";
 
 import type { Target, RawTarget, DeviceInfo, WizardCorner, SetupStep } from "./types.js";
-import { FLOOR_PLAN_SVGS, FURNITURE_CATALOG, CORNER_LABELS, CORNER_OFFSET_LABELS, CAPTURE_DURATION_S, TARGET_COLORS, DEBUG_LOG_MAX, FOV_HALF_ANGLE, FOV_X_EXTENT } from "./constants.js";
+import { FLOOR_PLAN_SVGS, FURNITURE_CATALOG, CORNER_LABELS, CORNER_OFFSET_LABELS, CAPTURE_DURATION_S, TARGET_COLORS, FOV_HALF_ANGLE, FOV_X_EXTENT } from "./constants.js";
 import { DeviceController } from "./controllers/device-controller.js";
 import { GridStateController } from "./controllers/grid-state-controller.js";
+import { TargetController } from "./controllers/target-controller.js";
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
@@ -95,6 +94,8 @@ export class EPPGridPanel extends LitElement {
 	private _deviceCtrl = new DeviceController(this);
 	// Grid state controller — owns zone/furniture/template/paint/save logic
 	private _gridCtrl = new GridStateController(this);
+	// Target controller — owns target/sensor/zone state processing, zone engine, debug logging
+	private _targetCtrl = new TargetController(this);
 	private _localize: (
 		key: string,
 		params?: Record<string, string | number>,
@@ -176,8 +177,13 @@ export class EPPGridPanel extends LitElement {
 	@state() private _showBackendDebugLog = false;
 	private _backendDebugLogLines: string[] = [];
 	private _backendDebugLogPrev: string | null = null;
-	// Zone engine state (mutable, passed to runLocalZoneEngine)
-	private _zoneEngineState: ZoneEngineState = createZoneEngineState();
+	// Zone engine state — delegated to TargetController
+	private get _zoneEngineState(): ZoneEngineState {
+		return this._targetCtrl.zoneEngineState;
+	}
+	private set _zoneEngineState(value: ZoneEngineState) {
+		this._targetCtrl.zoneEngineState = value;
+	}
 	@state() private _isPainting = false;
 	private _justPainted = false;
 	@state() private _paintAction: PaintAction = "set";
@@ -479,41 +485,10 @@ export class EPPGridPanel extends LitElement {
 	private _subscribeTargets(mac: string): void {
 		this._deviceCtrl.hass = this.hass;
 		this._deviceCtrl.onTargetData = (data) => {
-			this._targets = data.targets;
-			this._sensorState = data.sensors;
-			if (data.zones) {
-				this._zoneState = {
-					occupancy: data.zones.occupancy,
-					target_counts: data.zones.target_counts,
-					frame_count: data.zones.frame_count,
-				};
-				if (this._showBackendDebugLog && data.zones.debug_log) {
-					const body = this._enrichDebugLog(data.zones.debug_log);
-					if (body !== this._backendDebugLogPrev) {
-						this._backendDebugLogPrev = body;
-						const ts = new Date().toLocaleTimeString("en-GB", {
-							hour12: false,
-							hour: "2-digit",
-							minute: "2-digit",
-							second: "2-digit",
-							fractionalSecondDigits: 1,
-						});
-						this._backendDebugLogLines.push(`${ts} ${body}`);
-						if (
-							this._backendDebugLogLines.length >
-							DEBUG_LOG_MAX
-						) {
-							this._backendDebugLogLines = this._backendDebugLogLines.slice(
-								-DEBUG_LOG_MAX,
-							);
-						}
-						this.requestUpdate();
-					}
-				}
-			}
+			this._targetCtrl.handleTargetData(data);
 		};
 		this._deviceCtrl.onRawTargetData = (rawTargets) => {
-			this._rawTargets = rawTargets;
+			this._targetCtrl.handleRawTargetData(rawTargets);
 		};
 		this._deviceCtrl.subscribeTargets(mac);
 	}
@@ -527,7 +502,7 @@ export class EPPGridPanel extends LitElement {
 	private _subscribeDisplay(mac: string): void {
 		this._deviceCtrl.hass = this.hass;
 		this._deviceCtrl.onRawTargetData = (rawTargets) => {
-			this._rawTargets = rawTargets;
+			this._targetCtrl.handleRawTargetData(rawTargets);
 		};
 		this._deviceCtrl.subscribeDisplay(mac);
 	}
@@ -3861,144 +3836,19 @@ export class EPPGridPanel extends LitElement {
 		return cells;
 	}
 
-	/** Run local zone engine replica (matches backend zone_engine._tick). */
+	/** Run local zone engine replica — delegated to TargetController. */
 	private _runLocalZoneEngine(): ZoneEngineResult {
-		const result = runLocalZoneEngine(this._zoneEngineState, {
-			targets: this._targets,
-			grid: this._grid,
-			roomWidth: this._roomWidth,
-			roomDepth: this._roomDepth,
-			zoneConfigs: this._zoneConfigs,
-			roomType: this._roomType,
-			roomTrigger: this._roomTrigger,
-			roomRenew: this._roomRenew,
-			roomTimeout: this._roomTimeout,
-			roomHandoffTimeout: this._roomHandoffTimeout,
-			roomEntryPoint: this._roomEntryPoint,
-		});
-
-		// Build raw debug log (same format as firmware)
-		if (this._showDebugLog) {
-			const MAX_TARGETS = 3;
-			// Compute target→zone mapping for debug log
-			const targetZoneCurr: (number | null)[] = [null, null, null];
-			for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
-				const t = this._targets[i];
-				if (t.x == null || t.y == null || t.signal <= 0) continue;
-				const pos = this._mapTargetToGridCell(t);
-				if (!pos) continue;
-				const col = Math.floor(pos.col);
-				const row = Math.floor(pos.row);
-				if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) continue;
-				const idx = row * GRID_COLS + col;
-				if (!cellIsInside(this._grid[idx])) continue;
-				targetZoneCurr[i] = cellZone(this._grid[idx]);
-			}
-
-			// Compute best signal per zone (matches firmware zone_signal[])
-			const zoneSignal: Map<number, number> = new Map();
-			for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
-				const t = this._targets[i];
-				if (t.x == null || t.y == null || t.signal <= 0) continue;
-				const zid = targetZoneCurr[i];
-				if (zid !== null) {
-					zoneSignal.set(zid, Math.max(zoneSignal.get(zid) ?? 0, t.signal));
-				}
-			}
-
-			const targetParts: string[] = [];
-			for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
-				const t = this._targets[i];
-				if (t.x == null || t.y == null) continue;
-				const sig = t.signal;
-				if (sig <= 0) continue;
-				const zid = targetZoneCurr[i];
-				const s = result.targets[i]?.status === "pending" ? "P" : "A";
-				targetParts.push(`T${i}:Z${zid ?? 0}:${s}:${sig}`);
-			}
-
-			const allZoneIds = new Set<number>();
-			for (let i = 0; i < this._grid.length; i++) {
-				if (cellIsInside(this._grid[i])) allZoneIds.add(cellZone(this._grid[i]));
-			}
-			const zoneParts: string[] = [];
-			for (const zid of allZoneIds) {
-				const st = this._zoneEngineState.localZoneState.get(zid);
-				if (st?.occupied) {
-					const state = st.pendingSince !== null ? "P" : "O";
-					zoneParts.push(`Z${zid}:${state}:${zoneSignal.get(zid) ?? 0}`);
-				}
-			}
-			const raw = `${targetParts.join(" ")}|${zoneParts.join(" ")}`;
-			const body = this._enrichDebugLog(raw);
-			if (body !== this._debugLogPrev) {
-				this._debugLogPrev = body;
-				const ts = new Date().toLocaleTimeString("en-GB", {
-					hour12: false,
-					hour: "2-digit",
-					minute: "2-digit",
-					second: "2-digit",
-					fractionalSecondDigits: 1,
-				});
-				this._debugLogLines.push(`${ts} ${body}`);
-				if (this._debugLogLines.length > DEBUG_LOG_MAX) {
-					this._debugLogLines = this._debugLogLines.slice(
-						-DEBUG_LOG_MAX,
-					);
-				}
-				this.requestUpdate();
-			}
-		}
-
-		return result;
+		return this._targetCtrl.runLocalZoneEngine();
 	}
 
-	/** Enrich a raw debug log string (from firmware or frontend zone engine)
-	 *  by replacing zone IDs with zone names.
-	 *  Raw format: "T0:Z1:A:5 T1:Z0:P:3|Z0:O:1 Z1:O:1"
-	 *  Enriched:   "T0→Entrance(active,5) T1→Room(pending,3) | Entrance: occupied(1)"
-	 */
+	/** Enrich a raw debug log string — delegated to TargetController. */
 	private _enrichDebugLog(raw: string): string {
-		const zoneName = (zid: number): string => {
-			if (zid === 0) return "Room";
-			const cfg = this._zoneConfigs[zid - 1];
-			return cfg ? cfg.name : `Zone ${zid}`;
-		};
-		const statusName: Record<string, string> = {
-			A: "active",
-			P: "pending",
-			O: "occupied",
-		};
-		const [targetPart, zonePart] = raw.split("|");
-		const targets = (targetPart || "")
-			.trim()
-			.split(/\s+/)
-			.filter(Boolean)
-			.map((s) => {
-				const [t, z, st, sig] = s.split(":");
-				const zid = parseInt(z?.replace("Z", "") ?? "0");
-				return `${t}→${zoneName(zid)}(${statusName[st] ?? st},${sig})`;
-			});
-		const zones = (zonePart || "")
-			.trim()
-			.split(/\s+/)
-			.filter(Boolean)
-			.map((s) => {
-				const [z, st, cnt] = s.split(":");
-				const zid = parseInt(z?.replace("Z", "") ?? "0");
-				return `${zoneName(zid)}: ${statusName[st] ?? st}(${cnt})`;
-			});
-		const tStr = targets.length ? targets.join(" ") : "no targets";
-		const zStr = zones.length ? zones.join(", ") : "all clear";
-		return `${tStr} | ${zStr}`;
+		return this._targetCtrl.enrichDebugLog(raw);
 	}
 
-	/** Compute rgba overlay colour per zone based on hit counts. */
+	/** Compute rgba overlay colour per zone — delegated to TargetController. */
 	private _computeHeatmapColors(): Map<number, string> {
-		return computeHeatmapColors(
-			this._zoneState.target_counts,
-			this._zoneConfigs,
-		);
+		return this._targetCtrl.computeHeatmapColors();
 	}
 
 	/** Get trigger/renew/timeout for a zone from the current editor state. */
