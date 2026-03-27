@@ -1,4 +1,5 @@
 """Tests for EPP Grid websocket API (v2 — MAC-keyed)."""
+
 from __future__ import annotations
 
 import pytest
@@ -13,6 +14,7 @@ from custom_components.eppgrid.device_manager import ManagedDevice
 def clear_registered(monkeypatch):
     """Clear the _REGISTERED set before each test to prevent double-registration errors."""
     import custom_components.eppgrid.websocket_api as ws
+
     ws._REGISTERED.clear()
     yield
 
@@ -27,9 +29,7 @@ async def setup_integration(hass: HomeAssistant) -> None:
 
 
 class TestListDevices:
-    async def test_list_devices_empty(
-        self, hass: HomeAssistant, setup_integration, hass_ws_client
-    ) -> None:
+    async def test_list_devices_empty(self, hass: HomeAssistant, setup_integration, hass_ws_client) -> None:
         """Returns empty list when no devices discovered."""
         client = await hass_ws_client(hass)
         await client.send_json({"id": 1, "type": "eppgrid/list_devices"})
@@ -37,9 +37,7 @@ class TestListDevices:
         assert msg["success"] is True
         assert msg["result"]["devices"] == []
 
-    async def test_list_devices_with_device(
-        self, hass: HomeAssistant, setup_integration, hass_ws_client
-    ) -> None:
+    async def test_list_devices_with_device(self, hass: HomeAssistant, setup_integration, hass_ws_client) -> None:
         """Returns discovered devices."""
         manager = hass.data[DOMAIN]
         manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
@@ -54,32 +52,32 @@ class TestListDevices:
 
 
 class TestGetConfig:
-    async def test_get_config_unknown_device(
-        self, hass: HomeAssistant, setup_integration, hass_ws_client
-    ) -> None:
+    async def test_get_config_unknown_device(self, hass: HomeAssistant, setup_integration, hass_ws_client) -> None:
         """Returns empty config for unconfigured device."""
         client = await hass_ws_client(hass)
-        await client.send_json({
-            "id": 1,
-            "type": "eppgrid/get_config",
-            "mac": "AA:BB:CC:DD:EE:FF",
-        })
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "eppgrid/get_config",
+                "mac": "AA:BB:CC:DD:EE:FF",
+            }
+        )
         msg = await client.receive_json()
         assert msg["success"] is True
         assert msg["result"]["config"] is None
 
-    async def test_get_config_known_device(
-        self, hass: HomeAssistant, setup_integration, hass_ws_client
-    ) -> None:
+    async def test_get_config_known_device(self, hass: HomeAssistant, setup_integration, hass_ws_client) -> None:
         """Returns stored config for known device."""
         manager = hass.data[DOMAIN]
         manager._store.devices["AA:BB:CC:DD:EE:FF"] = {"name": "Lounge"}
         client = await hass_ws_client(hass)
-        await client.send_json({
-            "id": 1,
-            "type": "eppgrid/get_config",
-            "mac": "AA:BB:CC:DD:EE:FF",
-        })
+        await client.send_json(
+            {
+                "id": 1,
+                "type": "eppgrid/get_config",
+                "mac": "AA:BB:CC:DD:EE:FF",
+            }
+        )
         msg = await client.receive_json()
         assert msg["success"] is True
         assert msg["result"]["config"]["name"] == "Lounge"

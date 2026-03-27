@@ -1,4 +1,5 @@
 """WebSocket API for EPP Grid frontend."""
+
 from __future__ import annotations
 
 import logging
@@ -17,9 +18,7 @@ _LOGGER = logging.getLogger(__name__)
 _REGISTERED: set[str] = set()
 
 
-def async_register_websocket_commands(
-    hass: HomeAssistant, manager: Any
-) -> None:
+def async_register_websocket_commands(hass: HomeAssistant, manager: Any) -> None:
     """Register WebSocket commands."""
     if DOMAIN in _REGISTERED:
         return
@@ -51,6 +50,7 @@ def _get_manager(hass: HomeAssistant) -> Any:
 
 # -- list_devices --
 
+
 @websocket_api.websocket_command({vol.Required("type"): "eppgrid/list_devices"})
 @callback
 def websocket_list_devices(
@@ -68,10 +68,13 @@ def websocket_list_devices(
 
 # -- get_config --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/get_config",
-    vol.Required("mac"): str,
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/get_config",
+        vol.Required("mac"): str,
+    }
+)
 @callback
 def websocket_get_config(
     hass: HomeAssistant,
@@ -89,13 +92,16 @@ def websocket_get_config(
 
 # -- set_setup (perspective calibration) --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/set_setup",
-    vol.Required("mac"): str,
-    vol.Required("perspective"): vol.All([vol.Coerce(float)], vol.Length(min=8, max=8)),
-    vol.Required("room_width"): vol.Coerce(float),
-    vol.Required("room_depth"): vol.Coerce(float),
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/set_setup",
+        vol.Required("mac"): str,
+        vol.Required("perspective"): vol.All([vol.Coerce(float)], vol.Length(min=8, max=8)),
+        vol.Required("room_width"): vol.Coerce(float),
+        vol.Required("room_depth"): vol.Coerce(float),
+    }
+)
 @websocket_api.async_response
 async def websocket_set_setup(
     hass: HomeAssistant,
@@ -123,6 +129,7 @@ async def websocket_set_setup(
 
     # Enable zone 0 now that device is calibrated
     from .const import MAX_ZONES
+
     zone_slots = device_config.get("room_layout", {}).get("zone_slots", [None] * MAX_ZONES)
     await manager.async_update_zone_entities(mac, zone_slots)
 
@@ -131,19 +138,22 @@ async def websocket_set_setup(
 
 # -- set_room_layout --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/set_room_layout",
-    vol.Required("mac"): str,
-    vol.Required("grid_bytes"): [int],
-    vol.Required("zone_slots"): list,
-    vol.Required("room_type"): str,
-    vol.Optional("room_trigger"): vol.Coerce(int),
-    vol.Optional("room_renew"): vol.Coerce(int),
-    vol.Optional("room_timeout"): vol.Coerce(float),
-    vol.Optional("room_handoff_timeout"): vol.Coerce(float),
-    vol.Optional("room_entry_point", default=False): bool,
-    vol.Optional("furniture", default=[]): list,
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/set_room_layout",
+        vol.Required("mac"): str,
+        vol.Required("grid_bytes"): [int],
+        vol.Required("zone_slots"): list,
+        vol.Required("room_type"): str,
+        vol.Optional("room_trigger"): vol.Coerce(int),
+        vol.Optional("room_renew"): vol.Coerce(int),
+        vol.Optional("room_timeout"): vol.Coerce(float),
+        vol.Optional("room_handoff_timeout"): vol.Coerce(float),
+        vol.Optional("room_entry_point", default=False): bool,
+        vol.Optional("furniture", default=[]): list,
+    }
+)
 @websocket_api.async_response
 async def websocket_set_room_layout(
     hass: HomeAssistant,
@@ -183,6 +193,7 @@ async def websocket_set_room_layout(
 
 # -- Template commands --
 
+
 @websocket_api.websocket_command({vol.Required("type"): "eppgrid/list_templates"})
 @callback
 def websocket_list_templates(
@@ -198,11 +209,13 @@ def websocket_list_templates(
     connection.send_result(msg["id"], {"templates": manager._store.templates})
 
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/save_template",
-    vol.Required("name"): str,
-    vol.Required("template"): dict,
-})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/save_template",
+        vol.Required("name"): str,
+        vol.Required("template"): dict,
+    }
+)
 @websocket_api.async_response
 async def websocket_save_template(
     hass: HomeAssistant,
@@ -219,10 +232,12 @@ async def websocket_save_template(
     connection.send_result(msg["id"])
 
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/delete_template",
-    vol.Required("name"): str,
-})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/delete_template",
+        vol.Required("name"): str,
+    }
+)
 @websocket_api.async_response
 async def websocket_delete_template(
     hass: HomeAssistant,
@@ -239,11 +254,13 @@ async def websocket_delete_template(
     connection.send_result(msg["id"])
 
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/apply_template",
-    vol.Required("mac"): str,
-    vol.Required("template_name"): str,
-})
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/apply_template",
+        vol.Required("mac"): str,
+        vol.Required("template_name"): str,
+    }
+)
 @websocket_api.async_response
 async def websocket_apply_template(
     hass: HomeAssistant,
@@ -267,21 +284,25 @@ async def websocket_apply_template(
 
 # -- Helper --
 
+
 def _build_entity_key_map(entities: list) -> dict[str, int]:
     """Map entity names to their numeric state keys."""
     key_map = {}
     for entity in entities:
-        if hasattr(entity, 'key') and hasattr(entity, 'name'):
+        if hasattr(entity, "key") and hasattr(entity, "name"):
             key_map[entity.name] = entity.key
     return key_map
 
 
 # -- subscribe_device (session lifecycle) --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/subscribe_device",
-    vol.Required("mac"): str,
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/subscribe_device",
+        vol.Required("mac"): str,
+    }
+)
 @websocket_api.async_response
 async def websocket_subscribe_device(
     hass: HomeAssistant,
@@ -303,15 +324,19 @@ async def websocket_subscribe_device(
     @callback
     def _unsub() -> None:
         hass.async_create_task(manager.async_close_session(mac))
+
     connection.subscriptions[msg["id"]] = _unsub
 
 
 # -- subscribe_raw_targets --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/subscribe_raw_targets",
-    vol.Required("mac"): str,
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/subscribe_raw_targets",
+        vol.Required("mac"): str,
+    }
+)
 @websocket_api.async_response
 async def websocket_subscribe_raw_targets(
     hass: HomeAssistant,
@@ -345,6 +370,7 @@ async def websocket_subscribe_raw_targets(
     @callback
     def _on_state(state: Any) -> None:
         from aioesphomeapi import TextSensorState
+
         if not isinstance(state, TextSensorState):
             return
         if state.key not in raw_keys:
@@ -355,9 +381,7 @@ async def websocket_subscribe_raw_targets(
             raw_targets[idx] = {"raw_x": float(parts[0]), "raw_y": float(parts[1])}
         else:
             raw_targets[idx] = {"raw_x": None, "raw_y": None}
-        connection.send_message(
-            websocket_api.event_message(msg["id"], {"targets": list(raw_targets)})
-        )
+        connection.send_message(websocket_api.event_message(msg["id"], {"targets": list(raw_targets)}))
 
     device_conn.subscribe_states(_on_state)
     connection.send_result(msg["id"])
@@ -365,10 +389,13 @@ async def websocket_subscribe_raw_targets(
 
 # -- subscribe_grid_targets --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/subscribe_grid_targets",
-    vol.Required("mac"): str,
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/subscribe_grid_targets",
+        vol.Required("mac"): str,
+    }
+)
 @websocket_api.async_response
 async def websocket_subscribe_grid_targets(
     hass: HomeAssistant,
@@ -423,9 +450,14 @@ async def websocket_subscribe_grid_targets(
     # Accumulated state
     targets = [{"x": None, "y": None, "signal": 0, "status": "inactive"} for _ in range(3)]
     sensors: dict[str, Any] = {
-        "occupancy": False, "static_presence": False,
-        "motion_presence": False, "target_presence": False,
-        "temperature": None, "humidity": None, "illuminance": None, "co2": None,
+        "occupancy": False,
+        "static_presence": False,
+        "motion_presence": False,
+        "target_presence": False,
+        "temperature": None,
+        "humidity": None,
+        "illuminance": None,
+        "co2": None,
     }
     zones: dict[str, Any] = {"occupancy": {}, "target_counts": {}, "frame_count": 0}
 
@@ -451,11 +483,14 @@ async def websocket_subscribe_grid_targets(
                     targets[idx] = {"x": None, "y": None, "signal": 0, "status": "inactive"}
                 # Send full event on each position update (5Hz)
                 connection.send_message(
-                    websocket_api.event_message(msg["id"], {
-                        "targets": list(targets),
-                        "sensors": dict(sensors),
-                        "zones": dict(zones),
-                    })
+                    websocket_api.event_message(
+                        msg["id"],
+                        {
+                            "targets": list(targets),
+                            "sensors": dict(sensors),
+                            "zones": dict(zones),
+                        },
+                    )
                 )
             elif zone_state_key is not None and state.key == zone_state_key and state.state:
                 # Parse zone state JSON (1Hz)
@@ -483,6 +518,7 @@ async def websocket_subscribe_grid_targets(
 
         elif isinstance(state, SensorState) and state.key in numeric_sensor_keys:
             import math
+
             field = numeric_sensor_keys[state.key]
             sensors[field] = None if math.isnan(state.state) else state.state
 
@@ -492,12 +528,15 @@ async def websocket_subscribe_grid_targets(
 
 # -- set_entity_enabled --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/set_entity_enabled",
-    vol.Required("mac"): str,
-    vol.Required("entity_id"): str,
-    vol.Required("enabled"): bool,
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/set_entity_enabled",
+        vol.Required("mac"): str,
+        vol.Required("entity_id"): str,
+        vol.Required("enabled"): bool,
+    }
+)
 @callback
 def websocket_set_entity_enabled(
     hass: HomeAssistant,
@@ -509,21 +548,22 @@ def websocket_set_entity_enabled(
     if msg["enabled"]:
         ent_reg.async_update_entity(msg["entity_id"], disabled_by=None)
     else:
-        ent_reg.async_update_entity(
-            msg["entity_id"], disabled_by=er.RegistryEntryDisabler.INTEGRATION
-        )
+        ent_reg.async_update_entity(msg["entity_id"], disabled_by=er.RegistryEntryDisabler.INTEGRATION)
     connection.send_result(msg["id"])
 
 
 # -- set_env_calibration --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/set_env_calibration",
-    vol.Required("mac"): str,
-    vol.Required("temperature_offset"): vol.Coerce(float),
-    vol.Required("humidity_offset"): vol.Coerce(float),
-    vol.Required("illuminance_offset"): vol.Coerce(float),
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/set_env_calibration",
+        vol.Required("mac"): str,
+        vol.Required("temperature_offset"): vol.Coerce(float),
+        vol.Required("humidity_offset"): vol.Coerce(float),
+        vol.Required("illuminance_offset"): vol.Coerce(float),
+    }
+)
 @websocket_api.async_response
 async def websocket_set_env_calibration(
     hass: HomeAssistant,
@@ -549,11 +589,14 @@ async def websocket_set_env_calibration(
 
 # -- set_motion_timeout --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/set_motion_timeout",
-    vol.Required("mac"): str,
-    vol.Required("timeout"): vol.Coerce(float),
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/set_motion_timeout",
+        vol.Required("mac"): str,
+        vol.Required("timeout"): vol.Coerce(float),
+    }
+)
 @websocket_api.async_response
 async def websocket_set_motion_timeout(
     hass: HomeAssistant,
@@ -575,11 +618,14 @@ async def websocket_set_motion_timeout(
 
 # -- set_tracking --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/set_tracking",
-    vol.Required("mac"): str,
-    vol.Required("max_range"): vol.Coerce(float),
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/set_tracking",
+        vol.Required("mac"): str,
+        vol.Required("max_range"): vol.Coerce(float),
+    }
+)
 @websocket_api.async_response
 async def websocket_set_tracking(
     hass: HomeAssistant,
@@ -601,18 +647,21 @@ async def websocket_set_tracking(
 
 # -- set_static_presence --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/set_static_presence",
-    vol.Required("mac"): str,
-    vol.Required("min_range"): vol.Coerce(float),
-    vol.Required("max_range"): vol.Coerce(float),
-    vol.Required("trigger_range"): vol.Coerce(float),
-    vol.Required("sustain_sensitivity"): vol.Coerce(int),
-    vol.Required("trigger_sensitivity"): vol.Coerce(int),
-    vol.Required("timeout"): vol.Coerce(float),
-    vol.Required("on_delay"): vol.Coerce(float),
-    vol.Required("led_enabled"): bool,
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/set_static_presence",
+        vol.Required("mac"): str,
+        vol.Required("min_range"): vol.Coerce(float),
+        vol.Required("max_range"): vol.Coerce(float),
+        vol.Required("trigger_range"): vol.Coerce(float),
+        vol.Required("sustain_sensitivity"): vol.Coerce(int),
+        vol.Required("trigger_sensitivity"): vol.Coerce(int),
+        vol.Required("timeout"): vol.Coerce(float),
+        vol.Required("on_delay"): vol.Coerce(float),
+        vol.Required("led_enabled"): bool,
+    }
+)
 @websocket_api.async_response
 async def websocket_set_static_presence(
     hass: HomeAssistant,
@@ -643,13 +692,16 @@ async def websocket_set_static_presence(
 
 # -- set_pipeline --
 
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/set_pipeline",
-    vol.Required("mac"): str,
-    vol.Required("display_interval_ms"): vol.All(vol.Coerce(int), vol.Range(min=50, max=1000)),
-    vol.Required("zone_publish_interval_ms"): vol.All(vol.Coerce(int), vol.Range(min=100, max=2000)),
-    vol.Required("window_duration_ms"): vol.All(vol.Coerce(int), vol.Range(min=200, max=2000)),
-})
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/set_pipeline",
+        vol.Required("mac"): str,
+        vol.Required("display_interval_ms"): vol.All(vol.Coerce(int), vol.Range(min=50, max=1000)),
+        vol.Required("zone_publish_interval_ms"): vol.All(vol.Coerce(int), vol.Range(min=100, max=2000)),
+        vol.Required("window_duration_ms"): vol.All(vol.Coerce(int), vol.Range(min=200, max=2000)),
+    }
+)
 @websocket_api.async_response
 async def websocket_set_pipeline(
     hass: HomeAssistant,

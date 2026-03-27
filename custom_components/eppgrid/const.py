@@ -49,5 +49,3 @@ ENTRY_POINT_ZONE_TYPES = {ZONE_TYPE_ENTRANCE}
 
 # LD2450 raw frame rate (10Hz per datasheet)
 RAW_FPS = 10
-
-

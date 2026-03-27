@@ -1,4 +1,5 @@
 """Everything Presence Pro Grid — calibration UI and device management."""
+
 from __future__ import annotations
 
 import hashlib
@@ -60,13 +61,15 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def _register_panel(hass: HomeAssistant) -> None:
     """Register the frontend sidebar panel."""
-    await hass.http.async_register_static_paths([
-        StaticPathConfig(
-            url_path=f"/{DOMAIN}_static",
-            path=FRONTEND_DIR,
-            cache_headers=False,
-        )
-    ])
+    await hass.http.async_register_static_paths(
+        [
+            StaticPathConfig(
+                url_path=f"/{DOMAIN}_static",
+                path=FRONTEND_DIR,
+                cache_headers=False,
+            )
+        ]
+    )
     js_path = os.path.join(FRONTEND_DIR, "eppgrid-panel.js")
     try:
         js_hash = await hass.async_add_executor_job(_hash_file, js_path)

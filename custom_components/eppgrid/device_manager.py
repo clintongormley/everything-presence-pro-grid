@@ -1,4 +1,5 @@
 """Device manager: discovery, connections, config push, entity management."""
+
 from __future__ import annotations
 
 import base64
@@ -87,11 +88,14 @@ class DeviceConnection:
         if perspective:
             service = self._services.get("epp_set_perspective")
             if service:
-                await self._client.execute_service(service, {
-                    "perspective": ",".join(str(c) for c in perspective),
-                    "room_width": cal.get("room_width", 0.0),
-                    "room_depth": cal.get("room_depth", 0.0),
-                })
+                await self._client.execute_service(
+                    service,
+                    {
+                        "perspective": ",".join(str(c) for c in perspective),
+                        "room_width": cal.get("room_width", 0.0),
+                        "room_depth": cal.get("room_depth", 0.0),
+                    },
+                )
                 _LOGGER.info("Pushed perspective to %s", self._host)
 
         layout = config.get("room_layout", {})
@@ -106,11 +110,14 @@ class DeviceConnection:
                 room_cols = max(1, -(-int(room_width) // cell_size))  # ceil division
                 start_col = (20 - room_cols) // 2
                 origin_x = -start_col * cell_size
-                await self._client.execute_service(service, {
-                    "grid_data": grid_b64,
-                    "origin_x": float(origin_x),
-                    "origin_y": 0.0,
-                })
+                await self._client.execute_service(
+                    service,
+                    {
+                        "grid_data": grid_b64,
+                        "origin_x": float(origin_x),
+                        "origin_y": 0.0,
+                    },
+                )
                 _LOGGER.info("Pushed grid to %s", self._host)
 
         zone_slots = layout.get("zone_slots", [None] * MAX_ZONES)
@@ -126,9 +133,12 @@ class DeviceConnection:
                 "room_handoff_timeout": layout.get("room_handoff_timeout", 3.0),
                 "room_entry_point": layout.get("room_entry_point", False),
             }
-            await self._client.execute_service(service, {
-                "zones_json": json.dumps(zone_data),
-            })
+            await self._client.execute_service(
+                service,
+                {
+                    "zones_json": json.dumps(zone_data),
+                },
+            )
             _LOGGER.info("Pushed %d zones to %s", len(named), self._host)
 
         # Push device settings
@@ -175,14 +185,10 @@ class DeviceManager:
         """Start discovery and event listeners."""
         await self.async_discover()
         self._unsub_listeners.append(
-            self._hass.bus.async_listen(
-                er.EVENT_ENTITY_REGISTRY_UPDATED, self._on_entity_registry_updated
-            )
+            self._hass.bus.async_listen(er.EVENT_ENTITY_REGISTRY_UPDATED, self._on_entity_registry_updated)
         )
         # Listen for state changes to detect device availability
-        self._unsub_listeners.append(
-            self._hass.bus.async_listen("state_changed", self._on_state_changed)
-        )
+        self._unsub_listeners.append(self._hass.bus.async_listen("state_changed", self._on_state_changed))
 
     async def async_stop(self) -> None:
         """Stop listeners and close all connections."""
@@ -231,7 +237,8 @@ class DeviceManager:
                 config = self._store.get_device(mac)
                 zone_slots = (
                     config.get("room_layout", {}).get("zone_slots", [None] * MAX_ZONES)
-                    if config else [None] * MAX_ZONES
+                    if config
+                    else [None] * MAX_ZONES
                 )
                 await self.async_update_zone_entities(mac, zone_slots)
 
@@ -346,18 +353,18 @@ class DeviceManager:
         result = []
         for mac, dev in self.devices.items():
             config = self._store.get_device(mac)
-            result.append({
-                "mac": mac,
-                "name": config.get("name", dev.name) if config else dev.name,
-                "host": dev.host,
-                "available": dev.available,
-                "configured": config is not None,
-            })
+            result.append(
+                {
+                    "mac": mac,
+                    "name": config.get("name", dev.name) if config else dev.name,
+                    "host": dev.host,
+                    "available": dev.available,
+                    "configured": config is not None,
+                }
+            )
         return result
 
-    async def async_update_zone_entities(
-        self, mac: str, zone_slots: list[dict[str, Any] | None]
-    ) -> None:
+    async def async_update_zone_entities(self, mac: str, zone_slots: list[dict[str, Any] | None]) -> None:
         """Enable/disable and rename ESPHome zone occupancy entities for a device."""
         dev = self.devices.get(mac)
         if dev is None or dev.device_id is None:
@@ -378,26 +385,18 @@ class DeviceManager:
             if i == 0:
                 # Zone 0 "rest of room" — enable if device is calibrated
                 if is_calibrated:
-                    ent_reg.async_update_entity(
-                        entity_id, disabled_by=None, name="Rest of Room Occupancy"
-                    )
+                    ent_reg.async_update_entity(entity_id, disabled_by=None, name="Rest of Room Occupancy")
                 else:
-                    ent_reg.async_update_entity(
-                        entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
-                    )
+                    ent_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION)
             elif i <= len(zone_slots) and zone_slots[i - 1] is not None:
                 # Named zone — enable and rename
                 zone = zone_slots[i - 1]
                 ent_reg.async_update_entity(entity_id, disabled_by=None, name=zone["name"])
             else:
                 # Unused zone — disable
-                ent_reg.async_update_entity(
-                    entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION
-                )
+                ent_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION)
 
-    def _find_zone_entity(
-        self, ent_reg: er.EntityRegistry, device_id: str, zone_index: int
-    ) -> str | None:
+    def _find_zone_entity(self, ent_reg: er.EntityRegistry, device_id: str, zone_index: int) -> str | None:
         """Find the ESPHome zone occupancy entity_id for a device and zone index."""
         for entry in ent_reg.entities.values():
             if (
@@ -417,9 +416,7 @@ def _extract_mac(device: dr.DeviceEntry) -> str | None:
     return None
 
 
-def _extract_host(
-    device: dr.DeviceEntry, config_entry_id: str | None, hass: HomeAssistant
-) -> str | None:
+def _extract_host(device: dr.DeviceEntry, config_entry_id: str | None, hass: HomeAssistant) -> str | None:
     """Try to extract the host/IP from the ESPHome config entry."""
     if config_entry_id is None:
         return None

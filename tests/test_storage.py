@@ -1,4 +1,5 @@
 """Tests for EPP Grid storage layer."""
+
 from __future__ import annotations
 
 import pytest

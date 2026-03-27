@@ -1,4 +1,5 @@
 """Persistent storage for EPP Grid device configs and templates."""
+
 from __future__ import annotations
 
 import logging
@@ -36,11 +37,13 @@ class EPPGridStore:
 
     async def async_save(self) -> None:
         """Persist current data."""
-        await self._store.async_save({
-            "devices": self.devices,
-            "templates": self.templates,
-            "sidebar_panel": self.sidebar_panel,
-        })
+        await self._store.async_save(
+            {
+                "devices": self.devices,
+                "templates": self.templates,
+                "sidebar_panel": self.sidebar_panel,
+            }
+        )
 
     def get_device(self, mac: str) -> dict[str, Any] | None:
         """Get config for a device by MAC, or None."""

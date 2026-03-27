@@ -1,4 +1,5 @@
 """Tests for EPP Grid setup via config entry."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -34,16 +35,12 @@ class TestSetupEntry:
             await hass.async_block_till_done()
             mock_panel.assert_called_once()
 
-    async def test_setup_stores_manager_in_hass_data(
-        self, hass: HomeAssistant, config_entry: MockConfigEntry
-    ) -> None:
+    async def test_setup_stores_manager_in_hass_data(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """Manager is accessible via hass.data[DOMAIN]."""
         assert DOMAIN in hass.data
         assert hasattr(hass.data[DOMAIN], "devices")
 
-    async def test_unload_entry(
-        self, hass: HomeAssistant, config_entry: MockConfigEntry
-    ) -> None:
+    async def test_unload_entry(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """Unloading removes manager from hass.data."""
         assert DOMAIN in hass.data
         await hass.config_entries.async_unload(config_entry.entry_id)

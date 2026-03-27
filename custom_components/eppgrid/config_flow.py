@@ -1,4 +1,5 @@
 """Config flow for Everything Presence Pro Grid."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -40,9 +41,7 @@ class EPPGridOptionsFlow(OptionsFlow):
     def __init__(self, config_entry: ConfigEntry) -> None:
         self._config_entry = config_entry
 
-    async def async_step_init(
-        self, user_input: dict[str, Any] | None = None
-    ) -> Any:
+    async def async_step_init(self, user_input: dict[str, Any] | None = None) -> Any:
         """Handle options."""
         if user_input is not None:
             # Update the store's sidebar_panel setting
@@ -61,7 +60,9 @@ class EPPGridOptionsFlow(OptionsFlow):
 
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({
-                vol.Required("sidebar_panel", default=sidebar_panel): bool,
-            }),
+            data_schema=vol.Schema(
+                {
+                    vol.Required("sidebar_panel", default=sidebar_panel): bool,
+                }
+            ),
         )

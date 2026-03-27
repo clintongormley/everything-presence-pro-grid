@@ -1,4 +1,5 @@
 """Tests for EPP Grid device manager."""
+
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
@@ -32,9 +33,7 @@ class TestDiscovery:
         await manager.async_discover()
         assert manager.devices == {}
 
-    async def test_discovers_zone_engine_device(
-        self, hass: HomeAssistant, manager: DeviceManager
-    ) -> None:
+    async def test_discovers_zone_engine_device(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """Finds ESPHome device with zone_engine_version entity."""
         from homeassistant.helpers import device_registry as dr
         from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -73,9 +72,7 @@ class TestDiscovery:
         dev = manager.devices["AA:BB:CC:DD:EE:FF"]
         assert dev.name == "Everything Presence Pro"
 
-    async def test_ignores_non_zone_engine_entities(
-        self, hass: HomeAssistant, manager: DeviceManager
-    ) -> None:
+    async def test_ignores_non_zone_engine_entities(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """Entities without zone_engine_version are ignored."""
         ent_reg = er.async_get(hass)
         ent_reg.async_get_or_create(
@@ -170,9 +167,7 @@ class TestAutoConfigPush:
 
 
 class TestEntityManagement:
-    async def test_enable_zone_entities(
-        self, hass: HomeAssistant, manager: DeviceManager
-    ) -> None:
+    async def test_enable_zone_entities(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """Configuring zones enables corresponding ESPHome entities."""
         from pytest_homeassistant_custom_component.common import MockConfigEntry
 
@@ -208,12 +203,14 @@ class TestEntityManagement:
         zone_slots = [
             {"name": "Entrance", "type": "entrance"},
             {"name": "Armchair", "type": "normal"},
-            None, None, None, None, None,
+            None,
+            None,
+            None,
+            None,
+            None,
         ]
 
-        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
-            mac="AA:BB:CC:DD:EE:FF", name="EPP", device_id=device.id
-        )
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(mac="AA:BB:CC:DD:EE:FF", name="EPP", device_id=device.id)
 
         # Store calibration so zone 0 is enabled
         await manager._store.async_load()
@@ -244,9 +241,7 @@ class TestEntityManagement:
 class TestDeviceSession:
     async def test_open_and_close_session(self, manager: DeviceManager) -> None:
         """Session opens a connection and closes it."""
-        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
-            mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100"
-        )
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100")
         with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
             client = AsyncMock()
             client.connect = AsyncMock()
@@ -265,9 +260,7 @@ class TestDeviceSession:
 
     async def test_open_session_reuses_existing(self, manager: DeviceManager) -> None:
         """Opening a session when one exists returns the same connection."""
-        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
-            mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100"
-        )
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100")
         with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
             client = AsyncMock()
             client.connect = AsyncMock()
@@ -293,9 +286,7 @@ class TestDeviceSession:
         store.devices["AA:BB:CC:DD:EE:FF"] = {
             "calibration": {"perspective": [1.0] * 8, "room_width": 3000.0, "room_depth": 4000.0},
         }
-        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
-            mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100"
-        )
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100")
         with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
             client = AsyncMock()
             client.connect = AsyncMock()

@@ -710,9 +710,7 @@ export class EPPGridPanel extends LitElement {
 		const stored = localStorage.getItem("epp_selected_mac");
 		const match =
 			stored && this._devices.find((d: DeviceInfo) => d.mac === stored);
-		this._selectedMac = match
-			? stored!
-			: (this._devices[0]?.mac ?? "");
+		this._selectedMac = match ? stored! : (this._devices[0]?.mac ?? "");
 	}
 
 	private async _loadDeviceConfig(mac: string): Promise<void> {
@@ -775,7 +773,11 @@ export class EPPGridPanel extends LitElement {
 	private _closeDeviceSession(): void {
 		this._unsubscribeTargets();
 		if (this._unsubDevice) {
-			try { this._unsubDevice(); } catch { /* stale subscription */ }
+			try {
+				this._unsubDevice();
+			} catch {
+				/* stale subscription */
+			}
 			this._unsubDevice = undefined;
 		}
 	}
@@ -857,13 +859,16 @@ export class EPPGridPanel extends LitElement {
 	private _unsubscribeTargets(): void {
 		this._unsubscribeDisplay();
 		if (this._unsubTargets) {
-			try { this._unsubTargets(); } catch { /* stale subscription */ }
+			try {
+				this._unsubTargets();
+			} catch {
+				/* stale subscription */
+			}
 			this._unsubTargets = undefined;
 		}
 		this._targets = [];
 		this._rawTargets = [];
 	}
-
 
 	private _subscribeDisplay(mac: string): void {
 		this._unsubscribeDisplay();
@@ -889,7 +894,11 @@ export class EPPGridPanel extends LitElement {
 
 	private _unsubscribeDisplay(): void {
 		if (this._unsubDisplay) {
-			try { this._unsubDisplay(); } catch { /* stale subscription */ }
+			try {
+				this._unsubDisplay();
+			} catch {
+				/* stale subscription */
+			}
 			this._unsubDisplay = undefined;
 		}
 	}
@@ -5122,12 +5131,17 @@ export class EPPGridPanel extends LitElement {
 			if (body !== this._debugLogPrev) {
 				this._debugLogPrev = body;
 				const ts = new Date().toLocaleTimeString("en-GB", {
-					hour12: false, hour: "2-digit", minute: "2-digit",
-					second: "2-digit", fractionalSecondDigits: 1,
+					hour12: false,
+					hour: "2-digit",
+					minute: "2-digit",
+					second: "2-digit",
+					fractionalSecondDigits: 1,
 				});
 				this._debugLogLines.push(`${ts} ${body}`);
 				if (this._debugLogLines.length > EPPGridPanel._DEBUG_LOG_MAX) {
-					this._debugLogLines = this._debugLogLines.slice(-EPPGridPanel._DEBUG_LOG_MAX);
+					this._debugLogLines = this._debugLogLines.slice(
+						-EPPGridPanel._DEBUG_LOG_MAX,
+					);
 				}
 				this.requestUpdate();
 			}
@@ -5147,18 +5161,30 @@ export class EPPGridPanel extends LitElement {
 			const cfg = this._zoneConfigs[zid - 1];
 			return cfg ? cfg.name : `Zone ${zid}`;
 		};
-		const statusName: Record<string, string> = { A: "active", P: "pending", O: "occupied" };
+		const statusName: Record<string, string> = {
+			A: "active",
+			P: "pending",
+			O: "occupied",
+		};
 		const [targetPart, zonePart] = raw.split("|");
-		const targets = (targetPart || "").trim().split(/\s+/).filter(Boolean).map(s => {
-			const [t, z, st, sig] = s.split(":");
-			const zid = parseInt(z?.replace("Z", "") ?? "0");
-			return `${t}→${zoneName(zid)}(${statusName[st] ?? st},${sig})`;
-		});
-		const zones = (zonePart || "").trim().split(/\s+/).filter(Boolean).map(s => {
-			const [z, st, cnt] = s.split(":");
-			const zid = parseInt(z?.replace("Z", "") ?? "0");
-			return `${zoneName(zid)}: ${statusName[st] ?? st}(${cnt})`;
-		});
+		const targets = (targetPart || "")
+			.trim()
+			.split(/\s+/)
+			.filter(Boolean)
+			.map((s) => {
+				const [t, z, st, sig] = s.split(":");
+				const zid = parseInt(z?.replace("Z", "") ?? "0");
+				return `${t}→${zoneName(zid)}(${statusName[st] ?? st},${sig})`;
+			});
+		const zones = (zonePart || "")
+			.trim()
+			.split(/\s+/)
+			.filter(Boolean)
+			.map((s) => {
+				const [z, st, cnt] = s.split(":");
+				const zid = parseInt(z?.replace("Z", "") ?? "0");
+				return `${zoneName(zid)}: ${statusName[st] ?? st}(${cnt})`;
+			});
 		const tStr = targets.length ? targets.join(" ") : "no targets";
 		const zStr = zones.length ? zones.join(", ") : "all clear";
 		return `${tStr} | ${zStr}`;
