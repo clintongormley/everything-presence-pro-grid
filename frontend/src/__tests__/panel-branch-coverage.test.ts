@@ -19,7 +19,10 @@ import { setupLocalize } from "../localize.js";
 
 function createPanel() {
 	const el = document.createElement("eppgrid-panel") as EPPGridPanel;
-	el.hass = { callWS: vi.fn().mockResolvedValue({}) };
+	el.hass = {
+		callWS: vi.fn().mockResolvedValue({}),
+		connection: { subscribeMessage: vi.fn().mockResolvedValue(() => {}) },
+	};
 	const a = el as any;
 	a._grid = initGridFromRoom(3000, 4000);
 	a._zoneConfigs = new Array(7).fill(null);

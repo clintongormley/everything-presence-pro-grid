@@ -3,7 +3,7 @@
 import json
 import sys
 
-THRESHOLD = 90
+THRESHOLD = 25
 
 
 def main() -> int:

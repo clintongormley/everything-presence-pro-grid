@@ -17,7 +17,10 @@ describe("panel element creation", () => {
 	it("can be connected to the DOM", () => {
 		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
 		// Mock hass to prevent WS calls during connectedCallback
-		el.hass = { callWS: async () => ({}) };
+		el.hass = {
+			callWS: async () => ({}),
+			connection: { subscribeMessage: async () => () => {} },
+		};
 		document.body.appendChild(el);
 		expect(el.isConnected).toBe(true);
 		document.body.removeChild(el);
@@ -41,7 +44,10 @@ describe("panel loading state", () => {
 describe("panel renders without throwing", () => {
 	it("renders loading state when _loading is true", () => {
 		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
-		el.hass = { callWS: async () => ({}) };
+		el.hass = {
+			callWS: async () => ({}),
+			connection: { subscribeMessage: async () => () => {} },
+		};
 		const a = el as any;
 		a._loading = true;
 
@@ -52,7 +58,10 @@ describe("panel renders without throwing", () => {
 
 	it("renders loading state when _devices is empty", () => {
 		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
-		el.hass = { callWS: async () => ({}) };
+		el.hass = {
+			callWS: async () => ({}),
+			connection: { subscribeMessage: async () => () => {} },
+		};
 		const a = el as any;
 		a._loading = false;
 		a._devices = [];

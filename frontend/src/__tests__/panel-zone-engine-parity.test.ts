@@ -62,7 +62,10 @@ function makeTarget(
 
 function createParityPanel(): EPPGridPanel {
 	const el = document.createElement("eppgrid-panel") as EPPGridPanel;
-	el.hass = { callWS: async () => ({}) };
+	el.hass = {
+		callWS: async () => ({}),
+		connection: { subscribeMessage: async () => () => {} },
+	};
 	const a = el as any;
 	a._grid = makeParityGrid();
 	a._zoneConfigs = new Array(MAX_ZONES).fill(null);

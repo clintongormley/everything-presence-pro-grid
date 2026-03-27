@@ -5,7 +5,10 @@ import { GRID_CELL_COUNT } from "../lib/grid.js";
 
 function createPanel(): EPPGridPanel {
 	const el = document.createElement("eppgrid-panel") as EPPGridPanel;
-	el.hass = { callWS: async () => ({}) };
+	el.hass = {
+		callWS: async () => ({}),
+		connection: { subscribeMessage: async () => () => {} },
+	};
 	const a = el as any;
 	a._grid = new Uint8Array(GRID_CELL_COUNT);
 	a._zoneConfigs = new Array(7).fill(null);
