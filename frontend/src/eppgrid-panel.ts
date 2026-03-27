@@ -83,11 +83,15 @@ import {
 } from "./lib/zone-engine.js";
 import { setupLocalize } from "./localize.js";
 
-import type { Target, RawTarget, DeviceInfo, WizardCorner, TargetStatus, SetupStep } from "./types.js";
+import type { Target, RawTarget, DeviceInfo, WizardCorner, SetupStep } from "./types.js";
 import { FLOOR_PLAN_SVGS, FURNITURE_CATALOG, CORNER_LABELS, CORNER_OFFSET_LABELS, CAPTURE_DURATION_S, TARGET_COLORS, DEBUG_LOG_MAX, FOV_HALF_ANGLE, FOV_X_EXTENT } from "./constants.js";
+import { DeviceController } from "./controllers/device-controller.js";
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
+
+	// Device controller — owns WS subscriptions and device loading
+	private _deviceCtrl = new DeviceController(this);
 	private _localize: (
 		key: string,
 		params?: Record<string, string | number>,
@@ -219,10 +223,21 @@ export class EPPGridPanel extends LitElement {
 	@state() private _roomWidth = 0; // mm
 	@state() private _roomDepth = 0; // mm
 
-	// Device session + target subscriptions
-	private _unsubDevice?: () => void;
-	private _unsubTargets?: () => void;
-	private _unsubDisplay?: () => void;
+	// Device session + target subscriptions (delegated to _deviceCtrl)
+	// Getter/setter proxies for _unsubTargets and _unsubDisplay so that
+	// existing tests can read/write them via (el as any)._unsubTargets etc.
+	private get _unsubTargets(): (() => void) | undefined {
+		return (this._deviceCtrl as any)._unsubTargets;
+	}
+	private set _unsubTargets(v: (() => void) | undefined) {
+		(this._deviceCtrl as any)._unsubTargets = v;
+	}
+	private get _unsubDisplay(): (() => void) | undefined {
+		return (this._deviceCtrl as any)._unsubDisplay;
+	}
+	private set _unsubDisplay(v: (() => void) | undefined) {
+		(this._deviceCtrl as any)._unsubDisplay = v;
+	}
 
 	private _beforeUnloadHandler = (e: BeforeUnloadEvent) => {
 		if (this._dirty) {
@@ -376,9 +391,10 @@ export class EPPGridPanel extends LitElement {
 
 	updated(changedProps: PropertyValues): void {
 		if (changedProps.has("hass") && this.hass) {
+			this._deviceCtrl.hass = this.hass;
 			if (this._loading && !this._devices.length) {
 				this._initialize();
-			} else if (this._selectedMac && !this._unsubDevice) {
+			} else if (this._selectedMac && !this._deviceCtrl.hasDeviceSession) {
 				// Session lost (e.g. after HA reconnect) — re-open
 				this._loadDeviceConfig(this._selectedMac);
 			}
@@ -396,6 +412,7 @@ export class EPPGridPanel extends LitElement {
 	private async _initialize(): Promise<void> {
 		if (!this.hass) return;
 		this._loading = true;
+		this._deviceCtrl.hass = this.hass;
 		await this._loadDevices();
 		if (this._selectedMac) {
 			await this._loadDeviceConfig(this._selectedMac);
@@ -404,38 +421,17 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private async _loadDevices(): Promise<void> {
-		try {
-			const result = await this.hass.callWS({
-				type: "eppgrid/list_devices",
-			});
-			this._devices = ((result as any).devices as DeviceInfo[]).sort((a, b) =>
-				(a.name || "").localeCompare(b.name || ""),
-			);
-		} catch {
-			this._devices = [];
-			return;
-		}
-
-		const stored = localStorage.getItem("epp_selected_mac");
-		const match =
-			stored && this._devices.find((d: DeviceInfo) => d.mac === stored);
-		this._selectedMac = match ? stored! : (this._devices[0]?.mac ?? "");
+		this._deviceCtrl.hass = this.hass;
+		await this._deviceCtrl.loadDevices();
+		this._devices = this._deviceCtrl.devices;
+		this._selectedMac = this._deviceCtrl.selectedMac;
 	}
 
 	private async _loadDeviceConfig(mac: string): Promise<void> {
-		try {
-			const result = await this.hass.callWS({
-				type: "eppgrid/get_config",
-				mac,
-			});
-			this._applyConfig((result as any).config);
-		} catch {
-			// Device may not be ready yet
-		}
-		// Open device session, then subscribe to data streams
-		await this._openDeviceSession(mac);
-		if (this._unsubDevice) {
-			this._subscribeTargets(mac);
+		this._deviceCtrl.hass = this.hass;
+		const config = await this._deviceCtrl.loadDeviceConfig(mac);
+		if (config) {
+			this._applyConfig(config);
 		}
 	}
 
@@ -467,149 +463,74 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private async _openDeviceSession(mac: string): Promise<void> {
-		this._closeDeviceSession();
-		if (!this.hass || !mac) return;
-		try {
-			this._unsubDevice = await this.hass.connection.subscribeMessage(
-				() => {}, // session has no events, just lifecycle
-				{ type: "eppgrid/subscribe_device", mac },
-			);
-		} catch (e) {
-			console.warn("Failed to open device session:", e);
-		}
+		this._deviceCtrl.hass = this.hass;
+		await this._deviceCtrl.openDeviceSession(mac);
 	}
 
 	private _closeDeviceSession(): void {
-		this._unsubscribeTargets();
-		if (this._unsubDevice) {
-			try {
-				this._unsubDevice();
-			} catch {
-				/* stale subscription */
-			}
-			this._unsubDevice = undefined;
-		}
+		this._deviceCtrl.closeDeviceSession();
+		this._targets = [];
+		this._rawTargets = [];
 	}
 
 	private _subscribeTargets(mac: string): void {
-		this._unsubscribeDisplay();
-		if (this._unsubTargets) {
-			this._unsubTargets();
-			this._unsubTargets = undefined;
-		}
-		if (!this.hass || !mac) return;
-
-		const conn = this.hass.connection;
-
-		conn
-			.subscribeMessage(
-				(event: any) => {
-					this._targets = (event.targets || []).map((t: any) => ({
-						x: t.x,
-						y: t.y,
-						speed: 0,
-						status: (t.status as TargetStatus) ?? "inactive",
-						signal: t.signal ?? 0,
-					}));
-					if (event.sensors) {
-						this._sensorState = {
-							occupancy: event.sensors.occupancy ?? false,
-							static_presence: event.sensors.static_presence ?? false,
-							motion_presence: event.sensors.motion_presence ?? false,
-							target_presence: event.sensors.target_presence ?? false,
-							illuminance: event.sensors.illuminance ?? null,
-							temperature: event.sensors.temperature ?? null,
-							humidity: event.sensors.humidity ?? null,
-							co2: event.sensors.co2 ?? null,
-						};
-					}
-					if (event.zones) {
-						this._zoneState = {
-							occupancy: event.zones.occupancy ?? {},
-							target_counts: event.zones.target_counts ?? {},
-							frame_count: event.zones.frame_count ?? 0,
-						};
-						if (this._showBackendDebugLog && event.zones.debug_log) {
-							const body = this._enrichDebugLog(event.zones.debug_log);
-							if (body !== this._backendDebugLogPrev) {
-								this._backendDebugLogPrev = body;
-								const ts = new Date().toLocaleTimeString("en-GB", {
-									hour12: false,
-									hour: "2-digit",
-									minute: "2-digit",
-									second: "2-digit",
-									fractionalSecondDigits: 1,
-								});
-								this._backendDebugLogLines.push(`${ts} ${body}`);
-								if (
-									this._backendDebugLogLines.length >
-									DEBUG_LOG_MAX
-								) {
-									this._backendDebugLogLines = this._backendDebugLogLines.slice(
-										-DEBUG_LOG_MAX,
-									);
-								}
-								this.requestUpdate();
-							}
+		this._deviceCtrl.hass = this.hass;
+		this._deviceCtrl.onTargetData = (data) => {
+			this._targets = data.targets;
+			this._sensorState = data.sensors;
+			if (data.zones) {
+				this._zoneState = {
+					occupancy: data.zones.occupancy,
+					target_counts: data.zones.target_counts,
+					frame_count: data.zones.frame_count,
+				};
+				if (this._showBackendDebugLog && data.zones.debug_log) {
+					const body = this._enrichDebugLog(data.zones.debug_log);
+					if (body !== this._backendDebugLogPrev) {
+						this._backendDebugLogPrev = body;
+						const ts = new Date().toLocaleTimeString("en-GB", {
+							hour12: false,
+							hour: "2-digit",
+							minute: "2-digit",
+							second: "2-digit",
+							fractionalSecondDigits: 1,
+						});
+						this._backendDebugLogLines.push(`${ts} ${body}`);
+						if (
+							this._backendDebugLogLines.length >
+							DEBUG_LOG_MAX
+						) {
+							this._backendDebugLogLines = this._backendDebugLogLines.slice(
+								-DEBUG_LOG_MAX,
+							);
 						}
+						this.requestUpdate();
 					}
-				},
-				{
-					type: "eppgrid/subscribe_grid_targets",
-					mac,
-				},
-			)
-			.then((unsub: () => void) => {
-				this._unsubTargets = unsub;
-			});
-		this._subscribeDisplay(mac);
+				}
+			}
+		};
+		this._deviceCtrl.onRawTargetData = (rawTargets) => {
+			this._rawTargets = rawTargets;
+		};
+		this._deviceCtrl.subscribeTargets(mac);
 	}
 
 	private _unsubscribeTargets(): void {
-		this._unsubscribeDisplay();
-		if (this._unsubTargets) {
-			try {
-				this._unsubTargets();
-			} catch {
-				/* stale subscription */
-			}
-			this._unsubTargets = undefined;
-		}
+		this._deviceCtrl.unsubscribeTargets();
 		this._targets = [];
 		this._rawTargets = [];
 	}
 
 	private _subscribeDisplay(mac: string): void {
-		this._unsubscribeDisplay();
-		if (!this.hass || !mac) return;
-
-		this.hass.connection
-			.subscribeMessage(
-				(event: any) => {
-					this._rawTargets = (event.targets || []).map((t: any) => ({
-						raw_x: t.raw_x,
-						raw_y: t.raw_y,
-					}));
-				},
-				{
-					type: "eppgrid/subscribe_raw_targets",
-					mac,
-				},
-			)
-			.then((unsub: () => void) => {
-				this._unsubDisplay = unsub;
-			});
+		this._deviceCtrl.hass = this.hass;
+		this._deviceCtrl.onRawTargetData = (rawTargets) => {
+			this._rawTargets = rawTargets;
+		};
+		this._deviceCtrl.subscribeDisplay(mac);
 	}
 
 	private _unsubscribeDisplay(): void {
-		if (this._unsubDisplay) {
-			try {
-				this._unsubDisplay();
-			} catch {
-				/* stale subscription */
-			}
-			this._unsubDisplay = undefined;
-		}
+		this._deviceCtrl.unsubscribeDisplay();
 	}
 
 	// -- Grid cell painting --
