@@ -7,20 +7,19 @@ Implement the target data streaming pipeline so the frontend gets structured eve
 ## Pipeline
 
 ```
-LD2450 UART (10Hz raw frames)
+LD2450 UART (~10Hz raw frames)
   → epp component feed_targets()
-    → raw rolling median (1s window, computed every frame at 10Hz)
-      → perspective transform (10Hz)
-        → grid rolling median (1s window, computed every frame at 10Hz)
-          → zone engine tick (10Hz)
+    → rolling median (1s time-based window, computed every frame)
+      → perspective transform (every frame)
+        → zone engine tick (every frame, counts frames per zone)
 
 Publishing (output throttles, do not affect processing):
-  → raw median  → publish at display_interval (default 5Hz)   ←── subscribe_raw_targets
-  → grid median → publish at display_interval (default 5Hz)   ←── subscribe_grid_targets (positions)
-  → zone results → publish at zone_interval (default 1Hz)     ←── subscribe_grid_targets (state)
+  → raw median      → display_interval (default 5Hz)  ←── subscribe_raw_targets
+  → transformed pos → display_interval (default 5Hz)  ←── subscribe_grid_targets (positions)
+  → zone results    → zone_publish_interval (default 1Hz)  ←── subscribe_grid_targets (state)
 ```
 
-Two rolling medians in cascade: the first smooths raw sensor noise, the perspective transform runs on smoothed data, then the second smooths any transform-induced noise. The zone engine receives fully smoothed grid coordinates at 10Hz for maximum detection precision. Publish rates are purely output throttles.
+One rolling median smooths raw sensor noise. The perspective transform and zone engine run on every frame at whatever rate the LD2450 produces data. The zone engine counts frames per zone using the actual frame count within the window — no assumption of a fixed frame rate. Publish rates are purely output throttles.
 
 ## Configurable Rates
 
