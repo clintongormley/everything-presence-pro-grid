@@ -76,6 +76,19 @@ epp:
     target_2:
       name: "Target 2 Position"
       disabled_by_default: true
+  raw_target_positions:
+    target_0:
+      name: "Raw Target 0"
+      disabled_by_default: true
+    target_1:
+      name: "Raw Target 1"
+      disabled_by_default: true
+    target_2:
+      name: "Raw Target 2"
+      disabled_by_default: true
+  zone_state:
+    name: "Zone State"
+    disabled_by_default: true
 
 # Enable logging
 logger:
@@ -93,6 +106,12 @@ globals:
   - id: motion_timeout
     type: float
     initial_value: '10'
+  - id: display_interval_ms
+    type: uint32_t
+    initial_value: '200'
+  - id: zone_publish_interval_ms
+    type: uint32_t
+    initial_value: '1000'
 
 # Enable Home Assistant API
 api:
@@ -210,6 +229,16 @@ api:
             id: uart_bus_dfrobot
             data: "sensorStart\r\n"
         - delay: 1s
+    - action: epp_set_pipeline
+      variables:
+        display_interval: int
+        zone_publish_interval: int
+        window_duration: int
+      then:
+        - lambda: |-
+            id(display_interval_ms) = display_interval;
+            id(zone_publish_interval_ms) = zone_publish_interval;
+            id(epp_component).set_window_duration(window_duration);
     - action: get_build_flags
       then:
         - api.respond:
