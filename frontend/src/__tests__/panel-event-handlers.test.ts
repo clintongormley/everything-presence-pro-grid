@@ -917,9 +917,9 @@ describe("epp-live-sidebar inline handlers", () => {
 });
 
 // ========================
-// _renderFurnitureSidebar inline handlers
+// Furniture sidebar panel handler methods
 // ========================
-describe("_renderFurnitureSidebar inline handlers", () => {
+describe("furniture sidebar panel handler methods", () => {
 	it("custom icon picker toggle", () => {
 		const a = createPanel() as any;
 		// Replicate handler (line 5523-5524)

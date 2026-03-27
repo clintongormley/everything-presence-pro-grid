@@ -9,6 +9,8 @@ import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
+import "../components/epp-furniture-sidebar.js";
+import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	GRID_CELL_COUNT,
@@ -939,123 +941,161 @@ describe("_renderZoneSidebar DOM events", () => {
 	});
 });
 
-describe("_renderFurnitureSidebar DOM events", () => {
-	it("clicking a sticker adds furniture", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderFurnitureSidebar();
+describe("epp-furniture-sidebar DOM events", () => {
+	function createFurnSidebar(overrides: Record<string, any> = {}): EppFurnitureSidebar {
+		const el = document.createElement("epp-furniture-sidebar") as any;
+		el.furniture = [];
+		el.selectedFurnitureId = null;
+		el.hass = {};
+		el.localize = (k: string) => k;
+		el.showCustomIconPicker = false;
+		el.customIconValue = "";
+		Object.assign(el, overrides);
+		return el as EppFurnitureSidebar;
+	}
+
+	it("clicking a sticker fires furniture-add event", () => {
+		const el = createFurnSidebar();
+		const handler = vi.fn();
+		el.addEventListener("furniture-add", handler);
+
+		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
 		const stickers = c.querySelectorAll(".furn-sticker:not(.furn-custom)");
 		if (stickers.length > 0) {
 			(stickers[0] as HTMLElement).click();
-			expect(a._furniture.length).toBeGreaterThan(0);
+			expect(handler).toHaveBeenCalledTimes(1);
 		}
 	});
 
-	it("custom icon button toggles picker", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderFurnitureSidebar();
+	it("custom icon button fires custom-icon-toggle", () => {
+		const el = createFurnSidebar();
+		const handler = vi.fn();
+		el.addEventListener("custom-icon-toggle", handler);
+
+		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
 		const customBtn = c.querySelector(".furn-custom") as HTMLElement;
 		if (customBtn) {
 			customBtn.click();
-			expect(a._showCustomIconPicker).toBe(true);
+			expect(handler).toHaveBeenCalledTimes(1);
 		}
 	});
 
-	it("custom icon picker cancel", () => {
-		const a = createPanel() as any;
-		a._showCustomIconPicker = true;
-		a._customIconValue = "mdi:lamp";
-		const tpl = a._renderFurnitureSidebar();
+	it("custom icon picker cancel fires events", () => {
+		const el = createFurnSidebar({
+			showCustomIconPicker: true,
+			customIconValue: "mdi:lamp",
+		});
+		const toggleHandler = vi.fn();
+		const changeHandler = vi.fn();
+		el.addEventListener("custom-icon-toggle", toggleHandler);
+		el.addEventListener("custom-icon-change", changeHandler);
+
+		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
 		const backBtn = c.querySelector(".wizard-btn-back") as HTMLElement;
 		if (backBtn) {
 			backBtn.click();
-			expect(a._showCustomIconPicker).toBe(false);
+			expect(toggleHandler).toHaveBeenCalledTimes(1);
+			expect(changeHandler).toHaveBeenCalledTimes(1);
+			expect(changeHandler.mock.calls[0][0].detail).toBe("");
 		}
 	});
 
-	it("custom icon picker add", () => {
-		const a = createPanel() as any;
-		a._showCustomIconPicker = true;
-		a._customIconValue = "mdi:star";
-		const tpl = a._renderFurnitureSidebar();
+	it("custom icon picker add fires furniture-add-custom", () => {
+		const el = createFurnSidebar({
+			showCustomIconPicker: true,
+			customIconValue: "mdi:star",
+		});
+		const handler = vi.fn();
+		el.addEventListener("furniture-add-custom", handler);
+
+		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
 		const primaryBtn = c.querySelector(".wizard-btn-primary") as HTMLElement;
 		if (primaryBtn) {
 			primaryBtn.click();
-			expect(a._furniture.length).toBe(1);
-			expect(a._showCustomIconPicker).toBe(false);
+			expect(handler).toHaveBeenCalledTimes(1);
+			expect(handler.mock.calls[0][0].detail).toBe("mdi:star");
 		}
 	});
 
-	it("furniture remove button on selected item", () => {
-		const a = createPanel() as any;
-		a._furniture = [
-			{
-				id: "f1",
-				type: "svg",
-				icon: "armchair",
-				label: "Chair",
-				x: 100,
-				y: 200,
-				width: 800,
-				height: 800,
-				rotation: 0,
-				lockAspect: false,
-			},
-		];
-		a._selectedFurnitureId = "f1";
-		const tpl = a._renderFurnitureSidebar();
+	it("furniture remove button fires furniture-remove", () => {
+		const el = createFurnSidebar({
+			furniture: [
+				{
+					id: "f1",
+					type: "svg" as const,
+					icon: "armchair",
+					label: "Chair",
+					x: 100,
+					y: 200,
+					width: 800,
+					height: 800,
+					rotation: 0,
+					lockAspect: false,
+				},
+			],
+			selectedFurnitureId: "f1",
+		});
+		const handler = vi.fn();
+		el.addEventListener("furniture-remove", handler);
+
+		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
 		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
 		if (removeBtn) {
 			removeBtn.click();
-			expect(a._furniture.length).toBe(0);
+			expect(handler).toHaveBeenCalledTimes(1);
+			expect(handler.mock.calls[0][0].detail).toBe("f1");
 		}
 	});
 
-	it("furniture dimension inputs", () => {
-		const a = createPanel() as any;
-		a._furniture = [
-			{
-				id: "f1",
-				type: "svg",
-				icon: "armchair",
-				label: "Chair",
-				x: 100,
-				y: 200,
-				width: 800,
-				height: 800,
-				rotation: 0,
-				lockAspect: false,
-			},
-		];
-		a._selectedFurnitureId = "f1";
-		const tpl = a._renderFurnitureSidebar();
+	it("furniture dimension inputs fire furniture-update", () => {
+		const el = createFurnSidebar({
+			furniture: [
+				{
+					id: "f1",
+					type: "svg" as const,
+					icon: "armchair",
+					label: "Chair",
+					x: 100,
+					y: 200,
+					width: 800,
+					height: 800,
+					rotation: 0,
+					lockAspect: false,
+				},
+			],
+			selectedFurnitureId: "f1",
+		});
+		const handler = vi.fn();
+		el.addEventListener("furniture-update", handler);
+
+		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
 		const inputs = c.querySelectorAll(
 			".furn-dims input",
 		) as NodeListOf<HTMLInputElement>;
 		if (inputs.length >= 3) {
-			// Width/height inputs are in cm, stored internally as mm
 			inputs[0].value = "120";
 			inputs[0].dispatchEvent(new Event("change"));
-			expect(a._furniture[0].width).toBe(1200);
+			expect(handler.mock.calls[0][0].detail.updates.width).toBe(1200);
 
 			inputs[1].value = "100";
 			inputs[1].dispatchEvent(new Event("change"));
-			expect(a._furniture[0].height).toBe(1000);
+			expect(handler.mock.calls[1][0].detail.updates.height).toBe(1000);
 
 			inputs[2].value = "45";
 			inputs[2].dispatchEvent(new Event("change"));
-			expect(a._furniture[0].rotation).toBe(45);
+			expect(handler.mock.calls[2][0].detail.updates.rotation).toBe(45);
 		}
 	});
 });

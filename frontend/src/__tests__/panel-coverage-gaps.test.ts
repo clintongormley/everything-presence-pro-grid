@@ -9,6 +9,8 @@ import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
+import "../components/epp-furniture-sidebar.js";
+import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -772,14 +774,22 @@ describe("_renderTemplateSaveDialog DOM events", () => {
 });
 
 // =========================================================
-// _renderFurnitureSidebar: ha-icon-picker value-changed
+// epp-furniture-sidebar: ha-icon-picker value-changed
 // =========================================================
-describe("_renderFurnitureSidebar icon picker event", () => {
-	it("value-changed updates custom icon value", () => {
-		const a = createPanel() as any;
-		a._showCustomIconPicker = true;
-		a._customIconValue = "";
-		const tpl = a._renderFurnitureSidebar();
+describe("epp-furniture-sidebar icon picker event", () => {
+	it("value-changed fires custom-icon-change", () => {
+		const el = document.createElement("epp-furniture-sidebar") as any;
+		el.furniture = [];
+		el.selectedFurnitureId = null;
+		el.hass = {};
+		el.localize = (k: string) => k;
+		el.showCustomIconPicker = true;
+		el.customIconValue = "";
+
+		const handler = vi.fn();
+		el.addEventListener("custom-icon-change", handler);
+
+		const tpl = el._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
 		const picker = c.querySelector("ha-icon-picker") as HTMLElement;
@@ -787,7 +797,8 @@ describe("_renderFurnitureSidebar icon picker event", () => {
 			picker.dispatchEvent(
 				new CustomEvent("value-changed", { detail: { value: "mdi:lamp" } }),
 			);
-			expect(a._customIconValue).toBe("mdi:lamp");
+			expect(handler).toHaveBeenCalledTimes(1);
+			expect(handler.mock.calls[0][0].detail).toBe("mdi:lamp");
 		}
 		document.body.removeChild(c);
 	});

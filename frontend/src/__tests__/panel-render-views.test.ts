@@ -3,6 +3,8 @@ import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
+import "../components/epp-furniture-sidebar.js";
+import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import type { EppZoneSidebar } from "../components/epp-zone-sidebar.js";
 import {
 	CELL_ROOM_BIT,
@@ -1158,48 +1160,62 @@ describe("epp-live-sidebar via panel", () => {
 	});
 });
 
-describe("_renderFurnitureSidebar", () => {
+describe("epp-furniture-sidebar renders via component", () => {
+	function createFurnSidebar(overrides: Record<string, any> = {}): EppFurnitureSidebar {
+		const el = document.createElement("epp-furniture-sidebar") as any;
+		el.furniture = [];
+		el.selectedFurnitureId = null;
+		el.hass = {};
+		el.localize = (k: string) => k;
+		el.showCustomIconPicker = false;
+		el.customIconValue = "";
+		Object.assign(el, overrides);
+		return el as EppFurnitureSidebar;
+	}
+
 	it("renders furniture catalog", () => {
-		const a = createPanel() as any;
-		a._furniture = [];
-		const result = a._renderFurnitureSidebar();
+		const el = createFurnSidebar();
+		const result = (el as any)._renderFurnitureSidebar();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with selected furniture", () => {
-		const a = createPanel() as any;
-		a._furniture = [
-			{
-				id: "f1",
-				type: "svg",
-				icon: "armchair",
-				label: "Chair",
-				x: 100,
-				y: 200,
-				width: 800,
-				height: 800,
-				rotation: 45,
-				lockAspect: false,
-			},
-		];
-		a._selectedFurnitureId = "f1";
-		const result = a._renderFurnitureSidebar();
+		const el = createFurnSidebar({
+			furniture: [
+				{
+					id: "f1",
+					type: "svg",
+					icon: "armchair",
+					label: "Chair",
+					x: 100,
+					y: 200,
+					width: 800,
+					height: 800,
+					rotation: 45,
+					lockAspect: false,
+				},
+			],
+			selectedFurnitureId: "f1",
+		});
+		const result = (el as any)._renderFurnitureSidebar();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with custom icon picker open", () => {
-		const a = createPanel() as any;
-		a._showCustomIconPicker = true;
-		a._customIconValue = "mdi:lamp";
-		const result = a._renderFurnitureSidebar();
+		const el = createFurnSidebar({
+			showCustomIconPicker: true,
+			customIconValue: "mdi:lamp",
+		});
+		const result = (el as any)._renderFurnitureSidebar();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with empty custom icon value", () => {
-		const a = createPanel() as any;
-		a._showCustomIconPicker = true;
-		a._customIconValue = "";
-		const result = a._renderFurnitureSidebar();
+		const el = createFurnSidebar({
+			showCustomIconPicker: true,
+			customIconValue: "",
+		});
+		const result = (el as any)._renderFurnitureSidebar();
 		expect(result).toBeDefined();
 	});
 });
