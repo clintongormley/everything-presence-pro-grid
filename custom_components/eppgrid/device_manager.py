@@ -324,10 +324,16 @@ class DeviceManager:
             return
         self._connection_refcount[mac] -= 1
         if self._connection_refcount[mac] <= 0:
-            conn = self._active_connections.pop(mac, None)
-            self._connection_refcount.pop(mac, None)
-            if conn is not None:
-                await conn.async_disconnect()
+            conn = self._active_connections.get(mac)
+            # Only disconnect if no state subscribers are listening
+            if conn is None or not conn._state_subscribers:
+                conn = self._active_connections.pop(mac, None)
+                self._connection_refcount.pop(mac, None)
+                if conn is not None:
+                    await conn.async_disconnect()
+            else:
+                # Reset refcount — subscribers still active
+                self._connection_refcount[mac] = 0
 
     def list_devices(self) -> list[dict[str, Any]]:
         """Return serializable list of managed devices for the frontend."""
