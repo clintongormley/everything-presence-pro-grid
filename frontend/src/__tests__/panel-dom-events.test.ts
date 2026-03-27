@@ -8,6 +8,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
+import "../components/epp-live-view.js";
+import type { EppLiveView } from "../components/epp-live-view.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
@@ -65,7 +67,6 @@ function createPanel(): EPPGridPanel {
 	a._showUnsavedDialog = false;
 	a._pendingNavigation = null;
 	a._saving = false;
-	a._showLiveMenu = false;
 	a._showDeleteCalibrationDialog = false;
 	a._showTemplateSave = false;
 	a._showTemplateLoad = false;
@@ -137,70 +138,65 @@ function renderTo(template: any): HTMLDivElement {
 	return container;
 }
 
-describe("_renderLiveOverview DOM events", () => {
-	it("clicking hit counts toggle changes state", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderLiveOverview();
-		const c = renderTo(tpl);
-
-		// Find and click the hit counts button
-		const btn = c.querySelector(
-			'[title="Show signal strength"]',
-		) as HTMLElement;
-		if (btn) {
-			btn.click();
-			expect(a._showHitCounts).toBe(true);
+describe("epp-live-view DOM events", () => {
+	function createLiveView(overrides?: Partial<Record<string, unknown>>): EppLiveView {
+		const el = document.createElement("epp-live-view") as EppLiveView;
+		el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+		el.zoneConfigs = new Array(7).fill(null);
+		if (overrides) {
+			for (const [k, v] of Object.entries(overrides)) {
+				(el as any)[k] = v;
+			}
 		}
-	});
+		return el;
+	}
 
-	it("clicking menu dots toggles live menu", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderLiveOverview();
+	it("clicking menu dots toggles showMenu", () => {
+		const lv = createLiveView();
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const menuBtns = c.querySelectorAll(".sidebar-menu-btn");
 		const menuBtn = menuBtns[menuBtns.length - 1] as HTMLElement;
 		if (menuBtn) {
 			menuBtn.click();
-			expect(a._showLiveMenu).toBe(true);
+			expect(lv.showMenu).toBe(true);
 		}
 	});
 
-	it("live menu items navigate correctly", () => {
-		const a = createPanel() as any;
-		a._showLiveMenu = true;
-		const tpl = a._renderLiveOverview();
+	it("live menu items fire navigate-view event", () => {
+		const lv = createLiveView({ showMenu: true });
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const items = c.querySelectorAll(".sidebar-menu-item");
+		let detail: any = null;
+		lv.addEventListener("navigate-view", ((e: CustomEvent) => {
+			detail = e.detail;
+		}) as EventListener);
 		if (items.length > 0) {
 			// First item should be "Detection zones" (if perspective exists)
 			(items[0] as HTMLElement).click();
+			expect(detail).toEqual({ view: "editor", sidebarTab: "zones" });
 		}
 	});
 
-	it("live overview renders epp-live-sidebar component", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderLiveOverview();
+	it("live view renders epp-live-sidebar component", () => {
+		const lv = createLiveView();
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const sidebar = c.querySelector("epp-live-sidebar");
 		expect(sidebar).not.toBeNull();
 	});
 
-	it("detection zones link navigates", () => {
+	it("panel _renderLiveOverview returns epp-live-view element", () => {
 		const a = createPanel() as any;
 		const tpl = a._renderLiveOverview();
 		const c = renderTo(tpl);
 
-		const link = c.querySelector(
-			".zone-sidebar .live-section-link",
-		) as HTMLElement;
-		if (link) {
-			link.click();
-			expect(a._view).toBe("editor");
-			expect(a._sidebarTab).toBe("zones");
-		}
+		const liveView = c.querySelector("epp-live-view");
+		expect(liveView).not.toBeNull();
 	});
 });
 

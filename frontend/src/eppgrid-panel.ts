@@ -86,6 +86,7 @@ import { DeviceController } from "./controllers/device-controller.js";
 import { GridStateController } from "./controllers/grid-state-controller.js";
 import { TargetController } from "./controllers/target-controller.js";
 import "./components/epp-live-sidebar.js";
+import "./components/epp-live-view.js";
 import "./components/epp-zone-sidebar.js";
 import "./components/epp-furniture-sidebar.js";
 import "./components/epp-furniture-overlay.js";
@@ -126,7 +127,6 @@ export class EPPGridPanel extends LitElement {
 	@state() private _staticMinDistance = 0.3;
 	@state() private _staticMaxDistance = 16.0;
 	@state() private _sidebarTab: "zones" | "furniture" | "live" = "zones";
-	@state() private _showLiveMenu = false;
 	@state() private _showDeleteCalibrationDialog = false;
 	@state() private _showCustomIconPicker = false;
 	@state() private _customIconValue = "";
@@ -2353,109 +2353,39 @@ export class EPPGridPanel extends LitElement {
 
 	private _renderLiveOverview() {
 		return html`
-      <div class="panel" @click=${(e: MouseEvent) => {
-				if (!(e.target instanceof Element)) return;
-				if (this._showLiveMenu && !e.target.closest(".sidebar-menu-wrapper")) {
-					this._showLiveMenu = false;
-				}
-			}}>
-        ${this._renderHeader()}
-        <div class="editor-layout">
-          <div style="flex: 1; min-width: 0;">
-            ${nothing}
-            <div class="grid-container">
-              ${
-								this._perspective
-									? this._renderLiveGrid()
-									: this._renderUncalibratedFov()
-							}
-            </div>
-            ${this._perspective ? this._renderBackendDebugLog() : nothing}
-          </div>
-          <div class="zone-sidebar">
-            <div class="sidebar-header">
-              <span class="sidebar-title" style="margin-right: auto;">${this._localize("sidebar.live_overview")}</span>
-              <div class="sidebar-menu-wrapper">
-                <button class="sidebar-menu-btn" @click=${() => {
-									this._showLiveMenu = !this._showLiveMenu;
-								}}>
-                  <ha-icon icon="mdi:dots-vertical" style="--mdc-icon-size: 20px;"></ha-icon>
-                </button>
-                ${
-									this._showLiveMenu
-										? html`
-                  <div class="sidebar-menu" @click=${() => {
-										this._showLiveMenu = false;
-									}}>
-                    ${
-											this._perspective
-												? html`
-                      <button class="sidebar-menu-item" @click=${() => {
-												this._view = "editor";
-												this._sidebarTab = "zones";
-											}}>
-                        <ha-icon icon="mdi:vector-square" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("menu.detection_zones")}
-                      </button>
-                      <button class="sidebar-menu-item" @click=${() => {
-												this._view = "editor";
-												this._sidebarTab = "furniture";
-											}}>
-                        <ha-icon icon="mdi:sofa" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("menu.furniture")}
-                      </button>
-                    `
-												: nothing
-										}
-                    <button class="sidebar-menu-item" @click=${() => {
-											this._view = "settings";
-										}}>
-                      <ha-icon icon="mdi:cog" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("menu.settings")}
-                    </button>
-                    <hr style="border: none; border-top: 1px solid var(--divider-color, #eee); margin: 4px 0;"/>
-                    <button class="sidebar-menu-item" @click=${this._changePlacement}>
-                      <ha-icon icon="mdi:target" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("menu.room_calibration")}
-                    </button>
-                    ${
-											this._perspective
-												? html`
-                      <button class="sidebar-menu-item" style="color: var(--error-color, #f44336);" @click=${() => {
-												this._showDeleteCalibrationDialog = true;
-											}}>
-                        <ha-icon icon="mdi:delete" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("menu.delete_calibration")}
-                      </button>
-                    `
-												: nothing
-										}
-                    <hr style="border: none; border-top: 1px solid var(--divider-color, #eee); margin: 4px 0;"/>
-                    <button class="sidebar-menu-item" @click=${() => {
-											this._showTemplateSave = true;
-										}}>
-                      <ha-icon icon="mdi:content-save" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("dialogs.save_template")}
-                    </button>
-                    <button class="sidebar-menu-item" @click=${() => {
-											this._showTemplateLoad = true;
-										}}>
-                      <ha-icon icon="mdi:folder-open" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("dialogs.load_template")}
-                    </button>
-                  </div>
-                `
-										: nothing
-								}
-              </div>
-            </div>
-            <epp-live-sidebar
-              .sensorState=${this._sensorState}
-              .zoneState=${this._zoneState}
-              .zoneConfigs=${this._zoneConfigs}
-              .perspective=${this._perspective}
-              .localize=${this._localize}
-              @view-change=${(e: CustomEvent) => {
-								this._view = e.detail.view;
-								this._sidebarTab = e.detail.sidebarTab;
-							}}
-            ></epp-live-sidebar>
-          </div>
-        </div>
-      </div>
+      <epp-live-view
+        .perspective=${this._perspective}
+        .sensorState=${this._sensorState}
+        .zoneState=${this._zoneState}
+        .zoneConfigs=${this._zoneConfigs}
+        .localize=${this._localize}
+        .headerTemplate=${this._renderHeader()}
+        .gridTemplate=${this._perspective
+					? this._renderLiveGrid()
+					: this._renderUncalibratedFov()}
+        .debugLogTemplate=${this._perspective ? this._renderBackendDebugLog() : nothing}
+        @navigate-view=${(e: CustomEvent) => {
+					const { view, sidebarTab } = e.detail;
+					this._view = view;
+					if (sidebarTab) this._sidebarTab = sidebarTab;
+				}}
+        @live-view-action=${(e: CustomEvent) => {
+					switch (e.detail.action) {
+						case "change-placement":
+							this._changePlacement();
+							break;
+						case "show-delete-calibration":
+							this._showDeleteCalibrationDialog = true;
+							break;
+						case "show-template-save":
+							this._showTemplateSave = true;
+							break;
+						case "show-template-load":
+							this._showTemplateLoad = true;
+							break;
+					}
+				}}
+      ></epp-live-view>
     `;
 	}
 

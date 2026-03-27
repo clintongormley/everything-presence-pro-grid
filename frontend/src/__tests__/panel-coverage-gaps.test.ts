@@ -8,6 +8,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
+import "../components/epp-live-view.js";
+import type { EppLiveView } from "../components/epp-live-view.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
@@ -68,7 +70,6 @@ function createPanel(): EPPGridPanel {
 	a._showUnsavedDialog = false;
 	a._pendingNavigation = null;
 	a._saving = false;
-	a._showLiveMenu = false;
 	a._showDeleteCalibrationDialog = false;
 	a._showTemplateSave = false;
 	a._showTemplateLoad = false;
@@ -132,6 +133,18 @@ function renderTo(tpl: any): HTMLDivElement {
 	document.body.appendChild(c);
 	render(tpl, c);
 	return c;
+}
+
+function createLiveView(overrides?: Partial<Record<string, unknown>>): EppLiveView {
+	const el = document.createElement("epp-live-view") as EppLiveView;
+	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+	el.zoneConfigs = new Array(7).fill(null);
+	if (overrides) {
+		for (const [k, v] of Object.entries(overrides)) {
+			(el as any)[k] = v;
+		}
+	}
+	return el;
 }
 
 // =========================================================
@@ -274,14 +287,12 @@ describe("_renderLiveGrid target rendering branches", () => {
 });
 
 // =========================================================
-// _renderLiveOverview: live menu with perspective branches
+// epp-live-view menu branches (extracted from _renderLiveOverview)
 // =========================================================
-describe("_renderLiveOverview menu branches", () => {
+describe("epp-live-view menu branches", () => {
 	it("renders menu with furniture button when perspective exists", () => {
-		const a = createPanel() as any;
-		a._showLiveMenu = true;
-		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-		const tpl = a._renderLiveOverview();
+		const lv = createLiveView({ showMenu: true });
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const items = c.querySelectorAll(".sidebar-menu-item");
@@ -290,10 +301,8 @@ describe("_renderLiveOverview menu branches", () => {
 	});
 
 	it("renders menu without zone/furniture buttons when no perspective", () => {
-		const a = createPanel() as any;
-		a._showLiveMenu = true;
-		a._perspective = null;
-		const tpl = a._renderLiveOverview();
+		const lv = createLiveView({ perspective: null, showMenu: true });
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		// Should have fewer menu items
@@ -302,94 +311,105 @@ describe("_renderLiveOverview menu branches", () => {
 		document.body.removeChild(c);
 	});
 
-	it("furniture menu item navigates to editor furniture tab", () => {
-		const a = createPanel() as any;
-		a._showLiveMenu = true;
-		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-		const tpl = a._renderLiveOverview();
+	it("furniture menu item fires navigate-view event", () => {
+		const lv = createLiveView({ showMenu: true });
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const items = c.querySelectorAll(".sidebar-menu-item");
-		// Click furniture item (usually index 1)
+		let detail: any = null;
+		lv.addEventListener("navigate-view", ((e: CustomEvent) => {
+			detail = e.detail;
+		}) as EventListener);
 		for (let i = 0; i < items.length; i++) {
 			const text = items[i].textContent || "";
-			if (text.includes("Furniture")) {
+			if (text.includes("menu.furniture")) {
 				(items[i] as HTMLElement).click();
-				expect(a._view).toBe("editor");
-				expect(a._sidebarTab).toBe("furniture");
+				expect(detail).toEqual({ view: "editor", sidebarTab: "furniture" });
 				break;
 			}
 		}
 		document.body.removeChild(c);
 	});
 
-	it("settings menu item navigates to settings", () => {
-		const a = createPanel() as any;
-		a._showLiveMenu = true;
-		const tpl = a._renderLiveOverview();
+	it("settings menu item fires navigate-view event", () => {
+		const lv = createLiveView({ showMenu: true });
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const items = c.querySelectorAll(".sidebar-menu-item");
+		let detail: any = null;
+		lv.addEventListener("navigate-view", ((e: CustomEvent) => {
+			detail = e.detail;
+		}) as EventListener);
 		for (let i = 0; i < items.length; i++) {
 			const text = items[i].textContent || "";
-			if (text.includes("Settings")) {
+			if (text.includes("menu.settings")) {
 				(items[i] as HTMLElement).click();
-				expect(a._view).toBe("settings");
+				expect(detail).toEqual({ view: "settings", sidebarTab: undefined });
 				break;
 			}
 		}
 		document.body.removeChild(c);
 	});
 
-	it("delete calibration menu item shows dialog", () => {
-		const a = createPanel() as any;
-		a._showLiveMenu = true;
-		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-		const tpl = a._renderLiveOverview();
+	it("delete calibration menu item fires live-view-action event", () => {
+		const lv = createLiveView({ showMenu: true });
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const items = c.querySelectorAll(".sidebar-menu-item");
+		let detail: any = null;
+		lv.addEventListener("live-view-action", ((e: CustomEvent) => {
+			detail = e.detail;
+		}) as EventListener);
 		for (let i = 0; i < items.length; i++) {
 			const text = items[i].textContent || "";
-			if (text.includes("Delete")) {
+			if (text.includes("menu.delete_calibration")) {
 				(items[i] as HTMLElement).click();
-				expect(a._showDeleteCalibrationDialog).toBe(true);
+				expect(detail).toEqual({ action: "show-delete-calibration" });
 				break;
 			}
 		}
 		document.body.removeChild(c);
 	});
 
-	it("save template menu item shows dialog", () => {
-		const a = createPanel() as any;
-		a._showLiveMenu = true;
-		const tpl = a._renderLiveOverview();
+	it("save template menu item fires live-view-action event", () => {
+		const lv = createLiveView({ showMenu: true });
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const items = c.querySelectorAll(".sidebar-menu-item");
+		let detail: any = null;
+		lv.addEventListener("live-view-action", ((e: CustomEvent) => {
+			detail = e.detail;
+		}) as EventListener);
 		for (let i = 0; i < items.length; i++) {
 			const text = items[i].textContent || "";
-			if (text.includes("Save template")) {
+			if (text.includes("dialogs.save_template")) {
 				(items[i] as HTMLElement).click();
-				expect(a._showTemplateSave).toBe(true);
+				expect(detail).toEqual({ action: "show-template-save" });
 				break;
 			}
 		}
 		document.body.removeChild(c);
 	});
 
-	it("load template menu item shows dialog", () => {
-		const a = createPanel() as any;
-		a._showLiveMenu = true;
-		const tpl = a._renderLiveOverview();
+	it("load template menu item fires live-view-action event", () => {
+		const lv = createLiveView({ showMenu: true });
+		const tpl = lv.render();
 		const c = renderTo(tpl);
 
 		const items = c.querySelectorAll(".sidebar-menu-item");
+		let detail: any = null;
+		lv.addEventListener("live-view-action", ((e: CustomEvent) => {
+			detail = e.detail;
+		}) as EventListener);
 		for (let i = 0; i < items.length; i++) {
 			const text = items[i].textContent || "";
-			if (text.includes("Load template")) {
+			if (text.includes("dialogs.load_template")) {
 				(items[i] as HTMLElement).click();
-				expect(a._showTemplateLoad).toBe(true);
+				expect(detail).toEqual({ action: "show-template-load" });
 				break;
 			}
 		}

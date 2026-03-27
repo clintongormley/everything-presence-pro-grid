@@ -22,7 +22,15 @@ Frontend (eppgrid-panel.ts)
   ├── subscribe_device → opens session connection
   ├── subscribe_grid_targets → structured events (positions, zones, sensors)
   ├── subscribe_raw_targets → raw sensor-space positions
-  └── commands: set_setup, set_room_layout, set_env_calibration, etc.
+  ├── commands: set_setup, set_room_layout, set_env_calibration, etc.
+  └── components/
+      ├── epp-live-view.ts — live overview composite (header, grid, sidebar, menu)
+      ├── epp-live-sidebar.ts — sensor/zone status sidebar
+      ├── epp-zone-sidebar.ts — zone editing sidebar
+      ├── epp-furniture-sidebar.ts — furniture editing sidebar
+      ├── epp-furniture-overlay.ts — furniture drag/resize overlay
+      ├── epp-grid.ts — grid rendering component
+      └── epp-settings-view.ts — settings panel
 ```
 
 ## 1. ESPHome Entities
