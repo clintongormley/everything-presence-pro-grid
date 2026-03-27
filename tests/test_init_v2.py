@@ -1,7 +1,8 @@
 """Tests for EPP Grid setup via config entry."""
 from __future__ import annotations
 
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock
+from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant

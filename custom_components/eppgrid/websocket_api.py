@@ -6,7 +6,8 @@ from typing import Any
 
 import voluptuous as vol
 from homeassistant.components import websocket_api
-from homeassistant.core import HomeAssistant, callback
+from homeassistant.core import HomeAssistant
+from homeassistant.core import callback
 from homeassistant.helpers import entity_registry as er
 
 from .const import DOMAIN
@@ -430,8 +431,11 @@ async def websocket_subscribe_grid_targets(
 
     @callback
     def _on_state(state: Any) -> None:
-        from aioesphomeapi import TextSensorState, BinarySensorState, SensorState
         import json as json_mod
+
+        from aioesphomeapi import BinarySensorState
+        from aioesphomeapi import SensorState
+        from aioesphomeapi import TextSensorState
 
         if isinstance(state, TextSensorState):
             if state.key in target_keys:
@@ -477,11 +481,10 @@ async def websocket_subscribe_grid_targets(
             if state.key in binary_sensor_keys:
                 sensors[binary_sensor_keys[state.key]] = state.state
 
-        elif isinstance(state, SensorState):
-            if state.key in numeric_sensor_keys:
-                import math
-                field = numeric_sensor_keys[state.key]
-                sensors[field] = None if math.isnan(state.state) else state.state
+        elif isinstance(state, SensorState) and state.key in numeric_sensor_keys:
+            import math
+            field = numeric_sensor_keys[state.key]
+            sensors[field] = None if math.isnan(state.state) else state.state
 
     device_conn.subscribe_states(_on_state)
     connection.send_result(msg["id"])

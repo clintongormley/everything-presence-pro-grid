@@ -1,15 +1,18 @@
 """Tests for EPP Grid device manager."""
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import patch
 
 import pytest
-from homeassistant.const import STATE_UNAVAILABLE
-from homeassistant.core import HomeAssistant, State
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
-from custom_components.eppgrid.device_manager import DeviceConnection, DeviceManager, ManagedDevice
+from custom_components.eppgrid.device_manager import DeviceConnection
+from custom_components.eppgrid.device_manager import DeviceManager
+from custom_components.eppgrid.device_manager import ManagedDevice
 from custom_components.eppgrid.storage import EPPGridStore
 
 
@@ -56,7 +59,7 @@ class TestDiscovery:
         )
 
         # Simulate an ESPHome sensor entity for zone_engine_version
-        entry = ent_reg.async_get_or_create(
+        ent_reg.async_get_or_create(
             domain="sensor",
             platform="esphome",
             unique_id="esphome_aabbccddeeff_zone_engine_version",
@@ -236,3 +239,123 @@ class TestEntityManagement:
         assert ent2 is not None
         assert ent2.disabled_by is None
         assert ent2.name == "Armchair"
+
+
+class TestDeviceSession:
+    async def test_open_and_close_session(self, manager: DeviceManager) -> None:
+        """Session opens a connection and closes it."""
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
+            mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100"
+        )
+        with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
+            client = AsyncMock()
+            client.connect = AsyncMock()
+            client.disconnect = AsyncMock()
+            client.list_entities_services = AsyncMock(return_value=([], []))
+            mock_cls.return_value = client
+
+            conn = await manager.async_open_session("AA:BB:CC:DD:EE:FF")
+            assert conn is not None
+            assert conn.connected is True
+            assert "AA:BB:CC:DD:EE:FF" in manager._active_connections
+
+            await manager.async_close_session("AA:BB:CC:DD:EE:FF")
+            assert "AA:BB:CC:DD:EE:FF" not in manager._active_connections
+            client.disconnect.assert_called_once()
+
+    async def test_open_session_reuses_existing(self, manager: DeviceManager) -> None:
+        """Opening a session when one exists returns the same connection."""
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
+            mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100"
+        )
+        with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
+            client = AsyncMock()
+            client.connect = AsyncMock()
+            client.disconnect = AsyncMock()
+            client.list_entities_services = AsyncMock(return_value=([], []))
+            mock_cls.return_value = client
+
+            conn1 = await manager.async_open_session("AA:BB:CC:DD:EE:FF")
+            conn2 = await manager.async_open_session("AA:BB:CC:DD:EE:FF")
+            assert conn1 is conn2
+            # Only one connection was created
+            assert mock_cls.call_count == 1
+
+    async def test_get_session_returns_none_without_open(self, manager: DeviceManager) -> None:
+        """get_session returns None if no session is open."""
+        assert manager.get_session("AA:BB:CC:DD:EE:FF") is None
+
+    async def test_push_uses_existing_session(
+        self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
+    ) -> None:
+        """Push config uses the active session connection."""
+        await store.async_load()
+        store.devices["AA:BB:CC:DD:EE:FF"] = {
+            "calibration": {"perspective": [1.0] * 8, "room_width": 3000.0, "room_depth": 4000.0},
+        }
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
+            mac="AA:BB:CC:DD:EE:FF", name="Test", host="192.168.1.100"
+        )
+        with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
+            client = AsyncMock()
+            client.connect = AsyncMock()
+            client.disconnect = AsyncMock()
+            svc = MagicMock()
+            svc.name = "epp_set_perspective"
+            client.list_entities_services = AsyncMock(return_value=([], [svc]))
+            client.execute_service = AsyncMock()
+            mock_cls.return_value = client
+
+            # Open session first
+            await manager.async_open_session("AA:BB:CC:DD:EE:FF")
+            # Push should use the same connection
+            await manager._push_config_to_device("AA:BB:CC:DD:EE:FF")
+            client.execute_service.assert_called()
+            # Only one connection was opened (no temporary)
+            assert mock_cls.call_count == 1
+
+
+class TestStateFanOut:
+    async def test_multiple_subscribers(self) -> None:
+        """Multiple subscribers all receive state updates."""
+        with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
+            client = AsyncMock()
+            client.connect = AsyncMock()
+            client.disconnect = AsyncMock()
+            client.list_entities_services = AsyncMock(return_value=([], []))
+            client.subscribe_states = MagicMock()
+            mock_cls.return_value = client
+
+            conn = DeviceConnection("192.168.1.100")
+            await conn.async_connect()
+
+            received_a = []
+            received_b = []
+            conn.subscribe_states(lambda s: received_a.append(s))
+            conn.subscribe_states(lambda s: received_b.append(s))
+
+            # Simulate a state dispatch
+            conn._dispatch_state("test_state")
+
+            assert received_a == ["test_state"]
+            assert received_b == ["test_state"]
+
+    async def test_subscribe_states_calls_client_once(self) -> None:
+        """Multiple subscribe_states calls only subscribe to the client once."""
+        with patch("custom_components.eppgrid.device_manager.APIClient") as mock_cls:
+            client = AsyncMock()
+            client.connect = AsyncMock()
+            client.disconnect = AsyncMock()
+            client.list_entities_services = AsyncMock(return_value=([], []))
+            client.subscribe_states = MagicMock()
+            mock_cls.return_value = client
+
+            conn = DeviceConnection("192.168.1.100")
+            await conn.async_connect()
+
+            conn.subscribe_states(lambda s: None)
+            conn.subscribe_states(lambda s: None)
+            conn.subscribe_states(lambda s: None)
+
+            # Client subscribe_states called only once
+            client.subscribe_states.assert_called_once()
