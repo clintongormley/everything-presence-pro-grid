@@ -412,7 +412,7 @@ async def websocket_subscribe_grid_targets(
     # Accumulated state
     targets = [{"x": None, "y": None, "signal": 0, "status": "inactive"} for _ in range(3)]
     sensors = {"occupancy": False, "static_presence": False, "motion_presence": False, "target_presence": False}
-    zones = {"occupancy": {}, "target_counts": {}, "frame_count": 0}
+    zones: dict[str, Any] = {"occupancy": {}, "target_counts": {}, "frame_count": 0}
 
     @callback
     def _on_state(state: Any) -> None:
@@ -449,6 +449,9 @@ async def websocket_subscribe_grid_targets(
                     zone_occ = zs.get("zones", {}).get("occupancy", [])
                     zones["occupancy"] = {str(i): v for i, v in enumerate(zone_occ)}
                     zones["frame_count"] = zs.get("frame_count", 0)
+                    debug_log = zs.get("debug_log")
+                    if debug_log:
+                        zones["debug_log"] = debug_log
                     sensors["target_presence"] = zs.get("zones", {}).get("tracking", False)
                 except (ValueError, KeyError):
                     pass

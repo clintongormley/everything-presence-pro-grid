@@ -118,7 +118,7 @@ void EPPComponent::loop() {
 
     // Publish zone state as compact JSON
     if (zone_state_sensor_ != nullptr) {
-      char json[256];
+      char json[384];
       int pos = snprintf(json, sizeof(json),
           "{\"targets\":[");
       for (int i = 0; i < NUM_TARGETS; i++) {
@@ -143,9 +143,27 @@ void EPPComponent::loop() {
             result.zone_occupancy[i] ? "true" : "false");
       }
       pos += snprintf(json + pos, sizeof(json) - pos,
-          "],\"tracking\":%s},\"frame_count\":%d}",
+          "],\"tracking\":%s},\"frame_count\":%d,\"debug_log\":\"",
           result.device_tracking_present ? "true" : "false",
           result.frame_count);
+      // Build debug log: "T0→Z1(A,5) T1→Z0(P,3)"
+      for (int i = 0; i < result.target_count && i < NUM_TARGETS; i++) {
+        if (result.targets[i].status == TargetStatus::INACTIVE) continue;
+        const char *s = result.targets[i].status == TargetStatus::ACTIVE ? "A" : "P";
+        // Find which zone this target is in by checking grid cell
+        int zone = 0;  // default: rest of room
+        if (result.targets[i].x != 0.0f || result.targets[i].y != 0.0f) {
+          auto cell = grid_.xy_to_cell(result.targets[i].x, result.targets[i].y);
+          if (cell >= 0 && cell < GRID_CELL_COUNT) {
+            zone = grid_.cell_zone(cell);
+          }
+        }
+        pos += snprintf(json + pos, sizeof(json) - pos,
+            "T%d>Z%d(%s,%d) ", i, zone, s, result.targets[i].signal);
+      }
+      // Trim trailing space and close string + object
+      if (pos > 0 && json[pos-1] == ' ') pos--;
+      pos += snprintf(json + pos, sizeof(json) - pos, "\"}");
       zone_state_sensor_->publish_state(json);
     }
 
