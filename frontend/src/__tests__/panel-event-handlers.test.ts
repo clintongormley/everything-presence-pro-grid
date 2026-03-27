@@ -237,21 +237,27 @@ describe("_renderWizardCorners inline handlers", () => {
 		expect(a._setupStep).toBeNull();
 	});
 
-	it("save button calls computeWizardPerspective and wizardFinish", async () => {
-		const a = createPanel() as any;
-		a._wizardCorners = [
+	it("save button calls computeWizardPerspective and wizardFinish (via EppWizard)", async () => {
+		const { EppWizard } = await import("../components/epp-wizard.js");
+		const el = document.createElement("epp-wizard") as any;
+		el.hass = { callWS: vi.fn().mockResolvedValue({}) };
+		el.selectedMac = "AA:BB:CC:DD:EE:01";
+		el.rawTargets = [];
+		el.sensorState = { occupancy: false };
+		el.devices = [];
+		el.localize = (k: string) => k;
+		el._wizardCorners = [
 			{ raw_x: -1500, raw_y: 1000, offset_side: 0, offset_fb: 0 },
 			{ raw_x: 1500, raw_y: 1000, offset_side: 0, offset_fb: 0 },
 			{ raw_x: 2000, raw_y: 4000, offset_side: 0, offset_fb: 0 },
 			{ raw_x: -2000, raw_y: 4000, offset_side: 0, offset_fb: 0 },
 		];
-		a._wizardRoomWidth = 3000;
-		a._wizardRoomDepth = 4000;
+		el._wizardRoomWidth = 3000;
+		el._wizardRoomDepth = 4000;
 
-		// Replicate handler (line 3426-3428)
-		a._computeWizardPerspective();
+		el._computeWizardPerspective();
 
-		expect(a._perspective).not.toBeNull();
+		expect(el._perspective).not.toBeNull();
 	});
 });
 

@@ -9,7 +9,9 @@ import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-settings-view.js";
+import "../components/epp-wizard.js";
 import type { EppSettingsView } from "../components/epp-settings-view.js";
+import type { EppWizard } from "../components/epp-wizard.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -523,19 +525,26 @@ describe("zone engine branch coverage", () => {
 // =========================================================
 // _renderWizardCorners: branches for offset update on null corner
 // =========================================================
-describe("wizard corner offset edge cases", () => {
+describe("wizard corner offset edge cases (via EppWizard)", () => {
 	it("offset input on null corner does nothing", () => {
-		const a = createPanel() as any;
-		a._wizardCorners = [null, null, null, null];
-		a._wizardCornerIndex = 0;
-		a._rawTargets = [
-			{
-				raw_x: 0,
-				raw_y: 0,
-			},
-		];
+		const el = document.createElement("epp-wizard") as any;
+		el.hass = { callWS: vi.fn().mockResolvedValue({}) };
+		el.selectedMac = "";
+		el.rawTargets = [{ raw_x: 0, raw_y: 0 }];
+		el.sensorState = { occupancy: false };
+		el.devices = [];
+		el.localize = (k: string) => k;
+		el._setupStep = "corners";
+		el._wizardCornerIndex = 0;
+		el._wizardCorners = [null, null, null, null];
+		el._wizardRoomWidth = 3000;
+		el._wizardRoomDepth = 4000;
+		el._wizardCapturing = false;
+		el._wizardOffsetSide = "";
+		el._wizardOffsetFb = "";
+		el._smoothBuffer = [];
 
-		const tpl = a._renderWizardCorners();
+		const tpl = el._renderWizardCorners();
 		const c = document.createElement("div");
 		document.body.appendChild(c);
 		render(tpl, c);
@@ -1287,23 +1296,31 @@ describe("_onFurnitureDrag edge case branches", () => {
 // =========================================================
 // _renderWizardCorners: branches for corner chip offset restore
 // =========================================================
-describe("corner chip click with null offsets", () => {
+describe("corner chip click with null offsets (via EppWizard)", () => {
 	it("corner chip click on corner with zero offsets", () => {
-		const a = createPanel() as any;
-		a._wizardCorners = [
+		const el = document.createElement("epp-wizard") as any;
+		el.hass = { callWS: vi.fn().mockResolvedValue({}) };
+		el.selectedMac = "";
+		el.rawTargets = [{ raw_x: 0, raw_y: 0 }];
+		el.sensorState = { occupancy: false };
+		el.devices = [];
+		el.localize = (k: string) => k;
+		el._setupStep = "corners";
+		el._wizardCornerIndex = 0;
+		el._wizardCorners = [
 			{ raw_x: 100, raw_y: 200, offset_side: 0, offset_fb: 0 },
 			null,
 			null,
 			null,
 		];
-		a._rawTargets = [
-			{
-				raw_x: 0,
-				raw_y: 0,
-			},
-		];
+		el._wizardRoomWidth = 3000;
+		el._wizardRoomDepth = 4000;
+		el._wizardCapturing = false;
+		el._wizardOffsetSide = "";
+		el._wizardOffsetFb = "";
+		el._smoothBuffer = [];
 
-		const tpl = a._renderWizardCorners();
+		const tpl = el._renderWizardCorners();
 		const c = document.createElement("div");
 		document.body.appendChild(c);
 		render(tpl, c);
@@ -1312,8 +1329,8 @@ describe("corner chip click with null offsets", () => {
 		if (chips.length > 0) {
 			(chips[0] as HTMLElement).click();
 			// offset_side and offset_fb are 0 -> empty strings
-			expect(a._wizardOffsetSide).toBe("");
-			expect(a._wizardOffsetFb).toBe("");
+			expect(el._wizardOffsetSide).toBe("");
+			expect(el._wizardOffsetFb).toBe("");
 		}
 		document.body.removeChild(c);
 	});
@@ -1384,25 +1401,22 @@ describe("editor target signal display branches", () => {
 // =========================================================
 // _renderUncalibratedFov: target color fallback
 // =========================================================
-describe("uncalibrated FOV target color", () => {
+describe("uncalibrated FOV target color (via EppWizard)", () => {
 	it("uses fallback color for target index >= 3", () => {
-		const a = createPanel() as any;
-		a._perspective = null;
-		a._rawTargets = [
-			{
-				raw_x: 100,
-				raw_y: 200,
-			},
-			{
-				raw_x: 200,
-				raw_y: 300,
-			},
-			{
-				raw_x: 300,
-				raw_y: 400,
-			},
+		const el = document.createElement("epp-wizard") as any;
+		el.hass = { callWS: vi.fn().mockResolvedValue({}) };
+		el.selectedMac = "";
+		el.rawTargets = [
+			{ raw_x: 100, raw_y: 200 },
+			{ raw_x: 200, raw_y: 300 },
+			{ raw_x: 300, raw_y: 400 },
 		];
-		const tpl = a._renderUncalibratedFov();
+		el.sensorState = { occupancy: false };
+		el.devices = [];
+		el.localize = (k: string) => k;
+		el.mode = "uncalibrated-fov";
+
+		const tpl = el._renderUncalibratedFov();
 		expect(tpl).toBeDefined();
 	});
 });

@@ -13,8 +13,10 @@ import type { EppLiveView } from "../components/epp-live-view.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
+import "../components/epp-wizard.js";
 import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
+import type { EppWizard } from "../components/epp-wizard.js";
 import {
 	CELL_ROOM_BIT,
 	GRID_CELL_COUNT,
@@ -128,6 +130,35 @@ function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSe
 			(el as any)[k] = v;
 		}
 	}
+	return el;
+}
+
+function createWizard(): EppWizard {
+	const el = document.createElement("epp-wizard") as EppWizard;
+	const a = el as any;
+	a.hass = { callWS: vi.fn().mockResolvedValue({}) };
+	a.selectedMac = "AA:BB:CC:DD:EE:01";
+	a.rawTargets = [];
+	a.sensorState = { occupancy: false };
+	a.devices = [{ mac: "AA:BB:CC:DD:EE:01", name: "Test" }];
+	a.localize = (k: string) => k;
+	a.initialRoomWidth = 0;
+	a.initialRoomDepth = 0;
+	a.mode = "wizard";
+	a._setupStep = "guide";
+	a._wizardCornerIndex = 0;
+	a._wizardCorners = [null, null, null, null];
+	a._wizardRoomWidth = 3000;
+	a._wizardRoomDepth = 4000;
+	a._wizardCapturing = false;
+	a._wizardCaptureProgress = 0;
+	a._wizardCapturePaused = false;
+	a._wizardCaptureCancelled = false;
+	a._wizardOffsetSide = "";
+	a._wizardOffsetFb = "";
+	a._wizardSaving = false;
+	a._smoothBuffer = [];
+	a._perspective = null;
 	return el;
 }
 
@@ -264,22 +295,25 @@ describe("_renderHeader DOM events", () => {
 	});
 });
 
-describe("_renderWizardGuide DOM events", () => {
-	it("cancel button resets wizard", () => {
-		const a = createPanel() as any;
+describe("_renderWizardGuide DOM events (via EppWizard)", () => {
+	it("cancel button fires wizard-cancel event", () => {
+		const a = createWizard() as any;
 		a._setupStep = "guide";
 		const tpl = a._renderWizardGuide();
 		const c = renderTo(tpl);
 
+		let cancelFired = false;
+		a.addEventListener("wizard-cancel", () => { cancelFired = true; });
+
 		const backBtn = c.querySelector(".wizard-btn-back") as HTMLElement;
 		if (backBtn) {
 			backBtn.click();
-			expect(a._setupStep).toBeNull();
+			expect(cancelFired).toBe(true);
 		}
 	});
 
 	it("begin marking button advances to corners", () => {
-		const a = createPanel() as any;
+		const a = createWizard() as any;
 		const tpl = a._renderWizardGuide();
 		const c = renderTo(tpl);
 
@@ -291,25 +325,17 @@ describe("_renderWizardGuide DOM events", () => {
 	});
 });
 
-describe("_renderWizardCorners DOM events", () => {
+describe("_renderWizardCorners DOM events (via EppWizard)", () => {
 	it("corner chip click resets corner", () => {
-		const a = createPanel() as any;
+		const a = createWizard() as any;
 		a._wizardCorners = [
 			{ raw_x: 100, raw_y: 200, offset_side: 500, offset_fb: 300 },
 			null,
 			null,
 			null,
 		];
-		a._targets = [
-			{
-				x: 100,
-				y: 200,
-				raw_x: 100,
-				raw_y: 200,
-				speed: 0,
-				status: "active" as const,
-				signal: 5,
-			},
+		a.rawTargets = [
+			{ raw_x: 100, raw_y: 200 },
 		];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
@@ -322,23 +348,15 @@ describe("_renderWizardCorners DOM events", () => {
 	});
 
 	it("offset input updates corner offsets", () => {
-		const a = createPanel() as any;
+		const a = createWizard() as any;
 		a._wizardCorners = [
 			{ raw_x: 100, raw_y: 200, offset_side: 0, offset_fb: 0 },
 			null,
 			null,
 			null,
 		];
-		a._targets = [
-			{
-				x: 100,
-				y: 200,
-				raw_x: 100,
-				raw_y: 200,
-				speed: 0,
-				status: "active" as const,
-				signal: 5,
-			},
+		a.rawTargets = [
+			{ raw_x: 100, raw_y: 200 },
 		];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
@@ -357,41 +375,28 @@ describe("_renderWizardCorners DOM events", () => {
 		}
 	});
 
-	it("cancel button on corners step exits wizard", () => {
-		const a = createPanel() as any;
-		a._targets = [
-			{
-				x: 100,
-				y: 200,
-				raw_x: 100,
-				raw_y: 200,
-				speed: 0,
-				status: "active" as const,
-				signal: 5,
-			},
+	it("cancel button on corners step fires wizard-cancel", () => {
+		const a = createWizard() as any;
+		a.rawTargets = [
+			{ raw_x: 100, raw_y: 200 },
 		];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
 
+		let cancelFired = false;
+		a.addEventListener("wizard-cancel", () => { cancelFired = true; });
+
 		const backBtn = c.querySelector(".wizard-btn-back") as HTMLElement;
 		if (backBtn) {
 			backBtn.click();
-			expect(a._setupStep).toBeNull();
+			expect(cancelFired).toBe(true);
 		}
 	});
 
 	it("mark button starts capture", () => {
-		const a = createPanel() as any;
-		a._targets = [
-			{
-				x: 100,
-				y: 200,
-				raw_x: 100,
-				raw_y: 200,
-				speed: 0,
-				status: "active" as const,
-				signal: 5,
-			},
+		const a = createWizard() as any;
+		a.rawTargets = [
+			{ raw_x: 100, raw_y: 200 },
 		];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
@@ -406,23 +411,15 @@ describe("_renderWizardCorners DOM events", () => {
 	});
 
 	it("save button when all corners marked", () => {
-		const a = createPanel() as any;
+		const a = createWizard() as any;
 		a._wizardCorners = [
 			{ raw_x: -1500, raw_y: 1000, offset_side: 0, offset_fb: 0 },
 			{ raw_x: 1500, raw_y: 1000, offset_side: 0, offset_fb: 0 },
 			{ raw_x: 2000, raw_y: 4000, offset_side: 0, offset_fb: 0 },
 			{ raw_x: -2000, raw_y: 4000, offset_side: 0, offset_fb: 0 },
 		];
-		a._targets = [
-			{
-				x: 100,
-				y: 200,
-				raw_x: 100,
-				raw_y: 200,
-				speed: 0,
-				status: "active" as const,
-				signal: 5,
-			},
+		a.rawTargets = [
+			{ raw_x: 100, raw_y: 200 },
 		];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
@@ -1121,31 +1118,38 @@ describe("epp-furniture-sidebar DOM events", () => {
 	});
 });
 
-describe("_renderUncalibratedFov DOM events", () => {
-	it("calibrate button starts wizard", () => {
-		const a = createPanel() as any;
-		a._perspective = null;
+describe("_renderUncalibratedFov DOM events (via EppWizard)", () => {
+	it("calibrate button fires start-calibration event", () => {
+		const a = createWizard() as any;
+		a.mode = "uncalibrated-fov";
 		const tpl = a._renderUncalibratedFov();
 		const c = renderTo(tpl);
+
+		let startFired = false;
+		a.addEventListener("start-calibration", () => { startFired = true; });
 
 		const link = c.querySelector(".live-nav-link") as HTMLElement;
 		if (link) {
 			link.click();
-			expect(a._setupStep).toBe("guide");
+			expect(startFired).toBe(true);
 		}
 	});
 });
 
-describe("_renderNeedsCalibration DOM events", () => {
-	it("start calibration button works", () => {
-		const a = createPanel() as any;
+describe("_renderNeedsCalibration DOM events (via EppWizard)", () => {
+	it("start calibration button fires start-calibration event", () => {
+		const a = createWizard() as any;
+		a.mode = "needs-calibration";
 		const tpl = a._renderNeedsCalibration();
 		const c = renderTo(tpl);
+
+		let startFired = false;
+		a.addEventListener("start-calibration", () => { startFired = true; });
 
 		const btn = c.querySelector(".wizard-btn-primary") as HTMLElement;
 		if (btn) {
 			btn.click();
-			expect(a._setupStep).toBe("guide");
+			expect(startFired).toBe(true);
 		}
 	});
 });

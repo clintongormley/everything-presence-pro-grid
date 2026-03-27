@@ -885,23 +885,36 @@ describe("_applyLayout zone/furniture serialization", () => {
 	});
 });
 
-describe("_wizardStartCapture cancellation", () => {
+describe("_wizardStartCapture cancellation (via EppWizard)", () => {
 	it("cancels capture when _wizardCaptureCancelled is set", async () => {
-		const a = createPanel() as any;
-		a._rawTargets = [
-			{
-				raw_x: 100,
-				raw_y: 200,
-			},
+		await import("../components/epp-wizard.js");
+		const el = document.createElement("epp-wizard") as any;
+		el.hass = { callWS: vi.fn().mockResolvedValue({}) };
+		el.selectedMac = "";
+		el.rawTargets = [
+			{ raw_x: 100, raw_y: 200 },
 		];
+		el.sensorState = { occupancy: false };
+		el.devices = [];
+		el.localize = (k: string) => k;
+		el._setupStep = "corners";
+		el._wizardCornerIndex = 0;
+		el._wizardCorners = [null, null, null, null];
+		el._wizardCapturing = false;
+		el._wizardCaptureCancelled = false;
+		el._wizardCapturePaused = false;
+		el._wizardCaptureProgress = 0;
+		el._wizardOffsetSide = "";
+		el._wizardOffsetFb = "";
+		el._smoothBuffer = [];
 
-		a._wizardStartCapture();
-		expect(a._wizardCapturing).toBe(true);
+		el._wizardStartCapture();
+		expect(el._wizardCapturing).toBe(true);
 
 		// Cancel immediately
-		a._wizardCancelCapture();
-		expect(a._wizardCapturing).toBe(false);
-		expect(a._wizardCaptureCancelled).toBe(true);
+		el._wizardCancelCapture();
+		expect(el._wizardCapturing).toBe(false);
+		expect(el._wizardCaptureCancelled).toBe(true);
 	});
 });
 

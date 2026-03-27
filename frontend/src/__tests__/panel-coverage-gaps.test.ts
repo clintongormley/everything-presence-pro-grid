@@ -13,6 +13,8 @@ import type { EppLiveView } from "../components/epp-live-view.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
+import "../components/epp-wizard.js";
+import "../components/epp-grid.js";
 import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import {
@@ -279,9 +281,14 @@ describe("_renderLiveGrid target rendering branches", () => {
 		expect(tpl).toBeDefined();
 	});
 
-	it("renders with grid metrics", () => {
-		const a = createPanel() as any;
-		const tpl = a._renderGridDimensions();
+	it("renders with grid metrics (via EppGrid)", () => {
+		const el = document.createElement("epp-grid") as any;
+		el.grid = initGridFromRoom(3000, 4000);
+		el.roomWidth = 3000;
+		el.roomDepth = 4000;
+		el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+		el.localize = (k: string) => k;
+		const tpl = el._renderGridDimensions();
 		expect(tpl).toBeDefined();
 	});
 });
@@ -880,23 +887,33 @@ describe("_loadTemplate backwards compat", () => {
 // =========================================================
 // _renderWizard with capturing in progress
 // =========================================================
-describe("_renderWizard capture overlay branches", () => {
+describe("_renderWizard capture overlay branches (via EppWizard)", () => {
+	function createWiz() {
+		const el = document.createElement("epp-wizard") as any;
+		el.hass = { callWS: vi.fn().mockResolvedValue({}) };
+		el.selectedMac = "";
+		el.rawTargets = [{ raw_x: 100, raw_y: 200 }];
+		el.sensorState = { occupancy: false };
+		el.devices = [];
+		el.localize = (k: string) => k;
+		el.mode = "wizard";
+		el._setupStep = "corners";
+		el._wizardCornerIndex = 0;
+		el._wizardCorners = [null, null, null, null];
+		el._wizardRoomWidth = 3000;
+		el._wizardRoomDepth = 4000;
+		el._wizardOffsetSide = "";
+		el._wizardOffsetFb = "";
+		el._smoothBuffer = [];
+		el._perspective = null;
+		return el;
+	}
+
 	it("renders capture overlay", () => {
-		const a = createPanel() as any;
-		a._setupStep = "corners";
+		const a = createWiz();
 		a._wizardCapturing = true;
 		a._wizardCaptureProgress = 0.5;
-		a._targets = [
-			{
-				x: 100,
-				y: 200,
-				raw_x: 100,
-				raw_y: 200,
-				speed: 0,
-				status: "active" as const,
-				signal: 5,
-			},
-		];
+		a._wizardCapturePaused = false;
 		const tpl = a._renderWizard();
 		const c = renderTo(tpl);
 
@@ -907,21 +924,9 @@ describe("_renderWizard capture overlay branches", () => {
 	});
 
 	it("renders paused capture overlay", () => {
-		const a = createPanel() as any;
-		a._setupStep = "corners";
+		const a = createWiz();
 		a._wizardCapturing = true;
 		a._wizardCapturePaused = true;
-		a._targets = [
-			{
-				x: 100,
-				y: 200,
-				raw_x: 100,
-				raw_y: 200,
-				speed: 0,
-				status: "active" as const,
-				signal: 5,
-			},
-		];
 		const tpl = a._renderWizard();
 		expect(tpl).toBeDefined();
 	});
