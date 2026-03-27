@@ -31,15 +31,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        variant:
-          - wifi
-          - wifi-ble
-          - wifi-co2
-          - wifi-ble-co2
-          - ethernet
-          - ethernet-ble
-          - ethernet-co2
-          - ethernet-ble-co2
+        variant: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && fromJSON('["wifi","wifi-ble","wifi-co2","wifi-ble-co2","ethernet","ethernet-ble","ethernet-co2","ethernet-ble-co2"]') || fromJSON('["wifi"]') }}
     name: "Compile ${{ matrix.variant }}"
     steps:
       - uses: actions/checkout@v4

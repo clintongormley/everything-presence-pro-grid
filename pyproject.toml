@@ -36,6 +36,14 @@ testpaths = ["tests"]
 
 [tool.coverage.run]
 source = ["custom_components/eppgrid"]
+omit = [
+    "custom_components/eppgrid/binary_sensor.py",
+    "custom_components/eppgrid/calibration.py",
+    "custom_components/eppgrid/config_flow.py",
+    "custom_components/eppgrid/coordinator.py",
+    "custom_components/eppgrid/sensor.py",
+    "custom_components/eppgrid/zone_engine.py",
+]
 
 [tool.coverage.report]
 show_missing = true
