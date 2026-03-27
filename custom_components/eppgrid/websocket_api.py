@@ -33,6 +33,7 @@ def async_register_websocket_commands(
     websocket_api.async_register_command(hass, websocket_delete_template)
     websocket_api.async_register_command(hass, websocket_apply_template)
     websocket_api.async_register_command(hass, websocket_subscribe_grid_targets)
+    websocket_api.async_register_command(hass, websocket_subscribe_raw_targets)
     websocket_api.async_register_command(hass, websocket_set_entity_enabled)
     websocket_api.async_register_command(hass, websocket_set_env_calibration)
     websocket_api.async_register_command(hass, websocket_set_motion_timeout)
@@ -258,6 +259,79 @@ async def websocket_apply_template(
     connection.send_result(msg["id"])
 
 
+# -- Helper --
+
+def _build_entity_key_map(entities: list) -> dict[str, int]:
+    """Map entity names to their numeric state keys."""
+    key_map = {}
+    for entity in entities:
+        if hasattr(entity, 'key') and hasattr(entity, 'name'):
+            key_map[entity.name] = entity.key
+    return key_map
+
+
+# -- subscribe_raw_targets --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/subscribe_raw_targets",
+    vol.Required("mac"): str,
+})
+@websocket_api.async_response
+async def websocket_subscribe_raw_targets(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Stream raw target positions from device."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+
+    mac = msg["mac"]
+    device_conn = await manager.async_get_or_create_connection(mac)
+    if device_conn is None:
+        connection.send_error(msg["id"], "not_found", "Device not available")
+        return
+
+    key_map = _build_entity_key_map(device_conn._entities)
+
+    # Map raw target sensor keys to indices
+    raw_keys = {}
+    for i in range(3):
+        name = f"Raw Target {i}"
+        if name in key_map:
+            raw_keys[key_map[name]] = i
+
+    # Accumulated state
+    raw_targets = [{"raw_x": None, "raw_y": None} for _ in range(3)]
+
+    @callback
+    def _on_state(state: Any) -> None:
+        from aioesphomeapi import TextSensorState
+        if not isinstance(state, TextSensorState):
+            return
+        if state.key not in raw_keys:
+            return
+        idx = raw_keys[state.key]
+        if state.state:
+            parts = state.state.split(",")
+            raw_targets[idx] = {"raw_x": float(parts[0]), "raw_y": float(parts[1])}
+        else:
+            raw_targets[idx] = {"raw_x": None, "raw_y": None}
+        connection.send_message(
+            websocket_api.event_message(msg["id"], {"targets": list(raw_targets)})
+        )
+
+    device_conn.subscribe_states(_on_state)
+    connection.send_result(msg["id"])
+
+    @callback
+    def _unsub() -> None:
+        hass.async_create_task(manager.async_release_connection(mac))
+    connection.subscriptions[msg["id"]] = _unsub
+
+
 # -- subscribe_grid_targets --
 
 @websocket_api.websocket_command({
@@ -270,7 +344,7 @@ async def websocket_subscribe_grid_targets(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Stream target positions and zone state from device."""
+    """Stream target positions, zone state, and sensor data from device."""
     manager = _get_manager(hass)
     if manager is None:
         connection.send_error(msg["id"], "not_ready", "Integration not loaded")
@@ -282,22 +356,77 @@ async def websocket_subscribe_grid_targets(
         connection.send_error(msg["id"], "not_found", "Device not available")
         return
 
+    key_map = _build_entity_key_map(device_conn._entities)
+
+    # Map target position sensor keys to indices
+    target_keys = {}
+    for i in range(3):
+        name = f"Target {i} Position"
+        if name in key_map:
+            target_keys[key_map[name]] = i
+
+    # Zone state text sensor key
+    zone_state_key = key_map.get("Zone State")
+
+    # Binary sensor keys for sensors dict
+    sensor_keys = {}
+    for name, field in (
+        ("Occupancy", "occupancy"),
+        ("Static Presence", "static_presence"),
+        ("Motion Presence", "motion_presence"),
+        ("Zone Tracking", "target_presence"),
+    ):
+        if name in key_map:
+            sensor_keys[key_map[name]] = field
+
+    # Accumulated state
+    targets = [{"x": None, "y": None, "signal": 0, "status": "inactive"} for _ in range(3)]
+    sensors = {"occupancy": False, "static_presence": False, "motion_presence": False, "target_presence": False}
+    zones = {"occupancy": {}, "target_counts": {}, "frame_count": 0}
+
     @callback
     def _on_state(state: Any) -> None:
-        """Forward device state to frontend."""
-        from aioesphomeapi import BinarySensorState, SensorState, TextSensorState
+        from aioesphomeapi import TextSensorState, BinarySensorState
+        import json as json_mod
 
-        data: dict[str, Any] = {}
         if isinstance(state, TextSensorState):
-            data = {"type": "text", "key": state.key, "state": state.state}
+            if state.key in target_keys:
+                idx = target_keys[state.key]
+                if state.state:
+                    parts = state.state.split(",")
+                    targets[idx]["x"] = float(parts[0])
+                    targets[idx]["y"] = float(parts[1])
+                else:
+                    targets[idx] = {"x": None, "y": None, "signal": 0, "status": "inactive"}
+                # Send full event on each position update (5Hz)
+                connection.send_message(
+                    websocket_api.event_message(msg["id"], {
+                        "targets": list(targets),
+                        "sensors": dict(sensors),
+                        "zones": dict(zones),
+                    })
+                )
+            elif zone_state_key is not None and state.key == zone_state_key and state.state:
+                # Parse zone state JSON (1Hz)
+                try:
+                    zs = json_mod.loads(state.state)
+                    # Update target signal/status
+                    for i, t in enumerate(zs.get("targets", [])):
+                        if i < 3:
+                            targets[i]["signal"] = t.get("signal", 0)
+                            targets[i]["status"] = t.get("status", "inactive")
+                    # Update zone data
+                    zone_occ = zs.get("zones", {}).get("occupancy", [])
+                    zones["occupancy"] = {str(i): v for i, v in enumerate(zone_occ)}
+                    zones["frame_count"] = zs.get("frame_count", 0)
+                    sensors["target_presence"] = zs.get("zones", {}).get("tracking", False)
+                except (ValueError, KeyError):
+                    pass
+
         elif isinstance(state, BinarySensorState):
-            data = {"type": "binary", "key": state.key, "state": state.state}
-        elif isinstance(state, SensorState):
-            data = {"type": "sensor", "key": state.key, "state": state.state}
-        if data:
-            connection.send_message(
-                websocket_api.event_message(msg["id"], data)
-            )
+            if state.key in sensor_keys:
+                field = sensor_keys[state.key]
+                sensors[field] = state.state
 
     device_conn.subscribe_states(_on_state)
     connection.send_result(msg["id"])
@@ -305,7 +434,6 @@ async def websocket_subscribe_grid_targets(
     @callback
     def _unsub() -> None:
         hass.async_create_task(manager.async_release_connection(mac))
-
     connection.subscriptions[msg["id"]] = _unsub
 
 
