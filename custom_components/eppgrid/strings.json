@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Everything Presence Pro Grid",
+        "description": "Set up the EPP Grid calibration UI and device management."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Already configured."
+    }
+  }
+}

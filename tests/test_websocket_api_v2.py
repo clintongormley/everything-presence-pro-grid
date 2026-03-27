@@ -5,8 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from homeassistant.setup import async_setup_component
-from pytest_homeassistant_custom_component.common import MockUser
+from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import DOMAIN
 from custom_components.eppgrid.device_manager import ManagedDevice
@@ -22,8 +21,10 @@ def clear_registered(monkeypatch):
 
 @pytest.fixture
 async def setup_integration(hass: HomeAssistant) -> None:
-    """Set up the integration."""
-    assert await async_setup_component(hass, DOMAIN, {DOMAIN: {}})
+    """Set up the integration via config entry."""
+    entry = MockConfigEntry(domain=DOMAIN, data={}, title="EPP Grid")
+    entry.add_to_hass(hass)
+    await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
 
 

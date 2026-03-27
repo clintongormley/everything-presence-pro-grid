@@ -7,8 +7,8 @@ import os
 
 from homeassistant.components import panel_custom
 from homeassistant.components.http import StaticPathConfig
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.typing import ConfigType
 
 from .const import DOMAIN
 from .device_manager import DeviceManager
@@ -28,8 +28,8 @@ def _hash_file(path: str) -> str:
         return hashlib.md5(f.read()).hexdigest()[:8]
 
 
-async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
-    """Set up Everything Presence Pro Grid."""
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Everything Presence Pro Grid from a config entry."""
     store = EPPGridStore(hass)
     await store.async_load()
 
@@ -46,8 +46,15 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     if DEV_MODE:
         _LOGGER.info("Dev mode enabled — loading Python zone engine and recording tools")
         from .coordinator import EPPGridCoordinator  # noqa: F401
-        # Dev-mode websocket commands can be registered here in future
 
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    manager = hass.data.pop(DOMAIN, None)
+    if manager is not None:
+        await manager.async_stop()
     return True
 
 
