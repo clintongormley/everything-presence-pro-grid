@@ -836,10 +836,26 @@ export class EPPGridPanel extends LitElement {
 		this._rawTargets = [];
 	}
 
-	private _subscribeDisplay(_mac: string): void {
+	private _subscribeDisplay(mac: string): void {
 		this._unsubscribeDisplay();
-		// TODO: Raw target display will be reimplemented using target position
-		// text sensors from the epp component via subscribe_grid_targets
+		if (!this.hass || !mac) return;
+
+		this.hass.connection
+			.subscribeMessage(
+				(event: any) => {
+					this._rawTargets = (event.targets || []).map((t: any) => ({
+						raw_x: t.raw_x,
+						raw_y: t.raw_y,
+					}));
+				},
+				{
+					type: "eppgrid/subscribe_raw_targets",
+					mac,
+				},
+			)
+			.then((unsub: () => void) => {
+				this._unsubDisplay = unsub;
+			});
 	}
 
 	private _unsubscribeDisplay(): void {
