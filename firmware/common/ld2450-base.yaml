@@ -58,9 +58,10 @@ uart:
           auto parse_target = [&](int offset, float &ex, float &ey) -> bool {
             bool detected = *((uint16_t *)(&bytes[offset + 6])) != 0;
             if (!detected) return false;
+            // LD2450 sign decoding (matches old default non-upside-down behavior)
             int16_t px = *((int16_t *)(&bytes[offset]));
             if (px < 0) px += MIN_INT16_VAL; else px = -px;
-            px = -px;  // default orientation (non-upside-down mounting)
+            px = -px;  // default mounting orientation flip
             int16_t py = *((int16_t *)(&bytes[offset + 2]));
             if (py < 0) py += MIN_INT16_VAL; else py = -py;
             float dist = sqrt(px * px + py * py);
