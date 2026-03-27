@@ -724,7 +724,9 @@ export class EPPGridPanel extends LitElement {
 		}
 		// Open device session, then subscribe to data streams
 		await this._openDeviceSession(mac);
-		this._subscribeTargets(mac);
+		if (this._unsubDevice) {
+			this._subscribeTargets(mac);
+		}
 	}
 
 	private _applyConfig(config: any): void {
@@ -770,7 +772,7 @@ export class EPPGridPanel extends LitElement {
 	private _closeDeviceSession(): void {
 		this._unsubscribeTargets();
 		if (this._unsubDevice) {
-			this._unsubDevice();
+			try { this._unsubDevice(); } catch { /* stale subscription */ }
 			this._unsubDevice = undefined;
 		}
 	}
@@ -852,7 +854,7 @@ export class EPPGridPanel extends LitElement {
 	private _unsubscribeTargets(): void {
 		this._unsubscribeDisplay();
 		if (this._unsubTargets) {
-			this._unsubTargets();
+			try { this._unsubTargets(); } catch { /* stale subscription */ }
 			this._unsubTargets = undefined;
 		}
 		this._targets = [];
@@ -884,7 +886,7 @@ export class EPPGridPanel extends LitElement {
 
 	private _unsubscribeDisplay(): void {
 		if (this._unsubDisplay) {
-			this._unsubDisplay();
+			try { this._unsubDisplay(); } catch { /* stale subscription */ }
 			this._unsubDisplay = undefined;
 		}
 	}
