@@ -9,5 +9,14 @@
     "abort": {
       "single_instance_allowed": "Already configured."
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "sidebar_panel": "Show sidebar panel"
+        }
+      }
+    }
   }
 }
