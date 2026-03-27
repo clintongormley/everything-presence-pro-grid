@@ -60,6 +60,7 @@ uart:
             if (!detected) return false;
             int16_t px = *((int16_t *)(&bytes[offset]));
             if (px < 0) px += MIN_INT16_VAL; else px = -px;
+            px = -px;  // default orientation (non-upside-down mounting)
             int16_t py = *((int16_t *)(&bytes[offset + 2]));
             if (py < 0) py += MIN_INT16_VAL; else py = -py;
             float dist = sqrt(px * px + py * py);
