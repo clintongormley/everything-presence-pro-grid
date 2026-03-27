@@ -4684,8 +4684,8 @@ export class EPPGridPanel extends LitElement {
             ${this._renderTargetDots(minCol, minRow, visCols, visRows)}
             </div>
             ${this._renderGridDimensions()}
-            ${this._sidebarTab === "zones" ? this._renderDebugLog() : nothing}
           </div>
+            ${this._sidebarTab === "zones" ? this._renderDebugLog() : nothing}
           </div>
 
           <!-- Sidebar -->

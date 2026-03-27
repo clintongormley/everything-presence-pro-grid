@@ -840,8 +840,8 @@ const he={attribute:!0,type:String,converter:b,reflect:!1,hasChanged:v},de=(e=he
             ${this._renderTargetDots(i,r,s,a)}
             </div>
             ${this._renderGridDimensions()}
-            ${"zones"===this._sidebarTab?this._renderDebugLog():V}
           </div>
+            ${"zones"===this._sidebarTab?this._renderDebugLog():V}
           </div>
 
           <!-- Sidebar -->
