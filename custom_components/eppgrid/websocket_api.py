@@ -361,6 +361,7 @@ async def websocket_subscribe_grid_targets(
         return
 
     key_map = _build_entity_key_map(device_conn._entities)
+    _LOGGER.debug("subscribe_grid_targets key_map: %s", key_map)
 
     # Map target position sensor keys to indices
     target_keys = {}
@@ -368,9 +369,11 @@ async def websocket_subscribe_grid_targets(
         name = f"Target {i} Position"
         if name in key_map:
             target_keys[key_map[name]] = i
+    _LOGGER.debug("subscribe_grid_targets target_keys: %s", target_keys)
 
     # Zone state text sensor key
     zone_state_key = key_map.get("Zone State")
+    _LOGGER.debug("subscribe_grid_targets zone_state_key: %s", zone_state_key)
 
     # Binary sensor keys for sensors dict
     sensor_keys = {}
@@ -382,6 +385,7 @@ async def websocket_subscribe_grid_targets(
     ):
         if name in key_map:
             sensor_keys[key_map[name]] = field
+    _LOGGER.debug("subscribe_grid_targets sensor_keys: %s", sensor_keys)
 
     # Accumulated state
     targets = [{"x": None, "y": None, "signal": 0, "status": "inactive"} for _ in range(3)]
