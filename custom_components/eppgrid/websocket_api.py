@@ -399,7 +399,7 @@ async def websocket_subscribe_grid_targets(
     zone_state_key = key_map.get("Zone State")
 
     # Binary sensor keys for sensors dict
-    sensor_keys = {}
+    binary_sensor_keys = {}
     for name, field in (
         ("Occupancy", "occupancy"),
         ("Static Presence", "static_presence"),
@@ -407,16 +407,30 @@ async def websocket_subscribe_grid_targets(
         ("Zone Tracking", "target_presence"),
     ):
         if name in key_map:
-            sensor_keys[key_map[name]] = field
+            binary_sensor_keys[key_map[name]] = field
+
+    # Numeric sensor keys for environmental data
+    numeric_sensor_keys = {}
+    for name, field in (
+        ("Temperature", "temperature"),
+        ("Humidity", "humidity"),
+        ("Illuminance", "illuminance"),
+    ):
+        if name in key_map:
+            numeric_sensor_keys[key_map[name]] = field
 
     # Accumulated state
     targets = [{"x": None, "y": None, "signal": 0, "status": "inactive"} for _ in range(3)]
-    sensors = {"occupancy": False, "static_presence": False, "motion_presence": False, "target_presence": False}
+    sensors: dict[str, Any] = {
+        "occupancy": False, "static_presence": False,
+        "motion_presence": False, "target_presence": False,
+        "temperature": None, "humidity": None, "illuminance": None, "co2": None,
+    }
     zones: dict[str, Any] = {"occupancy": {}, "target_counts": {}, "frame_count": 0}
 
     @callback
     def _on_state(state: Any) -> None:
-        from aioesphomeapi import TextSensorState, BinarySensorState
+        from aioesphomeapi import TextSensorState, BinarySensorState, SensorState
         import json as json_mod
 
         if isinstance(state, TextSensorState):
@@ -457,9 +471,14 @@ async def websocket_subscribe_grid_targets(
                     pass
 
         elif isinstance(state, BinarySensorState):
-            if state.key in sensor_keys:
-                field = sensor_keys[state.key]
-                sensors[field] = state.state
+            if state.key in binary_sensor_keys:
+                sensors[binary_sensor_keys[state.key]] = state.state
+
+        elif isinstance(state, SensorState):
+            if state.key in numeric_sensor_keys:
+                import math
+                field = numeric_sensor_keys[state.key]
+                sensors[field] = None if math.isnan(state.state) else state.state
 
     device_conn.subscribe_states(_on_state)
     connection.send_result(msg["id"])
