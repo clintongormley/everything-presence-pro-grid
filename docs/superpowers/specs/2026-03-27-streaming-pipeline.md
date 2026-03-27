@@ -10,16 +10,77 @@ Implement the target data streaming pipeline so the frontend gets structured eve
 LD2450 UART (10Hz raw frames)
   → epp component feed_targets()
     → rolling median window (1s, computed on every frame at 10Hz)
-      → every 200ms (5Hz publish):
+      → every display_interval (default 200ms / 5Hz):
         → publish raw median x,y text sensors  ←── subscribe_raw_targets
         → perspective transform
           → publish grid x,y text sensors  ←── subscribe_grid_targets (positions)
-      → every 1s (1Hz zone tick):
+      → every zone_tick_interval (default 1000ms / 1Hz):
         → zone engine tick with current window output
           → publish zones, signal, status  ←── subscribe_grid_targets (state)
 ```
 
-One rolling window, two publish rates. The window processes every frame at 10Hz to preserve full precision. Publication is throttled to 5Hz for display and 1Hz for zone state.
+One rolling window, two configurable publish rates. The window processes every frame at 10Hz to preserve full precision. Publication is throttled by configurable intervals.
+
+## Configurable Rates
+
+Both the display publish rate and zone engine tick rate are configurable via API actions, allowing tuning of responsiveness vs CPU/network load.
+
+| Setting | Default | Range | Notes |
+|---------|---------|-------|-------|
+| `display_interval_ms` | 200 (5Hz) | 50–1000 | How often raw + grid positions are published. Lower = smoother UI, more traffic. |
+| `zone_tick_interval_ms` | 1000 (1Hz) | 100–2000 | How often zone engine ticks. Lower = faster zone detection, more CPU. With rolling windows this is safe to increase — the window always has ~1s of data. |
+| `window_s` | 1.0 | 0.2–2.0 | Rolling window duration. Longer = more smoothing, higher latency. |
+
+These are stored in `EPPGridStore` as device config (key `"pipeline"`) and pushed to the device via a new `epp_set_pipeline` API action. Defaults are sensible — most users won't change them.
+
+### Firmware globals
+
+```yaml
+globals:
+  - id: display_interval_ms
+    type: uint32_t
+    initial_value: '200'
+  - id: zone_tick_interval_ms
+    type: uint32_t
+    initial_value: '1000'
+```
+
+### API action
+
+```yaml
+- action: epp_set_pipeline
+  variables:
+    display_interval: int     # ms, default 200
+    zone_interval: int        # ms, default 1000
+    window_duration: float    # seconds, default 1.0
+  then:
+    - lambda: |-
+        id(display_interval_ms) = display_interval;
+        id(zone_tick_interval_ms) = zone_interval;
+        id(epp_component).set_window_duration(window_duration);
+```
+
+### epp_component loop() uses the globals
+
+```cpp
+// 5Hz (configurable): publish display data
+if (now - last_display_publish_ms_ >= id(display_interval_ms)) {
+    ...
+}
+
+// 1Hz (configurable): zone engine tick
+if (now - last_zone_tick_ms_ >= id(zone_tick_interval_ms)) {
+    ...
+}
+```
+
+### Integration websocket command
+
+```
+eppgrid/set_pipeline  {mac, display_interval_ms, zone_tick_interval_ms, window_s}
+```
+
+Stores under `device_config["pipeline"]`, pushed via `epp_set_pipeline` API action on save and reconnect.
 
 ## Firmware Changes
 
@@ -72,18 +133,24 @@ The rolling window computes `frame_count` per target as the number of frames whe
 // Replace TumblingWindow with RollingWindow
 RollingWindow window_{1.0f};
 
-// Raw target text sensors (pre-transform, published at 5Hz)
+// Raw target text sensors (pre-transform)
 esphome::text_sensor::TextSensor *raw_target_sensors_[NUM_TARGETS]{};
 
-// Publish throttle
+// Configurable publish intervals (ms)
+uint32_t display_interval_ms_ = 200;   // default 5Hz
+uint32_t zone_tick_interval_ms_ = 1000; // default 1Hz
+
+// Publish throttle timestamps
 uint32_t last_display_publish_ms_ = 0;
 uint32_t last_zone_tick_ms_ = 0;
 
-// Cached zone result (signal/status update at 1Hz, positions at 5Hz)
-// Used by subscribe_grid_targets to merge 5Hz positions with 1Hz state
+// Cached zone result (signal/status update at zone tick rate, positions at display rate)
 TickResult last_zone_result_{};
 
 void set_raw_target_sensor(int index, esphome::text_sensor::TextSensor *sensor);
+void set_window_duration(float seconds) { window_ = RollingWindow(seconds); }
+void set_display_interval(uint32_t ms) { display_interval_ms_ = ms; }
+void set_zone_tick_interval(uint32_t ms) { zone_tick_interval_ms_ = ms; }
 ```
 
 ### epp_component.cpp loop() rewrite
@@ -105,8 +172,8 @@ void EPPComponent::loop() {
     }
     window_.feed(raw_inputs, NUM_TARGETS, ts);
 
-    // 5Hz: publish display data
-    if (now - last_display_publish_ms_ >= 200) {
+    // Configurable display publish rate (default 5Hz / 200ms)
+    if (now - last_display_publish_ms_ >= display_interval_ms_) {
         last_display_publish_ms_ = now;
         const auto &win = window_.output();
 
@@ -141,8 +208,8 @@ void EPPComponent::loop() {
         }
     }
 
-    // 1Hz: zone engine tick
-    if (now - last_zone_tick_ms_ >= 1000) {
+    // Configurable zone tick rate (default 1Hz / 1000ms)
+    if (now - last_zone_tick_ms_ >= zone_tick_interval_ms_) {
         last_zone_tick_ms_ = now;
 
         // Transform the window output for zone engine
@@ -368,6 +435,14 @@ private _subscribeDisplay(mac: string): void {
 ### `subscribe_grid_targets` handler
 
 No changes needed — the frontend already parses the structured `{targets, sensors, zones}` format. The backend now produces it.
+
+## Integration: `async_push_config` extension
+
+Add `pipeline` to the config push loop alongside the other settings:
+
+```python
+("pipeline", "epp_set_pipeline"),
+```
 
 ## Out of Scope
 
