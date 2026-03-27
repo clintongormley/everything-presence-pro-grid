@@ -1,16 +1,16 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-	createZoneEngineState,
-	runLocalZoneEngine,
-	type ZoneEngineParams,
-	type ZoneEngineState,
-} from "../zone-engine.js";
-import {
 	CELL_ROOM_BIT,
 	cellSetZone,
 	GRID_CELL_COUNT,
 	GRID_COLS,
 } from "../grid.js";
+import {
+	createZoneEngineState,
+	runLocalZoneEngine,
+	type ZoneEngineParams,
+	type ZoneEngineState,
+} from "../zone-engine.js";
 
 const MAX_ZONES = 7;
 

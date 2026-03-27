@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { GridStateController } from "../../controllers/grid-state-controller.js";
-import { ZONE_COLORS, type ZoneConfig } from "../../lib/zone-defaults.js";
-import { MAX_ZONES, GRID_CELL_COUNT, CELL_ROOM_BIT } from "../../lib/grid.js";
 import type { FurnitureItem, FurnitureSticker } from "../../lib/furniture.js";
+import { CELL_ROOM_BIT, GRID_CELL_COUNT, MAX_ZONES } from "../../lib/grid.js";
+import { ZONE_COLORS, type ZoneConfig } from "../../lib/zone-defaults.js";
 
 // Build a minimal host with all properties the controller reads/writes
 function mockHost(overrides: Record<string, any> = {}) {
@@ -26,7 +26,10 @@ function mockHost(overrides: Record<string, any> = {}) {
 		_selectedFurnitureId: null as string | null,
 		_dragState: null as any,
 		// Zones
-		_zoneConfigs: Array.from({ length: MAX_ZONES }, () => null) as (ZoneConfig | null)[],
+		_zoneConfigs: Array.from(
+			{ length: MAX_ZONES },
+			() => null,
+		) as (ZoneConfig | null)[],
 		// Furniture
 		_furniture: [] as FurnitureItem[],
 		// Templates
@@ -85,7 +88,11 @@ describe("GridStateController", () => {
 
 		it("skips already-used colors when picking a color", () => {
 			// Manually occupy slot 0 with the first color
-			host._zoneConfigs[0] = { name: "Zone 1", color: ZONE_COLORS[0], type: "normal" };
+			host._zoneConfigs[0] = {
+				name: "Zone 1",
+				color: ZONE_COLORS[0],
+				type: "normal",
+			};
 			ctrl.addZone(); // should fill slot 1
 			expect(host._zoneConfigs[1]!.color).toBe(ZONE_COLORS[1]);
 		});
@@ -102,8 +109,16 @@ describe("GridStateController", () => {
 
 		it("fills a gap rather than always using slot 0", () => {
 			// Occupy slots 0 and 2 so slot 1 is the first empty
-			host._zoneConfigs[0] = { name: "Zone 1", color: ZONE_COLORS[0], type: "normal" };
-			host._zoneConfigs[2] = { name: "Zone 3", color: ZONE_COLORS[2], type: "normal" };
+			host._zoneConfigs[0] = {
+				name: "Zone 1",
+				color: ZONE_COLORS[0],
+				type: "normal",
+			};
+			host._zoneConfigs[2] = {
+				name: "Zone 3",
+				color: ZONE_COLORS[2],
+				type: "normal",
+			};
 			ctrl.addZone();
 			expect(host._zoneConfigs[1]).not.toBeNull();
 			expect(host._activeZone).toBe(2);
@@ -127,7 +142,11 @@ describe("GridStateController", () => {
 	describe("removeZone(slot)", () => {
 		beforeEach(() => {
 			// Add a zone in slot 1
-			host._zoneConfigs[0] = { name: "Zone 1", color: ZONE_COLORS[0], type: "normal" };
+			host._zoneConfigs[0] = {
+				name: "Zone 1",
+				color: ZONE_COLORS[0],
+				type: "normal",
+			};
 			host._activeZone = 1;
 		});
 
@@ -155,7 +174,11 @@ describe("GridStateController", () => {
 		});
 
 		it("leaves _activeZone unchanged when a different slot is removed", () => {
-			host._zoneConfigs[1] = { name: "Zone 2", color: ZONE_COLORS[1], type: "normal" };
+			host._zoneConfigs[1] = {
+				name: "Zone 2",
+				color: ZONE_COLORS[1],
+				type: "normal",
+			};
 			host._activeZone = 1;
 			ctrl.removeZone(2);
 			expect(host._activeZone).toBe(1);
@@ -218,7 +241,9 @@ describe("GridStateController", () => {
 
 		it("selects the newly added item", () => {
 			ctrl.addFurniture(sticker);
-			expect(host._selectedFurnitureId).toBe((host._furniture[0] as FurnitureItem).id);
+			expect(host._selectedFurnitureId).toBe(
+				(host._furniture[0] as FurnitureItem).id,
+			);
 		});
 
 		it("marks the host as dirty", () => {
@@ -320,14 +345,18 @@ describe("GridStateController", () => {
 
 		it("saves template data to localStorage", () => {
 			ctrl.saveTemplate();
-			const stored = JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
+			const stored = JSON.parse(
+				localStorage.getItem("epp_layout_templates") || "[]",
+			);
 			expect(stored).toHaveLength(1);
 			expect(stored[0].name).toBe("My Template");
 		});
 
 		it("stores grid bytes, zone configs, and room dimensions", () => {
 			ctrl.saveTemplate();
-			const stored = JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
+			const stored = JSON.parse(
+				localStorage.getItem("epp_layout_templates") || "[]",
+			);
 			const tmpl = stored[0];
 			expect(tmpl.grid[5]).toBe(CELL_ROOM_BIT);
 			expect(tmpl.roomWidth).toBe(3000);
@@ -347,7 +376,9 @@ describe("GridStateController", () => {
 			host._templateName = "My Template";
 			host._roomWidth = 5000;
 			ctrl.saveTemplate();
-			const stored = JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
+			const stored = JSON.parse(
+				localStorage.getItem("epp_layout_templates") || "[]",
+			);
 			expect(stored).toHaveLength(1);
 			expect(stored[0].roomWidth).toBe(5000);
 		});
@@ -355,7 +386,9 @@ describe("GridStateController", () => {
 		it("does nothing when template name is blank", () => {
 			host._templateName = "   ";
 			ctrl.saveTemplate();
-			const stored = JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
+			const stored = JSON.parse(
+				localStorage.getItem("epp_layout_templates") || "[]",
+			);
 			expect(stored).toHaveLength(0);
 		});
 
@@ -363,7 +396,9 @@ describe("GridStateController", () => {
 			ctrl.saveTemplate();
 			host._templateName = "Other Template";
 			ctrl.saveTemplate();
-			const stored = JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
+			const stored = JSON.parse(
+				localStorage.getItem("epp_layout_templates") || "[]",
+			);
 			expect(stored).toHaveLength(2);
 		});
 	});
@@ -371,7 +406,9 @@ describe("GridStateController", () => {
 	describe("loadTemplate()", () => {
 		const TEMPLATE = {
 			name: "Loaded",
-			grid: Array.from({ length: GRID_CELL_COUNT }, (_, i) => (i === 3 ? CELL_ROOM_BIT : 0)),
+			grid: Array.from({ length: GRID_CELL_COUNT }, (_, i) =>
+				i === 3 ? CELL_ROOM_BIT : 0,
+			),
 			zones: [{ name: "Zone 1", color: ZONE_COLORS[0], type: "normal" }],
 			roomWidth: 2400,
 			roomDepth: 3600,
@@ -427,7 +464,10 @@ describe("GridStateController", () => {
 
 		it("handles templates without furniture field", () => {
 			const tmplNoFurniture = { ...TEMPLATE, furniture: undefined };
-			localStorage.setItem("epp_layout_templates", JSON.stringify([tmplNoFurniture]));
+			localStorage.setItem(
+				"epp_layout_templates",
+				JSON.stringify([tmplNoFurniture]),
+			);
 			ctrl.loadTemplate("Loaded");
 			expect(host._furniture).toEqual([]);
 		});
@@ -446,13 +486,17 @@ describe("GridStateController", () => {
 
 		it("removes the named template from localStorage", () => {
 			ctrl.deleteTemplate("Alpha");
-			const stored = JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
+			const stored = JSON.parse(
+				localStorage.getItem("epp_layout_templates") || "[]",
+			);
 			expect(stored.map((t: any) => t.name)).not.toContain("Alpha");
 		});
 
 		it("leaves other templates intact", () => {
 			ctrl.deleteTemplate("Alpha");
-			const stored = JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
+			const stored = JSON.parse(
+				localStorage.getItem("epp_layout_templates") || "[]",
+			);
 			expect(stored).toHaveLength(1);
 			expect(stored[0].name).toBe("Beta");
 		});

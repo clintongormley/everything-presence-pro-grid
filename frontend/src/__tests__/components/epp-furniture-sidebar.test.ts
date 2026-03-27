@@ -14,9 +14,7 @@ function renderTo(tpl: any): HTMLDivElement {
 function createSidebar(
 	overrides: Record<string, any> = {},
 ): EppFurnitureSidebar {
-	const el = document.createElement(
-		"epp-furniture-sidebar",
-	) as any;
+	const el = document.createElement("epp-furniture-sidebar") as any;
 	el.furniture = [];
 	el.selectedFurnitureId = null;
 	el.hass = {};
@@ -102,9 +100,7 @@ describe("epp-furniture-sidebar DOM events", () => {
 		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
-		const stickers = c.querySelectorAll(
-			".furn-sticker:not(.furn-custom)",
-		);
+		const stickers = c.querySelectorAll(".furn-sticker:not(.furn-custom)");
 		if (stickers.length > 0) {
 			(stickers[0] as HTMLElement).click();
 			expect(handler).toHaveBeenCalledTimes(1);
@@ -142,9 +138,7 @@ describe("epp-furniture-sidebar DOM events", () => {
 		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
-		const backBtn = c.querySelector(
-			".wizard-btn-back",
-		) as HTMLElement;
+		const backBtn = c.querySelector(".wizard-btn-back") as HTMLElement;
 		if (backBtn) {
 			backBtn.click();
 			expect(toggleHandler).toHaveBeenCalledTimes(1);
@@ -165,9 +159,7 @@ describe("epp-furniture-sidebar DOM events", () => {
 		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
-		const primaryBtn = c.querySelector(
-			".wizard-btn-primary",
-		) as HTMLElement;
+		const primaryBtn = c.querySelector(".wizard-btn-primary") as HTMLElement;
 		if (primaryBtn) {
 			primaryBtn.click();
 			expect(handler).toHaveBeenCalledTimes(1);
@@ -187,9 +179,7 @@ describe("epp-furniture-sidebar DOM events", () => {
 		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
-		const removeBtn = c.querySelector(
-			".zone-remove-btn",
-		) as HTMLElement;
+		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
 		if (removeBtn) {
 			removeBtn.click();
 			expect(handler).toHaveBeenCalledTimes(1);
@@ -243,9 +233,7 @@ describe("epp-furniture-sidebar DOM events", () => {
 		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
-		const picker = c.querySelector(
-			"ha-icon-picker",
-		) as HTMLElement;
+		const picker = c.querySelector("ha-icon-picker") as HTMLElement;
 		if (picker) {
 			picker.dispatchEvent(
 				new CustomEvent("value-changed", {

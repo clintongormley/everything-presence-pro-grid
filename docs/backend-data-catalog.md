@@ -18,19 +18,27 @@ HA Integration (eppgrid)
   ├── stores config in EPPGridStore → pushes to device via API actions
   └── manages ESPHome entity enable/disable/rename
 
-Frontend (eppgrid-panel.ts)
+Frontend (eppgrid-panel.ts — orchestrator)
   ├── subscribe_device → opens session connection
   ├── subscribe_grid_targets → structured events (positions, zones, sensors)
   ├── subscribe_raw_targets → raw sensor-space positions
   ├── commands: set_setup, set_room_layout, set_env_calibration, etc.
-  └── components/
-      ├── epp-live-view.ts — live overview composite (header, grid, sidebar, menu)
-      ├── epp-live-sidebar.ts — sensor/zone status sidebar
-      ├── epp-zone-sidebar.ts — zone editing sidebar
-      ├── epp-furniture-sidebar.ts — furniture editing sidebar
-      ├── epp-furniture-overlay.ts — furniture drag/resize overlay
-      ├── epp-grid.ts — grid rendering component
-      └── epp-settings-view.ts — settings panel
+  ├── controllers/
+  │   ├── device-controller.ts — WS subscriptions, device loading
+  │   ├── grid-state-controller.ts — grid/zone/furniture mutation, templates
+  │   └── target-controller.ts — target/sensor/zone state, zone engine, debug logs
+  ├── components/
+  │   ├── epp-wizard.ts — calibration wizard (guide, corners, capture)
+  │   ├── epp-live-view.ts — live overview composite (grid, sidebar, menu)
+  │   ├── epp-editor-view.ts — zone/furniture editor composite
+  │   ├── epp-settings-view.ts — device settings (accordions, ranges, reporting)
+  │   ├── epp-grid.ts — shared grid renderer (live + editor)
+  │   ├── epp-live-sidebar.ts — sensor/zone status display
+  │   ├── epp-zone-sidebar.ts — zone list + type controls
+  │   ├── epp-furniture-sidebar.ts — furniture catalog + custom icons
+  │   └── epp-furniture-overlay.ts — furniture drag/resize/rotate
+  └── lib/
+      └── zone-engine.ts — pure-function zone occupancy state machine
 ```
 
 ## 1. ESPHome Entities

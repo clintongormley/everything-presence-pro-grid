@@ -11,7 +11,9 @@ function renderTo(tpl: any): HTMLDivElement {
 	return container;
 }
 
-function createView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+function createView(
+	overrides?: Partial<Record<string, unknown>>,
+): EppSettingsView {
 	const el = document.createElement("epp-settings-view") as EppSettingsView;
 	el.grid = initGridFromRoom(3000, 4000);
 	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];

@@ -69,13 +69,31 @@ everything-presence-pro-grid/
 │       └── eppgrid-panel.js   # Built JS bundle
 ├── frontend/
 │   ├── src/
-│   │   ├── eppgrid-panel.ts   # Main Lit element
-│   │   ├── index.ts                           # Export entry point
+│   │   ├── eppgrid-panel.ts       # Orchestrator (view routing, controllers, dialogs)
+│   │   ├── types.ts               # Shared type definitions
+│   │   ├── constants.ts           # SVG data, catalog, labels, thresholds
+│   │   ├── styles.ts              # HA theme tokens, reusable CSS fragments
+│   │   ├── index.ts               # Export entry point
+│   │   ├── controllers/
+│   │   │   ├── device-controller.ts    # WS subscriptions, device loading
+│   │   │   ├── grid-state-controller.ts # Grid/zone/furniture mutation, templates
+│   │   │   └── target-controller.ts    # Target/sensor/zone state, zone engine
+│   │   ├── components/
+│   │   │   ├── epp-wizard.ts           # Calibration wizard (guide, corners, capture)
+│   │   │   ├── epp-live-view.ts        # Live overview composite
+│   │   │   ├── epp-editor-view.ts      # Zone/furniture editor composite
+│   │   │   ├── epp-settings-view.ts    # Device settings (accordions, ranges)
+│   │   │   ├── epp-grid.ts             # Shared grid renderer
+│   │   │   ├── epp-live-sidebar.ts     # Sensor/zone status display
+│   │   │   ├── epp-zone-sidebar.ts     # Zone list + type controls
+│   │   │   ├── epp-furniture-sidebar.ts # Furniture catalog
+│   │   │   └── epp-furniture-overlay.ts # Furniture drag/resize/rotate
 │   │   └── lib/
-│   │       ├── perspective.ts     # Homography math
-│   │       ├── grid.ts            # Cell encoding, room bounds
-│   │       ├── coordinates.ts     # Target → grid mapping
-│   │       └── zone-defaults.ts   # Zone types, thresholds, colors
+│   │       ├── zone-engine.ts       # Pure-function zone state machine
+│   │       ├── perspective.ts       # Homography math
+│   │       ├── grid.ts             # Cell encoding, room bounds
+│   │       ├── coordinates.ts      # Target → grid mapping
+│   │       └── zone-defaults.ts    # Zone types, thresholds, colors
 │   ├── rollup.config.js       # Bundles TS → built JS
 │   ├── biome.json             # TS linter/formatter config
 │   └── vitest.config.ts       # Frontend test config
@@ -266,40 +284,36 @@ Rollup bundles `src/index.ts` → minified ES module at
 TypeScript with strict mode and experimental decorators for Lit.
 Biome for linting/formatting.
 
-### Main Panel (`eppgrid-panel.ts`)
+### Panel Architecture
 
-A Lit `LitElement` registered as `<eppgrid-panel>`. It has
-three views: live overview, editor, and settings.
+The frontend is a Lit-based component tree rooted in `<eppgrid-panel>`,
+which serves as an orchestrator. State flows via reactive controllers,
+rendering is delegated to focused sub-components.
 
-**Initialization:** On connect, loads entries via `list_entries`, loads
-config via `get_config`, and subscribes to live target data via
-`subscribe_grid_targets` (grid positions + state) and `subscribe_raw_targets`
-(sensor-space positions for FOV overlay).
+**Orchestrator (`eppgrid-panel.ts`)** — View routing (live/editor/settings/wizard),
+device selector, global dialogs, navigation guards, controller creation.
 
-**Live Overview** — Renders the calibrated grid with target dots, zone
-occupancy overlays, environment sensor readouts, and presence status
-(including target presence and motion presence). The sidebar shows
-rest-of-room zone under detection zones. A collapsible "Detection events"
-debug log panel below the grid shows backend zone engine tick summaries
-(deduped, timestamped, 100-line cap).
+**Controllers** (shared state, no DOM):
+- `DeviceController` — WS subscriptions, device loading, session lifecycle
+- `GridStateController` — grid/zone/furniture mutation, template persistence, save
+- `TargetController` — target/sensor/zone state, zone engine, debug logs
 
-**Editor** — Two tabs:
-- *Zones:* Paint zone cells on the grid, add/remove zones, configure
-  type/trigger/renew/timeout per zone. Room boundary is zone 0 (painted
-  with the room bit). Zones with zero painted cells are auto-removed on
-  save. A collapsible "Detection events" debug log panel below the grid
-  shows local zone engine output (deduped, timestamped, 100-line cap).
-- *Furniture:* Place, move, resize, rotate furniture items (MDI icons or
-  SVG floor plans) for visual context. Drag handles for resize, rotation
-  handle at top.
+**Composite views:**
+- `<epp-live-view>` — live grid + sidebar + menu dropdown
+- `<epp-editor-view>` — editable grid + zone/furniture sidebars + debug log
+- `<epp-settings-view>` — accordion panels for detection ranges, reporting, env offsets
+- `<epp-wizard>` — calibration flow (guide, 4-corner capture, perspective solve)
 
-**Calibration Wizard** — Four-step flow:
-1. Guide: instructions
-2. Corners: capture 4 room corners (5-second median of raw sensor coords
-   each, with wall offset inputs)
-3. Auto-compute room dimensions from corner distances
-4. Solve perspective via `solvePerspective()` (Gaussian elimination)
-5. Save via `set_setup` websocket command
+**Shared components:**
+- `<epp-grid>` — grid cell rendering, target dots, furniture overlay (live + editor)
+- `<epp-live-sidebar>` — presence/zone/environment sensor display
+- `<epp-zone-sidebar>` — zone list, type controls, add/remove
+- `<epp-furniture-sidebar>` — sticker catalog, custom icons
+- `<epp-furniture-overlay>` — drag, resize, rotate furniture items
+
+**State flow:** Controllers own cross-cutting state (device, grid, targets).
+Components receive data as properties, fire `CustomEvent`s for mutations.
+The orchestrator wires events to controller methods.
 
 **Navigation protection:** Intercepts `beforeunload` and
 `history.pushState/replaceState` when unsaved changes exist.
@@ -325,10 +339,10 @@ median for capture smoothing.
 thresholds per zone type, color palette (7 colorblind-friendly colors),
 `getZoneThresholds()` resolver.
 
-### Local Zone Engine Replica
+### Local Zone Engine Replica (`lib/zone-engine.ts`)
 
-The frontend contains a replica of the backend's zone engine state machine
-for live preview in the editor. It implements the same algorithms:
+The frontend contains a pure-function replica of the backend's zone engine
+state machine for live preview in the editor. It implements the same algorithms:
 
 - Target → grid cell mapping
 - Continuity check (Chebyshev ≤ 5 cells)
@@ -350,9 +364,9 @@ Python backend and the TypeScript frontend. Both implement:
 |-----------|--------|------------|
 | Cell encoding | `zone_engine.py` Grid | `grid.ts` |
 | Target → cell | `zone_engine.py` `xy_to_cell` | `coordinates.ts` `mapTargetToGridCell` |
-| Zone state machine | `zone_engine.py` `_tick` | `panel.ts` `_renderVisibleCells` |
-| Entry-point gating | `zone_engine.py` lines ~460-500 | `panel.ts` lines ~4908-4937 |
-| Handoff detection | `zone_engine.py` lines ~502-528 | `panel.ts` lines ~4940-4958 |
+| Zone state machine | `zone_engine.py` `_tick` | `lib/zone-engine.ts` `runLocalZoneEngine` |
+| Entry-point gating | `zone_engine.py` lines ~460-500 | `lib/zone-engine.ts` |
+| Handoff detection | `zone_engine.py` lines ~502-528 | `lib/zone-engine.ts` |
 | Zone type defaults | `const.py` | `zone-defaults.ts` |
 | Perspective transform | `calibration.py` | `perspective.ts` |
 
@@ -384,18 +398,14 @@ Config: `pyproject.toml` — ruff for lint/format, pytest-asyncio with
 ### TypeScript (vitest)
 
 Tests live in `frontend/src/__tests__/` with happy-dom for DOM simulation.
+39 test files, 1169 tests.
 
-| File | Covers |
-|------|--------|
-| `panel-render.test.ts` | Element creation, loading states |
-| `panel-grid.test.ts` | Cell painting, boundary drawing |
-| `panel-zones.test.ts` | Zone CRUD, color assignment |
-| `panel-furniture.test.ts` | Furniture item management |
-| `panel-navigation.test.ts` | View switching |
-| `lib/coordinates.test.ts` | Target mapping, FOV, smoothing |
-| `lib/grid.test.ts` | Cell bit operations, room bounds |
-| `lib/perspective.test.ts` | Homography solve, apply, inverse |
-| `lib/zone-defaults.test.ts` | Thresholds, colors |
+| Directory | Covers |
+|-----------|--------|
+| `panel-*.test.ts` | Integration tests for orchestrator |
+| `controllers/*.test.ts` | DeviceController, GridStateController, TargetController |
+| `components/*.test.ts` | All 9 extracted components |
+| `lib/*.test.ts` | Pure-function modules (grid, coordinates, perspective, zone-engine, etc.) |
 
 ### CI (.github/workflows/)
 

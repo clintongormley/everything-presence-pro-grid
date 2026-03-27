@@ -60,7 +60,11 @@ describe("epp-zone-sidebar element", () => {
 		(el as any).zoneConfigs = [
 			{ name: "Kitchen", color: ZONE_COLORS[0], type: "normal" },
 			{ name: "Living Room", color: ZONE_COLORS[1], type: "normal" },
-			null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
@@ -114,7 +118,12 @@ describe("epp-zone-sidebar element", () => {
 		const el = createSidebar({ activeZone: 1 });
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: ZONE_COLORS[0], type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
@@ -129,7 +138,12 @@ describe("epp-zone-sidebar element", () => {
 		const el = createSidebar({ activeZone: 1 });
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: "#ff0000", type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
@@ -144,7 +158,12 @@ describe("epp-zone-sidebar element", () => {
 		const el = createSidebar({ activeZone: 0 });
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: "#ff0000", type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
@@ -182,7 +201,12 @@ describe("epp-zone-sidebar events", () => {
 		const el = createSidebar();
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: "#ff0000", type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const handler = vi.fn();
 		el.addEventListener("zone-select", handler);
@@ -219,7 +243,12 @@ describe("epp-zone-sidebar events", () => {
 		const el = createSidebar({ activeZone: 1 });
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: "#ff0000", type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const handler = vi.fn();
 		el.addEventListener("zone-remove", handler);
@@ -240,7 +269,12 @@ describe("epp-zone-sidebar events", () => {
 		const el = createSidebar();
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: "#ff0000", type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const handler = vi.fn();
 		el.addEventListener("zone-config-change", handler);
@@ -263,7 +297,12 @@ describe("epp-zone-sidebar events", () => {
 		const el = createSidebar({ activeZone: 1 });
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: "#ff0000", type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const handler = vi.fn();
 		el.addEventListener("zone-config-change", handler);
@@ -271,7 +310,9 @@ describe("epp-zone-sidebar events", () => {
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
-		const colorPicker = c.querySelector(".zone-color-picker") as HTMLInputElement;
+		const colorPicker = c.querySelector(
+			".zone-color-picker",
+		) as HTMLInputElement;
 		colorPicker.value = "#00ff00";
 		colorPicker.dispatchEvent(new Event("input", { bubbles: true }));
 
@@ -340,7 +381,14 @@ describe("epp-zone-sidebar events", () => {
 describe("epp-zone-sidebar occupancy glow", () => {
 	it("boundary zone dot shows glow when occupied", () => {
 		const localZoneState = new Map([
-			[0, { occupied: true, pendingSince: null, confirmedTargets: new Set<number>() }],
+			[
+				0,
+				{
+					occupied: true,
+					pendingSince: null,
+					confirmedTargets: new Set<number>(),
+				},
+			],
 		]);
 		const el = createSidebar({ localZoneState });
 		const tpl = (el as any)._renderZoneSidebar();
@@ -354,12 +402,24 @@ describe("epp-zone-sidebar occupancy glow", () => {
 
 	it("named zone dot shows glow when occupied", () => {
 		const localZoneState = new Map([
-			[1, { occupied: true, pendingSince: null, confirmedTargets: new Set<number>() }],
+			[
+				1,
+				{
+					occupied: true,
+					pendingSince: null,
+					confirmedTargets: new Set<number>(),
+				},
+			],
 		]);
 		const el = createSidebar({ activeZone: 0, localZoneState });
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: ZONE_COLORS[0], type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
@@ -376,7 +436,12 @@ describe("epp-zone-sidebar occupancy glow", () => {
 		const el = createSidebar();
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: ZONE_COLORS[0], type: "normal" },
-			null, null, null, null, null, null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
 		];
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);

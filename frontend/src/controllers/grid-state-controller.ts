@@ -6,14 +6,14 @@ import {
 	type PaintAction,
 } from "../lib/cell-painting.js";
 import {
+	clampFurnitureMove,
+	computeFurnitureResize,
+	computeFurnitureRotation,
 	createFurnitureItem,
 	type FurnitureItem,
 	type FurnitureSticker,
 	removeFurnitureItem,
 	updateFurnitureItem,
-	clampFurnitureMove,
-	computeFurnitureResize,
-	computeFurnitureRotation,
 } from "../lib/furniture.js";
 import {
 	cellIsInside,
@@ -374,9 +374,7 @@ export class GridStateController implements ReactiveController {
 		furniture?: FurnitureItem[];
 	}[] {
 		try {
-			return JSON.parse(
-				localStorage.getItem("epp_layout_templates") || "[]",
-			);
+			return JSON.parse(localStorage.getItem("epp_layout_templates") || "[]");
 		} catch {
 			return [];
 		}
@@ -391,8 +389,8 @@ export class GridStateController implements ReactiveController {
 		const entry = {
 			name,
 			grid: Array.from(this.host._grid as Uint8Array),
-			zones: (this.host._zoneConfigs as (ZoneConfig | null)[]).map(
-				(z) => (z !== null ? { ...z } : null),
+			zones: (this.host._zoneConfigs as (ZoneConfig | null)[]).map((z) =>
+				z !== null ? { ...z } : null,
 			),
 			roomWidth: this.host._roomWidth as number,
 			roomDepth: this.host._roomDepth as number,
@@ -405,10 +403,7 @@ export class GridStateController implements ReactiveController {
 		} else {
 			templates.push(entry);
 		}
-		localStorage.setItem(
-			"epp_layout_templates",
-			JSON.stringify(templates),
-		);
+		localStorage.setItem("epp_layout_templates", JSON.stringify(templates));
 		this.host._showTemplateSave = false;
 		this.host._templateName = "";
 	}
@@ -434,10 +429,7 @@ export class GridStateController implements ReactiveController {
 
 	deleteTemplate(name: string): void {
 		const templates = this.getTemplates().filter((t) => t.name !== name);
-		localStorage.setItem(
-			"epp_layout_templates",
-			JSON.stringify(templates),
-		);
+		localStorage.setItem("epp_layout_templates", JSON.stringify(templates));
 		this.host.requestUpdate();
 	}
 
@@ -452,10 +444,7 @@ export class GridStateController implements ReactiveController {
 			if (cellIsInside(this.host._grid[i])) {
 				const zid = cellZone(this.host._grid[i]);
 				if (zid > 0) {
-					zoneCellCounts.set(
-						zid,
-						(zoneCellCounts.get(zid) ?? 0) + 1,
-					);
+					zoneCellCounts.set(zid, (zoneCellCounts.get(zid) ?? 0) + 1);
 				}
 			}
 		}
@@ -480,35 +469,32 @@ export class GridStateController implements ReactiveController {
 				room_timeout: this.host._roomTimeout,
 				room_handoff_timeout: this.host._roomHandoffTimeout,
 				room_entry_point: this.host._roomEntryPoint,
-				zone_slots: (
-					this.host._zoneConfigs as (ZoneConfig | null)[]
-				).map((z) =>
-					z !== null
-						? {
-								name: z.name,
-								color: z.color,
-								type: z.type,
-								trigger: z.trigger,
-								renew: z.renew,
-								timeout: z.timeout,
-								handoff_timeout: z.handoff_timeout,
-								entry_point: z.entry_point,
-							}
-						: null,
+				zone_slots: (this.host._zoneConfigs as (ZoneConfig | null)[]).map(
+					(z) =>
+						z !== null
+							? {
+									name: z.name,
+									color: z.color,
+									type: z.type,
+									trigger: z.trigger,
+									renew: z.renew,
+									timeout: z.timeout,
+									handoff_timeout: z.handoff_timeout,
+									entry_point: z.entry_point,
+								}
+							: null,
 				),
-				furniture: (this.host._furniture as FurnitureItem[]).map(
-					(f) => ({
-						type: f.type,
-						icon: f.icon,
-						label: f.label,
-						x: f.x,
-						y: f.y,
-						width: f.width,
-						height: f.height,
-						rotation: f.rotation,
-						lockAspect: f.lockAspect,
-					}),
-				),
+				furniture: (this.host._furniture as FurnitureItem[]).map((f) => ({
+					type: f.type,
+					icon: f.icon,
+					label: f.label,
+					x: f.x,
+					y: f.y,
+					width: f.width,
+					height: f.height,
+					rotation: f.rotation,
+					lockAspect: f.lockAspect,
+				})),
 			});
 			this.host._dirty = false;
 			this.host._view = "live";

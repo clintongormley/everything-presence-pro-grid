@@ -9,11 +9,11 @@ import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
 import "../components/epp-wizard.js";
 import "../components/epp-grid.js";
-import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
-import type { EppZoneSidebar } from "../components/epp-zone-sidebar.js";
-import type { EppWizard } from "../components/epp-wizard.js";
 import type { EppGrid } from "../components/epp-grid.js";
+import type { EppSettingsView } from "../components/epp-settings-view.js";
+import type { EppWizard } from "../components/epp-wizard.js";
+import type { EppZoneSidebar } from "../components/epp-zone-sidebar.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -111,7 +111,9 @@ function createPanel(): EPPGridPanel {
 	return el;
 }
 
-function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+function createSettingsView(
+	overrides?: Partial<Record<string, unknown>>,
+): EppSettingsView {
 	const el = document.createElement("epp-settings-view") as EppSettingsView;
 	el.grid = new Uint8Array(GRID_CELL_COUNT);
 	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
@@ -296,9 +298,7 @@ describe("_renderWizardCorners (via EppWizard)", () => {
 
 	it("renders with active target", () => {
 		const a = createWizard() as any;
-		a.rawTargets = [
-			{ raw_x: 100, raw_y: 200 },
-		];
+		a.rawTargets = [{ raw_x: 100, raw_y: 200 }];
 		const result = a._renderWizardCorners();
 		expect(result).toBeDefined();
 	});
@@ -349,9 +349,7 @@ describe("_renderMiniSensorView (via EppWizard)", () => {
 
 	it("renders with targets on the FOV view", () => {
 		const a = createWizard() as any;
-		a.rawTargets = [
-			{ raw_x: 500, raw_y: 1000 },
-		];
+		a.rawTargets = [{ raw_x: 500, raw_y: 1000 }];
 		a._wizardCorners = [
 			{ raw_x: -1000, raw_y: 1000, offset_side: 0, offset_fb: 0 },
 			null,
@@ -488,27 +486,21 @@ describe("_renderUncalibratedFov (via EppWizard)", () => {
 
 	it("renders with active targets", () => {
 		const a = createWizard({ mode: "uncalibrated-fov" }) as any;
-		a.rawTargets = [
-			{ raw_x: 500, raw_y: 1000 },
-		];
+		a.rawTargets = [{ raw_x: 500, raw_y: 1000 }];
 		const result = a._renderUncalibratedFov();
 		expect(result).toBeDefined();
 	});
 
 	it("skips targets with null raw positions", () => {
 		const a = createWizard({ mode: "uncalibrated-fov" }) as any;
-		a.rawTargets = [
-			{ raw_x: null, raw_y: null },
-		];
+		a.rawTargets = [{ raw_x: null, raw_y: null }];
 		const result = a._renderUncalibratedFov();
 		expect(result).toBeDefined();
 	});
 
 	it("shows targets with raw positions even if status is inactive", () => {
 		const a = createWizard({ mode: "uncalibrated-fov" }) as any;
-		a.rawTargets = [
-			{ raw_x: 500, raw_y: 1000 },
-		];
+		a.rawTargets = [{ raw_x: 500, raw_y: 1000 }];
 		const result = a._renderUncalibratedFov();
 		expect(result).toBeDefined();
 	});
@@ -592,13 +584,19 @@ describe("_renderSettingsSection (via EppSettingsView)", () => {
 
 describe("_renderDetectionRanges (via EppSettingsView)", () => {
 	it("renders with auto range enabled", () => {
-		const sv = createSettingsView({ targetAutoRange: true, staticAutoRange: true });
+		const sv = createSettingsView({
+			targetAutoRange: true,
+			staticAutoRange: true,
+		});
 		const result = (sv as any).renderDetectionRanges();
 		expect(result).toBeDefined();
 	});
 
 	it("renders with auto range disabled", () => {
-		const sv = createSettingsView({ targetAutoRange: false, staticAutoRange: false });
+		const sv = createSettingsView({
+			targetAutoRange: false,
+			staticAutoRange: false,
+		});
 		const result = (sv as any).renderDetectionRanges();
 		expect(result).toBeDefined();
 	});
@@ -959,7 +957,10 @@ describe("epp-zone-sidebar renders boundary type controls", () => {
 describe("epp-zone-sidebar renders zone type controls", () => {
 	it("renders for normal zone", () => {
 		const el = document.createElement("epp-zone-sidebar") as any;
-		el.zoneConfigs = [{ name: "Zone 1", color: "#ff0000", type: "normal" }, ...new Array(6).fill(null)];
+		el.zoneConfigs = [
+			{ name: "Zone 1", color: "#ff0000", type: "normal" },
+			...new Array(6).fill(null),
+		];
 		el.activeZone = 1;
 		const result = el.render();
 		expect(result).toBeDefined();
@@ -967,16 +968,19 @@ describe("epp-zone-sidebar renders zone type controls", () => {
 
 	it("renders for custom zone with explicit thresholds", () => {
 		const el = document.createElement("epp-zone-sidebar") as any;
-		el.zoneConfigs = [{
-			name: "Zone 1",
-			color: "#ff0000",
-			type: "custom",
-			trigger: 7,
-			renew: 4,
-			timeout: 15,
-			handoff_timeout: 5,
-			entry_point: true,
-		}, ...new Array(6).fill(null)];
+		el.zoneConfigs = [
+			{
+				name: "Zone 1",
+				color: "#ff0000",
+				type: "custom",
+				trigger: 7,
+				renew: 4,
+				timeout: 15,
+				handoff_timeout: 5,
+				entry_point: true,
+			},
+			...new Array(6).fill(null),
+		];
 		el.activeZone = 1;
 		const result = el.render();
 		expect(result).toBeDefined();
@@ -1022,11 +1026,16 @@ describe("epp-zone-sidebar renders zone sidebar", () => {
 		el.zoneConfigs = new Array(7).fill(null);
 		el.zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
 		el.activeZone = 1;
-		el.localZoneState = new Map([[1, {
-			occupied: true,
-			pendingSince: null,
-			confirmedTargets: new Set(),
-		}]]);
+		el.localZoneState = new Map([
+			[
+				1,
+				{
+					occupied: true,
+					pendingSince: null,
+					confirmedTargets: new Set(),
+				},
+			],
+		]);
 		const result = el.render();
 		expect(result).toBeDefined();
 	});
@@ -1176,7 +1185,9 @@ describe("epp-live-sidebar via panel", () => {
 });
 
 describe("epp-furniture-sidebar renders via component", () => {
-	function createFurnSidebar(overrides: Record<string, any> = {}): EppFurnitureSidebar {
+	function createFurnSidebar(
+		overrides: Record<string, any> = {},
+	): EppFurnitureSidebar {
 		const el = document.createElement("epp-furniture-sidebar") as any;
 		el.furniture = [];
 		el.selectedFurnitureId = null;

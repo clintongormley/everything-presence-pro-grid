@@ -78,8 +78,8 @@ export class DeviceController implements ReactiveController {
 			const result = await this._hass.callWS({
 				type: "eppgrid/list_devices",
 			});
-			this.devices = ((result as any).devices as DeviceInfo[]).sort(
-				(a, b) => (a.name || "").localeCompare(b.name || ""),
+			this.devices = ((result as any).devices as DeviceInfo[]).sort((a, b) =>
+				(a.name || "").localeCompare(b.name || ""),
 			);
 		} catch {
 			this.devices = [];
@@ -158,28 +158,21 @@ export class DeviceController implements ReactiveController {
 		conn
 			.subscribeMessage(
 				(event: any) => {
-					const targets: Target[] = (event.targets || []).map(
-						(t: any) => ({
-							x: t.x,
-							y: t.y,
-							speed: 0,
-							status: (t.status as TargetStatus) ?? "inactive",
-							signal: t.signal ?? 0,
-						}),
-					);
+					const targets: Target[] = (event.targets || []).map((t: any) => ({
+						x: t.x,
+						y: t.y,
+						speed: 0,
+						status: (t.status as TargetStatus) ?? "inactive",
+						signal: t.signal ?? 0,
+					}));
 					const sensors = event.sensors
 						? {
 								occupancy: event.sensors.occupancy ?? false,
-								static_presence:
-									event.sensors.static_presence ?? false,
-								motion_presence:
-									event.sensors.motion_presence ?? false,
-								target_presence:
-									event.sensors.target_presence ?? false,
-								illuminance:
-									event.sensors.illuminance ?? null,
-								temperature:
-									event.sensors.temperature ?? null,
+								static_presence: event.sensors.static_presence ?? false,
+								motion_presence: event.sensors.motion_presence ?? false,
+								target_presence: event.sensors.target_presence ?? false,
+								illuminance: event.sensors.illuminance ?? null,
+								temperature: event.sensors.temperature ?? null,
 								humidity: event.sensors.humidity ?? null,
 								co2: event.sensors.co2 ?? null,
 							}
@@ -196,8 +189,7 @@ export class DeviceController implements ReactiveController {
 					const zones = event.zones
 						? {
 								occupancy: event.zones.occupancy ?? {},
-								target_counts:
-									event.zones.target_counts ?? {},
+								target_counts: event.zones.target_counts ?? {},
 								frame_count: event.zones.frame_count ?? 0,
 								debug_log: event.zones.debug_log,
 							}
@@ -235,12 +227,12 @@ export class DeviceController implements ReactiveController {
 		this._hass.connection
 			.subscribeMessage(
 				(event: any) => {
-					const rawTargets: RawTarget[] = (
-						event.targets || []
-					).map((t: any) => ({
-						raw_x: t.raw_x,
-						raw_y: t.raw_y,
-					}));
+					const rawTargets: RawTarget[] = (event.targets || []).map(
+						(t: any) => ({
+							raw_x: t.raw_x,
+							raw_y: t.raw_y,
+						}),
+					);
 					this.onRawTargetData?.(rawTargets);
 				},
 				{

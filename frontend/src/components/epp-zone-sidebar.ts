@@ -1,10 +1,7 @@
-import { LitElement, html, css, nothing } from "lit";
+import { css, html, LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
+import { ZONE_TYPE_DEFAULTS, type ZoneConfig } from "../lib/zone-defaults.js";
 import { toggleStyles } from "../styles.js";
-import {
-	ZONE_TYPE_DEFAULTS,
-	type ZoneConfig,
-} from "../lib/zone-defaults.js";
 
 export interface LocalZoneInfo {
 	occupied: boolean;
@@ -198,9 +195,11 @@ export class EppZoneSidebar extends LitElement {
 							>${this.localize("sidebar.room")}</span
 						>
 					</div>
-					${this.activeZone === 0
-						? html` ${this._renderBoundaryTypeControls()} `
-						: nothing}
+					${
+						this.activeZone === 0
+							? html` ${this._renderBoundaryTypeControls()} `
+							: nothing
+					}
 				</div>
 
 				<hr class="zone-separator" />
@@ -222,31 +221,27 @@ export class EppZoneSidebar extends LitElement {
 							}}
 						>
 							<div class="zone-item-row">
-								${this.activeZone === slot
-									? html`
+								${
+									this.activeZone === slot
+										? html`
 											<input
 												type="color"
 												class="zone-color-picker"
 												style="width: 16px; height: 16px; border-radius: 50%;${this.localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"
 												.value=${zone.color}
 												@input=${(e: Event) => {
-													const val = (
-														e.target as HTMLInputElement
-													).value;
+													const val = (e.target as HTMLInputElement).value;
 													this.dispatchEvent(
-														new CustomEvent(
-															"zone-config-change",
-															{
-																detail: {
-																	index: i,
-																	updates: {
-																		color: val,
-																	},
+														new CustomEvent("zone-config-change", {
+															detail: {
+																index: i,
+																updates: {
+																	color: val,
 																},
-																bubbles: true,
-																composed: true,
 															},
-														),
+															bubbles: true,
+															composed: true,
+														}),
 													);
 													this.dispatchEvent(
 														new CustomEvent("dirty", {
@@ -255,36 +250,31 @@ export class EppZoneSidebar extends LitElement {
 														}),
 													);
 												}}
-												@click=${(e: Event) =>
-													e.stopPropagation()}
+												@click=${(e: Event) => e.stopPropagation()}
 											/>
 										`
-									: html`
+										: html`
 											<div
 												class="zone-color-dot"
 												style="background: ${zone.color};${this.localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"
 											></div>
-										`}
+										`
+								}
 								<input
 									class="zone-name-input"
 									type="text"
 									.value=${zone.name}
 									@input=${(e: Event) => {
-										const val = (
-											e.target as HTMLInputElement
-										).value;
+										const val = (e.target as HTMLInputElement).value;
 										this.dispatchEvent(
-											new CustomEvent(
-												"zone-config-change",
-												{
-													detail: {
-														index: i,
-														updates: { name: val },
-													},
-													bubbles: true,
-													composed: true,
+											new CustomEvent("zone-config-change", {
+												detail: {
+													index: i,
+													updates: { name: val },
 												},
-											),
+												bubbles: true,
+												composed: true,
+											}),
 										);
 										this.dispatchEvent(
 											new CustomEvent("dirty", {
@@ -329,17 +319,20 @@ export class EppZoneSidebar extends LitElement {
 									<ha-icon icon="mdi:close"></ha-icon>
 								</button>
 							</div>
-							${this.activeZone === slot
-								? html`
+							${
+								this.activeZone === slot
+									? html`
 										${this._renderZoneTypeControls(zone, i)}
 									`
-								: nothing}
+									: nothing
+							}
 						</div>
 					`;
 				})}
 
-				${this.zoneConfigs.some((z) => z === null)
-					? html`
+				${
+					this.zoneConfigs.some((z) => z === null)
+						? html`
 							<button
 								class="add-zone-btn"
 								@click=${() => {
@@ -355,7 +348,8 @@ export class EppZoneSidebar extends LitElement {
 								${this.localize("sidebar.add_zone")}
 							</button>
 						`
-					: nothing}
+						: nothing
+				}
 			</div>
 		`;
 	}
@@ -390,9 +384,7 @@ export class EppZoneSidebar extends LitElement {
 						@change=${(e: Event) => {
 							const val = (e.target as HTMLSelectElement)
 								.value as ZoneConfig["type"];
-							const d =
-								ZONE_TYPE_DEFAULTS[val] ||
-								ZONE_TYPE_DEFAULTS.normal;
+							const d = ZONE_TYPE_DEFAULTS[val] || ZONE_TYPE_DEFAULTS.normal;
 							this.dispatchEvent(
 								new CustomEvent("room-config-change", {
 									detail: {
@@ -401,8 +393,7 @@ export class EppZoneSidebar extends LitElement {
 											roomTrigger: d.trigger,
 											roomRenew: d.renew,
 											roomTimeout: d.timeout,
-											roomHandoffTimeout:
-												d.handoff_timeout,
+											roomHandoffTimeout: d.handoff_timeout,
 										},
 									},
 									bubbles: true,
@@ -451,10 +442,7 @@ export class EppZoneSidebar extends LitElement {
 								new CustomEvent("room-config-change", {
 									detail: {
 										updates: {
-											roomTrigger: Number(
-												(e.target as HTMLInputElement)
-													.value,
-											),
+											roomTrigger: Number((e.target as HTMLInputElement).value),
 										},
 									},
 									bubbles: true,
@@ -491,10 +479,7 @@ export class EppZoneSidebar extends LitElement {
 								new CustomEvent("room-config-change", {
 									detail: {
 										updates: {
-											roomRenew: Number(
-												(e.target as HTMLInputElement)
-													.value,
-											),
+											roomRenew: Number((e.target as HTMLInputElement).value),
 										},
 									},
 									bubbles: true,
@@ -528,9 +513,7 @@ export class EppZoneSidebar extends LitElement {
 						.value=${String(timeout)}
 						?disabled=${!isCustom}
 						@input=${(e: Event) => {
-							const v = Number(
-								(e.target as HTMLInputElement).value,
-							);
+							const v = Number((e.target as HTMLInputElement).value);
 							if (v > 0) {
 								this.dispatchEvent(
 									new CustomEvent("room-config-change", {
@@ -569,9 +552,7 @@ export class EppZoneSidebar extends LitElement {
 						.value=${String(handoffTimeout)}
 						?disabled=${!isCustom}
 						@input=${(e: Event) => {
-							const v = Number(
-								(e.target as HTMLInputElement).value,
-							);
+							const v = Number((e.target as HTMLInputElement).value);
 							if (v > 0) {
 								this.dispatchEvent(
 									new CustomEvent("room-config-change", {
@@ -616,9 +597,7 @@ export class EppZoneSidebar extends LitElement {
 									new CustomEvent("room-config-change", {
 										detail: {
 											updates: {
-												roomEntryPoint: (
-													e.target as HTMLInputElement
-												).checked,
+												roomEntryPoint: (e.target as HTMLInputElement).checked,
 											},
 										},
 										bubbles: true,
@@ -644,8 +623,7 @@ export class EppZoneSidebar extends LitElement {
 
 	private _renderZoneTypeControls(zone: ZoneConfig, index: number) {
 		const isCustom = zone.type === "custom";
-		const defaults =
-			ZONE_TYPE_DEFAULTS[zone.type] || ZONE_TYPE_DEFAULTS.normal;
+		const defaults = ZONE_TYPE_DEFAULTS[zone.type] || ZONE_TYPE_DEFAULTS.normal;
 		const trigger = zone.trigger ?? defaults.trigger;
 		const renew = zone.renew ?? defaults.renew;
 		const timeout = zone.timeout ?? defaults.timeout;
@@ -670,9 +648,7 @@ export class EppZoneSidebar extends LitElement {
 						@change=${(e: Event) => {
 							const val = (e.target as HTMLSelectElement)
 								.value as ZoneConfig["type"];
-							const d =
-								ZONE_TYPE_DEFAULTS[val] ||
-								ZONE_TYPE_DEFAULTS.normal;
+							const d = ZONE_TYPE_DEFAULTS[val] || ZONE_TYPE_DEFAULTS.normal;
 							this.dispatchEvent(
 								new CustomEvent("zone-config-change", {
 									detail: {
@@ -732,10 +708,7 @@ export class EppZoneSidebar extends LitElement {
 									detail: {
 										index,
 										updates: {
-											trigger: Number(
-												(e.target as HTMLInputElement)
-													.value,
-											),
+											trigger: Number((e.target as HTMLInputElement).value),
 										},
 									},
 									bubbles: true,
@@ -773,10 +746,7 @@ export class EppZoneSidebar extends LitElement {
 									detail: {
 										index,
 										updates: {
-											renew: Number(
-												(e.target as HTMLInputElement)
-													.value,
-											),
+											renew: Number((e.target as HTMLInputElement).value),
 										},
 									},
 									bubbles: true,
@@ -810,9 +780,7 @@ export class EppZoneSidebar extends LitElement {
 						.value=${String(timeout)}
 						?disabled=${!isCustom}
 						@input=${(e: Event) => {
-							const v = Number(
-								(e.target as HTMLInputElement).value,
-							);
+							const v = Number((e.target as HTMLInputElement).value);
 							if (v > 0) {
 								this.dispatchEvent(
 									new CustomEvent("zone-config-change", {
@@ -852,9 +820,7 @@ export class EppZoneSidebar extends LitElement {
 						.value=${String(handoffTimeout)}
 						?disabled=${!isCustom}
 						@input=${(e: Event) => {
-							const v = Number(
-								(e.target as HTMLInputElement).value,
-							);
+							const v = Number((e.target as HTMLInputElement).value);
 							if (v > 0) {
 								this.dispatchEvent(
 									new CustomEvent("zone-config-change", {
@@ -899,9 +865,7 @@ export class EppZoneSidebar extends LitElement {
 										detail: {
 											index,
 											updates: {
-												entry_point: (
-													e.target as HTMLInputElement
-												).checked,
+												entry_point: (e.target as HTMLInputElement).checked,
 											},
 										},
 										bubbles: true,

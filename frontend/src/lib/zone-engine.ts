@@ -1,5 +1,11 @@
-import { cellIsInside, cellZone, GRID_CELL_COUNT, GRID_COLS, GRID_ROWS } from "./grid.js";
 import { mapTargetToGridCell } from "./coordinates.js";
+import {
+	cellIsInside,
+	cellZone,
+	GRID_CELL_COUNT,
+	GRID_COLS,
+	GRID_ROWS,
+} from "./grid.js";
 import { getZoneThresholds, type ZoneConfig } from "./zone-defaults.js";
 
 // ---- Interfaces ----
@@ -18,7 +24,13 @@ export interface ZoneEngineState {
 }
 
 export interface ZoneEngineParams {
-	targets: { x: number | null; y: number | null; signal: number; speed: number; status: string }[];
+	targets: {
+		x: number | null;
+		y: number | null;
+		signal: number;
+		speed: number;
+		status: string;
+	}[];
 	grid: Uint8Array;
 	roomWidth: number;
 	roomDepth: number;
@@ -80,7 +92,12 @@ export function runLocalZoneEngine(
 
 		targetSignal.set(i, signal);
 
-		const pos = mapTargetToGridCell(t.x, t.y, params.roomWidth, params.roomDepth);
+		const pos = mapTargetToGridCell(
+			t.x,
+			t.y,
+			params.roomWidth,
+			params.roomDepth,
+		);
 		if (!pos) {
 			state.targetPrev[i] = null;
 			state.targetGateCount[i] = 0;
@@ -121,10 +138,7 @@ export function runLocalZoneEngine(
 
 		let continuous = false;
 		if (prev !== null) {
-			const dist = Math.max(
-				Math.abs(col - prev.col),
-				Math.abs(row - prev.row),
-			);
+			const dist = Math.max(Math.abs(col - prev.col), Math.abs(row - prev.row));
 			continuous = dist <= MAX_MOVEMENT_CELLS;
 		}
 

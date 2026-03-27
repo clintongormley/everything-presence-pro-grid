@@ -15,8 +15,8 @@ import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
 import "../components/epp-wizard.js";
 import "../components/epp-grid.js";
-import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
+import type { EppSettingsView } from "../components/epp-settings-view.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -113,7 +113,9 @@ function createPanel(): EPPGridPanel {
 	return el;
 }
 
-function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+function createSettingsView(
+	overrides?: Partial<Record<string, unknown>>,
+): EppSettingsView {
 	const el = document.createElement("epp-settings-view") as EppSettingsView;
 	el.grid = initGridFromRoom(3000, 4000);
 	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
@@ -137,7 +139,9 @@ function renderTo(tpl: any): HTMLDivElement {
 	return c;
 }
 
-function createLiveView(overrides?: Partial<Record<string, unknown>>): EppLiveView {
+function createLiveView(
+	overrides?: Partial<Record<string, unknown>>,
+): EppLiveView {
 	const el = document.createElement("epp-live-view") as EppLiveView;
 	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
 	el.zoneConfigs = new Array(7).fill(null);
@@ -624,13 +628,20 @@ describe("_renderFurnitureOverlay DOM events", () => {
 
 		const overlay = c.querySelector("epp-furniture-overlay") as any;
 		if (overlay) {
-			const item = overlay.shadowRoot?.querySelector(".furniture-item") as HTMLElement;
+			const item = overlay.shadowRoot?.querySelector(
+				".furniture-item",
+			) as HTMLElement;
 			if (item) {
 				const addSpy = vi
 					.spyOn(window, "addEventListener")
 					.mockImplementation(() => {});
 				item.dispatchEvent(
-					new PointerEvent("pointerdown", { clientX: 500, clientY: 300, bubbles: true, composed: true }),
+					new PointerEvent("pointerdown", {
+						clientX: 500,
+						clientY: 300,
+						bubbles: true,
+						composed: true,
+					}),
 				);
 				// The overlay fires furniture-select which the panel listens for
 				expect(a._selectedFurnitureId).toBe("f1");
@@ -670,7 +681,12 @@ describe("_renderFurnitureOverlay DOM events", () => {
 					.spyOn(window, "addEventListener")
 					.mockImplementation(() => {});
 				handles[0].dispatchEvent(
-					new PointerEvent("pointerdown", { clientX: 500, clientY: 300, bubbles: true, composed: true }),
+					new PointerEvent("pointerdown", {
+						clientX: 500,
+						clientY: 300,
+						bubbles: true,
+						composed: true,
+					}),
 				);
 				expect(a._dragState).not.toBeNull();
 				addSpy.mockRestore();
@@ -703,13 +719,20 @@ describe("_renderFurnitureOverlay DOM events", () => {
 
 		const overlay = c.querySelector("epp-furniture-overlay") as any;
 		if (overlay) {
-			const rotateHandle = overlay.shadowRoot?.querySelector(".furn-rotate-handle") as HTMLElement;
+			const rotateHandle = overlay.shadowRoot?.querySelector(
+				".furn-rotate-handle",
+			) as HTMLElement;
 			if (rotateHandle) {
 				const addSpy = vi
 					.spyOn(window, "addEventListener")
 					.mockImplementation(() => {});
 				rotateHandle.dispatchEvent(
-					new PointerEvent("pointerdown", { clientX: 500, clientY: 300, bubbles: true, composed: true }),
+					new PointerEvent("pointerdown", {
+						clientX: 500,
+						clientY: 300,
+						bubbles: true,
+						composed: true,
+					}),
 				);
 				expect(a._dragState?.type).toBe("rotate");
 				addSpy.mockRestore();
@@ -742,7 +765,9 @@ describe("_renderFurnitureOverlay DOM events", () => {
 
 		const overlay = c.querySelector("epp-furniture-overlay") as any;
 		if (overlay) {
-			const deleteBtn = overlay.shadowRoot?.querySelector(".furn-delete-btn") as HTMLElement;
+			const deleteBtn = overlay.shadowRoot?.querySelector(
+				".furn-delete-btn",
+			) as HTMLElement;
 			if (deleteBtn) {
 				deleteBtn.dispatchEvent(
 					new PointerEvent("pointerdown", { bubbles: true, composed: true }),
@@ -1014,7 +1039,15 @@ describe("render view branching", () => {
 describe("stopPropagation handlers in zone sidebar", () => {
 	it("color picker click event has stopPropagation", () => {
 		const el = document.createElement("epp-zone-sidebar") as any;
-		el.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		el.zoneConfigs = [
+			{ name: "Z1", color: "#ff0000", type: "normal" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
 		el.activeZone = 1;
 		el.roomType = "normal";
 		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;

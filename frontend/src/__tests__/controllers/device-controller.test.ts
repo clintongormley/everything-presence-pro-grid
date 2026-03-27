@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { TargetData } from "../../controllers/device-controller.js";
 import { DeviceController } from "../../controllers/device-controller.js";
 import type { DeviceInfo, RawTarget } from "../../types.js";
-import type { TargetData } from "../../controllers/device-controller.js";
 
 function mockHost() {
 	return {
@@ -62,8 +62,20 @@ describe("DeviceController", () => {
 	describe("loadDevices", () => {
 		it("loads and sorts devices by name", async () => {
 			const devices: DeviceInfo[] = [
-				{ mac: "bb", name: "Zed", host: null, available: true, configured: true },
-				{ mac: "aa", name: "Alpha", host: null, available: true, configured: true },
+				{
+					mac: "bb",
+					name: "Zed",
+					host: null,
+					available: true,
+					configured: true,
+				},
+				{
+					mac: "aa",
+					name: "Alpha",
+					host: null,
+					available: true,
+					configured: true,
+				},
 			];
 			ctrl.hass = mockHass(devices);
 			await ctrl.loadDevices();
@@ -75,8 +87,20 @@ describe("DeviceController", () => {
 
 		it("selects the first device by default", async () => {
 			const devices: DeviceInfo[] = [
-				{ mac: "bb", name: "Zed", host: null, available: true, configured: true },
-				{ mac: "aa", name: "Alpha", host: null, available: true, configured: true },
+				{
+					mac: "bb",
+					name: "Zed",
+					host: null,
+					available: true,
+					configured: true,
+				},
+				{
+					mac: "aa",
+					name: "Alpha",
+					host: null,
+					available: true,
+					configured: true,
+				},
 			];
 			ctrl.hass = mockHass(devices);
 			await ctrl.loadDevices();
@@ -88,8 +112,20 @@ describe("DeviceController", () => {
 		it("restores selected mac from localStorage", async () => {
 			localStorage.setItem("epp_selected_mac", "bb");
 			const devices: DeviceInfo[] = [
-				{ mac: "bb", name: "Zed", host: null, available: true, configured: true },
-				{ mac: "aa", name: "Alpha", host: null, available: true, configured: true },
+				{
+					mac: "bb",
+					name: "Zed",
+					host: null,
+					available: true,
+					configured: true,
+				},
+				{
+					mac: "aa",
+					name: "Alpha",
+					host: null,
+					available: true,
+					configured: true,
+				},
 			];
 			ctrl.hass = mockHass(devices);
 			await ctrl.loadDevices();
@@ -100,7 +136,13 @@ describe("DeviceController", () => {
 		it("falls back to first device when stored mac not found", async () => {
 			localStorage.setItem("epp_selected_mac", "gone");
 			const devices: DeviceInfo[] = [
-				{ mac: "aa", name: "Alpha", host: null, available: true, configured: true },
+				{
+					mac: "aa",
+					name: "Alpha",
+					host: null,
+					available: true,
+					configured: true,
+				},
 			];
 			ctrl.hass = mockHass(devices);
 			await ctrl.loadDevices();
@@ -212,11 +254,16 @@ describe("DeviceController", () => {
 			const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 			ctrl.hass = {
 				callWS: vi.fn(),
-				connection: { subscribeMessage: vi.fn().mockRejectedValue(new Error("fail")) },
+				connection: {
+					subscribeMessage: vi.fn().mockRejectedValue(new Error("fail")),
+				},
 			};
 			await ctrl.openDeviceSession("aa");
 			expect(ctrl.hasDeviceSession).toBe(false);
-			expect(warn).toHaveBeenCalledWith("Failed to open device session:", expect.any(Error));
+			expect(warn).toHaveBeenCalledWith(
+				"Failed to open device session:",
+				expect.any(Error),
+			);
 			warn.mockRestore();
 		});
 	});
@@ -255,8 +302,14 @@ describe("DeviceController", () => {
 			ctrl.subscribeTargets("aa");
 			const calls = hass.connection.subscribeMessage.mock.calls;
 			expect(calls).toHaveLength(2);
-			expect(calls[0][1]).toEqual({ type: "eppgrid/subscribe_grid_targets", mac: "aa" });
-			expect(calls[1][1]).toEqual({ type: "eppgrid/subscribe_raw_targets", mac: "aa" });
+			expect(calls[0][1]).toEqual({
+				type: "eppgrid/subscribe_grid_targets",
+				mac: "aa",
+			});
+			expect(calls[1][1]).toEqual({
+				type: "eppgrid/subscribe_raw_targets",
+				mac: "aa",
+			});
 		});
 
 		it("does nothing when hass is null", () => {
@@ -303,7 +356,11 @@ describe("DeviceController", () => {
 			capturedCallback!({
 				targets: [{ x: 100, y: 200, status: "active", signal: 50 }],
 				sensors: { occupancy: true, static_presence: false },
-				zones: { occupancy: { 1: true }, target_counts: { 1: 2 }, frame_count: 5 },
+				zones: {
+					occupancy: { 1: true },
+					target_counts: { 1: 2 },
+					frame_count: 5,
+				},
 			});
 
 			expect(onTargetData).toHaveBeenCalledWith({

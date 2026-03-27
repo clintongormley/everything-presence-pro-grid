@@ -1,7 +1,7 @@
-import { LitElement, html, css, nothing, type TemplateResult } from "lit";
+import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { property } from "lit/decorators.js";
-import type { ZoneConfig } from "../lib/zone-defaults.js";
 import type { FurnitureItem } from "../lib/furniture.js";
+import type { ZoneConfig } from "../lib/zone-defaults.js";
 import type { LocalZoneInfo } from "./epp-zone-sidebar.js";
 import "./epp-zone-sidebar.js";
 import "./epp-furniture-sidebar.js";
@@ -18,7 +18,8 @@ export class EppEditorView extends LitElement {
 	@property({ type: Number }) roomTimeout = 0;
 	@property({ type: Number }) roomHandoffTimeout = 0;
 	@property({ type: Boolean }) roomEntryPoint = false;
-	@property({ attribute: false }) localZoneState: Map<number, LocalZoneInfo> = new Map();
+	@property({ attribute: false }) localZoneState: Map<number, LocalZoneInfo> =
+		new Map();
 
 	// Furniture sidebar props
 	@property({ attribute: false }) furniture: FurnitureItem[] = [];
@@ -33,16 +34,24 @@ export class EppEditorView extends LitElement {
 	) => string = (k) => k;
 
 	/** Pre-rendered header template from the panel */
-	@property({ attribute: false }) headerTemplate: TemplateResult | typeof nothing = nothing;
+	@property({ attribute: false }) headerTemplate:
+		| TemplateResult
+		| typeof nothing = nothing;
 
 	/** Pre-rendered grid template (epp-grid with all bindings) from the panel */
-	@property({ attribute: false }) gridTemplate: TemplateResult | typeof nothing = nothing;
+	@property({ attribute: false }) gridTemplate:
+		| TemplateResult
+		| typeof nothing = nothing;
 
 	/** Pre-rendered debug log template from the panel */
-	@property({ attribute: false }) debugLogTemplate: TemplateResult | typeof nothing = nothing;
+	@property({ attribute: false }) debugLogTemplate:
+		| TemplateResult
+		| typeof nothing = nothing;
 
 	/** Pre-rendered save/cancel buttons template from the panel */
-	@property({ attribute: false }) saveCancelTemplate: TemplateResult | typeof nothing = nothing;
+	@property({ attribute: false }) saveCancelTemplate:
+		| TemplateResult
+		| typeof nothing = nothing;
 
 	static styles = css`
     :host {

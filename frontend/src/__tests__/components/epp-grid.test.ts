@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-grid.js";
 import type { EppGrid } from "../../components/epp-grid.js";
+import type { FurnitureItem } from "../../lib/furniture.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -11,7 +12,6 @@ import {
 } from "../../lib/grid.js";
 import { ZONE_COLORS } from "../../lib/zone-defaults.js";
 import type { Target } from "../../types.js";
-import type { FurnitureItem } from "../../lib/furniture.js";
 
 function createGrid(overrides: Record<string, any> = {}): EppGrid {
 	const el = document.createElement("epp-grid") as any;
@@ -220,7 +220,9 @@ describe("epp-grid target rendering", () => {
 		document.body.appendChild(el);
 		await el.updateComplete;
 
-		const overlay = el.shadowRoot!.querySelector(".targets-overlay") as HTMLElement;
+		const overlay = el.shadowRoot!.querySelector(
+			".targets-overlay",
+		) as HTMLElement;
 		// Signal badge is a div with the signal number
 		expect(overlay.textContent).toContain("7");
 
@@ -267,7 +269,9 @@ describe("epp-grid occupancy", () => {
 		document.body.appendChild(el);
 		await el.updateComplete;
 
-		const cells = el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>;
+		const cells = el.shadowRoot!.querySelectorAll(
+			".cell",
+		) as NodeListOf<HTMLElement>;
 		// At least one cell should have box-shadow for occupancy
 		const hasOccupancyShadow = Array.from(cells).some((c) =>
 			c.style.cssText.includes("box-shadow"),
@@ -302,7 +306,9 @@ describe("epp-grid heatmap", () => {
 		document.body.appendChild(el);
 		await el.updateComplete;
 
-		const cells = el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>;
+		const cells = el.shadowRoot!.querySelectorAll(
+			".cell",
+		) as NodeListOf<HTMLElement>;
 		const hasGradient = Array.from(cells).some((c) =>
 			c.style.background.includes("linear-gradient"),
 		);
@@ -347,9 +353,13 @@ describe("epp-grid furniture overlay", () => {
 		await el.updateComplete;
 
 		const events: CustomEvent[] = [];
-		el.addEventListener("furniture-select", (e) => events.push(e as CustomEvent));
+		el.addEventListener("furniture-select", (e) =>
+			events.push(e as CustomEvent),
+		);
 
-		const overlay = el.shadowRoot!.querySelector("epp-furniture-overlay") as any;
+		const overlay = el.shadowRoot!.querySelector(
+			"epp-furniture-overlay",
+		) as any;
 		overlay.dispatchEvent(
 			new CustomEvent("furniture-select", {
 				detail: "f1",
@@ -373,9 +383,13 @@ describe("epp-grid furniture overlay", () => {
 		await el.updateComplete;
 
 		const events: CustomEvent[] = [];
-		el.addEventListener("furniture-delete", (e) => events.push(e as CustomEvent));
+		el.addEventListener("furniture-delete", (e) =>
+			events.push(e as CustomEvent),
+		);
 
-		const overlay = el.shadowRoot!.querySelector("epp-furniture-overlay") as any;
+		const overlay = el.shadowRoot!.querySelector(
+			"epp-furniture-overlay",
+		) as any;
 		overlay.dispatchEvent(
 			new CustomEvent("furniture-delete", {
 				detail: "f1",
@@ -403,7 +417,9 @@ describe("epp-grid furniture overlay", () => {
 			events.push(e as CustomEvent),
 		);
 
-		const overlay = el.shadowRoot!.querySelector("epp-furniture-overlay") as any;
+		const overlay = el.shadowRoot!.querySelector(
+			"epp-furniture-overlay",
+		) as any;
 		overlay.dispatchEvent(
 			new CustomEvent("furniture-pointer-down", {
 				detail: {

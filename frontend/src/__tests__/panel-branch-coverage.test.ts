@@ -111,7 +111,9 @@ function createPanel() {
 	return el;
 }
 
-function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+function createSettingsView(
+	overrides?: Partial<Record<string, unknown>>,
+): EppSettingsView {
 	const el = document.createElement("epp-settings-view") as EppSettingsView;
 	el.grid = initGridFromRoom(3000, 4000);
 	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
@@ -842,11 +844,16 @@ describe("_renderZoneSidebar boundary occupancy glow", () => {
 		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
 		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
 		el.roomEntryPoint = false;
-		el.localZoneState = new Map([[0, {
-			occupied: true,
-			pendingSince: null,
-			confirmedTargets: new Set(),
-		}]]);
+		el.localZoneState = new Map([
+			[
+				0,
+				{
+					occupied: true,
+					pendingSince: null,
+					confirmedTargets: new Set(),
+				},
+			],
+		]);
 		el.localize = (k: string) => k;
 		const tpl = el._renderZoneSidebar();
 		expect(tpl).toBeDefined();
@@ -986,14 +993,26 @@ describe("furniture overlay all handle events", () => {
 			const handles = overlay.shadowRoot.querySelectorAll(".furn-handle");
 			handles.forEach((h: any) => {
 				h.dispatchEvent(
-					new PointerEvent("pointerdown", { clientX: 500, clientY: 300, bubbles: true, composed: true }),
+					new PointerEvent("pointerdown", {
+						clientX: 500,
+						clientY: 300,
+						bubbles: true,
+						composed: true,
+					}),
 				);
 			});
 
-			const rotateHandle = overlay.shadowRoot.querySelector(".furn-rotate-handle");
+			const rotateHandle = overlay.shadowRoot.querySelector(
+				".furn-rotate-handle",
+			);
 			if (rotateHandle) {
 				rotateHandle.dispatchEvent(
-					new PointerEvent("pointerdown", { clientX: 500, clientY: 300, bubbles: true, composed: true }),
+					new PointerEvent("pointerdown", {
+						clientX: 500,
+						clientY: 300,
+						bubbles: true,
+						composed: true,
+					}),
 				);
 			}
 		}
@@ -1465,7 +1484,15 @@ describe("live grid hit count and signal", () => {
 describe("zone sidebar occupancy glow branch", () => {
 	it("zone color dot shows glow when zone is occupied", () => {
 		const el = document.createElement("epp-zone-sidebar") as any;
-		el.zoneConfigs = [{ name: "Z1", color: ZONE_COLORS[0], type: "normal" }, null, null, null, null, null, null];
+		el.zoneConfigs = [
+			{ name: "Z1", color: ZONE_COLORS[0], type: "normal" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
 		el.activeZone = 0; // boundary selected, not zone 1
 		el.roomType = "normal";
 		el.roomTrigger = ZONE_TYPE_DEFAULTS.normal.trigger;
@@ -1473,11 +1500,16 @@ describe("zone sidebar occupancy glow branch", () => {
 		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
 		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
 		el.roomEntryPoint = false;
-		el.localZoneState = new Map([[1, {
-			occupied: true,
-			pendingSince: null,
-			confirmedTargets: new Set(),
-		}]]);
+		el.localZoneState = new Map([
+			[
+				1,
+				{
+					occupied: true,
+					pendingSince: null,
+					confirmedTargets: new Set(),
+				},
+			],
+		]);
 		el.localize = (k: string) => k;
 
 		const tpl = el._renderZoneSidebar();
@@ -1494,11 +1526,16 @@ describe("zone sidebar occupancy glow branch", () => {
 		el.roomTimeout = ZONE_TYPE_DEFAULTS.normal.timeout;
 		el.roomHandoffTimeout = ZONE_TYPE_DEFAULTS.normal.handoff_timeout;
 		el.roomEntryPoint = false;
-		el.localZoneState = new Map([[0, {
-			occupied: true,
-			pendingSince: null,
-			confirmedTargets: new Set(),
-		}]]);
+		el.localZoneState = new Map([
+			[
+				0,
+				{
+					occupied: true,
+					pendingSince: null,
+					confirmedTargets: new Set(),
+				},
+			],
+		]);
 		el.localize = (k: string) => k;
 		const tpl = el._renderZoneSidebar();
 		expect(tpl).toBeDefined();

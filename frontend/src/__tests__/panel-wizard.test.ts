@@ -11,9 +11,7 @@ function createWizard(): EppWizard {
 	a.selectedMac = "AA:BB:CC:DD:EE:01";
 	a.rawTargets = [];
 	a.sensorState = { occupancy: false };
-	a.devices = [
-		{ mac: "AA:BB:CC:DD:EE:01", name: "Test" },
-	];
+	a.devices = [{ mac: "AA:BB:CC:DD:EE:01", name: "Test" }];
 	a.localize = (k: string) => k;
 	a.initialRoomWidth = 0;
 	a.initialRoomDepth = 0;

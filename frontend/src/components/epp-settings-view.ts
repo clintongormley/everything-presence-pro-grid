@@ -1,5 +1,9 @@
-import { LitElement, html, css, nothing } from "lit";
+import { css, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
+import {
+	autoDetectionRange,
+	getGridRoomMetrics,
+} from "../lib/room-geometry.js";
 import {
 	accordionStyles,
 	buttonStyles,
@@ -7,10 +11,6 @@ import {
 	toggleStyles,
 	tooltipStyles,
 } from "../styles.js";
-import {
-	autoDetectionRange,
-	getGridRoomMetrics,
-} from "../lib/room-geometry.js";
 
 export interface SensorState {
 	occupancy: boolean;
@@ -51,8 +51,7 @@ export class EppSettingsView extends LitElement {
 	@property({ type: Boolean }) saving = false;
 	@property({ type: Boolean }) dirty = false;
 
-	@property({ attribute: false }) reportingConfig: Record<string, boolean> =
-		{};
+	@property({ attribute: false }) reportingConfig: Record<string, boolean> = {};
 	@property({ attribute: false }) offsetsConfig: Record<string, number> = {};
 
 	@property({ attribute: false }) localize: (
@@ -193,8 +192,7 @@ export class EppSettingsView extends LitElement {
 				) => {
 					const el = e.target as HTMLInputElement;
 					const off = parseFloat(el.value);
-					const val =
-						raw != null ? (raw + off).toFixed(precision) : "\u2014";
+					const val = raw != null ? (raw + off).toFixed(precision) : "\u2014";
 					el.nextElementSibling!.textContent = val;
 				}} /><span class="setting-value">${adjusted}</span> ${unit}</span>
         ${this.infoTip(tip)}
@@ -207,9 +205,7 @@ export class EppSettingsView extends LitElement {
       @click=${(e: Event) => {
 				e.stopPropagation();
 				const icon = e.currentTarget as HTMLElement;
-				const tip = icon.querySelector(
-					".setting-info-tooltip",
-				) as HTMLElement;
+				const tip = icon.querySelector(".setting-info-tooltip") as HTMLElement;
 				if (!tip) return;
 				const wasOpen = tip.style.display === "block";
 				// Close any other open tooltips

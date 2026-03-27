@@ -2,7 +2,10 @@ import type { FurnitureSticker } from "./lib/furniture.js";
 import { MAX_RANGE } from "./lib/grid.js";
 
 // Top-down floor plan SVGs from frontend/images/
-export const FLOOR_PLAN_SVGS: Record<string, { viewBox: string; content: string }> = {
+export const FLOOR_PLAN_SVGS: Record<
+	string,
+	{ viewBox: string; content: string }
+> = {
 	armchair: {
 		viewBox: "0 0 256 256",
 		content: `<rect x="16" y="16" width="224" height="224" rx="16" stroke="black" stroke-width="12" fill="none"/><rect x="16" y="16" width="224" height="48" rx="8" stroke="black" stroke-width="12" fill="none"/><rect x="16" y="64" width="48" height="176" rx="8" stroke="black" stroke-width="12" fill="none"/><rect x="192" y="64" width="48" height="176" rx="8" stroke="black" stroke-width="12" fill="none"/><rect x="64" y="64" width="128" height="176" rx="8" stroke="black" stroke-width="8" fill="none"/>`,

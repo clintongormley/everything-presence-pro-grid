@@ -1,6 +1,6 @@
 # EPPGridPanel Refactoring Spec
 
-**Status:** Draft — file is still evolving; re-read `eppgrid-panel.ts` before creating an implementation plan.
+**Status:** Implemented — panel reduced from 6044 to 1660 lines across 9 components, 3 controllers, and 4 shared modules.
 
 ## Goal
 

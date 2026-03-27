@@ -14,9 +14,7 @@ function renderTo(tpl: any): HTMLDivElement {
 function createOverlay(
 	overrides: Record<string, any> = {},
 ): EppFurnitureOverlay {
-	const el = document.createElement(
-		"epp-furniture-overlay",
-	) as any;
+	const el = document.createElement("epp-furniture-overlay") as any;
 	el.furniture = [];
 	el.selectedFurnitureId = null;
 	el.roomWidth = 3000;

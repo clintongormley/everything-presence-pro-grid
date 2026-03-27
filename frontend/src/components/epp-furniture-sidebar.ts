@@ -1,9 +1,9 @@
-import { LitElement, html, css, nothing, svg } from "lit";
+import { css, html, LitElement, nothing, svg } from "lit";
 import { property } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
-import { dialogStyles, buttonStyles } from "../styles.js";
 import { FLOOR_PLAN_SVGS, FURNITURE_CATALOG } from "../constants.js";
 import type { FurnitureItem, FurnitureSticker } from "../lib/furniture.js";
+import { buttonStyles, dialogStyles } from "../styles.js";
 
 export class EppFurnitureSidebar extends LitElement {
 	@property({ attribute: false }) furniture: FurnitureItem[] = [];
@@ -180,7 +180,12 @@ export class EppFurnitureSidebar extends LitElement {
 					`,
 				)}
 				<button class="furn-sticker furn-custom" @click=${() => {
-					this.dispatchEvent(new CustomEvent("custom-icon-toggle", { bubbles: true, composed: true }));
+					this.dispatchEvent(
+						new CustomEvent("custom-icon-toggle", {
+							bubbles: true,
+							composed: true,
+						}),
+					);
 				}}>
 					<ha-icon icon="mdi:plus" style="--mdc-icon-size: 24px;"></ha-icon>
 					<span>${this.localize("furniture.custom_icon")}</span>
@@ -196,11 +201,13 @@ export class EppFurnitureSidebar extends LitElement {
 									.hass=${this.hass}
 									.value=${this.customIconValue}
 									@value-changed=${(e: CustomEvent) => {
-										this.dispatchEvent(new CustomEvent("custom-icon-change", {
-											detail: e.detail.value || "",
-											bubbles: true,
-											composed: true,
-										}));
+										this.dispatchEvent(
+											new CustomEvent("custom-icon-change", {
+												detail: e.detail.value || "",
+												bubbles: true,
+												composed: true,
+											}),
+										);
 									}}
 								></ha-icon-picker>
 								${
@@ -215,28 +222,44 @@ export class EppFurnitureSidebar extends LitElement {
 								<div class="template-dialog-actions">
 									<button class="wizard-btn wizard-btn-back"
 										@click=${() => {
-											this.dispatchEvent(new CustomEvent("custom-icon-toggle", { bubbles: true, composed: true }));
-											this.dispatchEvent(new CustomEvent("custom-icon-change", {
-												detail: "",
-												bubbles: true,
-												composed: true,
-											}));
+											this.dispatchEvent(
+												new CustomEvent("custom-icon-toggle", {
+													bubbles: true,
+													composed: true,
+												}),
+											);
+											this.dispatchEvent(
+												new CustomEvent("custom-icon-change", {
+													detail: "",
+													bubbles: true,
+													composed: true,
+												}),
+											);
 										}}
 									>${this.localize("common.cancel")}</button>
 									<button class="wizard-btn wizard-btn-primary"
 										?disabled=${!this.customIconValue.trim()}
 										@click=${() => {
-											this.dispatchEvent(new CustomEvent("furniture-add-custom", {
-												detail: this.customIconValue.trim(),
-												bubbles: true,
-												composed: true,
-											}));
-											this.dispatchEvent(new CustomEvent("custom-icon-change", {
-												detail: "",
-												bubbles: true,
-												composed: true,
-											}));
-											this.dispatchEvent(new CustomEvent("custom-icon-toggle", { bubbles: true, composed: true }));
+											this.dispatchEvent(
+												new CustomEvent("furniture-add-custom", {
+													detail: this.customIconValue.trim(),
+													bubbles: true,
+													composed: true,
+												}),
+											);
+											this.dispatchEvent(
+												new CustomEvent("custom-icon-change", {
+													detail: "",
+													bubbles: true,
+													composed: true,
+												}),
+											);
+											this.dispatchEvent(
+												new CustomEvent("custom-icon-toggle", {
+													bubbles: true,
+													composed: true,
+												}),
+											);
 										}}
 									>${this.localize("common.add")}</button>
 								</div>

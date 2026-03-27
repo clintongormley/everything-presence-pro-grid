@@ -891,9 +891,7 @@ describe("_wizardStartCapture cancellation (via EppWizard)", () => {
 		const el = document.createElement("epp-wizard") as any;
 		el.hass = { callWS: vi.fn().mockResolvedValue({}) };
 		el.selectedMac = "";
-		el.rawTargets = [
-			{ raw_x: 100, raw_y: 200 },
-		];
+		el.rawTargets = [{ raw_x: 100, raw_y: 200 }];
 		el.sensorState = { occupancy: false };
 		el.devices = [];
 		el.localize = (k: string) => k;

@@ -1,24 +1,24 @@
-import { LitElement, html, css, nothing, svg } from "lit";
+import { css, html, LitElement, nothing, svg } from "lit";
 import { property, state } from "lit/decorators.js";
 import { unsafeHTML } from "lit/directives/unsafe-html.js";
-import { buttonStyles, settingStyles } from "../styles.js";
+import {
+	CAPTURE_DURATION_S,
+	CORNER_LABELS,
+	CORNER_OFFSET_LABELS,
+	FOV_HALF_ANGLE,
+	FOV_X_EXTENT,
+	TARGET_COLORS,
+} from "../constants.js";
 import type { SmoothBufferEntry } from "../lib/coordinates.js";
 import { getSmoothedValue, rawToFovPct } from "../lib/coordinates.js";
+import { initGridFromRoom, MAX_RANGE } from "../lib/grid.js";
+import { solvePerspective } from "../lib/perspective.js";
 import {
 	autoComputeRoomDimensions,
 	medianPoint,
 } from "../lib/room-geometry.js";
-import { solvePerspective } from "../lib/perspective.js";
-import { initGridFromRoom, MAX_RANGE } from "../lib/grid.js";
-import type { RawTarget, WizardCorner, SetupStep } from "../types.js";
-import {
-	CORNER_LABELS,
-	CORNER_OFFSET_LABELS,
-	CAPTURE_DURATION_S,
-	TARGET_COLORS,
-	FOV_HALF_ANGLE,
-	FOV_X_EXTENT,
-} from "../constants.js";
+import { buttonStyles, settingStyles } from "../styles.js";
+import type { RawTarget, SetupStep, WizardCorner } from "../types.js";
 
 export class EppWizard extends LitElement {
 	// --- Properties set by the parent panel ---
@@ -252,10 +252,7 @@ export class EppWizard extends LitElement {
 	}
 
 	// --- FOV helpers ---
-	_rawToFovPct(
-		rawX: number,
-		rawY: number,
-	): { xPct: number; yPct: number } {
+	_rawToFovPct(rawX: number, rawY: number): { xPct: number; yPct: number } {
 		return rawToFovPct(rawX, rawY);
 	}
 

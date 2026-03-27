@@ -1,13 +1,18 @@
-import { LitElement, html, css, nothing } from "lit";
+import { css, html, LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
-import { cellIsInside, cellZone, GRID_COLS, getRoomBounds } from "../lib/grid.js";
-import { getCellColor } from "../lib/heatmap.js";
-import { mapTargetToGridCell } from "../lib/coordinates.js";
-import { getGridRoomMetrics } from "../lib/room-geometry.js";
 import { TARGET_COLORS } from "../constants.js";
-import type { Target } from "../types.js";
-import type { ZoneConfig } from "../lib/zone-defaults.js";
+import { mapTargetToGridCell } from "../lib/coordinates.js";
 import type { FurnitureItem } from "../lib/furniture.js";
+import {
+	cellIsInside,
+	cellZone,
+	GRID_COLS,
+	getRoomBounds,
+} from "../lib/grid.js";
+import { getCellColor } from "../lib/heatmap.js";
+import { getGridRoomMetrics } from "../lib/room-geometry.js";
+import type { ZoneConfig } from "../lib/zone-defaults.js";
+import type { Target } from "../types.js";
 import "./epp-furniture-overlay.js";
 
 export class EppGrid extends LitElement {
@@ -24,8 +29,12 @@ export class EppGrid extends LitElement {
 	@property({ attribute: false }) activeZone: number | null = null;
 	@property({ type: Boolean }) showHitCounts = false;
 	@property({ attribute: false }) occupancy: Record<number, boolean> = {};
-	@property({ attribute: false }) targetPrevXY: ({ x: number; y: number } | null)[] = [];
-	@property({ attribute: false }) heatmapColors: Map<number, string> | null = null;
+	@property({ attribute: false }) targetPrevXY: ({
+		x: number;
+		y: number;
+	} | null)[] = [];
+	@property({ attribute: false }) heatmapColors: Map<number, string> | null =
+		null;
 	@property({ attribute: false }) localize: (
 		key: string,
 		params?: Record<string, string | number>,
@@ -118,7 +127,8 @@ export class EppGrid extends LitElement {
 		const maxRow = noRoom ? bounds.maxRow : bounds.maxRow;
 		const visCols = maxCol - minCol + 1;
 		const visRows = maxRow - minRow + 1;
-		const parentWidth = (this.offsetWidth || this.parentElement?.offsetWidth || 800);
+		const parentWidth =
+			this.offsetWidth || this.parentElement?.offsetWidth || 800;
 		const maxPx = Math.min(this.maxGridPx, parentWidth * this.widthFraction);
 		const cellPx = Math.min(
 			Math.floor(maxPx / visCols),
@@ -231,12 +241,7 @@ export class EppGrid extends LitElement {
 					if (t.status === "inactive") return nothing;
 					let pos =
 						t.x != null
-							? mapTargetToGridCell(
-									t.x,
-									t.y,
-									this.roomWidth,
-									this.roomDepth,
-								)
+							? mapTargetToGridCell(t.x, t.y, this.roomWidth, this.roomDepth)
 							: null;
 					const onGrid =
 						pos &&

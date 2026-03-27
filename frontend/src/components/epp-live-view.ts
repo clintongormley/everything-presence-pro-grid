@@ -1,4 +1,4 @@
-import { LitElement, html, css, nothing, type TemplateResult } from "lit";
+import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import type { ZoneConfig } from "../lib/zone-defaults.js";
 import "./epp-live-sidebar.js";
@@ -48,13 +48,19 @@ export class EppLiveView extends LitElement {
 	) => string = (k) => k;
 
 	/** Pre-rendered header template from the panel */
-	@property({ attribute: false }) headerTemplate: TemplateResult | typeof nothing = nothing;
+	@property({ attribute: false }) headerTemplate:
+		| TemplateResult
+		| typeof nothing = nothing;
 
 	/** Pre-rendered grid template (live grid or uncalibrated FOV) from the panel */
-	@property({ attribute: false }) gridTemplate: TemplateResult | typeof nothing = nothing;
+	@property({ attribute: false }) gridTemplate:
+		| TemplateResult
+		| typeof nothing = nothing;
 
 	/** Pre-rendered backend debug log template from the panel */
-	@property({ attribute: false }) debugLogTemplate: TemplateResult | typeof nothing = nothing;
+	@property({ attribute: false }) debugLogTemplate:
+		| TemplateResult
+		| typeof nothing = nothing;
 
 	@state() showMenu = false;
 

@@ -13,14 +13,9 @@ import "./components/epp-zone-sidebar.js";
 import { DeviceController } from "./controllers/device-controller.js";
 import { GridStateController } from "./controllers/grid-state-controller.js";
 import { TargetController } from "./controllers/target-controller.js";
-import type {
-	PaintAction,
-} from "./lib/cell-painting.js";
+import type { PaintAction } from "./lib/cell-painting.js";
 import { parseConfig } from "./lib/config-serialization.js";
-import {
-	mapTargetToGridCell,
-	mapTargetToPercent,
-} from "./lib/coordinates.js";
+import { mapTargetToGridCell, mapTargetToPercent } from "./lib/coordinates.js";
 import {
 	type FurnitureItem,
 	type FurnitureSticker,
@@ -40,10 +35,7 @@ import {
 	MAX_ZONES,
 } from "./lib/grid.js";
 import { getCellColor } from "./lib/heatmap.js";
-import {
-	applyPerspective,
-	getInversePerspective,
-} from "./lib/perspective.js";
+import { applyPerspective, getInversePerspective } from "./lib/perspective.js";
 import {
 	autoDetectionRange,
 	computeMaxRangeMm,
@@ -58,10 +50,7 @@ import {
 	ZONE_TYPE_DEFAULTS,
 	type ZoneConfig,
 } from "./lib/zone-defaults.js";
-import type {
-	ZoneEngineResult,
-	ZoneEngineState,
-} from "./lib/zone-engine.js";
+import type { ZoneEngineResult, ZoneEngineState } from "./lib/zone-engine.js";
 import { setupLocalize } from "./localize.js";
 import {
 	buttonStyles,
@@ -1083,15 +1072,17 @@ export class EPPGridPanel extends LitElement {
         .zoneConfigs=${this._zoneConfigs}
         .localize=${this._localize}
         .headerTemplate=${this._renderHeader()}
-        .gridTemplate=${this._perspective
-					? this._renderLiveGrid()
-					: html`<epp-wizard
+        .gridTemplate=${
+					this._perspective
+						? this._renderLiveGrid()
+						: html`<epp-wizard
 							mode="uncalibrated-fov"
 							.rawTargets=${this._rawTargets}
 							.sensorState=${{ occupancy: this._sensorState.occupancy }}
 							.localize=${this._localize}
 							@start-calibration=${() => this._changePlacement()}
-						></epp-wizard>`}
+						></epp-wizard>`
+				}
         .debugLogTemplate=${this._perspective ? this._renderBackendDebugLog() : nothing}
         @navigate-view=${(e: CustomEvent) => {
 					const { view, sidebarTab } = e.detail;
@@ -1285,11 +1276,16 @@ export class EPPGridPanel extends LitElement {
         @room-config-change=${(e: CustomEvent) => {
 					const { updates } = e.detail;
 					if (updates.roomType !== undefined) this._roomType = updates.roomType;
-					if (updates.roomTrigger !== undefined) this._roomTrigger = updates.roomTrigger;
-					if (updates.roomRenew !== undefined) this._roomRenew = updates.roomRenew;
-					if (updates.roomTimeout !== undefined) this._roomTimeout = updates.roomTimeout;
-					if (updates.roomHandoffTimeout !== undefined) this._roomHandoffTimeout = updates.roomHandoffTimeout;
-					if (updates.roomEntryPoint !== undefined) this._roomEntryPoint = updates.roomEntryPoint;
+					if (updates.roomTrigger !== undefined)
+						this._roomTrigger = updates.roomTrigger;
+					if (updates.roomRenew !== undefined)
+						this._roomRenew = updates.roomRenew;
+					if (updates.roomTimeout !== undefined)
+						this._roomTimeout = updates.roomTimeout;
+					if (updates.roomHandoffTimeout !== undefined)
+						this._roomHandoffTimeout = updates.roomHandoffTimeout;
+					if (updates.roomEntryPoint !== undefined)
+						this._roomEntryPoint = updates.roomEntryPoint;
 				}}
         @dirty=${() => {
 					this._dirty = true;
@@ -1646,7 +1642,6 @@ export class EPPGridPanel extends LitElement {
 			></epp-furniture-overlay>
 		`;
 	}
-
 }
 
 if (!customElements.get("eppgrid-panel")) {

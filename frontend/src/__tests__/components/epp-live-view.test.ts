@@ -139,7 +139,10 @@ describe("render()", () => {
 
 describe("menu with perspective", () => {
 	it("shows zone and furniture items when perspective exists", () => {
-		const lv = createView({ showMenu: true, perspective: [1, 0, 0, 0, 1, 0, 0, 0] });
+		const lv = createView({
+			showMenu: true,
+			perspective: [1, 0, 0, 0, 1, 0, 0, 0],
+		});
 		const tpl = lv.render();
 		const c = renderTo(tpl);
 

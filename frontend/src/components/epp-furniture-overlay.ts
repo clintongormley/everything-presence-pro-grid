@@ -1,10 +1,10 @@
-import { LitElement, html, css, nothing, svg } from "lit";
+import { css, html, LitElement, nothing, svg } from "lit";
 import { property } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { FLOOR_PLAN_SVGS } from "../constants.js";
+import type { FurnitureItem } from "../lib/furniture.js";
 import { mmToPx } from "../lib/furniture.js";
 import { GRID_CELL_MM, GRID_COLS } from "../lib/grid.js";
-import type { FurnitureItem } from "../lib/furniture.js";
 
 export class EppFurnitureOverlay extends LitElement {
 	@property({ attribute: false }) furniture: FurnitureItem[] = [];
@@ -196,10 +196,8 @@ export class EppFurnitureOverlay extends LitElement {
 		return html`
 			<div class="furniture-overlay ${interactive ? "" : "non-interactive"}">
 				${this.furniture.map((item) => {
-					const leftPx =
-						(startCol - this.minCol) * step + this._mmToPx(item.x);
-					const topPx =
-						(0 - this.minRow) * step + this._mmToPx(item.y);
+					const leftPx = (startCol - this.minCol) * step + this._mmToPx(item.x);
+					const topPx = (0 - this.minRow) * step + this._mmToPx(item.y);
 					const wPx = this._mmToPx(item.width);
 					const hPx = this._mmToPx(item.height);
 					const selected = this.selectedFurnitureId === item.id;

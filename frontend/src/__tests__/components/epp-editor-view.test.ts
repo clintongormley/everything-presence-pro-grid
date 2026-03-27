@@ -1,4 +1,4 @@
-import { html, render, nothing } from "lit";
+import { html, nothing, render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-editor-view.js";
 import "../../components/epp-zone-sidebar.js";
@@ -12,7 +12,9 @@ function renderTo(tpl: any): HTMLDivElement {
 	return container;
 }
 
-function createView(overrides?: Partial<Record<string, unknown>>): EppEditorView {
+function createView(
+	overrides?: Partial<Record<string, unknown>>,
+): EppEditorView {
 	const el = document.createElement("epp-editor-view") as EppEditorView;
 	el.zoneConfigs = new Array(7).fill(null);
 	if (overrides) {

@@ -1,7 +1,7 @@
-import { LitElement, html, css, nothing } from "lit";
+import { css, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
-import type { ZoneConfig } from "../lib/zone-defaults.js";
 import { MAX_ZONES } from "../lib/grid.js";
+import type { ZoneConfig } from "../lib/zone-defaults.js";
 
 export interface SensorState {
 	occupancy: boolean;

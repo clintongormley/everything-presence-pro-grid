@@ -1,6 +1,8 @@
 import type { ReactiveController, ReactiveControllerHost } from "lit";
-import type { Target, RawTarget } from "../types.js";
-import type { TargetData } from "./device-controller.js";
+import { DEBUG_LOG_MAX } from "../constants.js";
+import { mapTargetToGridCell } from "../lib/coordinates.js";
+import { cellIsInside, cellZone, GRID_COLS, GRID_ROWS } from "../lib/grid.js";
+import { computeHeatmapColors } from "../lib/heatmap.js";
 import type { ZoneConfig } from "../lib/zone-defaults.js";
 import {
 	createZoneEngineState,
@@ -8,10 +10,8 @@ import {
 	type ZoneEngineResult,
 	type ZoneEngineState,
 } from "../lib/zone-engine.js";
-import { computeHeatmapColors } from "../lib/heatmap.js";
-import { cellIsInside, cellZone, GRID_COLS, GRID_ROWS } from "../lib/grid.js";
-import { mapTargetToGridCell } from "../lib/coordinates.js";
-import { DEBUG_LOG_MAX } from "../constants.js";
+import type { RawTarget, Target } from "../types.js";
+import type { TargetData } from "./device-controller.js";
 
 /**
  * Host interface — the subset of the panel that this controller reads/writes.
@@ -203,8 +203,9 @@ export class TargetController implements ReactiveController {
 			});
 			this.host._backendDebugLogLines.push(`${ts} ${body}`);
 			if (this.host._backendDebugLogLines.length > DEBUG_LOG_MAX) {
-				this.host._backendDebugLogLines =
-					this.host._backendDebugLogLines.slice(-DEBUG_LOG_MAX);
+				this.host._backendDebugLogLines = this.host._backendDebugLogLines.slice(
+					-DEBUG_LOG_MAX,
+				);
 			}
 			this.host.requestUpdate();
 		}
@@ -255,8 +256,7 @@ export class TargetController implements ReactiveController {
 			if (!pos) continue;
 			const col = Math.floor(pos.col);
 			const row = Math.floor(pos.row);
-			if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS)
-				continue;
+			if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) continue;
 			const idx = row * GRID_COLS + col;
 			if (!cellIsInside(this.host._grid[idx])) continue;
 			targetZoneCurr[i] = cellZone(this.host._grid[idx]);
@@ -269,10 +269,7 @@ export class TargetController implements ReactiveController {
 			if (t.x == null || t.y == null || t.signal <= 0) continue;
 			const zid = targetZoneCurr[i];
 			if (zid !== null) {
-				zoneSignal.set(
-					zid,
-					Math.max(zoneSignal.get(zid) ?? 0, t.signal),
-				);
+				zoneSignal.set(zid, Math.max(zoneSignal.get(zid) ?? 0, t.signal));
 			}
 		}
 
@@ -297,9 +294,7 @@ export class TargetController implements ReactiveController {
 			const st = this._zoneEngineState.localZoneState.get(zid);
 			if (st?.occupied) {
 				const state = st.pendingSince !== null ? "P" : "O";
-				zoneParts.push(
-					`Z${zid}:${state}:${zoneSignal.get(zid) ?? 0}`,
-				);
+				zoneParts.push(`Z${zid}:${state}:${zoneSignal.get(zid) ?? 0}`);
 			}
 		}
 		const raw = `${targetParts.join(" ")}|${zoneParts.join(" ")}`;

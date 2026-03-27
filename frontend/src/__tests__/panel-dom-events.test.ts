@@ -15,8 +15,8 @@ import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
 import "../components/epp-wizard.js";
-import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
+import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppWizard } from "../components/epp-wizard.js";
 import {
 	CELL_ROOM_BIT,
@@ -117,7 +117,9 @@ afterEach(() => {
 	if (container?.isConnected) document.body.removeChild(container);
 });
 
-function createSettingsView(overrides?: Partial<Record<string, unknown>>): EppSettingsView {
+function createSettingsView(
+	overrides?: Partial<Record<string, unknown>>,
+): EppSettingsView {
 	const el = document.createElement("epp-settings-view") as EppSettingsView;
 	el.grid = initGridFromRoom(3000, 4000);
 	el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
@@ -171,7 +173,9 @@ function renderTo(template: any): HTMLDivElement {
 }
 
 describe("epp-live-view DOM events", () => {
-	function createLiveView(overrides?: Partial<Record<string, unknown>>): EppLiveView {
+	function createLiveView(
+		overrides?: Partial<Record<string, unknown>>,
+	): EppLiveView {
 		const el = document.createElement("epp-live-view") as EppLiveView;
 		el.perspective = [1, 0, 0, 0, 1, 0, 0, 0];
 		el.zoneConfigs = new Array(7).fill(null);
@@ -304,7 +308,9 @@ describe("_renderWizardGuide DOM events (via EppWizard)", () => {
 		const c = renderTo(tpl);
 
 		let cancelFired = false;
-		a.addEventListener("wizard-cancel", () => { cancelFired = true; });
+		a.addEventListener("wizard-cancel", () => {
+			cancelFired = true;
+		});
 
 		const backBtn = c.querySelector(".wizard-btn-back") as HTMLElement;
 		if (backBtn) {
@@ -335,9 +341,7 @@ describe("_renderWizardCorners DOM events (via EppWizard)", () => {
 			null,
 			null,
 		];
-		a.rawTargets = [
-			{ raw_x: 100, raw_y: 200 },
-		];
+		a.rawTargets = [{ raw_x: 100, raw_y: 200 }];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
 
@@ -356,9 +360,7 @@ describe("_renderWizardCorners DOM events (via EppWizard)", () => {
 			null,
 			null,
 		];
-		a.rawTargets = [
-			{ raw_x: 100, raw_y: 200 },
-		];
+		a.rawTargets = [{ raw_x: 100, raw_y: 200 }];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
 
@@ -378,14 +380,14 @@ describe("_renderWizardCorners DOM events (via EppWizard)", () => {
 
 	it("cancel button on corners step fires wizard-cancel", () => {
 		const a = createWizard() as any;
-		a.rawTargets = [
-			{ raw_x: 100, raw_y: 200 },
-		];
+		a.rawTargets = [{ raw_x: 100, raw_y: 200 }];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
 
 		let cancelFired = false;
-		a.addEventListener("wizard-cancel", () => { cancelFired = true; });
+		a.addEventListener("wizard-cancel", () => {
+			cancelFired = true;
+		});
 
 		const backBtn = c.querySelector(".wizard-btn-back") as HTMLElement;
 		if (backBtn) {
@@ -396,9 +398,7 @@ describe("_renderWizardCorners DOM events (via EppWizard)", () => {
 
 	it("mark button starts capture", () => {
 		const a = createWizard() as any;
-		a.rawTargets = [
-			{ raw_x: 100, raw_y: 200 },
-		];
+		a.rawTargets = [{ raw_x: 100, raw_y: 200 }];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
 
@@ -419,9 +419,7 @@ describe("_renderWizardCorners DOM events (via EppWizard)", () => {
 			{ raw_x: 2000, raw_y: 4000, offset_side: 0, offset_fb: 0 },
 			{ raw_x: -2000, raw_y: 4000, offset_side: 0, offset_fb: 0 },
 		];
-		a.rawTargets = [
-			{ raw_x: 100, raw_y: 200 },
-		];
+		a.rawTargets = [{ raw_x: 100, raw_y: 200 }];
 		const tpl = a._renderWizardCorners();
 		const c = renderTo(tpl);
 
@@ -563,15 +561,23 @@ describe("_renderBoundaryTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("room-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 		s.addEventListener("dirty", (e: Event) => events.push(e as CustomEvent));
 
 		const select = c.querySelector(".sensitivity-select") as HTMLSelectElement;
 		if (select) {
 			select.value = "entrance";
 			select.dispatchEvent(new Event("change", { bubbles: true }));
-			expect(events.some(e => e.type === "room-config-change" && e.detail.updates.roomType === "entrance")).toBe(true);
-			expect(events.some(e => e.type === "dirty")).toBe(true);
+			expect(
+				events.some(
+					(e) =>
+						e.type === "room-config-change" &&
+						e.detail.updates.roomType === "entrance",
+				),
+			).toBe(true);
+			expect(events.some((e) => e.type === "dirty")).toBe(true);
 		}
 	});
 
@@ -581,14 +587,16 @@ describe("_renderBoundaryTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("room-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const ranges = c.querySelectorAll('input[type="range"]');
 		if (ranges.length > 0) {
 			const range = ranges[0] as HTMLInputElement;
 			range.value = "7";
 			range.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.roomTrigger === 7)).toBe(true);
+			expect(events.some((e) => e.detail.updates.roomTrigger === 7)).toBe(true);
 		}
 	});
 
@@ -598,14 +606,16 @@ describe("_renderBoundaryTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("room-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const ranges = c.querySelectorAll('input[type="range"]');
 		if (ranges.length >= 2) {
 			const range = ranges[1] as HTMLInputElement;
 			range.value = "4";
 			range.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.roomRenew === 4)).toBe(true);
+			expect(events.some((e) => e.detail.updates.roomRenew === 4)).toBe(true);
 		}
 	});
 
@@ -615,14 +625,18 @@ describe("_renderBoundaryTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("room-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const numbers = c.querySelectorAll('input[type="number"]');
 		if (numbers.length > 0) {
 			const input = numbers[0] as HTMLInputElement;
 			input.value = "15";
 			input.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.roomTimeout === 15)).toBe(true);
+			expect(events.some((e) => e.detail.updates.roomTimeout === 15)).toBe(
+				true,
+			);
 		}
 	});
 
@@ -632,14 +646,18 @@ describe("_renderBoundaryTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("room-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const numbers = c.querySelectorAll('input[type="number"]');
 		if (numbers.length >= 2) {
 			const input = numbers[1] as HTMLInputElement;
 			input.value = "5";
 			input.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.roomHandoffTimeout === 5)).toBe(true);
+			expect(
+				events.some((e) => e.detail.updates.roomHandoffTimeout === 5),
+			).toBe(true);
 		}
 	});
 
@@ -649,14 +667,18 @@ describe("_renderBoundaryTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("room-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("room-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const toggles = c.querySelectorAll('.toggle-switch input[type="checkbox"]');
 		if (toggles.length > 0) {
 			const last = toggles[toggles.length - 1] as HTMLInputElement;
 			last.checked = true;
 			last.dispatchEvent(new Event("change", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.roomEntryPoint === true)).toBe(true);
+			expect(events.some((e) => e.detail.updates.roomEntryPoint === true)).toBe(
+				true,
+			);
 		}
 	});
 });
@@ -685,13 +707,19 @@ describe("_renderZoneTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const select = c.querySelector(".sensitivity-select") as HTMLSelectElement;
 		if (select) {
 			select.value = "rest";
 			select.dispatchEvent(new Event("change", { bubbles: true }));
-			expect(events.some(e => e.detail.index === 0 && e.detail.updates.type === "rest")).toBe(true);
+			expect(
+				events.some(
+					(e) => e.detail.index === 0 && e.detail.updates.type === "rest",
+				),
+			).toBe(true);
 		}
 	});
 
@@ -710,14 +738,16 @@ describe("_renderZoneTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const ranges = c.querySelectorAll('input[type="range"]');
 		if (ranges.length > 0) {
 			const range = ranges[0] as HTMLInputElement;
 			range.value = "8";
 			range.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.trigger === 8)).toBe(true);
+			expect(events.some((e) => e.detail.updates.trigger === 8)).toBe(true);
 		}
 	});
 
@@ -736,14 +766,16 @@ describe("_renderZoneTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const ranges = c.querySelectorAll('input[type="range"]');
 		if (ranges.length >= 2) {
 			const range = ranges[1] as HTMLInputElement;
 			range.value = "6";
 			range.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.renew === 6)).toBe(true);
+			expect(events.some((e) => e.detail.updates.renew === 6)).toBe(true);
 		}
 	});
 
@@ -762,14 +794,16 @@ describe("_renderZoneTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const numbers = c.querySelectorAll('input[type="number"]');
 		if (numbers.length > 0) {
 			const input = numbers[0] as HTMLInputElement;
 			input.value = "20";
 			input.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.timeout === 20)).toBe(true);
+			expect(events.some((e) => e.detail.updates.timeout === 20)).toBe(true);
 		}
 	});
 
@@ -788,14 +822,18 @@ describe("_renderZoneTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const numbers = c.querySelectorAll('input[type="number"]');
 		if (numbers.length >= 2) {
 			const input = numbers[1] as HTMLInputElement;
 			input.value = "7";
 			input.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.handoff_timeout === 7)).toBe(true);
+			expect(events.some((e) => e.detail.updates.handoff_timeout === 7)).toBe(
+				true,
+			);
 		}
 	});
 
@@ -806,14 +844,18 @@ describe("_renderZoneTypeControls DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const toggles = c.querySelectorAll('.toggle-switch input[type="checkbox"]');
 		if (toggles.length > 0) {
 			const last = toggles[toggles.length - 1] as HTMLInputElement;
 			last.checked = true;
 			last.dispatchEvent(new Event("change", { bubbles: true }));
-			expect(events.some(e => e.detail.updates.entry_point === true)).toBe(true);
+			expect(events.some((e) => e.detail.updates.entry_point === true)).toBe(
+				true,
+			);
 		}
 	});
 });
@@ -841,28 +883,40 @@ describe("_renderZoneSidebar DOM events", () => {
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-select", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-select", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const zoneItems = c.querySelectorAll(".zone-item");
 		if (zoneItems.length > 0) {
 			(zoneItems[0] as HTMLElement).click();
-			expect(events.some(e => e.detail.zone === 0)).toBe(true);
+			expect(events.some((e) => e.detail.zone === 0)).toBe(true);
 		}
 	});
 
 	it("named zone click", () => {
 		const s = createSidebar();
-		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		s.zoneConfigs = [
+			{ name: "Z1", color: "#ff0000", type: "normal" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
 		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-select", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-select", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const zoneItems = c.querySelectorAll(".zone-item");
 		if (zoneItems.length > 1) {
 			(zoneItems[1] as HTMLElement).click();
-			expect(events.some(e => e.detail.zone === 1)).toBe(true);
+			expect(events.some((e) => e.detail.zone === 1)).toBe(true);
 		}
 	});
 
@@ -877,77 +931,131 @@ describe("_renderZoneSidebar DOM events", () => {
 
 	it("zone remove button", () => {
 		const s = createSidebar({ activeZone: 1 });
-		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		s.zoneConfigs = [
+			{ name: "Z1", color: "#ff0000", type: "normal" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
 		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-remove", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-remove", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
 		if (removeBtn) {
 			removeBtn.click();
-			expect(events.some(e => e.detail.slot === 1)).toBe(true);
+			expect(events.some((e) => e.detail.slot === 1)).toBe(true);
 		}
 	});
 
 	it("zone name input focus", () => {
 		const s = createSidebar({ activeZone: 0 });
-		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		s.zoneConfigs = [
+			{ name: "Z1", color: "#ff0000", type: "normal" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
 		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-select", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-select", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const nameInput = c.querySelector(".zone-name-input") as HTMLInputElement;
 		if (nameInput) {
 			nameInput.dispatchEvent(new Event("focus", { bubbles: true }));
-			expect(events.some(e => e.detail.zone === 1)).toBe(true);
+			expect(events.some((e) => e.detail.zone === 1)).toBe(true);
 		}
 	});
 
 	it("zone name input click sets active", () => {
 		const s = createSidebar({ activeZone: 0 });
-		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		s.zoneConfigs = [
+			{ name: "Z1", color: "#ff0000", type: "normal" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
 		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-select", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-select", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const nameInput = c.querySelector(".zone-name-input") as HTMLInputElement;
 		if (nameInput) {
 			nameInput.click();
-			expect(events.some(e => e.detail.zone === 1)).toBe(true);
+			expect(events.some((e) => e.detail.zone === 1)).toBe(true);
 		}
 	});
 
 	it("zone name input changes name", () => {
 		const s = createSidebar();
-		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		s.zoneConfigs = [
+			{ name: "Z1", color: "#ff0000", type: "normal" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
 		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const nameInput = c.querySelector(".zone-name-input") as HTMLInputElement;
 		if (nameInput) {
 			nameInput.value = "Kitchen";
 			nameInput.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.index === 0 && e.detail.updates.name === "Kitchen")).toBe(true);
+			expect(
+				events.some(
+					(e) => e.detail.index === 0 && e.detail.updates.name === "Kitchen",
+				),
+			).toBe(true);
 		}
 	});
 
 	it("zone color picker input", () => {
 		const s = createSidebar({ activeZone: 1 });
-		s.zoneConfigs = [{ name: "Z1", color: "#ff0000", type: "normal" }, null, null, null, null, null, null];
+		s.zoneConfigs = [
+			{ name: "Z1", color: "#ff0000", type: "normal" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
 		const tpl = (s as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
 		const events: CustomEvent[] = [];
-		s.addEventListener("zone-config-change", (e: Event) => events.push(e as CustomEvent));
+		s.addEventListener("zone-config-change", (e: Event) =>
+			events.push(e as CustomEvent),
+		);
 
 		const colorPicker = c.querySelector(
 			".zone-color-picker",
@@ -955,13 +1063,19 @@ describe("_renderZoneSidebar DOM events", () => {
 		if (colorPicker) {
 			colorPicker.value = "#00ff00";
 			colorPicker.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(events.some(e => e.detail.index === 0 && e.detail.updates.color === "#00ff00")).toBe(true);
+			expect(
+				events.some(
+					(e) => e.detail.index === 0 && e.detail.updates.color === "#00ff00",
+				),
+			).toBe(true);
 		}
 	});
 });
 
 describe("epp-furniture-sidebar DOM events", () => {
-	function createFurnSidebar(overrides: Record<string, any> = {}): EppFurnitureSidebar {
+	function createFurnSidebar(
+		overrides: Record<string, any> = {},
+	): EppFurnitureSidebar {
 		const el = document.createElement("epp-furniture-sidebar") as any;
 		el.furniture = [];
 		el.selectedFurnitureId = null;
@@ -1127,7 +1241,9 @@ describe("_renderUncalibratedFov DOM events (via EppWizard)", () => {
 		const c = renderTo(tpl);
 
 		let startFired = false;
-		a.addEventListener("start-calibration", () => { startFired = true; });
+		a.addEventListener("start-calibration", () => {
+			startFired = true;
+		});
 
 		const link = c.querySelector(".live-nav-link") as HTMLElement;
 		if (link) {
@@ -1145,7 +1261,9 @@ describe("_renderNeedsCalibration DOM events (via EppWizard)", () => {
 		const c = renderTo(tpl);
 
 		let startFired = false;
-		a.addEventListener("start-calibration", () => { startFired = true; });
+		a.addEventListener("start-calibration", () => {
+			startFired = true;
+		});
 
 		const btn = c.querySelector(".wizard-btn-primary") as HTMLElement;
 		if (btn) {

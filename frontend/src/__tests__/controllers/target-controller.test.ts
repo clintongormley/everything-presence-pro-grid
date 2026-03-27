@@ -1,15 +1,15 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { TargetController } from "../../controllers/target-controller.js";
-import { createZoneEngineState } from "../../lib/zone-engine.js";
-import {
-	CELL_ROOM_BIT,
-	GRID_COLS,
-	GRID_ROWS,
-	GRID_CELL_COUNT,
-	cellSetZone,
-} from "../../lib/grid.js";
 import { DEBUG_LOG_MAX } from "../../constants.js";
 import type { TargetData } from "../../controllers/device-controller.js";
+import { TargetController } from "../../controllers/target-controller.js";
+import {
+	CELL_ROOM_BIT,
+	cellSetZone,
+	GRID_CELL_COUNT,
+	GRID_COLS,
+	GRID_ROWS,
+} from "../../lib/grid.js";
+import { createZoneEngineState } from "../../lib/zone-engine.js";
 
 // ---------------------------------------------------------------------------
 // Host factory — provides the properties TargetController reads/writes
@@ -141,7 +141,9 @@ describe("TargetController", () => {
 	// -------------------------------------------------------------------------
 	describe("handleTargetData", () => {
 		it("stores targets on host._targets", () => {
-			const targets = [{ x: 100, y: 200, speed: 0, status: "active", signal: 50 }];
+			const targets = [
+				{ x: 100, y: 200, speed: 0, status: "active", signal: 50 },
+			];
 			ctrl.handleTargetData(makeTargetData({ targets: targets as any }));
 			expect(host._targets).toBe(targets);
 		});
@@ -308,7 +310,9 @@ describe("TargetController", () => {
 				host._backendDebugLogPrev = "";
 				ctrl.appendBackendDebugLog(`T0:Z1:A:${i}|`);
 			}
-			expect(host._backendDebugLogLines.length).toBeLessThanOrEqual(DEBUG_LOG_MAX);
+			expect(host._backendDebugLogLines.length).toBeLessThanOrEqual(
+				DEBUG_LOG_MAX,
+			);
 		});
 
 		it("calls host.requestUpdate after appending", () => {
@@ -403,13 +407,16 @@ describe("TargetController", () => {
 			ctrl.runLocalZoneEngine();
 			// A line should have been appended (or prev should be set)
 			// Either the line was added or deduplication kicked in — at minimum requestUpdate was called
-			const hasLines = host._debugLogLines.length > 0 || host._debugLogPrev !== "";
+			const hasLines =
+				host._debugLogLines.length > 0 || host._debugLogPrev !== "";
 			expect(hasLines).toBe(true);
 		});
 
 		it("does NOT build frontend debug log when _showDebugLog is false", () => {
 			host._showDebugLog = false;
-			host._targets = [{ x: 100, y: 100, speed: 0, status: "active", signal: 80 }];
+			host._targets = [
+				{ x: 100, y: 100, speed: 0, status: "active", signal: 80 },
+			];
 			ctrl.runLocalZoneEngine();
 			expect(host._debugLogLines.length).toBe(0);
 		});
