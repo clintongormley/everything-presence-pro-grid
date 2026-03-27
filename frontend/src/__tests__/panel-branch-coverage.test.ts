@@ -15,6 +15,7 @@ import {
 	initGridFromRoom,
 } from "../lib/grid.js";
 import { ZONE_COLORS, ZONE_TYPE_DEFAULTS } from "../lib/zone-defaults.js";
+import { createZoneEngineState } from "../lib/zone-engine.js";
 import { setupLocalize } from "../localize.js";
 
 function createPanel() {
@@ -80,9 +81,7 @@ function createPanel() {
 	a._roomEntryPoint = false;
 	a._showHitCounts = false;
 	a._expandedSensorInfo = null;
-	a._localZoneState = new Map();
-	a._targetPrev = [null, null, null];
-	a._targetGateCount = [0, 0, 0];
+	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
 	a._isPainting = false;
@@ -289,11 +288,11 @@ describe("zone engine branch coverage", () => {
 				signal: 5,
 			},
 		];
-		a._targetPrev = [{ col: 5, row: 5 }, null, null]; // had previous valid position
+		a._zoneEngineState.targetPrev = [{ col: 5, row: 5 }, null, null]; // had previous valid position
 
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 		// Target should have been cleared
-		expect(a._targetPrev[0]).toBeNull();
+		expect(a._zoneEngineState.targetPrev[0]).toBeNull();
 	});
 
 	it("zone engine with occupied pending timeout via handoff", () => {
@@ -314,7 +313,7 @@ describe("zone engine branch coverage", () => {
 		};
 
 		// Set zone as occupied with handoff pending that has expired
-		a._localZoneState.set(1, {
+		a._zoneEngineState.localZoneState.set(1, {
 			occupied: true,
 			pendingSince: Date.now() / 1000 - 100, // well past timeout
 			confirmedTargets: new Set(),
@@ -325,7 +324,7 @@ describe("zone engine branch coverage", () => {
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 
 		// Zone should have been cleared by timeout
-		const st = a._localZoneState.get(1);
+		const st = a._zoneEngineState.localZoneState.get(1);
 		expect(st?.occupied).toBe(false);
 	});
 
@@ -347,7 +346,7 @@ describe("zone engine branch coverage", () => {
 		};
 
 		// Zone is in pending state
-		a._localZoneState.set(1, {
+		a._zoneEngineState.localZoneState.set(1, {
 			occupied: true,
 			pendingSince: Date.now() / 1000,
 			confirmedTargets: new Set(),
@@ -366,7 +365,7 @@ describe("zone engine branch coverage", () => {
 
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 
-		const st = a._localZoneState.get(1);
+		const st = a._zoneEngineState.localZoneState.get(1);
 		expect(st?.occupied).toBe(true);
 		expect(st?.pendingSince).toBeNull();
 	});
@@ -389,7 +388,7 @@ describe("zone engine branch coverage", () => {
 		};
 
 		// Zone is occupied, no pending
-		a._localZoneState.set(1, {
+		a._zoneEngineState.localZoneState.set(1, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set([0]),
@@ -400,7 +399,7 @@ describe("zone engine branch coverage", () => {
 
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 
-		const st = a._localZoneState.get(1);
+		const st = a._zoneEngineState.localZoneState.get(1);
 		expect(st?.occupied).toBe(true);
 		expect(st?.pendingSince).not.toBeNull(); // now pending
 	});
@@ -418,8 +417,8 @@ describe("zone engine branch coverage", () => {
 		};
 
 		// No previous position (non-continuous) and zone is clear -> gating
-		a._targetPrev = [null, null, null];
-		a._targetGateCount = [1, 0, 0]; // already 1, next will be 2 -> confirmed
+		a._zoneEngineState.targetPrev = [null, null, null];
+		a._zoneEngineState.targetGateCount = [1, 0, 0]; // already 1, next will be 2 -> confirmed
 
 		a._targets = [
 			{
@@ -434,7 +433,7 @@ describe("zone engine branch coverage", () => {
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 
 		// Gate should be 0 after confirming
-		expect(a._targetGateCount[0]).toBe(0);
+		expect(a._zoneEngineState.targetGateCount[0]).toBe(0);
 	});
 
 	it("handles target with previous position on inside cell for zone tracking", () => {
@@ -456,8 +455,8 @@ describe("zone engine branch coverage", () => {
 		}
 
 		// Set previous position in zone 1 (valid inside cell)
-		a._targetPrev = [{ col: 10, row: 3 }, null, null];
-		a._localZoneState.set(1, {
+		a._zoneEngineState.targetPrev = [{ col: 10, row: 3 }, null, null];
+		a._zoneEngineState.localZoneState.set(1, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set([0]),
@@ -802,7 +801,7 @@ describe("_renderLiveSidebar env sensor branches", () => {
 describe("_renderZoneSidebar boundary occupancy glow", () => {
 	it("renders boundary with occupancy glow", () => {
 		const a = createPanel() as any;
-		a._localZoneState.set(0, {
+		a._zoneEngineState.localZoneState.set(0, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set(),
@@ -1403,7 +1402,7 @@ describe("zone sidebar occupancy glow branch", () => {
 		const a = createPanel() as any;
 		a._zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
 		a._activeZone = 0; // boundary selected, not zone 1
-		a._localZoneState.set(1, {
+		a._zoneEngineState.localZoneState.set(1, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set(),
@@ -1415,7 +1414,7 @@ describe("zone sidebar occupancy glow branch", () => {
 
 	it("boundary dot shows glow when boundary zone occupied", () => {
 		const a = createPanel() as any;
-		a._localZoneState.set(0, {
+		a._zoneEngineState.localZoneState.set(0, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set(),
@@ -1803,9 +1802,9 @@ describe("_renderVisibleCells debug log branches", () => {
 				signal: 5,
 			},
 		];
-		a._targetPrev = [null, null, null];
-		a._targetGateCount = [0, 0, 0];
-		a._localZoneState = new Map();
+		a._zoneEngineState.targetPrev = [null, null, null];
+		a._zoneEngineState.targetGateCount = [0, 0, 0];
+		a._zoneEngineState.localZoneState = new Map();
 
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 
@@ -1821,9 +1820,9 @@ describe("_renderVisibleCells debug log branches", () => {
 		// Set prev to "no targets | all clear" so the next call with no targets returns early
 		a._debugLogPrev = "no targets | all clear";
 		a._targets = [];
-		a._targetPrev = [null, null, null];
-		a._targetGateCount = [0, 0, 0];
-		a._localZoneState = new Map();
+		a._zoneEngineState.targetPrev = [null, null, null];
+		a._zoneEngineState.targetGateCount = [0, 0, 0];
+		a._zoneEngineState.localZoneState = new Map();
 
 		const result = a._renderVisibleCells(
 			0,
@@ -1854,9 +1853,9 @@ describe("_renderVisibleCells debug log branches", () => {
 		a._debugLogLines = [];
 		a._debugLogPrev = null;
 		a._targets = [];
-		a._targetPrev = [null, null, null];
-		a._targetGateCount = [0, 0, 0];
-		a._localZoneState = new Map([
+		a._zoneEngineState.targetPrev = [null, null, null];
+		a._zoneEngineState.targetGateCount = [0, 0, 0];
+		a._zoneEngineState.localZoneState = new Map([
 			[
 				1,
 				{
@@ -1884,9 +1883,9 @@ describe("_renderVisibleCells debug log branches", () => {
 		a._debugLogLines = [];
 		a._debugLogPrev = null;
 		a._targets = [];
-		a._targetPrev = [null, null, null];
-		a._targetGateCount = [0, 0, 0];
-		a._localZoneState = new Map([
+		a._zoneEngineState.targetPrev = [null, null, null];
+		a._zoneEngineState.targetGateCount = [0, 0, 0];
+		a._zoneEngineState.localZoneState = new Map([
 			[
 				1,
 				{
@@ -1910,9 +1909,9 @@ describe("_renderVisibleCells debug log branches", () => {
 		a._debugLogLines = new Array(100).fill("old");
 		a._debugLogPrev = null;
 		a._targets = [];
-		a._targetPrev = [null, null, null];
-		a._targetGateCount = [0, 0, 0];
-		a._localZoneState = new Map();
+		a._zoneEngineState.targetPrev = [null, null, null];
+		a._zoneEngineState.targetGateCount = [0, 0, 0];
+		a._zoneEngineState.localZoneState = new Map();
 
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 
@@ -1926,9 +1925,9 @@ describe("_renderVisibleCells debug log branches", () => {
 		a._debugLogLines = [];
 		a._debugLogPrev = null;
 		a._targets = [];
-		a._targetPrev = [null, null, null];
-		a._targetGateCount = [0, 0, 0];
-		a._localZoneState = new Map();
+		a._zoneEngineState.targetPrev = [null, null, null];
+		a._zoneEngineState.targetGateCount = [0, 0, 0];
+		a._zoneEngineState.localZoneState = new Map();
 
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 
@@ -1954,9 +1953,9 @@ describe("_renderVisibleCells debug log branches", () => {
 				signal: 0, // zero signal — skipped
 			},
 		];
-		a._targetPrev = [null, null, null];
-		a._targetGateCount = [0, 0, 0];
-		a._localZoneState = new Map();
+		a._zoneEngineState.targetPrev = [null, null, null];
+		a._zoneEngineState.targetGateCount = [0, 0, 0];
+		a._zoneEngineState.localZoneState = new Map();
 
 		a._renderVisibleCells(0, GRID_COLS - 1, 0, GRID_ROWS - 1, 10);
 

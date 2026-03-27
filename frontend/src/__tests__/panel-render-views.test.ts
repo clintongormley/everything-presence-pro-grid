@@ -10,6 +10,7 @@ import {
 	initGridFromRoom,
 } from "../lib/grid.js";
 import { ZONE_COLORS, ZONE_TYPE_DEFAULTS } from "../lib/zone-defaults.js";
+import { createZoneEngineState } from "../lib/zone-engine.js";
 
 function createPanel(): EPPGridPanel {
 	const el = document.createElement("eppgrid-panel") as EPPGridPanel;
@@ -74,9 +75,7 @@ function createPanel(): EPPGridPanel {
 	a._roomEntryPoint = false;
 	a._showHitCounts = false;
 	a._expandedSensorInfo = null;
-	a._localZoneState = new Map();
-	a._targetPrev = [null, null, null];
-	a._targetGateCount = [0, 0, 0];
+	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
 	a._isPainting = false;
@@ -993,7 +992,7 @@ describe("_renderZoneSidebar", () => {
 		const a = createPanel() as any;
 		a._zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "normal" };
 		a._activeZone = 1;
-		a._localZoneState.set(1, {
+		a._zoneEngineState.localZoneState.set(1, {
 			occupied: true,
 			pendingSince: null,
 			confirmedTargets: new Set(),

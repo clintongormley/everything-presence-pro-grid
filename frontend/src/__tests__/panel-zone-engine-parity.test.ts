@@ -159,7 +159,7 @@ describe("Zone engine parity (mirrors test_zone_engine_parity.py)", () => {
 		expect(occ[1]).toBe(true); // still occupied (PENDING)
 
 		// Fast-forward past timeout (entrance timeout=5s)
-		const st = a._localZoneState.get(1);
+		const st = a._zoneEngineState.localZoneState.get(1);
 		st.pendingSince = Date.now() / 1000 - 6; // 6 seconds ago
 		occ = a._runLocalZoneEngine().occupancy;
 		expect(occ[1]).toBe(false); // cleared
@@ -286,7 +286,7 @@ describe("Per-target status parity", () => {
 		a._runLocalZoneEngine();
 
 		// Fast-forward past timeout
-		const st = a._localZoneState.get(1);
+		const st = a._zoneEngineState.localZoneState.get(1);
 		st.pendingSince = Date.now() / 1000 - 6;
 		const result = a._runLocalZoneEngine();
 		expect(result.targets[0].status).toBe("inactive");
@@ -445,7 +445,7 @@ describe("Pending target position fallback (_renderTargetDots)", () => {
 		const t = a._targets[0];
 		if (!t || t.status === "inactive") return null;
 
-		const prevXY = a._targetPrevXY[0];
+		const prevXY = a._zoneEngineState.targetPrevXY[0];
 		let pos = t.x != null ? a._mapTargetToGridCell(t) : null;
 		const onGrid =
 			pos &&
@@ -468,7 +468,7 @@ describe("Pending target position fallback (_renderTargetDots)", () => {
 		a._targets = [makeTarget(450, 450, 5)];
 		runEngineAndOverwrite();
 		runEngineAndOverwrite();
-		expect(a._targetPrevXY[0]).toEqual({ x: 450, y: 450 });
+		expect(a._zoneEngineState.targetPrevXY[0]).toEqual({ x: 450, y: 450 });
 
 		// Move target to a grey cell within the visible grid.
 		// Cell (8,0) is a room cell. Remove the room bit to make it grey.
@@ -494,7 +494,7 @@ describe("Pending target position fallback (_renderTargetDots)", () => {
 		a._targets = [makeTarget(450, 450, 5)];
 		runEngineAndOverwrite();
 		runEngineAndOverwrite();
-		expect(a._targetPrevXY[0]).toEqual({ x: 450, y: 450 });
+		expect(a._zoneEngineState.targetPrevXY[0]).toEqual({ x: 450, y: 450 });
 
 		// Target moves outside the visible grid entirely
 		// x=-900 → col = 8 + (-900/300) = 5 — below minCol=8

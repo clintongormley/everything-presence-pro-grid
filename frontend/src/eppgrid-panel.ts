@@ -75,6 +75,12 @@ import {
 	ZONE_TYPE_DEFAULTS,
 	type ZoneConfig,
 } from "./lib/zone-defaults.js";
+import {
+	createZoneEngineState,
+	runLocalZoneEngine,
+	type ZoneEngineResult,
+	type ZoneEngineState,
+} from "./lib/zone-engine.js";
 import { setupLocalize } from "./localize.js";
 
 import type { Target, RawTarget, DeviceInfo, WizardCorner, TargetStatus, SetupStep } from "./types.js";
@@ -163,30 +169,8 @@ export class EPPGridPanel extends LitElement {
 	@state() private _showBackendDebugLog = false;
 	private _backendDebugLogLines: string[] = [];
 	private _backendDebugLogPrev: string | null = null;
-	// Local zone occupancy state machine for live preview (with timeout)
-	private _localZoneState: Map<
-		number,
-		{
-			occupied: boolean;
-			pendingSince: number | null;
-			confirmedTargets: Set<number>;
-		}
-	> = new Map();
-	// Per-target tracking for zone engine replication
-	private _targetPrev: ({ col: number; row: number } | null)[] = [
-		null,
-		null,
-		null,
-	];
-	private _targetGateCount: number[] = [0, 0, 0];
-	// Last in-room position per target in room-space mm, for pending display.
-	// Only updated when the target is in a room cell; preserved when
-	// the target leaves the room so pending dots render at last known position.
-	private _targetPrevXY: ({ x: number; y: number } | null)[] = [
-		null,
-		null,
-		null,
-	];
+	// Zone engine state (mutable, passed to runLocalZoneEngine)
+	private _zoneEngineState: ZoneEngineState = createZoneEngineState();
 	@state() private _isPainting = false;
 	private _justPainted = false;
 	@state() private _paintAction: PaintAction = "set";
@@ -3332,7 +3316,7 @@ export class EPPGridPanel extends LitElement {
 		for (let i = 0; i < this._targets.length; i++) {
 			const t = this._targets[i];
 			if (t.x != null && t.y != null && t.status === "active") {
-				this._targetPrevXY[i] = { x: t.x, y: t.y };
+				this._zoneEngineState.targetPrevXY[i] = { x: t.x, y: t.y };
 			}
 		}
 
@@ -3371,11 +3355,11 @@ export class EPPGridPanel extends LitElement {
 						pos.col <= minCol + visCols &&
 						pos.row >= minRow &&
 						pos.row <= minRow + visRows;
-					if (t.status === "pending" && !onGrid && this._targetPrevXY[i]) {
+					if (t.status === "pending" && !onGrid && this._zoneEngineState.targetPrevXY[i]) {
 						pos = this._mapTargetToGridCell({
 							...t,
-							x: this._targetPrevXY[i]!.x,
-							y: this._targetPrevXY[i]!.y,
+							x: this._zoneEngineState.targetPrevXY[i]!.x,
+							y: this._zoneEngineState.targetPrevXY[i]!.y,
 						} as Target);
 					}
 					if (!pos) return nothing;
@@ -4229,7 +4213,7 @@ export class EPPGridPanel extends LitElement {
 
 			// Overwrite _targets status from frontend zone engine.
 			// Position for pending targets is handled by the shared rendering
-			// logic using _targetPrevXY.
+			// logic using _zoneEngineState.targetPrevXY.
 			for (
 				let i = 0;
 				i < engineResult.targets.length && i < this._targets.length;
@@ -4286,228 +4270,39 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	/** Run local zone engine replica (matches backend zone_engine._tick). */
-	private _runLocalZoneEngine(): {
-		occupancy: Record<number, boolean>;
-		targets: { status: "active" | "pending" | "inactive" }[];
-	} {
-		const now = Date.now() / 1000;
-		const MAX_MOVEMENT_CELLS = 5;
-		const MAX_TARGETS = 3;
-
-		const zoneConfirmed: Map<number, boolean> = new Map();
-		const targetSignal: Map<number, number> = new Map();
-		const targetZonePrev: (number | null)[] = [null, null, null];
-		const targetZoneCurr: (number | null)[] = [null, null, null];
-
-		for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
-			const t = this._targets[i];
-
-			// Check if sensor is tracking (x/y non-null), NOT backend status.
-			// The zone editor ignores backend status and recalculates its own.
-			if (t.x == null || t.y == null) {
-				this._targetPrev[i] = null;
-				this._targetGateCount[i] = 0;
-				continue;
-			}
-
-			const signal = t.signal;
-			if (signal <= 0) continue;
-
-			targetSignal.set(i, signal);
-
-			const pos = this._mapTargetToGridCell(t);
-			if (!pos) {
-				this._targetPrev[i] = null;
-				this._targetGateCount[i] = 0;
-				continue;
-			}
-			const col = Math.floor(pos.col);
-			const row = Math.floor(pos.row);
-			if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) {
-				this._targetPrev[i] = null;
-				this._targetGateCount[i] = 0;
-				continue;
-			}
-			const idx = row * GRID_COLS + col;
-			const cellVal = this._grid[idx];
-			if (!cellIsInside(cellVal)) {
-				this._targetPrev[i] = null;
-				this._targetGateCount[i] = 0;
-				continue;
-			}
-
-			const zid = cellZone(cellVal);
-			targetZoneCurr[i] = zid;
-
-			const prev = this._targetPrev[i];
-			if (prev !== null) {
-				const prevIdx = prev.row * GRID_COLS + prev.col;
-				if (
-					prevIdx >= 0 &&
-					prevIdx < GRID_CELL_COUNT &&
-					cellIsInside(this._grid[prevIdx])
-				) {
-					targetZonePrev[i] = cellZone(this._grid[prevIdx]);
-				}
-			}
-
-			// Record last in-room position (room-space mm) for pending display
-			this._targetPrevXY[i] = { x: t.x, y: t.y };
-
-			let continuous = false;
-			if (prev !== null) {
-				const dist = Math.max(
-					Math.abs(col - prev.col),
-					Math.abs(row - prev.row),
-				);
-				continuous = dist <= MAX_MOVEMENT_CELLS;
-			}
-
-			const { trigger, renew, entryPoint } = this._getZoneThresholds(zid);
-			const st = this._localZoneState.get(zid);
-			const isOccupied = st?.occupied ?? false;
-			const isClear = !isOccupied;
-
-			const baseTrigger = isClear ? trigger : renew;
-			const needsGating = !entryPoint && !continuous;
-
-			if (needsGating && isClear) {
-				const gatedThresh = Math.min(baseTrigger + 2, 8);
-				if (signal >= gatedThresh) {
-					this._targetGateCount[i]++;
-					if (this._targetGateCount[i] >= 2) {
-						zoneConfirmed.set(zid, true);
-						if (st) st.confirmedTargets.add(i);
-						this._targetPrev[i] = { col, row };
-						this._targetGateCount[i] = 0;
-					} else {
-						this._targetPrev[i] = { col, row };
-					}
-				} else {
-					this._targetPrev[i] = null;
-					this._targetGateCount[i] = 0;
-				}
-			} else {
-				if (signal >= baseTrigger) {
-					zoneConfirmed.set(zid, true);
-					if (st) st.confirmedTargets.add(i);
-					this._targetPrev[i] = { col, row };
-					this._targetGateCount[i] = 0;
-				} else {
-					this._targetPrev[i] = { col, row };
-				}
-			}
-		}
-
-		// Handoff detection
-		for (let i = 0; i < MAX_TARGETS; i++) {
-			const prevZid = targetZonePrev[i];
-			const currZid = targetZoneCurr[i];
-			if (prevZid === null || currZid === null || prevZid === currZid) continue;
-
-			const srcSt = this._localZoneState.get(prevZid);
-			if (!srcSt) continue;
-			srcSt.confirmedTargets.delete(i);
-			if (
-				srcSt.confirmedTargets.size === 0 &&
-				srcSt.occupied &&
-				srcSt.pendingSince === null
-			) {
-				const { timeout, handoffTimeout } = this._getZoneThresholds(prevZid);
-				srcSt.pendingSince = now - (timeout - handoffTimeout);
-			}
-		}
-
-		// State machine per zone
-		const occupancy: Record<number, boolean> = {};
-		const allZoneIds = new Set<number>();
-		for (let i = 0; i < this._grid.length; i++) {
-			if (cellIsInside(this._grid[i])) allZoneIds.add(cellZone(this._grid[i]));
-		}
-		for (const zid of allZoneIds) {
-			let st = this._localZoneState.get(zid);
-			if (!st) {
-				st = {
-					occupied: false,
-					pendingSince: null,
-					confirmedTargets: new Set(),
-				};
-				this._localZoneState.set(zid, st);
-			}
-			const { timeout } = this._getZoneThresholds(zid);
-			const confirmed = zoneConfirmed.get(zid) ?? false;
-
-			if (!st.occupied) {
-				if (confirmed) {
-					st.occupied = true;
-					st.pendingSince = null;
-				}
-			} else if (st.pendingSince === null) {
-				if (!confirmed) {
-					st.pendingSince = now;
-				}
-			} else {
-				if (confirmed) {
-					st.pendingSince = null;
-				} else {
-					if (now - st.pendingSince >= timeout) {
-						st.occupied = false;
-						st.pendingSince = null;
-						st.confirmedTargets.clear();
-					}
-				}
-			}
-			occupancy[zid] = st.occupied;
-		}
-		// activeTargets = sensor is tracking (mirrors backend tw.active)
-		const activeTargets = new Set<number>();
-		for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
-			if (this._targets[i].x != null && this._targets[i].y != null) {
-				activeTargets.add(i);
-			}
-		}
-
-		// Clean up stale confirmed targets in non-pending zones
-		// (mirrors backend _tick lines 705-709)
-		for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
-			if (!activeTargets.has(i)) {
-				for (const st of this._localZoneState.values()) {
-					if (st.pendingSince === null) {
-						st.confirmedTargets.delete(i);
-					}
-				}
-			}
-		}
-
-		// Build per-target status (mirrors backend _tick lines 661-700).
-		// Only status is needed — position for pending display is handled
-		// by _targetPrevXY in the rendering layer (_renderTargetDots).
-		const targetResults: { status: "active" | "pending" | "inactive" }[] = [];
-		for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
-			const sig = targetSignal.get(i) ?? 0;
-			const inRoom = targetZoneCurr[i] !== null;
-			if (activeTargets.has(i) && sig > 0 && inRoom) {
-				targetResults.push({ status: "active" });
-			} else {
-				let isPending = false;
-				if (!activeTargets.has(i) || !inRoom) {
-					for (const [, st] of this._localZoneState) {
-						if (
-							st.occupied &&
-							st.pendingSince !== null &&
-							st.confirmedTargets.has(i)
-						) {
-							isPending = true;
-							break;
-						}
-					}
-				}
-				targetResults.push({ status: isPending ? "pending" : "inactive" });
-			}
-		}
+	private _runLocalZoneEngine(): ZoneEngineResult {
+		const result = runLocalZoneEngine(this._zoneEngineState, {
+			targets: this._targets,
+			grid: this._grid,
+			roomWidth: this._roomWidth,
+			roomDepth: this._roomDepth,
+			zoneConfigs: this._zoneConfigs,
+			roomType: this._roomType,
+			roomTrigger: this._roomTrigger,
+			roomRenew: this._roomRenew,
+			roomTimeout: this._roomTimeout,
+			roomHandoffTimeout: this._roomHandoffTimeout,
+			roomEntryPoint: this._roomEntryPoint,
+		});
 
 		// Build raw debug log (same format as firmware)
 		if (this._showDebugLog) {
+			const MAX_TARGETS = 3;
+			// Compute target→zone mapping for debug log
+			const targetZoneCurr: (number | null)[] = [null, null, null];
+			for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
+				const t = this._targets[i];
+				if (t.x == null || t.y == null || t.signal <= 0) continue;
+				const pos = this._mapTargetToGridCell(t);
+				if (!pos) continue;
+				const col = Math.floor(pos.col);
+				const row = Math.floor(pos.row);
+				if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) continue;
+				const idx = row * GRID_COLS + col;
+				if (!cellIsInside(this._grid[idx])) continue;
+				targetZoneCurr[i] = cellZone(this._grid[idx]);
+			}
+
 			// Compute best signal per zone (matches firmware zone_signal[])
 			const zoneSignal: Map<number, number> = new Map();
 			for (let i = 0; i < MAX_TARGETS && i < this._targets.length; i++) {
@@ -4526,12 +4321,17 @@ export class EPPGridPanel extends LitElement {
 				const sig = t.signal;
 				if (sig <= 0) continue;
 				const zid = targetZoneCurr[i];
-				const s = targetResults[i]?.status === "pending" ? "P" : "A";
+				const s = result.targets[i]?.status === "pending" ? "P" : "A";
 				targetParts.push(`T${i}:Z${zid ?? 0}:${s}:${sig}`);
+			}
+
+			const allZoneIds = new Set<number>();
+			for (let i = 0; i < this._grid.length; i++) {
+				if (cellIsInside(this._grid[i])) allZoneIds.add(cellZone(this._grid[i]));
 			}
 			const zoneParts: string[] = [];
 			for (const zid of allZoneIds) {
-				const st = this._localZoneState.get(zid);
+				const st = this._zoneEngineState.localZoneState.get(zid);
 				if (st?.occupied) {
 					const state = st.pendingSince !== null ? "P" : "O";
 					zoneParts.push(`Z${zid}:${state}:${zoneSignal.get(zid) ?? 0}`);
@@ -4558,7 +4358,7 @@ export class EPPGridPanel extends LitElement {
 			}
 		}
 
-		return { occupancy, targets: targetResults };
+		return result;
 	}
 
 	/** Enrich a raw debug log string (from firmware or frontend zone engine)
@@ -4977,7 +4777,7 @@ export class EPPGridPanel extends LitElement {
 				}}
       >
         <div class="zone-item-row">
-          <div class="zone-color-dot" style="background: #fff; border: 1px solid #ccc;${this._localZoneState.get(0)?.occupied ? " box-shadow: 0 0 6px 2px #999;" : ""}"></div>
+          <div class="zone-color-dot" style="background: #fff; border: 1px solid #ccc;${this._zoneEngineState.localZoneState.get(0)?.occupied ? " box-shadow: 0 0 6px 2px #999;" : ""}"></div>
           <span class="zone-name">${this._localize("sidebar.room")}</span>
         </div>
         ${
@@ -5008,7 +4808,7 @@ export class EPPGridPanel extends LitElement {
                 <input
                   type="color"
                   class="zone-color-picker"
-                  style="width: 16px; height: 16px; border-radius: 50%;${this._localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"
+                  style="width: 16px; height: 16px; border-radius: 50%;${this._zoneEngineState.localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"
                   .value=${zone.color}
                   @input=${(e: Event) => {
 										const val = (e.target as HTMLInputElement).value;
@@ -5021,7 +4821,7 @@ export class EPPGridPanel extends LitElement {
                 />
               `
 									: html`
-                <div class="zone-color-dot" style="background: ${zone.color};${this._localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"></div>
+                <div class="zone-color-dot" style="background: ${zone.color};${this._zoneEngineState.localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"></div>
               `
 							}
               <input
