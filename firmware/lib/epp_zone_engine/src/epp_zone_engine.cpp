@@ -120,7 +120,8 @@ const ProcessingResult& ZoneEngine::tick(const WindowOutput& window, float times
         }
 
         target_active[i] = true;
-        int signal = std::min(tw.frame_count, 9);
+        // Signal = proportion of frames target was active (0-9 scale, rounded)
+        int signal = (frames > 0) ? std::min((tw.frame_count * 9 + frames / 2) / frames, 9) : 0;
         int cell = grid_.xy_to_cell(tw.median_x, tw.median_y);
 
         if (cell == -1 || !grid_.cell_is_room(cell)) {
