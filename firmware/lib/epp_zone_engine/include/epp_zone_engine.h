@@ -33,6 +33,7 @@ struct TargetResult {
 struct ProcessingResult {
     bool device_tracking_present = false;
     bool zone_occupancy[MAX_ZONE_SLOTS]{};
+    ZoneState zone_states[MAX_ZONE_SLOTS]{};
     int zone_target_counts[MAX_ZONE_SLOTS]{};
     int frame_count = 0;
     TargetResult targets[MAX_TARGETS];

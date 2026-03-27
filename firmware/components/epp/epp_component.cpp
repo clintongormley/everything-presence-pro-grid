@@ -87,13 +87,15 @@ void EPPComponent::loop() {
       }
     }
 
-    // Publish grid target positions (post-transform)
+    // Publish grid target positions from zone engine result
+    // (includes last-known position for pending targets)
     for (int i = 0; i < NUM_TARGETS; i++) {
       if (target_position_sensors_[i] != nullptr) {
-        if (grid_inputs[i].active) {
-          char buf[32];
-          snprintf(buf, sizeof(buf), "%.0f,%.0f",
-                   grid_inputs[i].x, grid_inputs[i].y);
+        if (i < result.target_count && result.targets[i].status != TargetStatus::INACTIVE) {
+          char buf[64];
+          snprintf(buf, sizeof(buf), "%.0f,%.0f,%s",
+                   result.targets[i].x, result.targets[i].y,
+                   result.targets[i].status == TargetStatus::ACTIVE ? "active" : "pending");
           target_position_sensors_[i]->publish_state(buf);
         } else {
           target_position_sensors_[i]->publish_state("");
@@ -168,8 +170,9 @@ void EPPComponent::loop() {
       bool first_zone = true;
       for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
         if (!result.zone_occupancy[i]) continue;
+        const char *zs = result.zone_states[i] == epp::ZoneState::PENDING_CLEAR ? "P" : "O";
         pos += snprintf(json + pos, sizeof(json) - pos,
-            "%sZ%d:O:%d", first_zone ? "" : " ", i, result.zone_target_counts[i]);
+            "%sZ%d:%s:%d", first_zone ? "" : " ", i, zs, result.zone_target_counts[i]);
         first_zone = false;
       }
       pos += snprintf(json + pos, sizeof(json) - pos, "\"}");

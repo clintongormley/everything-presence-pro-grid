@@ -300,6 +300,7 @@ const ProcessingResult& ZoneEngine::tick(const WindowOutput& window, float times
         }
 
         result_.zone_occupancy[zone_id] = (rt.state != ZoneState::CLEAR);
+        result_.zone_states[zone_id] = rt.state;
     }
 
     // -----------------------------------------------------------------------
@@ -337,16 +338,16 @@ const ProcessingResult& ZoneEngine::tick(const WindowOutput& window, float times
                     tr.x = target_prev_x_[i];
                     tr.y = target_prev_y_[i];
                 } else {
-                    tr.x = 0.0f;
-                    tr.y = 0.0f;
+                    tr.x = NAN;
+                    tr.y = NAN;
                 }
                 tr.status = TargetStatus::PENDING;
                 tr.signal = 0;
                 result_.target_count++;
             } else {
                 TargetResult& tr = result_.targets[result_.target_count];
-                tr.x = 0.0f;
-                tr.y = 0.0f;
+                tr.x = NAN;
+                tr.y = NAN;
                 tr.status = TargetStatus::INACTIVE;
                 tr.signal = 0;
                 result_.target_count++;

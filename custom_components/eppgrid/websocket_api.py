@@ -440,6 +440,9 @@ async def websocket_subscribe_grid_targets(
                     parts = state.state.split(",")
                     targets[idx]["x"] = float(parts[0])
                     targets[idx]["y"] = float(parts[1])
+                    # Status comes from position text sensor (active/pending)
+                    if len(parts) >= 3:
+                        targets[idx]["status"] = parts[2]
                 else:
                     targets[idx] = {"x": None, "y": None, "signal": 0, "status": "inactive"}
                 # Send full event on each position update (5Hz)
