@@ -18,16 +18,16 @@ function createPanel(): EPPGridPanel {
 	a._furniture = [];
 	a._selectedFurnitureId = null;
 	a._view = "live";
-	a._entries = [
+	a._devices = [
 		{
-			entry_id: "e1",
-			title: "Test",
-			room_name: "",
-			has_perspective: true,
-			has_layout: true,
+			mac: "AA:BB:CC:DD:EE:01",
+			name: "Test",
+			host: null,
+			available: true,
+			configured: true,
 		},
 	];
-	a._selectedEntryId = "e1";
+	a._selectedMac = "AA:BB:CC:DD:EE:01";
 	a._targets = [];
 	a._sensorState = {
 		occupancy: false,
@@ -48,8 +48,6 @@ function createPanel(): EPPGridPanel {
 	a._showDeleteCalibrationDialog = false;
 	a._showTemplateSave = false;
 	a._showTemplateLoad = false;
-	a._showRenameDialog = false;
-	a._pendingRenames = [];
 	a._reportingConfig = {};
 	a._offsetsConfig = {};
 	a._targetAutoRange = true;
@@ -353,7 +351,7 @@ describe("updated lifecycle", () => {
 		const el = createPanel();
 		const a = el as any;
 		a._loading = true;
-		a._entries = [];
+		a._devices = [];
 
 		// Mock _initialize to track calls
 		const initSpy = vi.spyOn(a, "_initialize").mockResolvedValue(undefined);
@@ -371,7 +369,7 @@ describe("updated lifecycle", () => {
 		const el = createPanel();
 		const a = el as any;
 		a._loading = true;
-		a._entries = [];
+		a._devices = [];
 
 		const initSpy = vi.spyOn(a, "_initialize").mockResolvedValue(undefined);
 
@@ -384,17 +382,17 @@ describe("updated lifecycle", () => {
 		initSpy.mockRestore();
 	});
 
-	it("does not re-initialize when entries already loaded", () => {
+	it("does not re-initialize when devices already loaded", () => {
 		const el = createPanel();
 		const a = el as any;
 		a._loading = true;
-		a._entries = [
+		a._devices = [
 			{
-				entry_id: "e1",
-				title: "A",
-				room_name: "",
-				has_perspective: false,
-				has_layout: false,
+				mac: "AA:BB:CC:DD:EE:01",
+				name: "A",
+				host: null,
+				available: true,
+				configured: true,
 			},
 		];
 

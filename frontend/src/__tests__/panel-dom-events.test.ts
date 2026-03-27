@@ -29,16 +29,16 @@ function createPanel(): EPPGridPanel {
 	a._furniture = [];
 	a._selectedFurnitureId = null;
 	a._view = "live";
-	a._entries = [
+	a._devices = [
 		{
-			entry_id: "e1",
-			title: "Test",
-			room_name: "Room",
-			has_perspective: true,
-			has_layout: true,
+			mac: "AA:BB:CC:DD:EE:01",
+			name: "Test",
+			host: null,
+			available: true,
+			configured: true,
 		},
 	];
-	a._selectedEntryId = "e1";
+	a._selectedMac = "AA:BB:CC:DD:EE:01";
 	a._targets = [];
 	a._sensorState = {
 		occupancy: false,
@@ -59,8 +59,6 @@ function createPanel(): EPPGridPanel {
 	a._showDeleteCalibrationDialog = false;
 	a._showTemplateSave = false;
 	a._showTemplateLoad = false;
-	a._showRenameDialog = false;
-	a._pendingRenames = [];
 	a._reportingConfig = {};
 	a._offsetsConfig = {};
 	a._targetAutoRange = true;
@@ -217,13 +215,13 @@ describe("_renderLiveSidebar DOM events", () => {
 describe("_renderHeader DOM events", () => {
 	it("device select __add__ opens new window", () => {
 		const a = createPanel() as any;
-		a._entries = [
+		a._devices = [
 			{
-				entry_id: "e1",
-				title: "Sensor",
-				room_name: "",
-				has_perspective: true,
-				has_layout: true,
+				mac: "AA:BB:CC:DD:EE:01",
+				name: "Sensor",
+				host: null,
+				available: true,
+				configured: true,
 			},
 		];
 		const tpl = a._renderHeader();

@@ -31,16 +31,16 @@ function createPanel(): EPPGridPanel {
 	a._furniture = [];
 	a._selectedFurnitureId = null;
 	a._view = "live";
-	a._entries = [
+	a._devices = [
 		{
-			entry_id: "e1",
-			title: "Test Sensor",
-			room_name: "Living room",
-			has_perspective: true,
-			has_layout: true,
+			mac: "AA:BB:CC:DD:EE:01",
+			name: "Test Sensor",
+			host: null,
+			available: true,
+			configured: true,
 		},
 	];
-	a._selectedEntryId = "e1";
+	a._selectedMac = "AA:BB:CC:DD:EE:01";
 	a._targets = [];
 	a._sensorState = {
 		occupancy: false,
@@ -61,8 +61,6 @@ function createPanel(): EPPGridPanel {
 	a._showDeleteCalibrationDialog = false;
 	a._showTemplateSave = false;
 	a._showTemplateLoad = false;
-	a._showRenameDialog = false;
-	a._pendingRenames = [];
 	a._reportingConfig = {};
 	a._offsetsConfig = {};
 	a._targetAutoRange = true;
@@ -266,7 +264,7 @@ describe("_renderSaveCancelButtons inline handlers", () => {
 		// Replicate cancel handler (line 3535-3538)
 		a._dirty = false;
 		a._view = "live";
-		// Would call: a._loadEntryConfig(a._selectedEntryId);
+		// Would call: a._loadDeviceConfig(a._selectedMac);
 
 		expect(a._dirty).toBe(false);
 		expect(a._view).toBe("live");

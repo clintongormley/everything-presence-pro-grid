@@ -18,8 +18,8 @@ function createPanel(): EPPGridPanel {
 	a._activeZone = 0;
 	a._dirty = false;
 	a._loading = false;
-	a._entries = [];
-	a._selectedEntryId = "";
+	a._devices = [];
+	a._selectedMac = "";
 	a._perspective = null;
 	a._roomWidth = 0;
 	a._roomDepth = 0;
@@ -29,8 +29,6 @@ function createPanel(): EPPGridPanel {
 	a._saving = false;
 	a._showUnsavedDialog = false;
 	a._pendingNavigation = null;
-	a._showRenameDialog = false;
-	a._pendingRenames = [];
 	a._view = "live";
 	a._targets = [];
 	a._sensorState = {
@@ -61,26 +59,32 @@ describe("_initialize", () => {
 		expect(a._loading).toBe(false); // unchanged from setup
 	});
 
-	it("loads entries and config when hass is available", async () => {
+	it("loads devices and config when hass is available", async () => {
 		const a = el as any;
-		const entries = [
+		const devices = [
 			{
-				entry_id: "e1",
-				title: "Sensor 1",
-				room_name: "Living room",
-				has_perspective: true,
-				has_layout: true,
+				mac: "AA:BB:CC:DD:EE:01",
+				name: "Sensor 1",
+				host: "192.168.1.10",
+				available: true,
+				configured: true,
 			},
 		];
 		el.hass = {
 			callWS: vi.fn().mockImplementation((msg: any) => {
-				if (msg.type === "eppgrid/list_entries") {
-					return Promise.resolve(entries);
+				if (msg.type === "eppgrid/list_devices") {
+					return Promise.resolve({ devices });
 				}
 				if (msg.type === "eppgrid/get_config") {
 					return Promise.resolve({
-						calibration: { perspective: null, room_width: 0, room_depth: 0 },
-						room_layout: {},
+						config: {
+							calibration: {
+								perspective: null,
+								room_width: 0,
+								room_depth: 0,
+							},
+							room_layout: {},
+						},
 					});
 				}
 				return Promise.resolve({});
@@ -93,152 +97,157 @@ describe("_initialize", () => {
 		await a._initialize();
 
 		expect(a._loading).toBe(false);
-		expect(a._entries).toEqual(entries);
+		expect(a._devices).toEqual(devices);
 	});
 });
 
-describe("_loadEntries", () => {
+describe("_loadDevices", () => {
 	let el: EPPGridPanel;
 
 	beforeEach(() => {
 		el = createPanel();
 	});
 
-	it("sorts entries alphabetically by title", async () => {
+	it("sorts devices alphabetically by name", async () => {
 		const a = el as any;
-		const entries = [
-			{
-				entry_id: "e2",
-				title: "Zebra",
-				room_name: "",
-				has_perspective: false,
-				has_layout: false,
-			},
-			{
-				entry_id: "e1",
-				title: "Apple",
-				room_name: "",
-				has_perspective: false,
-				has_layout: false,
-			},
-		];
 		el.hass = {
-			callWS: vi.fn().mockResolvedValue(entries),
+			callWS: vi.fn().mockResolvedValue({
+				devices: [
+					{
+						mac: "AA:BB:CC:DD:EE:02",
+						name: "Zebra",
+						host: null,
+						available: true,
+						configured: true,
+					},
+					{
+						mac: "AA:BB:CC:DD:EE:01",
+						name: "Apple",
+						host: null,
+						available: true,
+						configured: true,
+					},
+				],
+			}),
 		};
 
-		await a._loadEntries();
+		await a._loadDevices();
 
-		expect(a._entries[0].title).toBe("Apple");
-		expect(a._entries[1].title).toBe("Zebra");
+		expect(a._devices[0].name).toBe("Apple");
+		expect(a._devices[1].name).toBe("Zebra");
 	});
 
-	it("sets _entries to empty on error", async () => {
+	it("sets _devices to empty on error", async () => {
 		const a = el as any;
 		el.hass = {
 			callWS: vi.fn().mockRejectedValue(new Error("fail")),
 		};
 
-		await a._loadEntries();
+		await a._loadDevices();
 
-		expect(a._entries).toEqual([]);
+		expect(a._devices).toEqual([]);
 	});
 
-	it("selects the stored entry from localStorage if available", async () => {
+	it("selects the stored mac from localStorage if available", async () => {
 		const a = el as any;
-		const entries = [
-			{
-				entry_id: "e1",
-				title: "A",
-				room_name: "",
-				has_perspective: false,
-				has_layout: false,
-			},
-			{
-				entry_id: "e2",
-				title: "B",
-				room_name: "",
-				has_perspective: false,
-				has_layout: false,
-			},
-		];
 		el.hass = {
-			callWS: vi.fn().mockResolvedValue(entries),
+			callWS: vi.fn().mockResolvedValue({
+				devices: [
+					{
+						mac: "AA:BB:CC:DD:EE:01",
+						name: "A",
+						host: null,
+						available: true,
+						configured: true,
+					},
+					{
+						mac: "AA:BB:CC:DD:EE:02",
+						name: "B",
+						host: null,
+						available: true,
+						configured: true,
+					},
+				],
+			}),
 		};
 
-		localStorage.setItem("epp_selected_entry", "e2");
+		localStorage.setItem("epp_selected_mac", "AA:BB:CC:DD:EE:02");
 
-		await a._loadEntries();
+		await a._loadDevices();
 
-		expect(a._selectedEntryId).toBe("e2");
+		expect(a._selectedMac).toBe("AA:BB:CC:DD:EE:02");
 
-		localStorage.removeItem("epp_selected_entry");
+		localStorage.removeItem("epp_selected_mac");
 	});
 
-	it("selects first entry when stored entry not found", async () => {
+	it("selects first device when stored mac not found", async () => {
 		const a = el as any;
-		const entries = [
-			{
-				entry_id: "e1",
-				title: "A",
-				room_name: "",
-				has_perspective: false,
-				has_layout: false,
-			},
-		];
 		el.hass = {
-			callWS: vi.fn().mockResolvedValue(entries),
+			callWS: vi.fn().mockResolvedValue({
+				devices: [
+					{
+						mac: "AA:BB:CC:DD:EE:01",
+						name: "A",
+						host: null,
+						available: true,
+						configured: true,
+					},
+				],
+			}),
 		};
 
-		localStorage.setItem("epp_selected_entry", "nonexistent");
+		localStorage.setItem("epp_selected_mac", "nonexistent");
 
-		await a._loadEntries();
+		await a._loadDevices();
 
-		expect(a._selectedEntryId).toBe("e1");
+		expect(a._selectedMac).toBe("AA:BB:CC:DD:EE:01");
 
-		localStorage.removeItem("epp_selected_entry");
+		localStorage.removeItem("epp_selected_mac");
 	});
 
-	it("sets empty string when no entries available", async () => {
+	it("sets empty string when no devices available", async () => {
 		const a = el as any;
 		el.hass = {
-			callWS: vi.fn().mockResolvedValue([]),
+			callWS: vi.fn().mockResolvedValue({ devices: [] }),
 		};
 
-		await a._loadEntries();
+		await a._loadDevices();
 
-		expect(a._selectedEntryId).toBe("");
+		expect(a._selectedMac).toBe("");
 	});
 });
 
-describe("_loadEntryConfig", () => {
+describe("_loadDeviceConfig", () => {
 	let el: EPPGridPanel;
 
 	beforeEach(() => {
 		el = createPanel();
 	});
 
-	it("calls get_config and subscribes targets", async () => {
+	it("calls get_config and opens device session", async () => {
 		const a = el as any;
 		const unsubFn = vi.fn();
 		el.hass = {
 			callWS: vi.fn().mockResolvedValue({
-				calibration: {
-					perspective: [1, 0, 0, 0, 1, 0, 0, 0],
-					room_width: 3000,
-					room_depth: 4000,
+				config: {
+					calibration: {
+						perspective: [1, 0, 0, 0, 1, 0, 0, 0],
+						room_width: 3000,
+						room_depth: 4000,
+					},
+					room_layout: {},
 				},
-				room_layout: {},
 			}),
 			connection: {
 				subscribeMessage: vi.fn().mockResolvedValue(unsubFn),
 			},
 		};
 
-		await a._loadEntryConfig("e1");
+		await a._loadDeviceConfig("AA:BB:CC:DD:EE:01");
 
 		expect(el.hass.callWS).toHaveBeenCalledWith({
 			type: "eppgrid/get_config",
-			entry_id: "e1",
+			mac: "AA:BB:CC:DD:EE:01",
 		});
 		expect(el.hass.connection.subscribeMessage).toHaveBeenCalled();
 	});
@@ -253,7 +262,9 @@ describe("_loadEntryConfig", () => {
 		};
 
 		// Should not throw
-		await expect(a._loadEntryConfig("e1")).resolves.toBeUndefined();
+		await expect(
+			a._loadDeviceConfig("AA:BB:CC:DD:EE:01"),
+		).resolves.toBeUndefined();
 	});
 });
 
@@ -366,7 +377,7 @@ describe("_applyLayout", () => {
 
 	it("calls set_room_layout and resets dirty", async () => {
 		const a = el as any;
-		a._selectedEntryId = "e1";
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		a._dirty = true;
 		a._roomType = "normal";
 		a._roomTrigger = 5;
@@ -384,7 +395,7 @@ describe("_applyLayout", () => {
 		expect(el.hass.callWS).toHaveBeenCalledWith(
 			expect.objectContaining({
 				type: "eppgrid/set_room_layout",
-				entry_id: "e1",
+				mac: "AA:BB:CC:DD:EE:01",
 			}),
 		);
 		expect(a._dirty).toBe(false);
@@ -392,31 +403,9 @@ describe("_applyLayout", () => {
 		expect(a._view).toBe("live");
 	});
 
-	it("handles entity_id_renames from response", async () => {
-		const a = el as any;
-		a._selectedEntryId = "e1";
-		a._dirty = true;
-
-		el.hass = {
-			callWS: vi.fn().mockResolvedValue({
-				entity_id_renames: [
-					{
-						old_entity_id: "binary_sensor.old",
-						new_entity_id: "binary_sensor.new",
-					},
-				],
-			}),
-		};
-
-		await a._applyLayout();
-
-		expect(a._pendingRenames).toHaveLength(1);
-		expect(a._showRenameDialog).toBe(true);
-	});
-
 	it("strips zones with zero painted cells on save", async () => {
 		const a = el as any;
-		a._selectedEntryId = "e1";
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		a._dirty = true;
 		a._roomWidth = 3000;
 		a._roomDepth = 4000;
@@ -441,7 +430,7 @@ describe("_applyLayout", () => {
 
 	it("resets _saving on error", async () => {
 		const a = el as any;
-		a._selectedEntryId = "e1";
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		a._dirty = true;
 
 		el.hass = {
@@ -462,7 +451,7 @@ describe("_saveSettings", () => {
 
 	it("resets saving flag even when container is missing", async () => {
 		const a = el as any;
-		a._selectedEntryId = "e1";
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		a._dirty = true;
 		a._saving = false;
 
@@ -480,111 +469,8 @@ describe("_saveSettings", () => {
 
 		await a._saveSettings();
 
-		// callWS should not have been called since container is null
-		expect(callWS).not.toHaveBeenCalled();
+		// _saveSettings is now a stub that just resets state
 		expect(a._saving).toBe(false);
-	});
-});
-
-describe("_applyRenames", () => {
-	let el: EPPGridPanel;
-
-	beforeEach(() => {
-		el = createPanel();
-	});
-
-	it("does nothing when no pending renames", async () => {
-		const a = el as any;
-		el.hass = {
-			callWS: vi.fn().mockResolvedValue({}),
-		};
-
-		await a._applyRenames();
-		expect(el.hass.callWS).not.toHaveBeenCalled();
-	});
-
-	it("calls rename_zone_entities WS and clears state", async () => {
-		const a = el as any;
-		a._selectedEntryId = "e1";
-		a._pendingRenames = [
-			{
-				old_entity_id: "binary_sensor.zone_1",
-				new_entity_id: "binary_sensor.kitchen",
-			},
-		];
-		a._showRenameDialog = true;
-
-		el.hass = {
-			callWS: vi.fn().mockResolvedValue({ errors: [] }),
-		};
-
-		await a._applyRenames();
-
-		expect(el.hass.callWS).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "eppgrid/rename_zone_entities",
-				entry_id: "e1",
-			}),
-		);
-		expect(a._showRenameDialog).toBe(false);
-		expect(a._pendingRenames).toEqual([]);
-	});
-
-	it("handles rename errors gracefully", async () => {
-		const a = el as any;
-		a._selectedEntryId = "e1";
-		a._pendingRenames = [
-			{
-				old_entity_id: "binary_sensor.zone_1",
-				new_entity_id: "binary_sensor.kitchen",
-			},
-		];
-		a._showRenameDialog = true;
-
-		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
-		el.hass = {
-			callWS: vi.fn().mockResolvedValue({ errors: ["some rename error"] }),
-		};
-
-		await a._applyRenames();
-
-		expect(warn).toHaveBeenCalled();
-		expect(a._showRenameDialog).toBe(false);
-		warn.mockRestore();
-	});
-
-	it("cleans up even on WS error", async () => {
-		const a = el as any;
-		a._selectedEntryId = "e1";
-		a._pendingRenames = [
-			{
-				old_entity_id: "binary_sensor.zone_1",
-				new_entity_id: "binary_sensor.kitchen",
-			},
-		];
-		a._showRenameDialog = true;
-
-		el.hass = {
-			callWS: vi.fn().mockRejectedValue(new Error("fail")),
-		};
-
-		await expect(a._applyRenames()).rejects.toThrow("fail");
-		expect(a._showRenameDialog).toBe(false);
-		expect(a._pendingRenames).toEqual([]);
-	});
-});
-
-describe("_dismissRenameDialog", () => {
-	it("clears rename state", () => {
-		const el = createPanel();
-		const a = el as any;
-		a._showRenameDialog = true;
-		a._pendingRenames = [{ old_entity_id: "a", new_entity_id: "b" }];
-
-		a._dismissRenameDialog();
-
-		expect(a._showRenameDialog).toBe(false);
-		expect(a._pendingRenames).toEqual([]);
 	});
 });
 
@@ -597,7 +483,7 @@ describe("_deleteCalibration", () => {
 
 	it("resets all calibration state and calls backend", async () => {
 		const a = el as any;
-		a._selectedEntryId = "e1";
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
 		a._roomWidth = 3000;
 		a._roomDepth = 4000;
@@ -625,7 +511,7 @@ describe("_deleteCalibration", () => {
 
 	it("handles backend error gracefully", async () => {
 		const a = el as any;
-		a._selectedEntryId = "e1";
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
 
 		const err = vi.spyOn(console, "error").mockImplementation(() => {});
@@ -646,12 +532,18 @@ describe("_onDeviceChange", () => {
 		const el = createPanel();
 		const a = el as any;
 		a._dirty = false;
-		a._selectedEntryId = "old";
+		a._selectedMac = "old";
 
 		el.hass = {
 			callWS: vi.fn().mockResolvedValue({
-				calibration: { perspective: null, room_width: 0, room_depth: 0 },
-				room_layout: {},
+				config: {
+					calibration: {
+						perspective: null,
+						room_width: 0,
+						room_depth: 0,
+					},
+					room_layout: {},
+				},
 			}),
 			connection: {
 				subscribeMessage: vi.fn().mockResolvedValue(() => {}),
@@ -659,12 +551,12 @@ describe("_onDeviceChange", () => {
 		};
 
 		const fakeEvent = {
-			target: { value: "new_entry" },
+			target: { value: "new_mac" },
 		};
 
 		await a._onDeviceChange(fakeEvent);
 
-		expect(a._selectedEntryId).toBe("new_entry");
+		expect(a._selectedMac).toBe("new_mac");
 	});
 
 	it("shows unsaved dialog when dirty", async () => {
@@ -673,7 +565,7 @@ describe("_onDeviceChange", () => {
 		a._dirty = true;
 
 		const fakeEvent = {
-			target: { value: "new_entry" },
+			target: { value: "new_mac" },
 		};
 
 		a._onDeviceChange(fakeEvent);

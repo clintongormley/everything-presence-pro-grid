@@ -32,16 +32,16 @@ function createPanel(): EPPGridPanel {
 	a._furniture = [];
 	a._selectedFurnitureId = null;
 	a._view = "live";
-	a._entries = [
+	a._devices = [
 		{
-			entry_id: "e1",
-			title: "T",
-			room_name: "",
-			has_perspective: true,
-			has_layout: true,
+			mac: "AA:BB:CC:DD:EE:01",
+			name: "T",
+			host: null,
+			available: true,
+			configured: true,
 		},
 	];
-	a._selectedEntryId = "e1";
+	a._selectedMac = "AA:BB:CC:DD:EE:01";
 	a._targets = [];
 	a._sensorState = {
 		occupancy: false,
@@ -62,8 +62,6 @@ function createPanel(): EPPGridPanel {
 	a._showDeleteCalibrationDialog = false;
 	a._showTemplateSave = false;
 	a._showTemplateLoad = false;
-	a._showRenameDialog = false;
-	a._pendingRenames = [];
 	a._reportingConfig = {};
 	a._offsetsConfig = {};
 	a._targetAutoRange = true;
@@ -866,29 +864,7 @@ describe("_renderWizard capture overlay branches", () => {
 	});
 });
 
-// =========================================================
-// Editor view: rename dialog DOM events
-// =========================================================
-describe("editor rename dialog DOM events", () => {
-	it("renders and interacts with rename dialog", () => {
-		const a = createPanel() as any;
-		a._view = "editor";
-		a._showRenameDialog = true;
-		a._pendingRenames = [
-			{
-				old_entity_id: "binary_sensor.zone_1_presence",
-				new_entity_id: "binary_sensor.kitchen_presence",
-			},
-		];
-		const tpl = a._renderGlobalDialogs();
-		const c = renderTo(tpl);
-
-		// Find skip/rename buttons in the dialog
-		const dialogs = c.querySelectorAll(".template-dialog");
-		expect(dialogs.length).toBeGreaterThan(0);
-		document.body.removeChild(c);
-	});
-});
+// Editor view: rename dialog was removed (entity renaming handled by backend)
 
 // =========================================================
 // _renderGlobalDialogs: template and unsaved dialogs
@@ -947,8 +923,16 @@ describe("render view branching", () => {
 	it("renders settings view", () => {
 		const a = createPanel() as any;
 		a._view = "settings";
-		a._entries = [{ entry_id: "e1", title: "T", state: "loaded" }];
-		a._selectedEntryId = "e1";
+		a._devices = [
+			{
+				mac: "AA:BB:CC:DD:EE:01",
+				name: "T",
+				host: null,
+				available: true,
+				configured: true,
+			},
+		];
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		const tpl = a.render();
 		const c = renderTo(tpl);
 		expect(c.innerHTML).not.toBe("");

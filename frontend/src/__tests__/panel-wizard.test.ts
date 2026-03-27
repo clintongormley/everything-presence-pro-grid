@@ -31,16 +31,16 @@ function createPanel(): EPPGridPanel {
 	a._wizardSaving = false;
 	a._targets = [];
 	a._rawTargets = [];
-	a._entries = [
+	a._devices = [
 		{
-			entry_id: "e1",
-			title: "Test",
-			room_name: "",
-			has_perspective: false,
-			has_layout: false,
+			mac: "AA:BB:CC:DD:EE:01",
+			name: "Test",
+			host: null,
+			available: true,
+			configured: true,
 		},
 	];
-	a._selectedEntryId = "e1";
+	a._selectedMac = "AA:BB:CC:DD:EE:01";
 	a._view = "live";
 	a._sensorState = {
 		occupancy: false,
@@ -229,7 +229,7 @@ describe("_wizardFinish", () => {
 		const el = createPanel();
 		const a = el as any;
 		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-		a._selectedEntryId = "e1";
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		a._wizardRoomWidth = 3000;
 		a._wizardRoomDepth = 4000;
 
@@ -242,7 +242,7 @@ describe("_wizardFinish", () => {
 		expect(el.hass.callWS).toHaveBeenCalledWith(
 			expect.objectContaining({
 				type: "eppgrid/set_setup",
-				entry_id: "e1",
+				mac: "AA:BB:CC:DD:EE:01",
 				perspective: [1, 0, 0, 0, 1, 0, 0, 0],
 				room_width: 3000,
 				room_depth: 4000,
@@ -259,7 +259,7 @@ describe("_wizardFinish", () => {
 		const el = createPanel();
 		const a = el as any;
 		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-		a._selectedEntryId = "e1";
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
 		a._wizardRoomWidth = 3000;
 		a._wizardRoomDepth = 4000;
 

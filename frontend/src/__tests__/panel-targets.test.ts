@@ -75,7 +75,7 @@ describe("_subscribeTargets", () => {
 			expect.any(Function),
 			{
 				type: "eppgrid/subscribe_grid_targets",
-				entry_id: "e1",
+				mac: "e1",
 			},
 		);
 	});
@@ -440,7 +440,7 @@ describe("_subscribeDisplay", () => {
 			expect.any(Function),
 			{
 				type: "eppgrid/subscribe_raw_targets",
-				entry_id: "e1",
+				mac: "e1",
 			},
 		);
 

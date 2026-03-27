@@ -32,16 +32,16 @@ function createPanel() {
 	a._furniture = [];
 	a._selectedFurnitureId = null;
 	a._view = "live";
-	a._entries = [
+	a._devices = [
 		{
-			entry_id: "e1",
-			title: "T",
-			room_name: "",
-			has_perspective: true,
-			has_layout: true,
+			mac: "AA:BB:CC:DD:EE:01",
+			name: "T",
+			host: null,
+			available: true,
+			configured: true,
 		},
 	];
-	a._selectedEntryId = "e1";
+	a._selectedMac = "AA:BB:CC:DD:EE:01";
 	a._targets = [];
 	a._sensorState = {
 		occupancy: false,
@@ -62,8 +62,6 @@ function createPanel() {
 	a._showDeleteCalibrationDialog = false;
 	a._showTemplateSave = false;
 	a._showTemplateLoad = false;
-	a._showRenameDialog = false;
-	a._pendingRenames = [];
 	a._reportingConfig = {};
 	a._offsetsConfig = {};
 	a._targetAutoRange = true;
@@ -237,21 +235,35 @@ describe("target subscription null coalescing branches", () => {
 });
 
 // =========================================================
-// _loadEntries: sort with missing/empty titles
+// _loadDevices: sort with missing/empty names
 // =========================================================
-describe("_loadEntries edge branches", () => {
-	it("handles entries with no title", async () => {
+describe("_loadDevices edge branches", () => {
+	it("handles devices with no name", async () => {
 		const a = createPanel() as any;
 		a.hass = {
-			callWS: vi.fn().mockResolvedValue([
-				{ entry_id: "e1", title: "", room_name: "" },
-				{ entry_id: "e2", title: "Zebra", room_name: "" },
-			]),
+			callWS: vi.fn().mockResolvedValue({
+				devices: [
+					{
+						mac: "AA:BB:01",
+						name: "",
+						host: null,
+						available: true,
+						configured: true,
+					},
+					{
+						mac: "AA:BB:02",
+						name: "Zebra",
+						host: null,
+						available: true,
+						configured: true,
+					},
+				],
+			}),
 		};
 
-		await a._loadEntries();
+		await a._loadDevices();
 		// Should not throw during sort, empty string sorts before "Zebra"
-		expect(a._entries[0].entry_id).toBe("e1");
+		expect(a._devices[0].mac).toBe("AA:BB:01");
 	});
 });
 
@@ -1009,20 +1021,28 @@ describe("_renderTemplateLoadDialog item events", () => {
 });
 
 // =========================================================
-// _loadEntries: null title branch (line 588)
+// _loadDevices: null name branch
 // =========================================================
-describe("_loadEntries null title sorting", () => {
-	it("handles entries with null/undefined titles", async () => {
+describe("_loadDevices null name sorting", () => {
+	it("handles devices with null/undefined names", async () => {
 		const a = createPanel() as any;
 		a.hass = {
-			callWS: vi.fn().mockResolvedValue([
-				{ entry_id: "e1", title: null, room_name: "" },
-				{ entry_id: "e2", room_name: "" }, // title undefined
-			]),
+			callWS: vi.fn().mockResolvedValue({
+				devices: [
+					{
+						mac: "AA:BB:01",
+						name: null,
+						host: null,
+						available: true,
+						configured: true,
+					},
+					{ mac: "AA:BB:02", host: null, available: true, configured: true }, // name undefined
+				],
+			}),
 		};
 
-		await a._loadEntries();
-		expect(a._entries).toHaveLength(2);
+		await a._loadDevices();
+		expect(a._devices).toHaveLength(2);
 	});
 });
 
@@ -1528,13 +1548,13 @@ describe("updated debug-log-scroll branch", () => {
 		a._showDebugLog = true;
 		// Prevent _initialize from triggering subscriptions
 		a._loading = false;
-		a._entries = [
+		a._devices = [
 			{
-				entry_id: "e1",
-				title: "T",
-				room_name: "",
-				has_perspective: true,
-				has_layout: true,
+				mac: "AA:BB:CC:DD:EE:01",
+				name: "T",
+				host: null,
+				available: true,
+				configured: true,
 			},
 		];
 
@@ -1556,13 +1576,13 @@ describe("updated debug-log-scroll branch", () => {
 		const a = createPanel() as any;
 		a._showBackendDebugLog = true;
 		a._loading = false;
-		a._entries = [
+		a._devices = [
 			{
-				entry_id: "e1",
-				title: "T",
-				room_name: "",
-				has_perspective: true,
-				has_layout: true,
+				mac: "AA:BB:CC:DD:EE:01",
+				name: "T",
+				host: null,
+				available: true,
+				configured: true,
 			},
 		];
 
@@ -1584,13 +1604,13 @@ describe("updated debug-log-scroll branch", () => {
 		a._showDebugLog = true;
 		a._showBackendDebugLog = true;
 		a._loading = false;
-		a._entries = [
+		a._devices = [
 			{
-				entry_id: "e1",
-				title: "T",
-				room_name: "",
-				has_perspective: true,
-				has_layout: true,
+				mac: "AA:BB:CC:DD:EE:01",
+				name: "T",
+				host: null,
+				available: true,
+				configured: true,
 			},
 		];
 
@@ -1629,26 +1649,31 @@ describe("_subscribeTargets backend debug log", () => {
 
 		a._subscribeTargets("e1");
 
+		// Raw format: "T0:Z0:A:5|Z0:O:5"
 		targetsHandler!({
 			targets: [],
 			zones: {
 				occupancy: {},
 				target_counts: {},
 				frame_count: 1,
-				debug_log: "zone tick: no targets",
+				debug_log: "T0:Z0:A:5|Z0:O:5",
 			},
 		});
 
 		expect(a._backendDebugLogLines).toHaveLength(1);
-		expect(a._backendDebugLogLines[0]).toContain("zone tick: no targets");
-		expect(a._backendDebugLogPrev).toBe("zone tick: no targets");
+		// Enriched format includes zone names
+		expect(a._backendDebugLogLines[0]).toContain("Room");
+		// _backendDebugLogPrev stores the enriched body
+		expect(a._backendDebugLogPrev).toContain("Room");
 	});
 
 	it("does not append duplicate backend debug log lines", async () => {
 		const a = createPanel() as any;
 		a._showBackendDebugLog = true;
 		a._backendDebugLogLines = [];
-		a._backendDebugLogPrev = "zone tick: no targets";
+		// Pre-set prev to the enriched form of "T0:Z0:A:5|Z0:O:5"
+		const enriched = a._enrichDebugLog("T0:Z0:A:5|Z0:O:5");
+		a._backendDebugLogPrev = enriched;
 		let targetsHandler: (event: any) => void;
 		let callCount = 0;
 		a.hass = {
@@ -1669,7 +1694,7 @@ describe("_subscribeTargets backend debug log", () => {
 				occupancy: {},
 				target_counts: {},
 				frame_count: 1,
-				debug_log: "zone tick: no targets",
+				debug_log: "T0:Z0:A:5|Z0:O:5",
 			},
 		});
 
@@ -1734,13 +1759,14 @@ describe("_subscribeTargets backend debug log", () => {
 				occupancy: {},
 				target_counts: {},
 				frame_count: 1,
-				debug_log: "new line",
+				debug_log: "T0:Z0:A:5|Z0:O:5",
 			},
 		});
 
 		// After adding one more, it should be trimmed to 100
 		expect(a._backendDebugLogLines.length).toBe(100);
-		expect(a._backendDebugLogLines[99]).toContain("new line");
+		// Last line should contain the enriched form
+		expect(a._backendDebugLogLines[99]).toContain("Room");
 	});
 });
 
