@@ -7,19 +7,20 @@ Implement the target data streaming pipeline so the frontend gets structured eve
 ## Pipeline
 
 ```
-LD2450 UART (~10Hz, may vary)
+LD2450 UART (10Hz raw frames)
   → epp component feed_targets()
-    → rolling median (1s time-based window, computed every frame)
-      → perspective transform (every frame)
-        → zone engine tick (every frame, counts frames per zone)
+    → raw rolling median (1s window, computed every frame at 10Hz)
+      → perspective transform (10Hz)
+        → grid rolling median (1s window, computed every frame at 10Hz)
+          → zone engine tick (10Hz)
 
 Publishing (output throttles, do not affect processing):
-  → raw median      → display_interval (default 5Hz)  ←── subscribe_raw_targets
-  → transformed pos → display_interval (default 5Hz)  ←── subscribe_grid_targets (positions)
-  → zone results    → zone_publish_interval (default 1Hz)  ←── subscribe_grid_targets (state)
+  → raw median  → publish at display_interval (default 5Hz)   ←── subscribe_raw_targets
+  → grid median → publish at display_interval (default 5Hz)   ←── subscribe_grid_targets (positions)
+  → zone results → publish at zone_interval (default 1Hz)     ←── subscribe_grid_targets (state)
 ```
 
-One rolling median smooths raw sensor noise. The perspective transform and zone engine run on every frame at whatever rate the LD2450 produces data (~10Hz nominal, but may vary). The zone engine counts frames per zone using the actual frame count within the window — no assumption of a fixed frame rate. Publish rates are purely output throttles.
+Two rolling medians in cascade: the first smooths raw sensor noise, the perspective transform runs on smoothed data, then the second smooths any transform-induced noise. The zone engine receives fully smoothed grid coordinates at 10Hz for maximum detection precision. Publish rates are purely output throttles.
 
 ## Configurable Rates
 
@@ -29,7 +30,7 @@ Both the display publish rate and zone engine tick rate are configurable via API
 |---------|---------|-------|-------|
 | `display_interval_ms` | 200 (5Hz) | 50–1000 | How often raw + grid positions are published. Lower = smoother UI, more traffic. |
 | `zone_publish_interval_ms` | 1000 (1Hz) | 100–2000 | How often zone state is published. The zone engine itself ticks at 10Hz (every frame) — this only throttles publication to HA. |
-| `window_s` | 1.0 | 0.2–2.0 | Rolling window duration. Longer = more smoothing, higher latency. |
+| `window_duration_ms` | 1000 | 200–2000 | Rolling window duration. Longer = more smoothing, higher latency. |
 
 These are stored in `EPPGridStore` as device config (key `"pipeline"`) and pushed to the device via a new `epp_set_pipeline` API action. Defaults are sensible — most users won't change them.
 
@@ -50,9 +51,9 @@ globals:
 ```yaml
 - action: epp_set_pipeline
   variables:
-    display_interval: int     # ms, default 200
+    display_interval: int       # ms, default 200
     zone_publish_interval: int  # ms, default 1000
-    window_duration: float    # seconds, default 1.0
+    window_duration: int        # ms, default 1000
   then:
     - lambda: |-
         id(display_interval_ms) = display_interval;
@@ -77,7 +78,7 @@ if (now - last_zone_tick_ms_ >= id(zone_tick_interval_ms)) {
 ### Integration websocket command
 
 ```
-eppgrid/set_pipeline  {mac, display_interval_ms, zone_publish_interval_ms, window_s}
+eppgrid/set_pipeline  {mac, display_interval_ms, zone_publish_interval_ms, window_duration_ms}
 ```
 
 Stores under `device_config["pipeline"]`, pushed via `epp_set_pipeline` API action on save and reconnect.
@@ -91,16 +92,16 @@ The existing `TumblingWindow` resets after each tick, losing accumulated data. A
 ```cpp
 class RollingWindow {
 public:
-    explicit RollingWindow(float window_s = 1.0f);
+    explicit RollingWindow(uint32_t window_ms = 1000);
 
-    /// Feed a frame with its timestamp. Expires frames older than window_s.
-    void feed(const TargetInput targets[], int target_count, float timestamp);
+    /// Feed a frame with its timestamp (ms). Expires frames older than window_ms.
+    void feed(const TargetInput targets[], int target_count, uint32_t timestamp_ms);
 
     /// Compute current output (median of frames within window).
     /// Always valid after at least one feed() call.
     WindowOutput output() const;
 
-    void set_window_duration(float seconds) { window_s_ = seconds; }
+    void set_window_duration(uint32_t ms) { window_ms_ = ms; }
     void reset();
 
 private:
@@ -108,38 +109,46 @@ private:
 
     struct Frame {
         TargetInput targets[MAX_TARGETS];
-        float timestamp;
+        uint32_t timestamp_ms;
     };
 
-    float window_s_;
+    uint32_t window_ms_;
     Frame frames_[MAX_FRAMES];
     int head_ = 0;
     int count_ = 0;
 
-    void expire_old(float now);
+    void expire_old(uint32_t now_ms);
 };
 ```
 
 The `WindowOutput` struct stays the same (`TargetWindow` with `median_x`, `median_y`, `frame_count`, `active`). The zone engine's interface is unchanged.
 
-**Time-based expiry:** Frames are expired by timestamp, not count. If the LD2450 runs slightly fast (11Hz) or slow (8Hz), the window always contains ~1 second of data. `frame_count` per target reflects the actual number of active frames in the window, which the zone engine uses for threshold detection — it scales automatically regardless of frame rate.
+**Time-based expiry:** Frames are expired by timestamp, not count. If the LD2450 runs fast (12Hz) or slow (8Hz), the window always contains the right duration of data. `frame_count` per target reflects the actual number of active frames in the window — the zone engine uses this for threshold detection and it scales automatically regardless of frame rate.
 
 **Key difference from TumblingWindow:**
 - Tumbling: `feed()` returns `true` on tick, output is only valid then, buffer resets
 - Rolling: `feed()` always updates, `output()` is always valid, old frames slide out by timestamp
 
+**TDD:** The RollingWindow should be built test-first alongside the existing TumblingWindow tests. Key test cases:
+- Window expires old frames correctly
+- Median computation matches expected values
+- `frame_count` reflects actual active frames within window
+- Variable frame rates (8Hz, 10Hz, 12Hz) produce correct results
+- Empty window returns inactive targets
+- Window duration can be changed at runtime
+
 ### epp_component.h changes
 
 ```cpp
 // Rolling median pipeline
-RollingWindow window_{1.0f};  // smooths raw sensor-space positions
+RollingWindow window_{1000};  // 1000ms window, smooths raw sensor-space positions
 
 // Raw target text sensors (pre-transform)
 esphome::text_sensor::TextSensor *raw_target_sensors_[NUM_TARGETS]{};
 
 // Configurable publish intervals (ms) — output throttles only
-uint32_t display_interval_ms_ = 200;       // default 5Hz
-uint32_t zone_publish_interval_ms_ = 1000;  // default 1Hz
+uint32_t display_interval_ms_ = 200;    // default 5Hz
+uint32_t zone_publish_interval_ms_ = 1000; // default 1Hz
 
 // Publish throttle timestamps
 uint32_t last_display_publish_ms_ = 0;
@@ -149,7 +158,7 @@ uint32_t last_zone_publish_ms_ = 0;
 TickResult last_zone_result_{};
 
 void set_raw_target_sensor(int index, esphome::text_sensor::TextSensor *sensor);
-void set_window_duration(float seconds) { window_.set_window_duration(seconds); }
+void set_window_duration(uint32_t ms) { window_.set_window_duration(ms); }
 void set_display_interval(uint32_t ms) { display_interval_ms_ = ms; }
 void set_zone_publish_interval(uint32_t ms) { zone_publish_interval_ms_ = ms; }
 ```
@@ -165,7 +174,7 @@ void EPPComponent::loop() {
     uint32_t now = esphome::millis();
     float ts = now / 1000.0f;
 
-    // === PROCESSING PIPELINE (runs every frame, ~10Hz) ===
+    // === PROCESSING PIPELINE (runs every frame) ===
 
     // Stage 1: Feed raw positions into rolling median
     TargetInput raw_inputs[NUM_TARGETS];
@@ -173,9 +182,9 @@ void EPPComponent::loop() {
         raw_inputs[i] = {targets_[i].x, targets_[i].y,
                          targets_[i].detected && targets_[i].y != 0.0f};
     }
-    window_.feed(raw_inputs, NUM_TARGETS, ts);
+    window_.feed(raw_inputs, NUM_TARGETS, now);
 
-    // Stage 2: Get smoothed raw median, transform to grid coordinates
+    // Stage 2: Get smoothed raw, transform to grid coordinates
     const auto &win = window_.output();
     TargetInput grid_inputs[NUM_TARGETS];
     for (int i = 0; i < NUM_TARGETS; i++) {
@@ -189,7 +198,6 @@ void EPPComponent::loop() {
     }
 
     // Stage 3: Zone engine tick — uses transformed positions + frame counts
-    // Build WindowOutput with transformed coords but raw frame counts
     WindowOutput zone_input;
     zone_input.total_frames = win.total_frames;
     for (int i = 0; i < NUM_TARGETS; i++) {
@@ -203,7 +211,7 @@ void EPPComponent::loop() {
 
     // === PUBLISH THROTTLES (do not affect processing) ===
 
-    // Display publish (default 5Hz)
+    // Display publish (default 5Hz / 200ms)
     if (now - last_display_publish_ms_ >= display_interval_ms_) {
         last_display_publish_ms_ = now;
 
@@ -237,7 +245,7 @@ void EPPComponent::loop() {
         }
     }
 
-    // Zone state publish (default 1Hz)
+    // Zone state publish (default 1Hz / 1000ms)
     if (now - last_zone_publish_ms_ >= zone_publish_interval_ms_) {
         last_zone_publish_ms_ = now;
 
@@ -448,5 +456,24 @@ Add `pipeline` to the config push loop alongside the other settings:
 ## Out of Scope
 
 - Settings page reimplementation (separate task)
-- RollingWindow C++ unit tests (should be added but can follow)
 - Removing TumblingWindow (keep for now, remove after RollingWindow is proven)
+
+## Testing Approach
+
+**TDD (red-green-refactor)** throughout. Write tests before implementation.
+
+### RollingWindow C++ tests
+
+Build alongside the existing TumblingWindow tests in `firmware/lib/epp_zone_engine/tests/`. Key test cases:
+- Window expires frames older than `window_ms`
+- Median of 1, 2, 3, N frames matches expected values
+- `frame_count` per target = number of active frames in window
+- `total_frames` = total frames in window regardless of target activity
+- Variable frame rates (feed at 80ms, 100ms, 120ms intervals) produce correct results
+- Empty window returns all-inactive targets
+- `set_window_duration()` changes expiry behavior at runtime
+- Buffer wraps correctly when `MAX_FRAMES` is exceeded (oldest dropped)
+
+### Backend subscription handler tests
+
+Test the structured event format produced by `subscribe_grid_targets` and `subscribe_raw_targets` handlers — verify text sensor state parsing, key mapping, and event shape.
