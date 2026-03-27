@@ -8,49 +8,85 @@ Implement the target data streaming pipeline so the frontend gets structured eve
 
 ```
 LD2450 UART (10Hz raw frames)
-  → epp component receives via feed_targets()
-    → 5Hz rolling median smoother (new)
-      → publish raw_x, raw_y text sensors  ←── subscribe_raw_targets
-      → perspective transform
-        → publish x, y text sensors (5Hz)  ←── subscribe_grid_targets (positions)
-        → tumbling window (1Hz)
-          → zone engine tick
-            → publish zone occupancy, target signal/status  ←── subscribe_grid_targets (state)
+  → epp component feed_targets()
+    → rolling median window (1s, computed on every frame at 10Hz)
+      → every 200ms (5Hz publish):
+        → publish raw median x,y text sensors  ←── subscribe_raw_targets
+        → perspective transform
+          → publish grid x,y text sensors  ←── subscribe_grid_targets (positions)
+      → every 1s (1Hz zone tick):
+        → zone engine tick with current window output
+          → publish zones, signal, status  ←── subscribe_grid_targets (state)
 ```
 
-The median smoother is the single source of truth. Everything downstream consumes its output.
+One rolling window, two publish rates. The window processes every frame at 10Hz to preserve full precision. Publication is throttled to 5Hz for display and 1Hz for zone state.
 
 ## Firmware Changes
 
-### Two-stage TumblingWindow pipeline
+### Replace TumblingWindow with RollingWindow
 
-Reuse the existing `TumblingWindow` class (which already does 10Hz accumulation + median computation) with two instances at different intervals:
+The existing `TumblingWindow` resets after each tick, losing accumulated data. A `RollingWindow` maintains a circular buffer of the last ~1s of frames and computes median over the current buffer contents at any time.
 
 ```cpp
-TumblingWindow display_window_{0.2f};  // 5Hz output — display smoothing
-TumblingWindow window_{1.0f};          // 1Hz output — zone engine (existing)
+class RollingWindow {
+public:
+    explicit RollingWindow(float window_s = 1.0f);
+
+    /// Feed a frame (called at 10Hz). Updates internal buffer.
+    void feed(const TargetInput targets[], int target_count, float timestamp);
+
+    /// Compute current output (median of frames within window).
+    /// Can be called at any rate — always reflects latest state.
+    WindowOutput output() const;
+
+    void reset();
+
+private:
+    static constexpr int MAX_FRAMES = 12;  // 1s at 10Hz + margin
+
+    struct Frame {
+        TargetInput targets[MAX_TARGETS];
+        float timestamp;
+    };
+
+    float window_s_;
+    Frame frames_[MAX_FRAMES];
+    int head_ = 0;
+    int count_ = 0;
+
+    void expire_old(float now);
+};
 ```
 
-The `display_window_` accumulates raw LD2450 frames at 10Hz and emits median positions every 200ms. Its output feeds both the raw target publication and (after perspective transform) the grid target publication and the zone engine's `window_`.
+The `WindowOutput` struct stays the same (`TargetWindow` with `median_x`, `median_y`, `frame_count`, `active`). The zone engine's interface is unchanged — it still receives `WindowOutput` from `window.output()`.
 
-### epp_component.h additions
+**Key difference from TumblingWindow:**
+- Tumbling: `feed()` returns `true` on tick, output is only valid then, buffer resets
+- Rolling: `feed()` always updates, `output()` is always valid, buffer slides
+
+The rolling window computes `frame_count` per target as the number of frames where that target was active within the window. This is what the zone engine uses for threshold detection — it scales automatically.
+
+### epp_component.h changes
 
 ```cpp
-// 5Hz display smoother (feeds raw + transformed publishing)
-TumblingWindow display_window_{0.2f};
+// Replace TumblingWindow with RollingWindow
+RollingWindow window_{1.0f};
 
-// Text sensor pointers for raw target positions
+// Raw target text sensors (pre-transform, published at 5Hz)
 esphome::text_sensor::TextSensor *raw_target_sensors_[NUM_TARGETS]{};
 
-// Setter
+// Publish throttle
+uint32_t last_display_publish_ms_ = 0;
+uint32_t last_zone_tick_ms_ = 0;
+
+// Cached zone result (signal/status update at 1Hz, positions at 5Hz)
+// Used by subscribe_grid_targets to merge 5Hz positions with 1Hz state
+TickResult last_zone_result_{};
+
 void set_raw_target_sensor(int index, esphome::text_sensor::TextSensor *sensor);
 ```
 
-### epp_component.cpp loop() changes
-
-Current `loop()` does: transform at 10Hz → feed tumbling window → zone tick (1Hz) → publish everything at 1Hz.
-
-New `loop()`:
+### epp_component.cpp loop() rewrite
 
 ```cpp
 void EPPComponent::loop() {
@@ -58,27 +94,30 @@ void EPPComponent::loop() {
     frame_ready_ = false;
     frame_count_++;
 
-    float ts = esphome::millis() / 1000.0f;
+    uint32_t now = esphome::millis();
+    float ts = now / 1000.0f;
 
-    // Feed raw targets into 5Hz display window
+    // Feed every raw frame into rolling window (10Hz)
     TargetInput raw_inputs[NUM_TARGETS];
     for (int i = 0; i < NUM_TARGETS; i++) {
         raw_inputs[i] = {targets_[i].x, targets_[i].y,
                          targets_[i].detected && targets_[i].y != 0.0f};
     }
-    bool display_ticked = display_window_.feed(raw_inputs, NUM_TARGETS, ts);
+    window_.feed(raw_inputs, NUM_TARGETS, ts);
 
-    if (display_ticked) {
-        const auto &display = display_window_.output();
+    // 5Hz: publish display data
+    if (now - last_display_publish_ms_ >= 200) {
+        last_display_publish_ms_ = now;
+        const auto &win = window_.output();
 
-        // Publish raw target positions (pre-transform, 5Hz)
+        // Publish raw target positions (pre-transform)
         for (int i = 0; i < NUM_TARGETS; i++) {
             if (raw_target_sensors_[i] != nullptr) {
-                if (display.targets[i].active) {
+                if (win.targets[i].active) {
                     char buf[32];
                     snprintf(buf, sizeof(buf), "%.0f,%.0f",
-                             display.targets[i].median_x,
-                             display.targets[i].median_y);
+                             win.targets[i].median_x,
+                             win.targets[i].median_y);
                     raw_target_sensors_[i]->publish_state(buf);
                 } else {
                     raw_target_sensors_[i]->publish_state("");
@@ -86,68 +125,80 @@ void EPPComponent::loop() {
             }
         }
 
-        // Transform smoothed raw → grid coordinates
-        TargetInput grid_inputs[NUM_TARGETS];
-        for (int i = 0; i < NUM_TARGETS; i++) {
-            if (display.targets[i].active) {
-                auto [rx, ry] = transform_.apply(
-                    display.targets[i].median_x,
-                    display.targets[i].median_y);
-                grid_inputs[i] = {rx, ry, true};
-            } else {
-                grid_inputs[i] = {0.0f, 0.0f, false};
-            }
-        }
-
-        // Publish transformed target positions (5Hz)
+        // Transform → publish grid target positions
         for (int i = 0; i < NUM_TARGETS; i++) {
             if (target_position_sensors_[i] != nullptr) {
-                if (grid_inputs[i].active) {
+                if (win.targets[i].active) {
+                    auto [rx, ry] = transform_.apply(
+                        win.targets[i].median_x, win.targets[i].median_y);
                     char buf[32];
-                    snprintf(buf, sizeof(buf), "%.0f,%.0f",
-                             grid_inputs[i].x, grid_inputs[i].y);
+                    snprintf(buf, sizeof(buf), "%.0f,%.0f", rx, ry);
                     target_position_sensors_[i]->publish_state(buf);
                 } else {
                     target_position_sensors_[i]->publish_state("");
                 }
             }
         }
+    }
 
-        // Feed 1Hz zone engine window with transformed coordinates
-        bool zone_ticked = window_.feed(grid_inputs, NUM_TARGETS, ts);
+    // 1Hz: zone engine tick
+    if (now - last_zone_tick_ms_ >= 1000) {
+        last_zone_tick_ms_ = now;
 
-        if (zone_ticked) {
-            const auto &result = zone_engine_.tick(window_.output(), ts);
-
-            // Publish zone occupancy binary sensors
-            for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
-                if (zone_occupancy_sensors_[i] != nullptr)
-                    zone_occupancy_sensors_[i]->publish_state(result.zone_occupancy[i]);
+        // Transform the window output for zone engine
+        const auto &win = window_.output();
+        TargetInput grid_inputs[NUM_TARGETS];
+        for (int i = 0; i < NUM_TARGETS; i++) {
+            if (win.targets[i].active) {
+                auto [rx, ry] = transform_.apply(
+                    win.targets[i].median_x, win.targets[i].median_y);
+                grid_inputs[i] = {rx, ry, true};
+            } else {
+                grid_inputs[i] = {0.0f, 0.0f, false};
             }
+        }
 
-            // Publish device tracking
-            if (device_tracking_sensor_ != nullptr)
-                device_tracking_sensor_->publish_state(result.device_tracking_present);
-
-            // State transition logging
-            if (result.device_tracking_present != prev_tracking_) {
-                ESP_LOGI(TAG, "Tracking: %s",
-                         result.device_tracking_present ? "present" : "clear");
-                prev_tracking_ = result.device_tracking_present;
+        // Build WindowOutput for zone engine (with transformed coords)
+        WindowOutput zone_input;
+        zone_input.total_frames = win.total_frames;
+        for (int i = 0; i < NUM_TARGETS; i++) {
+            zone_input.targets[i].active = win.targets[i].active;
+            zone_input.targets[i].frame_count = win.targets[i].frame_count;
+            if (win.targets[i].active) {
+                zone_input.targets[i].median_x = grid_inputs[i].x;
+                zone_input.targets[i].median_y = grid_inputs[i].y;
             }
-            for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
-                if (result.zone_occupancy[i] != prev_zone_occ_[i]) {
-                    ESP_LOGI(TAG, "Zone %d: %s", i,
-                             result.zone_occupancy[i] ? "occupied" : "clear");
-                    prev_zone_occ_[i] = result.zone_occupancy[i];
-                }
+        }
+
+        const auto &result = zone_engine_.tick(zone_input, ts);
+        last_zone_result_ = result;
+
+        // Publish zone occupancy binary sensors
+        for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
+            if (zone_occupancy_sensors_[i] != nullptr)
+                zone_occupancy_sensors_[i]->publish_state(result.zone_occupancy[i]);
+        }
+
+        // Publish device tracking
+        if (device_tracking_sensor_ != nullptr)
+            device_tracking_sensor_->publish_state(result.device_tracking_present);
+
+        // State transition logging
+        if (result.device_tracking_present != prev_tracking_) {
+            ESP_LOGI(TAG, "Tracking: %s",
+                     result.device_tracking_present ? "present" : "clear");
+            prev_tracking_ = result.device_tracking_present;
+        }
+        for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
+            if (result.zone_occupancy[i] != prev_zone_occ_[i]) {
+                ESP_LOGI(TAG, "Zone %d: %s", i,
+                         result.zone_occupancy[i] ? "occupied" : "clear");
+                prev_zone_occ_[i] = result.zone_occupancy[i];
             }
         }
     }
 }
 ```
-
-**Key change:** The 1Hz tumbling window now receives ~5 samples per second (from the 5Hz display window output) instead of ~10. The zone engine uses `frame_count` from the window output, so thresholds scale automatically — no re-tuning needed.
 
 ### ESPHome YAML changes
 
@@ -198,7 +249,7 @@ async def to_code(config):
 
 ### Target position text sensor format change
 
-Currently target position sensors publish `"x,y,signal,status"`. Change to just `"x,y"` — signal and status come from the zone engine at 1Hz and will be included in the structured event by the backend, not embedded in the text sensor value.
+Currently target position sensors publish `"x,y,signal,status"`. Change to `"x,y"` — signal and status come from the zone engine at 1Hz and are included in the structured event by the backend, not embedded in the text sensor value.
 
 ## Backend Changes
 
@@ -206,42 +257,7 @@ Currently target position sensors publish `"x,y,signal,status"`. Change to just 
 
 Add new websocket command. Opens a device connection, subscribes to state changes, filters for raw target text sensor updates, reformats into the structured event the frontend expects.
 
-```python
-@websocket_api.websocket_command({
-    vol.Required("type"): "eppgrid/subscribe_raw_targets",
-    vol.Required("mac"): str,
-})
-@websocket_api.async_response
-async def websocket_subscribe_raw_targets(hass, connection, msg):
-    manager = _get_manager(hass)
-    mac = msg["mac"]
-    device_conn = await manager.async_get_or_create_connection(mac)
-
-    # Build key→index mapping from entity list
-    raw_keys = {}  # entity key → target index
-    for entity in device_conn.entities:
-        if "raw_target_" in entity.unique_id:
-            # Extract index from unique_id
-            ...
-
-    @callback
-    def _on_state(state):
-        if isinstance(state, TextSensorState) and state.key in raw_keys:
-            # Parse "x,y" or "" and build targets array
-            targets = [{"raw_x": None, "raw_y": None}] * 3
-            # ... parse and send event
-            connection.send_message(
-                websocket_api.event_message(msg["id"], {"targets": targets})
-            )
-
-    device_conn.subscribe_states(_on_state)
-    connection.send_result(msg["id"])
-
-    @callback
-    def _unsub():
-        hass.async_create_task(manager.async_release_connection(mac))
-    connection.subscriptions[msg["id"]] = _unsub
-```
+The handler maintains a 3-element array of `{raw_x, raw_y}`. On each raw target text sensor update, it updates the corresponding element and sends the full array.
 
 **Event format:**
 ```json
@@ -258,60 +274,14 @@ async def websocket_subscribe_raw_targets(hass, connection, msg):
 
 Rewrite the existing handler to accumulate state from text sensor and binary sensor updates into the structured format the frontend expects.
 
-The handler maintains local state for positions (5Hz from target text sensors), zone occupancy (1Hz from binary sensors), and sensor readings. On each target position update, it sends a full event with the latest accumulated state.
+The handler maintains:
+- `targets[3]` — positions from target_position text sensors (5Hz)
+- `zones` — occupancy from zone binary sensors (1Hz)
+- `sensors` — from other binary/sensor entities
 
-```python
-@websocket_api.async_response
-async def websocket_subscribe_grid_targets(hass, connection, msg):
-    manager = _get_manager(hass)
-    mac = msg["mac"]
-    device_conn = await manager.async_get_or_create_connection(mac)
+On each target position text sensor update (5Hz), send a full event with the latest accumulated state.
 
-    # Map entity keys to their roles
-    target_keys = {}    # key → target index (from target_position text sensors)
-    zone_keys = {}      # key → zone index (from zone_occupancy binary sensors)
-    sensor_keys = {}    # key → sensor name
-
-    # ... build mappings from device_conn.entities ...
-
-    # Accumulated state
-    targets = [{"x": None, "y": None, "signal": 0, "status": "inactive"}] * 3
-    zones = {"occupancy": {}, "target_counts": {}, "frame_count": 0}
-    sensors = {}
-
-    @callback
-    def _on_state(state):
-        nonlocal targets, zones, sensors
-
-        if isinstance(state, TextSensorState):
-            if state.key in target_keys:
-                idx = target_keys[state.key]
-                if state.state:
-                    parts = state.state.split(",")
-                    targets[idx]["x"] = float(parts[0])
-                    targets[idx]["y"] = float(parts[1])
-                else:
-                    targets[idx] = {"x": None, "y": None,
-                                    "signal": 0, "status": "inactive"}
-                # Send full event on each position update (5Hz)
-                connection.send_message(
-                    websocket_api.event_message(msg["id"], {
-                        "targets": targets,
-                        "sensors": sensors,
-                        "zones": zones,
-                    })
-                )
-
-        elif isinstance(state, BinarySensorState):
-            if state.key in zone_keys:
-                zone_idx = zone_keys[state.key]
-                zones["occupancy"][str(zone_idx)] = state.state
-
-    device_conn.subscribe_states(_on_state)
-    connection.send_result(msg["id"])
-```
-
-**Event format** (matches frontend expectations from data catalog):
+**Event format:**
 ```json
 {
     "targets": [
@@ -333,27 +303,43 @@ async def websocket_subscribe_grid_targets(hass, connection, msg):
 }
 ```
 
-### Key mapping challenge
+### Signal and status in grid events
 
-The `subscribe_states` callback receives states by numeric `key` (an ESPHome internal entity key), not by name or unique_id. To map keys to roles (which text sensor is target_0 vs raw_target_0), the handler needs to call `list_entities_services()` first and build the mapping from entity names/unique_ids.
+The zone engine produces `signal` and `status` per target at 1Hz. These need to reach the backend's `subscribe_grid_targets` handler.
 
-The `DeviceConnection.async_connect()` already calls `list_entities_services()` and caches services. It should also cache the entity list for key mapping.
+**Approach:** A single `zone_state` text sensor publishes JSON at 1Hz with all zone tick results:
 
-Add to `DeviceConnection`:
+```json
+{"targets":[{"signal":5,"status":"active"},{"signal":0,"status":"inactive"},{"signal":0,"status":"inactive"}],"zones":{"occupancy":[true,false,false,false,false,false,false,false],"tracking":true},"frame_count":10}
+```
+
+The backend handler parses this JSON, updates the cached signal/status/zones, and the next 5Hz position update includes the latest values.
+
+Add to epp component YAML:
+```yaml
+epp:
+  zone_state:
+    name: "Zone State"
+    disabled_by_default: true
+```
+
+### Entity key mapping
+
+The `subscribe_states` callback receives states by numeric `key`. To map keys to roles, `DeviceConnection.async_connect()` should cache the entity list:
 
 ```python
 async def async_connect(self) -> None:
     # ... existing connect code ...
     entities, services = await self._client.list_entities_services()
     self._services = {s.name: s for s in services}
-    self._entities = entities  # NEW: cache for key mapping
+    self._entities = entities  # cache for key mapping
 ```
 
 ## Frontend Changes
 
 ### `_subscribeDisplay` → `subscribe_raw_targets`
 
-Reimplement the stubbed-out method to use the new `subscribe_raw_targets` command:
+Reimplement the stubbed-out method:
 
 ```typescript
 private _subscribeDisplay(mac: string): void {
@@ -379,32 +365,12 @@ private _subscribeDisplay(mac: string): void {
 }
 ```
 
-This is identical to the old code except `entry_id` → `mac`.
-
 ### `subscribe_grid_targets` handler
 
 No changes needed — the frontend already parses the structured `{targets, sensors, zones}` format. The backend now produces it.
 
-## Signal and Status
-
-The data catalog says `signal` and `status` update at 1Hz (from zone engine ticks). The target positions update at 5Hz. The backend accumulates both — each 5Hz position update sends the full event with the latest signal/status from the last zone tick.
-
-The zone engine's `TickResult` contains `targets[i].signal` and `targets[i].status`. The epp component needs to publish these separately from positions (since they update at different rates). Options:
-
-**A)** Add dedicated text sensors for signal/status per target (6 more text sensors)
-**B)** Publish signal/status as part of a single zone state text sensor (1 text sensor with JSON)
-**C)** Keep signal/status embedded in the target position text sensor (current format, but updates at 5Hz not 1Hz)
-
-**Recommendation: C with a twist.** The target position text sensors publish `"x,y"` at 5Hz. A separate `zone_state` text sensor publishes JSON with all zone results at 1Hz:
-
-```json
-{"targets":[{"signal":5,"status":"active"},...],"zones":{"occupancy":[true,false,...],"tracking":true},"debug":"..."}
-```
-
-This way the backend receives one update per zone tick with all the state it needs, instead of 8+ separate binary sensor updates.
-
 ## Out of Scope
 
 - Settings page reimplementation (separate task)
-- Sensor state (occupancy, temperature, etc.) in grid events — needs entity key mapping for sensor entities
-- Debug log in zone state
+- RollingWindow C++ unit tests (should be added but can follow)
+- Removing TumblingWindow (keep for now, remove after RollingWindow is proven)
