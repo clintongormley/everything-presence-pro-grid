@@ -1,20 +1,20 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
-import {
-	accordionStyles,
-	buttonStyles,
-	dialogStyles,
-	hostStyles,
-	panelStyles,
-	settingStyles,
-	toggleStyles,
-	tooltipStyles,
-} from "./styles.js";
 import { property, state } from "lit/decorators.js";
-import {
-	applyPaintToCell,
-	clearZoneFromGrid,
-	determinePaintAction,
-	type PaintAction,
+
+import "./components/epp-editor-view.js";
+import "./components/epp-furniture-overlay.js";
+import "./components/epp-furniture-sidebar.js";
+import "./components/epp-grid.js";
+import "./components/epp-live-sidebar.js";
+import "./components/epp-live-view.js";
+import "./components/epp-settings-view.js";
+import "./components/epp-wizard.js";
+import "./components/epp-zone-sidebar.js";
+import { DeviceController } from "./controllers/device-controller.js";
+import { GridStateController } from "./controllers/grid-state-controller.js";
+import { TargetController } from "./controllers/target-controller.js";
+import type {
+	PaintAction,
 } from "./lib/cell-painting.js";
 import { parseConfig } from "./lib/config-serialization.js";
 import {
@@ -22,16 +22,10 @@ import {
 	mapTargetToPercent,
 } from "./lib/coordinates.js";
 import {
-	clampFurnitureMove,
-	computeFurnitureResize,
-	computeFurnitureRotation,
-	createFurnitureItem,
 	type FurnitureItem,
 	type FurnitureSticker,
 	mmToPx,
 	pxToMm,
-	removeFurnitureItem,
-	updateFurnitureItem,
 } from "./lib/furniture.js";
 import {
 	cellIsInside,
@@ -43,9 +37,7 @@ import {
 	getRawRoomBounds,
 	getRoomBounds,
 	initGridFromRoom,
-	MAX_RANGE,
 	MAX_ZONES,
-	updateRoomDimensionsFromGrid,
 } from "./lib/grid.js";
 import { getCellColor } from "./lib/heatmap.js";
 import {
@@ -63,30 +55,21 @@ import {
 } from "./lib/room-geometry.js";
 import {
 	getZoneThresholds,
-	ZONE_COLORS,
 	ZONE_TYPE_DEFAULTS,
 	type ZoneConfig,
 } from "./lib/zone-defaults.js";
-import {
-	type ZoneEngineResult,
-	type ZoneEngineState,
+import type {
+	ZoneEngineResult,
+	ZoneEngineState,
 } from "./lib/zone-engine.js";
 import { setupLocalize } from "./localize.js";
-
-import type { Target, RawTarget, DeviceInfo, SetupStep } from "./types.js";
-import { TARGET_COLORS } from "./constants.js";
-import { DeviceController } from "./controllers/device-controller.js";
-import { GridStateController } from "./controllers/grid-state-controller.js";
-import { TargetController } from "./controllers/target-controller.js";
-import "./components/epp-live-sidebar.js";
-import "./components/epp-live-view.js";
-import "./components/epp-zone-sidebar.js";
-import "./components/epp-furniture-sidebar.js";
-import "./components/epp-furniture-overlay.js";
-import "./components/epp-grid.js";
-import "./components/epp-editor-view.js";
-import "./components/epp-settings-view.js";
-import "./components/epp-wizard.js";
+import {
+	buttonStyles,
+	dialogStyles,
+	hostStyles,
+	panelStyles,
+} from "./styles.js";
+import type { DeviceInfo, RawTarget, SetupStep, Target } from "./types.js";
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
@@ -610,8 +593,6 @@ export class EPPGridPanel extends LitElement {
 	// -- Coordinate mapping (perspective transform) --
 
 	/**
-	 */
-	/**
 	 * Map a target to percentage coordinates for the editor grid.
 	 * Uses the backend's already-transformed x/y (perspective applied server-side).
 	 */
@@ -737,74 +718,7 @@ export class EPPGridPanel extends LitElement {
 		panelStyles,
 		dialogStyles,
 		buttonStyles,
-		accordionStyles,
-		settingStyles,
-		toggleStyles,
-		tooltipStyles,
 		css`
-    .mode-tabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 16px;
-    }
-
-    .mode-tab {
-      padding: 8px 18px;
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color, #212121);
-      cursor: pointer;
-      font-size: 14px;
-      font-weight: 500;
-      transition: background 0.2s;
-    }
-
-    .mode-tab:hover {
-      background: var(--secondary-background-color, #f5f5f5);
-    }
-
-    .mode-tab.active {
-      background: var(--primary-color, #03a9f4);
-      color: #fff;
-      border-color: var(--primary-color, #03a9f4);
-    }
-
-    .mode-tab.apply-btn {
-      background: var(--primary-color, #03a9f4);
-      color: #fff;
-      border-color: var(--primary-color, #03a9f4);
-    }
-
-    .mode-tab.apply-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .editor-layout {
-      display: flex;
-      gap: 24px;
-      align-items: flex-start;
-    }
-
-
-    .grid-container {
-      position: relative;
-      display: inline-block;
-      max-width: 100%;
-      overflow: visible;
-    }
-
-    .grid {
-      display: grid;
-      gap: 1px;
-      background: var(--divider-color, #e0e0e0);
-      border: 2px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      overflow: hidden;
-      user-select: none;
-    }
-
     .cell {
       cursor: pointer;
       transition: opacity 0.1s;
@@ -820,94 +734,6 @@ export class EPPGridPanel extends LitElement {
       margin: 0;
     }
 
-    /* Furniture overlay styles moved to epp-furniture-overlay component */
-
-    .targets-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      pointer-events: none;
-      z-index: 20;
-    }
-
-    .grid-targets-wrapper {
-      position: relative;
-      display: inline-block;
-    }
-
-    .target-dot {
-      position: absolute;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--primary-color, #03a9f4);
-      border: 2px solid #fff;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-      transform: translate(-50%, -50%);
-      z-index: 10;
-    }
-
-    .target-dot.moving {
-      background: #4caf50;
-    }
-
-    .target-dot.stationary {
-      background: #ff9800;
-    }
-
-    .sensor-overlay {
-      position: absolute;
-      top: 0;
-      left: 0;
-      pointer-events: none;
-      z-index: 5;
-    }
-
-    .zone-sidebar {
-      width: 240px;
-      max-height: 70vh;
-      background: var(--card-background-color, #fff);
-      border-left: 1px solid var(--divider-color, #e0e0e0);
-      padding: 12px;
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      overflow: hidden;
-    }
-
-    .sidebar-tabs {
-      display: flex;
-      gap: 4px;
-      margin-bottom: 8px;
-    }
-
-    .sidebar-tab {
-      flex: 1;
-      padding: 6px 12px;
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color, #212121);
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      text-align: center;
-    }
-
-    .sidebar-tab.active {
-      background: var(--primary-color, #03a9f4);
-      color: #fff;
-      border-color: var(--primary-color, #03a9f4);
-    }
-
-    .zone-sidebar h3 {
-      margin: 0;
-      font-size: 16px;
-      font-weight: 500;
-    }
-
     .panel-header {
       display: flex;
       align-items: center;
@@ -917,27 +743,6 @@ export class EPPGridPanel extends LitElement {
       font-weight: 500;
       margin-bottom: 16px;
       text-align: center;
-    }
-
-    .header-settings-btn {
-      background: none;
-      border: none;
-      color: var(--secondary-text-color, #757575);
-      cursor: pointer;
-      padding: 6px;
-      border-radius: 8px;
-      display: flex;
-      align-items: center;
-      transition: background 0.2s;
-    }
-
-    .header-settings-btn:hover {
-      background: var(--secondary-background-color, #e0e0e0);
-      color: var(--primary-text-color, #212121);
-    }
-
-    .header-settings-btn ha-icon {
-      --mdc-icon-size: 20px;
     }
 
     .device-select {
@@ -959,419 +764,6 @@ export class EPPGridPanel extends LitElement {
       width: 100%;
       font-size: 16px;
       color: var(--secondary-text-color, #757575);
-    }
-
-    /* Setup wizard */
-    .wizard-container {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100%;
-      width: 100%;
-      padding: 32px;
-      box-sizing: border-box;
-    }
-
-    .wizard-card {
-      max-width: 560px;
-      width: 100%;
-      background: var(--card-background-color, #fff);
-      border-radius: 16px;
-      padding: 32px;
-      display: flex;
-      flex-direction: column;
-      gap: 24px;
-      box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-    }
-
-    .wizard-card h2 {
-      margin: 0;
-      font-size: 22px;
-      font-weight: 500;
-    }
-
-    .wizard-card p {
-      margin: 0;
-      color: var(--secondary-text-color, #757575);
-      font-size: 15px;
-      line-height: 1.5;
-    }
-
-    .wizard-card label {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-      font-size: 14px;
-      font-weight: 500;
-      color: var(--secondary-text-color, #757575);
-    }
-
-    .wizard-card input[type="text"] {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      font-size: 15px;
-      box-sizing: border-box;
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color, #212121);
-    }
-
-
-    .wizard-actions {
-      display: flex;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .wizard-btn-secondary {
-      background: var(--secondary-background-color, #e0e0e0);
-      color: var(--primary-text-color, #212121);
-    }
-
-    .wizard-btn-secondary:hover {
-      opacity: 0.85;
-    }
-
-    /* Mini-grid used in orientation and bounds steps */
-    .mini-grid-container {
-      display: flex;
-      justify-content: center;
-    }
-
-    .mini-grid {
-      width: 280px;
-      height: 224px;
-      background: var(--secondary-background-color, #f5f5f5);
-      border: 2px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .mini-grid-label {
-      position: absolute;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 11px;
-      color: var(--secondary-text-color, #757575);
-      pointer-events: none;
-      writing-mode: vertical-rl;
-      text-orientation: mixed;
-    }
-
-    .mini-grid-label.left-label {
-      left: 6px;
-    }
-
-    .mini-grid-label.right-label {
-      right: 6px;
-      transform: translateY(-50%) rotate(180deg);
-    }
-
-    .mini-grid-sensor {
-      position: absolute;
-      width: 14px;
-      height: 14px;
-      border-radius: 50%;
-      background: var(--primary-color, #03a9f4);
-      border: 2px solid #fff;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-      z-index: 5;
-    }
-
-    .mini-grid-target {
-      position: absolute;
-      width: 16px;
-      height: 16px;
-      border-radius: 50%;
-      background: #4caf50;
-      border: 2px solid #fff;
-      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
-      transform: translate(-50%, -50%);
-      z-index: 10;
-      transition: left 0.15s, top 0.15s;
-    }
-
-    .mini-grid-captured {
-      position: absolute;
-      width: 10px;
-      height: 10px;
-      border-radius: 50%;
-      background: #ff9800;
-      border: 2px solid #fff;
-      transform: translate(-50%, -50%);
-      z-index: 8;
-    }
-
-    .sensor-fov-view {
-      width: 480px;
-      aspect-ratio: 1.732 / 1;
-      background: #1a1a2e;
-      border: 2px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .sensor-fov-svg {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
-      pointer-events: none;
-    }
-
-    .preview-grid-container {
-      display: flex;
-      justify-content: center;
-      position: relative;
-    }
-
-    .preview-grid-wrapper {
-      position: relative;
-    }
-
-    .preview-grid {
-      display: grid;
-      gap: 1px;
-      width: 100%;
-      height: 100%;
-      background: var(--divider-color, #e0e0e0);
-      border: 2px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      overflow: hidden;
-    }
-
-    .preview-cell {
-      background: var(--card-background-color, #fff);
-    }
-
-    .no-target-warning {
-      color: var(--error-color, #f44336);
-      font-size: 13px;
-      text-align: center;
-    }
-
-    .corner-progress {
-      display: flex;
-      gap: 8px;
-      flex-wrap: wrap;
-    }
-
-    .corner-chip {
-      padding: 5px 11px;
-      border-radius: 16px;
-      font-size: 13px;
-      background: var(--secondary-background-color, #e0e0e0);
-      color: var(--secondary-text-color, #757575);
-      cursor: pointer;
-      transition: background 0.2s, border-color 0.2s;
-      border: 2px solid transparent;
-    }
-
-    .corner-chip.active {
-      background: var(--primary-color, #03a9f4);
-      color: #fff;
-      border-color: var(--primary-color, #03a9f4);
-    }
-
-    .corner-chip.done {
-      background: #4caf50;
-      color: #fff;
-    }
-
-    .corner-chip.done.active {
-      border-color: var(--primary-color, #03a9f4);
-    }
-
-    .corner-arrow {
-      font-size: 18px;
-      color: var(--disabled-text-color, #ccc);
-      font-weight: bold;
-    }
-
-    .corner-arrow.done {
-      color: var(--primary-color, #03a9f4);
-    }
-
-    .corner-instruction {
-      font-size: 15px;
-      color: var(--primary-text-color, #212121);
-    }
-
-    .corner-offsets {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-
-    .offset-label {
-      font-size: 13px;
-      color: var(--secondary-text-color, #888);
-      white-space: nowrap;
-      flex-shrink: 0;
-    }
-
-    .capture-overlay {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      bottom: 0;
-      background: rgba(0, 0, 0, 0.4);
-      z-index: 1000;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .capture-overlay-content {
-      background: var(--card-background-color, #fff);
-      padding: 24px 32px;
-      border-radius: 16px;
-      text-align: center;
-      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
-    }
-
-    .offset-input {
-      flex: 1;
-      width: 100%;
-      padding: 14px 12px 6px;
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: 10px;
-      font-size: 16px;
-      box-sizing: border-box;
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color, #212121);
-    }
-
-    .offset-input::placeholder {
-      color: var(--secondary-text-color, #888);
-      font-size: 13px;
-    }
-
-    .offset-input:focus {
-      outline: none;
-      border-color: var(--primary-color, #03a9f4);
-    }
-
-    .dimension-inputs {
-      display: flex;
-      gap: 16px;
-    }
-
-    .dimension-inputs label {
-      flex: 1;
-    }
-
-    .dimension-inputs input {
-      width: 100%;
-      padding: 8px;
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      font-size: 14px;
-      box-sizing: border-box;
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color, #212121);
-    }
-
-    .capture-progress {
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      width: 100%;
-    }
-
-    .capture-bar {
-      flex: 1;
-      height: 8px;
-      background: var(--secondary-background-color, #e0e0e0);
-      border-radius: 4px;
-      overflow: hidden;
-    }
-
-    .capture-fill {
-      height: 100%;
-      background: var(--primary-color, #03a9f4);
-      border-radius: 4px;
-      transition: width 0.1s linear;
-    }
-
-    .capture-progress span {
-      font-size: 13px;
-      color: var(--secondary-text-color, #757575);
-      white-space: nowrap;
-    }
-
-    /* Live sidebar */
-    .sidebar-header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding: 6px 4px 4px 12px;
-    }
-
-    .sidebar-title {
-      font-size: 15px;
-      font-weight: 600;
-      padding: 10px 12px 8px;
-      color: var(--primary-text-color, #212121);
-    }
-
-    .sidebar-header .sidebar-title {
-      padding: 0;
-    }
-
-    .sidebar-menu-wrapper {
-      position: relative;
-    }
-
-    .sidebar-menu-btn {
-      background: none;
-      border: none;
-      color: var(--secondary-text-color, #757575);
-      cursor: pointer;
-      padding: 4px;
-      border-radius: 6px;
-      display: flex;
-    }
-
-    .sidebar-menu-btn:hover {
-      background: var(--secondary-background-color, #f0f0f0);
-    }
-
-    .sidebar-menu {
-      position: absolute;
-      top: 100%;
-      right: 0;
-      background: var(--card-background-color, #fff);
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: 10px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
-      z-index: 100;
-      min-width: 220px;
-      padding: 4px 0;
-    }
-
-    .sidebar-menu-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      width: 100%;
-      padding: 8px 14px;
-      border: none;
-      background: none;
-      color: var(--primary-text-color, #212121);
-      font-size: 13px;
-      cursor: pointer;
-      text-align: left;
-    }
-
-    .sidebar-menu-item:hover {
-      background: var(--secondary-background-color, #f5f5f5);
     }
 
     .save-cancel-bar {
@@ -1400,15 +792,6 @@ export class EPPGridPanel extends LitElement {
       text-transform: uppercase;
       letter-spacing: 0.5px;
       padding: 4px 12px 6px;
-    }
-
-    .live-nav-links {
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
-      padding: 16px 12px 8px;
-      margin-top: 8px;
-      border-top: 1px solid var(--divider-color, #eee);
     }
 
     .debug-log-container {
@@ -1443,82 +826,6 @@ export class EPPGridPanel extends LitElement {
     .debug-log-btn:hover {
       color: var(--primary-text-color);
       border-color: var(--primary-text-color, #ccc);
-    }
-
-    .live-nav-link {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      background: none;
-      border: none;
-      color: var(--primary-color, #03a9f4);
-      cursor: pointer;
-      padding: 6px 4px;
-      font-size: 13px;
-      border-radius: 6px;
-      text-align: left;
-    }
-
-    .live-nav-link:hover {
-      background: var(--secondary-background-color, #f5f5f5);
-    }
-
-    /* Settings view */
-    .grid-dimensions {
-      text-align: center;
-      font-size: 12px;
-      color: var(--secondary-text-color, #757575);
-      margin-top: 8px;
-    }
-
-    .settings-container {
-      width: 560px;
-      max-width: 100%;
-      margin: 0 auto;
-      padding: 0 16px;
-      box-sizing: border-box;
-    }
-
-    .setting-input {
-      width: 80px;
-      padding: 6px 8px;
-      font-size: 13px;
-      border: 1px solid var(--divider-color, #e0e0e0);
-      border-radius: 8px;
-      background: var(--secondary-background-color, #f5f5f5);
-      color: var(--primary-text-color, #212121);
-      text-align: right;
-    }
-
-    select.setting-input {
-      flex: 1;
-      width: auto;
-      text-align: left;
-    }
-
-    .setting-toggle {
-      width: 18px;
-      height: 18px;
-      accent-color: var(--primary-color, #03a9f4);
-      cursor: pointer;
-    }
-
-    .zone-type-group {
-      background: var(--secondary-background-color, #f5f5f5);
-      border-radius: 10px;
-      padding: 12px;
-      margin-bottom: 8px;
-    }
-
-    .zone-type-group:last-child {
-      margin-bottom: 0;
-    }
-
-    .zone-type-group h5 {
-      margin: 0 0 8px;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--primary-text-color, #212121);
     }
 
   `,
@@ -1857,7 +1164,7 @@ export class EPPGridPanel extends LitElement {
 					}}
           @setting-change=${(e: CustomEvent) => {
 						const { key, value } = e.detail;
-						(this as any)["_" + key] = value;
+						(this as any)[`_${key}`] = value;
 					}}
           @dirty=${() => {
 						this._dirty = true;
