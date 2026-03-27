@@ -386,6 +386,12 @@ async def websocket_subscribe_raw_targets(
     device_conn.subscribe_states(_on_state)
     connection.send_result(msg["id"])
 
+    @callback
+    def _unsub() -> None:
+        device_conn.unsubscribe_states(_on_state)
+
+    connection.subscriptions[msg["id"]] = _unsub
+
 
 # -- subscribe_grid_targets --
 
@@ -524,6 +530,12 @@ async def websocket_subscribe_grid_targets(
 
     device_conn.subscribe_states(_on_state)
     connection.send_result(msg["id"])
+
+    @callback
+    def _unsub() -> None:
+        device_conn.unsubscribe_states(_on_state)
+
+    connection.subscriptions[msg["id"]] = _unsub
 
 
 # -- set_entity_enabled --

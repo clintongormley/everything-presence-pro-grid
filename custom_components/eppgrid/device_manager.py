@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import contextlib
 import json
 import logging
 from dataclasses import dataclass
@@ -18,6 +19,8 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
 from .const import DEFAULT_PORT
+from .const import GRID_CELL_SIZE_MM
+from .const import GRID_COLS
 from .const import MAX_ZONES
 from .storage import EPPGridStore
 
@@ -73,6 +76,11 @@ class DeviceConnection:
             self._states_subscribed = True
             self._client.subscribe_states(self._dispatch_state)
 
+    def unsubscribe_states(self, cb: Any) -> None:
+        """Remove a state subscriber."""
+        with contextlib.suppress(ValueError):
+            self._state_subscribers.remove(cb)
+
     def _dispatch_state(self, state: Any) -> None:
         """Fan out state updates to all subscribers."""
         for cb in self._state_subscribers:
@@ -104,12 +112,11 @@ class DeviceConnection:
             service = self._services.get("epp_set_grid")
             if service:
                 grid_b64 = base64.b64encode(bytes(grid_bytes)).decode("ascii")
-                # Compute origin from grid dimensions (room centered in 20-col grid)
+                # Compute origin from grid dimensions (room centered in grid)
                 room_width = cal.get("room_width", 6000.0)
-                cell_size = 300
-                room_cols = max(1, -(-int(room_width) // cell_size))  # ceil division
-                start_col = (20 - room_cols) // 2
-                origin_x = -start_col * cell_size
+                room_cols = max(1, -(-int(room_width) // GRID_CELL_SIZE_MM))
+                start_col = (GRID_COLS - room_cols) // 2
+                origin_x = -start_col * GRID_CELL_SIZE_MM
                 await self._client.execute_service(
                     service,
                     {
@@ -291,6 +298,9 @@ class DeviceManager:
         """Push stored config when a managed device comes online."""
         if mac in self._pushing:
             return
+        dev = self.devices.get(mac)
+        if dev is not None:
+            dev.available = True
         self._pushing.add(mac)
         try:
             _LOGGER.info("Device %s became available, pushing config", mac)
@@ -376,7 +386,7 @@ class DeviceManager:
 
         _LOGGER.debug("Updating zone entities for %s (calibrated=%s)", mac, is_calibrated)
 
-        for i in range(8):  # zones 0-7
+        for i in range(MAX_ZONES + 1):  # zones 0-7
             entity_id = self._find_zone_entity(ent_reg, dev.device_id, i)
             _LOGGER.debug("Zone %d: entity_id=%s", i, entity_id)
             if entity_id is None:
