@@ -510,7 +510,8 @@ export class EPPGridPanel extends LitElement {
 	@state() private _roomWidth = 0; // mm
 	@state() private _roomDepth = 0; // mm
 
-	// Target subscription
+	// Device session + target subscriptions
+	private _unsubDevice?: () => void;
 	private _unsubTargets?: () => void;
 	private _unsubDisplay?: () => void;
 
@@ -643,7 +644,7 @@ export class EPPGridPanel extends LitElement {
 
 	disconnectedCallback(): void {
 		super.disconnectedCallback();
-		this._unsubscribeTargets();
+		this._closeDeviceSession();
 		window.removeEventListener("beforeunload", this._beforeUnloadHandler);
 		window.removeEventListener("click", this._dismissTooltips);
 		window.removeEventListener("keydown", this._onKeyDown);
@@ -721,6 +722,8 @@ export class EPPGridPanel extends LitElement {
 		} catch {
 			// Device may not be ready yet
 		}
+		// Open device session, then subscribe to data streams
+		await this._openDeviceSession(mac);
 		this._subscribeTargets(mac);
 	}
 
@@ -751,8 +754,33 @@ export class EPPGridPanel extends LitElement {
 		(this as any)._offsetsConfig = parsed.offsetsConfig;
 	}
 
-	private _subscribeTargets(mac: string): void {
+	private async _openDeviceSession(mac: string): Promise<void> {
+		this._closeDeviceSession();
+		if (!this.hass || !mac) return;
+		try {
+			this._unsubDevice = await this.hass.connection.subscribeMessage(
+				() => {}, // session has no events, just lifecycle
+				{ type: "eppgrid/subscribe_device", mac },
+			);
+		} catch (e) {
+			console.warn("Failed to open device session:", e);
+		}
+	}
+
+	private _closeDeviceSession(): void {
 		this._unsubscribeTargets();
+		if (this._unsubDevice) {
+			this._unsubDevice();
+			this._unsubDevice = undefined;
+		}
+	}
+
+	private _subscribeTargets(mac: string): void {
+		this._unsubscribeDisplay();
+		if (this._unsubTargets) {
+			this._unsubTargets();
+			this._unsubTargets = undefined;
+		}
 		if (!this.hass || !mac) return;
 
 		const conn = this.hass.connection;
@@ -830,6 +858,7 @@ export class EPPGridPanel extends LitElement {
 		this._targets = [];
 		this._rawTargets = [];
 	}
+
 
 	private _subscribeDisplay(mac: string): void {
 		this._unsubscribeDisplay();
@@ -1429,7 +1458,7 @@ export class EPPGridPanel extends LitElement {
 		const select = e.target as HTMLSelectElement;
 		const mac = select.value;
 		this._guardNavigation(async () => {
-			this._unsubscribeTargets();
+			this._closeDeviceSession();
 			this._selectedMac = mac;
 			localStorage.setItem("epp_selected_mac", mac);
 			await this._loadDeviceConfig(mac);

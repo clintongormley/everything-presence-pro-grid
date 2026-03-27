@@ -71,8 +71,6 @@ class DeviceConnection:
 
     def _dispatch_state(self, state: Any) -> None:
         """Fan out state updates to all subscribers."""
-        _LOGGER.debug("Dispatching state to %d subscribers: key=%s type=%s",
-                      len(self._state_subscribers), getattr(state, 'key', '?'), type(state).__name__)
         for cb in self._state_subscribers:
             cb(state)
 
@@ -167,8 +165,8 @@ class DeviceManager:
         self.devices: dict[str, ManagedDevice] = {}
         self._unsub_listeners: list[Any] = []
         self._pushing: set[str] = set()
+        # One connection per device, kept alive for the frontend session
         self._active_connections: dict[str, DeviceConnection] = {}
-        self._connection_refcount: dict[str, int] = {}
 
     async def async_start(self) -> None:
         """Start discovery and event listeners."""
@@ -184,10 +182,13 @@ class DeviceManager:
         )
 
     async def async_stop(self) -> None:
-        """Stop listeners and close connections."""
+        """Stop listeners and close all connections."""
         for unsub in self._unsub_listeners:
             unsub()
         self._unsub_listeners.clear()
+        for conn in self._active_connections.values():
+            await conn.async_disconnect()
+        self._active_connections.clear()
 
     async def async_discover(self) -> None:
         """Scan entity registry for ESPHome devices with zone_engine_version."""
@@ -236,7 +237,6 @@ class DeviceManager:
         """Handle entity registry changes — re-discover on new entities only."""
         if event.data.get("action") != "create":
             return
-        # Only re-discover for genuinely new entities, not our own enable/disable/rename
         entity_id = event.data.get("entity_id", "")
         ent_reg = er.async_get(self._hass)
         entry = ent_reg.async_get(entity_id)
@@ -289,11 +289,11 @@ class DeviceManager:
             self._pushing.discard(mac)
 
     async def _push_config_to_device(self, mac: str) -> None:
-        """Push config using the shared connection pool."""
+        """Push config to device. Opens a session if none exists."""
         config = self._store.get_device(mac)
         if config is None:
             return
-        conn = await self.async_get_or_create_connection(mac)
+        conn = await self.async_open_session(mac)
         if conn is None:
             return
         try:
@@ -302,38 +302,41 @@ class DeviceManager:
             dev = self.devices.get(mac)
             name = dev.name if dev else mac
             _LOGGER.warning("Failed to push config to %s (%s)", name, mac, exc_info=True)
-        finally:
-            await self.async_release_connection(mac)
 
-    async def async_get_or_create_connection(self, mac: str) -> DeviceConnection | None:
-        """Get or create a live connection for the calibration UI."""
+    async def async_open_session(self, mac: str) -> DeviceConnection | None:
+        """Open a persistent connection for a frontend session.
+        Returns the connection, or None if the device is not available."""
+        if mac in self._active_connections:
+            conn = self._active_connections[mac]
+            if conn.connected:
+                return conn
+            # Stale connection — clean up
+            await conn.async_disconnect()
+
         dev = self.devices.get(mac)
         if dev is None or dev.host is None:
             return None
-        if mac not in self._active_connections:
-            conn = DeviceConnection(dev.host)
-            await conn.async_connect()
-            self._active_connections[mac] = conn
-            self._connection_refcount[mac] = 0
-        self._connection_refcount[mac] += 1
-        return self._active_connections[mac]
+        conn = DeviceConnection(dev.host)
+        await conn.async_connect()
+        self._active_connections[mac] = conn
+        _LOGGER.info("Opened session for %s (%s)", dev.name, mac)
+        return conn
 
-    async def async_release_connection(self, mac: str) -> None:
-        """Release a reference to a live connection. Disconnects when last ref released."""
-        if mac not in self._connection_refcount:
-            return
-        self._connection_refcount[mac] -= 1
-        if self._connection_refcount[mac] <= 0:
-            conn = self._active_connections.get(mac)
-            # Only disconnect if no state subscribers are listening
-            if conn is None or not conn._state_subscribers:
-                conn = self._active_connections.pop(mac, None)
-                self._connection_refcount.pop(mac, None)
-                if conn is not None:
-                    await conn.async_disconnect()
-            else:
-                # Reset refcount — subscribers still active
-                self._connection_refcount[mac] = 0
+    async def async_close_session(self, mac: str) -> None:
+        """Close the frontend session connection for a device."""
+        conn = self._active_connections.pop(mac, None)
+        if conn is not None:
+            await conn.async_disconnect()
+            dev = self.devices.get(mac)
+            name = dev.name if dev else mac
+            _LOGGER.info("Closed session for %s (%s)", name, mac)
+
+    def get_session(self, mac: str) -> DeviceConnection | None:
+        """Get the active session connection for a device, or None."""
+        conn = self._active_connections.get(mac)
+        if conn is not None and conn.connected:
+            return conn
+        return None
 
     def list_devices(self) -> list[dict[str, Any]]:
         """Return serializable list of managed devices for the frontend."""

@@ -32,6 +32,7 @@ def async_register_websocket_commands(
     websocket_api.async_register_command(hass, websocket_save_template)
     websocket_api.async_register_command(hass, websocket_delete_template)
     websocket_api.async_register_command(hass, websocket_apply_template)
+    websocket_api.async_register_command(hass, websocket_subscribe_device)
     websocket_api.async_register_command(hass, websocket_subscribe_grid_targets)
     websocket_api.async_register_command(hass, websocket_subscribe_raw_targets)
     websocket_api.async_register_command(hass, websocket_set_entity_enabled)
@@ -274,6 +275,36 @@ def _build_entity_key_map(entities: list) -> dict[str, int]:
     return key_map
 
 
+# -- subscribe_device (session lifecycle) --
+
+@websocket_api.websocket_command({
+    vol.Required("type"): "eppgrid/subscribe_device",
+    vol.Required("mac"): str,
+})
+@websocket_api.async_response
+async def websocket_subscribe_device(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+) -> None:
+    """Open a session connection for a device. Closes on unsubscribe."""
+    manager = _get_manager(hass)
+    if manager is None:
+        connection.send_error(msg["id"], "not_ready", "Integration not loaded")
+        return
+    mac = msg["mac"]
+    device_conn = await manager.async_open_session(mac)
+    if device_conn is None:
+        connection.send_error(msg["id"], "not_found", "Device not available")
+        return
+    connection.send_result(msg["id"])
+
+    @callback
+    def _unsub() -> None:
+        hass.async_create_task(manager.async_close_session(mac))
+    connection.subscriptions[msg["id"]] = _unsub
+
+
 # -- subscribe_raw_targets --
 
 @websocket_api.websocket_command({
@@ -286,16 +317,16 @@ async def websocket_subscribe_raw_targets(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Stream raw target positions from device."""
+    """Stream raw target positions from the device session."""
     manager = _get_manager(hass)
     if manager is None:
         connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
 
     mac = msg["mac"]
-    device_conn = await manager.async_get_or_create_connection(mac)
+    device_conn = manager.get_session(mac)
     if device_conn is None:
-        connection.send_error(msg["id"], "not_found", "Device not available")
+        connection.send_error(msg["id"], "no_session", "No active session — call subscribe_device first")
         return
 
     key_map = _build_entity_key_map(device_conn._entities)
@@ -330,11 +361,6 @@ async def websocket_subscribe_raw_targets(
     device_conn.subscribe_states(_on_state)
     connection.send_result(msg["id"])
 
-    @callback
-    def _unsub() -> None:
-        hass.async_create_task(manager.async_release_connection(mac))
-    connection.subscriptions[msg["id"]] = _unsub
-
 
 # -- subscribe_grid_targets --
 
@@ -348,20 +374,19 @@ async def websocket_subscribe_grid_targets(
     connection: websocket_api.ActiveConnection,
     msg: dict[str, Any],
 ) -> None:
-    """Stream target positions, zone state, and sensor data from device."""
+    """Stream target positions, zone state, and sensor data from the device session."""
     manager = _get_manager(hass)
     if manager is None:
         connection.send_error(msg["id"], "not_ready", "Integration not loaded")
         return
 
     mac = msg["mac"]
-    device_conn = await manager.async_get_or_create_connection(mac)
+    device_conn = manager.get_session(mac)
     if device_conn is None:
-        connection.send_error(msg["id"], "not_found", "Device not available")
+        connection.send_error(msg["id"], "no_session", "No active session — call subscribe_device first")
         return
 
     key_map = _build_entity_key_map(device_conn._entities)
-    _LOGGER.debug("subscribe_grid_targets key_map: %s", key_map)
 
     # Map target position sensor keys to indices
     target_keys = {}
@@ -369,11 +394,9 @@ async def websocket_subscribe_grid_targets(
         name = f"Target {i} Position"
         if name in key_map:
             target_keys[key_map[name]] = i
-    _LOGGER.debug("subscribe_grid_targets target_keys: %s", target_keys)
 
     # Zone state text sensor key
     zone_state_key = key_map.get("Zone State")
-    _LOGGER.debug("subscribe_grid_targets zone_state_key: %s", zone_state_key)
 
     # Binary sensor keys for sensors dict
     sensor_keys = {}
@@ -385,7 +408,6 @@ async def websocket_subscribe_grid_targets(
     ):
         if name in key_map:
             sensor_keys[key_map[name]] = field
-    _LOGGER.debug("subscribe_grid_targets sensor_keys: %s", sensor_keys)
 
     # Accumulated state
     targets = [{"x": None, "y": None, "signal": 0, "status": "inactive"} for _ in range(3)]
@@ -438,11 +460,6 @@ async def websocket_subscribe_grid_targets(
 
     device_conn.subscribe_states(_on_state)
     connection.send_result(msg["id"])
-
-    @callback
-    def _unsub() -> None:
-        hass.async_create_task(manager.async_release_connection(mac))
-    connection.subscriptions[msg["id"]] = _unsub
 
 
 # -- set_entity_enabled --
