@@ -89,6 +89,7 @@ import "./components/epp-live-sidebar.js";
 import "./components/epp-zone-sidebar.js";
 import "./components/epp-furniture-sidebar.js";
 import "./components/epp-furniture-overlay.js";
+import "./components/epp-grid.js";
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
@@ -2458,22 +2459,6 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _renderLiveGrid() {
-		// Reuse the same grid rendering as the editor but read-only (no painting)
-		const bounds = this._getRoomBounds();
-		const noRoom = bounds.minCol > bounds.maxCol;
-		const minCol = noRoom ? 0 : bounds.minCol;
-		const maxCol = noRoom ? GRID_COLS - 1 : bounds.maxCol;
-		const minRow = noRoom ? 0 : bounds.minRow;
-		const maxRow = noRoom ? GRID_ROWS - 1 : bounds.maxRow;
-		const visCols = maxCol - minCol + 1;
-		const visRows = maxRow - minRow + 1;
-		const maxPx = Math.min(480, (this.offsetWidth || 800) * 0.55);
-		const cellPx = Math.min(
-			Math.floor(maxPx / visCols),
-			Math.floor(maxPx / visRows),
-			32,
-		);
-
 		// Track last in-room position for pending display (live overview
 		// uses backend status — active means target is in saved room grid)
 		for (let i = 0; i < this._targets.length; i++) {
@@ -2483,19 +2468,41 @@ export class EPPGridPanel extends LitElement {
 			}
 		}
 
+		// Build backend occupancy map
+		const occupancy: Record<number, boolean> = {};
+		for (const [k, v] of Object.entries(this._zoneState.occupancy)) {
+			occupancy[Number(k)] = v as boolean;
+		}
+
 		return html`
-      <div class="grid-targets-wrapper">
-      <div
-        class="grid"
-        style="grid-template-columns: repeat(${visCols}, ${cellPx}px); grid-template-rows: repeat(${visRows}, ${cellPx}px);"
-      >
-        ${this._renderVisibleCells(minCol, maxCol, minRow, maxRow, cellPx, true)}
-      </div>
-      ${this._renderFurnitureOverlay(cellPx, minCol, minRow, visCols, visRows)}
-      ${this._renderTargetDots(minCol, minRow, visCols, visRows)}
-      </div>
-      ${this._renderGridDimensions()}
-    `;
+			<epp-grid
+				.grid=${this._grid}
+				.zoneConfigs=${this._zoneConfigs}
+				.targets=${this._targets}
+				.roomWidth=${this._roomWidth}
+				.roomDepth=${this._roomDepth}
+				.perspective=${this._perspective}
+				.furniture=${this._furniture}
+				.selectedFurnitureId=${this._selectedFurnitureId}
+				.sidebarTab=${this._sidebarTab}
+				.showHitCounts=${this._showHitCounts}
+				.occupancy=${occupancy}
+				.targetPrevXY=${this._zoneEngineState.targetPrevXY}
+				.heatmapColors=${this._showHitCounts ? this._computeHeatmapColors() : null}
+				.localize=${this._localize}
+				.maxGridPx=${480}
+				@furniture-select=${(e: CustomEvent) => {
+					this._selectedFurnitureId = e.detail;
+				}}
+				@furniture-pointer-down=${(e: CustomEvent) => {
+					const { e: ptrEvent, id, type, handle } = e.detail;
+					this._onFurniturePointerDown(ptrEvent, id, type, handle);
+				}}
+				@furniture-delete=${(e: CustomEvent) => {
+					this._removeFurniture(e.detail);
+				}}
+			></epp-grid>
+		`;
 	}
 
 	private _renderTargetDots(
@@ -3208,22 +3215,25 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _renderEditor() {
-		// Determine visible range: zoom to room cells (freeze during painting)
-		const bounds = this._frozenBounds ?? this._getRoomBounds();
-		const noRoom = bounds.minCol > bounds.maxCol;
-		const minCol = noRoom ? 0 : bounds.minCol;
-		const maxCol = noRoom ? GRID_COLS - 1 : bounds.maxCol;
-		const minRow = noRoom ? 0 : bounds.minRow;
-		const maxRow = noRoom ? GRID_ROWS - 1 : bounds.maxRow;
+		// Run local zone engine replica and compute occupancy for editor view
+		const engineResult = this._runLocalZoneEngine();
+		const editorOccupancy = engineResult.occupancy;
 
-		const visCols = maxCol - minCol + 1;
-		const visRows = maxRow - minRow + 1;
-		const maxGridPx = Math.min(520, (this.offsetWidth || 800) * 0.55);
-		const cellPx = Math.min(
-			32,
-			Math.floor(maxGridPx / visCols),
-			Math.floor(maxGridPx / visRows),
-		);
+		// Overwrite _targets status from frontend zone engine
+		for (
+			let i = 0;
+			i < engineResult.targets.length && i < this._targets.length;
+			i++
+		) {
+			this._targets[i].status = engineResult.targets[i].status;
+		}
+
+		// Derive sensors.occupancy from unsaved zone config
+		const roomOccupied = Object.values(editorOccupancy).some((v) => v);
+		this._sensorState.occupancy =
+			this._sensorState.static_presence ||
+			this._sensorState.motion_presence ||
+			roomOccupied;
 
 		return html`
       <div class="panel" @click=${(e: Event) => {
@@ -3244,18 +3254,42 @@ export class EPPGridPanel extends LitElement {
 								this._selectedFurnitureId = null;
 							}
 						}}>
-            <div class="grid-targets-wrapper">
-            <div
-              class="grid"
-              style="grid-template-columns: repeat(${visCols}, ${cellPx}px); grid-template-rows: repeat(${visRows}, ${cellPx}px);"
-              @mouseup=${this._onCellMouseUp}
-            >
-              ${this._renderVisibleCells(minCol, maxCol, minRow, maxRow, cellPx)}
-            </div>
-            ${this._renderFurnitureOverlay(cellPx, minCol, minRow, visCols, visRows)}
-            ${this._renderTargetDots(minCol, minRow, visCols, visRows)}
-            </div>
-            ${this._renderGridDimensions()}
+            <epp-grid
+              .grid=${this._grid}
+              .zoneConfigs=${this._zoneConfigs}
+              .targets=${this._targets}
+              .roomWidth=${this._roomWidth}
+              .roomDepth=${this._roomDepth}
+              .perspective=${this._perspective}
+              .furniture=${this._furniture}
+              .selectedFurnitureId=${this._selectedFurnitureId}
+              .sidebarTab=${this._sidebarTab}
+              .editable=${true}
+              .activeZone=${this._activeZone}
+              .showHitCounts=${this._showHitCounts}
+              .occupancy=${editorOccupancy}
+              .targetPrevXY=${this._zoneEngineState.targetPrevXY}
+              .heatmapColors=${this._showHitCounts ? this._computeHeatmapColors() : null}
+              .localize=${this._localize}
+              .maxGridPx=${520}
+              .frozenBounds=${this._frozenBounds}
+              @cell-paint=${(e: CustomEvent) => {
+								const { index, action } = e.detail;
+								if (action === "down") this._onCellMouseDown(index);
+								else if (action === "enter") this._onCellMouseEnter(index);
+								else if (action === "up") this._onCellMouseUp();
+							}}
+              @furniture-select=${(e: CustomEvent) => {
+								this._selectedFurnitureId = e.detail;
+							}}
+              @furniture-pointer-down=${(e: CustomEvent) => {
+								const { e: ptrEvent, id, type, handle } = e.detail;
+								this._onFurniturePointerDown(ptrEvent, id, type, handle);
+							}}
+              @furniture-delete=${(e: CustomEvent) => {
+								this._removeFurniture(e.detail);
+							}}
+            ></epp-grid>
           </div>
             ${this._sidebarTab === "zones" ? this._renderDebugLog() : nothing}
           </div>

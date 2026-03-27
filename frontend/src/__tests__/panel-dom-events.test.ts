@@ -1269,8 +1269,10 @@ describe("_renderEditor DOM events", () => {
 		const tpl = a._renderEditor();
 		const c = renderTo(tpl);
 
-		const grid = c.querySelector(".grid") as HTMLElement;
-		expect(grid).not.toBeNull();
+		// After extracting to <epp-grid>, the .grid div is inside the
+		// component's shadow DOM.  Verify the epp-grid element is present.
+		const eppGrid = c.querySelector("epp-grid");
+		expect(eppGrid).not.toBeNull();
 		// mouseup/mouseleave use method refs that have `this` binding issues in external render
 		// Tested via _onCellMouseUp() directly in panel-settings.test.ts
 	});
