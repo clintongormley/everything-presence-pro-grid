@@ -8,6 +8,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_library(epp_zone_engine
     src/epp_grid.cpp
     src/epp_tumbling_window.cpp
+    src/epp_rolling_window.cpp
     src/epp_zone_engine.cpp
     src/epp_calibration.cpp
 )

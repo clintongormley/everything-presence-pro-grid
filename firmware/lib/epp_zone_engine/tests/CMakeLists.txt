@@ -24,9 +24,15 @@ target_compile_definitions(epp_parity_tests PRIVATE
     EPP_FIXTURE_PATH="${CMAKE_SOURCE_DIR}/../../../tests/fixtures/parity_scenarios.json"
 )
 
+add_executable(epp_rolling_window_tests
+    test_rolling_window.cpp
+)
+target_link_libraries(epp_rolling_window_tests PRIVATE epp_zone_engine doctest::doctest)
+
 include(${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake)
 doctest_discover_tests(epp_tests)
 doctest_discover_tests(epp_calibration_tests)
 doctest_discover_tests(epp_tumbling_window_tests)
 doctest_discover_tests(epp_zone_engine_tests)
 doctest_discover_tests(epp_parity_tests)
+doctest_discover_tests(epp_rolling_window_tests)
