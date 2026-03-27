@@ -21,3 +21,4 @@ firmware/lib/epp_zone_engine/build/
 
 # Egg info
 *.egg-info/
+.venv
