@@ -126,7 +126,9 @@ class TestWebSocketGetConfig:
     async def test_get_config(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """get_config returns stored config for a device."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.get_device = MagicMock(return_value={"calibration": {"perspective": [1.0] * 8}})
+        mock_dm._store.get_device = MagicMock(
+            return_value={"calibration": {"perspective": [1.0] * 8, "room_width": 3000.0, "room_depth": 4000.0}}
+        )
 
         from custom_components.eppgrid.websocket_api import websocket_get_config
 
@@ -363,7 +365,9 @@ class TestWebSocketSetRoomLayout:
             host="192.168.1.50",
         )
         mock_dm.read_firmware_version.return_value = FIRMWARE_VERSION
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"calibration": {"perspective": [1.0] * 8}}
+        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {
+            "calibration": {"perspective": [1.0] * 8, "room_width": 3000.0, "room_depth": 4000.0}
+        }
 
         from custom_components.eppgrid.websocket_api import websocket_set_room_layout
 
@@ -405,7 +409,9 @@ class TestWebSocketSetRoomLayout:
         mock_dm.async_update_zone_entities = AsyncMock()
         mock_dm._push_config_to_device = AsyncMock()
         mock_dm.devices["AA:BB:CC:DD:EE:FF"] = MagicMock(host="1.2.3.4")
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"calibration": {"perspective": [1.0] * 8}}
+        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {
+            "calibration": {"perspective": [1.0] * 8, "room_width": 3000.0, "room_depth": 4000.0}
+        }
 
         zone_slots = [
             {"type": "normal", "trigger": 5, "renew": 3, "timeout": 10.0, "handoff_timeout": 3.0},
@@ -445,6 +451,49 @@ class TestWebSocketSetRoomLayout:
         assert "room_type" not in layout
         assert "room_trigger" not in layout
         mock_dm.async_update_zone_entities.assert_awaited_with("AA:BB:CC:DD:EE:FF", zone_slots)
+
+    async def test_set_room_layout_rejects_after_delete_calibration(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """set_room_layout rejects when calibration was cleared via set_setup.
+
+        The delete-calibration flow in the frontend calls set_setup with
+        room_width=0 (and a zeroed perspective array). That leaves
+        `calibration.perspective` non-empty but the device is effectively
+        uncalibrated — so the room_width>0 signal is the one that must gate
+        set_room_layout, not mere perspective presence.
+        """
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.devices["AA:BB:CC:DD:EE:FF"] = MagicMock(host="1.2.3.4")
+        # Post-delete calibration state — perspective present but room_width=0.
+        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {
+            "calibration": {
+                "perspective": [0.0] * 8,
+                "room_width": 0,
+                "room_depth": 0,
+            },
+        }
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        zone_slots = [{"type": "normal"}] + [None] * 7
+        connection = MagicMock()
+        msg = {
+            "id": 11,
+            "type": "eppgrid/set_room_layout",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "grid_bytes": [0] * 400,
+            "zone_slots": zone_slots,
+            "furniture": [],
+        }
+
+        await call_async_handler(hass, websocket_set_room_layout, connection, msg)
+
+        assert "room_layout" not in mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]
+        mock_dm._push_config_to_device.assert_not_awaited()
+        connection.send_error.assert_called_once()
+        args, _ = connection.send_error.call_args
+        assert args[1] == "not_calibrated"
 
     async def test_set_room_layout_rejects_uncalibrated_device(
         self, hass: HomeAssistant, config_entry: MockConfigEntry

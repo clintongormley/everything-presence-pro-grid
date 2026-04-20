@@ -1047,8 +1047,9 @@ describe("_deleteCalibration", () => {
 		expect(a._dirty).toBe(false);
 		expect(a._view).toBe("live");
 
-		// set_distance_override (widen) + set_setup + set_room_layout
-		expect(el.hass.callWS).toHaveBeenCalledTimes(3);
+		// set_distance_override (widen) + set_setup — set_setup handler
+		// already clears room_layout, so no follow-up set_room_layout call.
+		expect(el.hass.callWS).toHaveBeenCalledTimes(2);
 	});
 
 	it("handles backend error gracefully", async () => {
@@ -1066,6 +1067,25 @@ describe("_deleteCalibration", () => {
 		expect(err).toHaveBeenCalled();
 		expect(a._dirty).toBe(false);
 		err.mockRestore();
+	});
+
+	it("does not call set_room_layout — set_setup already clears it", async () => {
+		// set_setup handler already pops room_layout, saves the store, pushes
+		// config, and updates zone entities. Calling set_room_layout after it
+		// is redundant and would now fail the calibration guard (room_width=0).
+		const a = el as any;
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
+		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+		a._roomWidth = 3000;
+		a._roomDepth = 4000;
+
+		const callWS = vi.fn().mockResolvedValue({});
+		el.hass = { callWS };
+
+		await a._deleteCalibration();
+
+		const types = callWS.mock.calls.map((c: any) => c[0].type);
+		expect(types).not.toContain("eppgrid/set_room_layout");
 	});
 });
 

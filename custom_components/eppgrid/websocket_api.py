@@ -379,11 +379,15 @@ async def websocket_set_room_layout(
         return
     mac = msg["mac"]
     device_config = manager._store.devices.setdefault(mac, {})
-    # A room layout is only meaningful alongside a stored perspective — the
-    # device needs perspective to map cells/targets to room coordinates.
-    # Writing a layout before calibration leaves the device "configured" but
-    # uncalibrated, so fail closed here (belt-and-braces with the UI gate).
-    if not device_config.get("calibration", {}).get("perspective"):
+    # A room layout is only meaningful on a calibrated device — the device
+    # needs perspective + non-zero room dimensions to map cells/targets to
+    # room coordinates. Writing a layout before calibration (or after
+    # calibration was deleted via set_setup with room_width=0) leaves the
+    # device "configured" but uncalibrated, so fail closed at the boundary.
+    # room_width>0 is the codebase's canonical "is calibrated" signal
+    # (matches settings.zone_presence logic in set_setup).
+    calibration = device_config.get("calibration") or {}
+    if not (calibration.get("perspective") and calibration.get("room_width", 0) > 0):
         connection.send_error(
             msg["id"],
             "not_calibrated",

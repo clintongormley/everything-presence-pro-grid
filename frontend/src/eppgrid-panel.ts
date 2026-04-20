@@ -785,10 +785,12 @@ export class EPPGridPanel extends LitElement {
 		return this._gridCtrl.templates;
 	}
 
-	private _templateErrorKey(err: unknown): string {
+	private _templateErrorKey(err: unknown, op: "save" | "load"): string {
 		const code = (err as { code?: string } | null)?.code;
 		if (code === "not_calibrated") return "dialogs.template_not_calibrated";
-		return "dialogs.template_apply_failed";
+		return op === "save"
+			? "dialogs.template_save_failed"
+			: "dialogs.template_load_failed";
 	}
 
 	private async _saveTemplate(): Promise<void> {
@@ -796,7 +798,7 @@ export class EPPGridPanel extends LitElement {
 			await this._gridCtrl.saveTemplate();
 		} catch (err) {
 			console.error("Failed to save template", err);
-			this._templateError = this._templateErrorKey(err);
+			this._templateError = this._templateErrorKey(err, "save");
 		}
 	}
 
@@ -805,7 +807,7 @@ export class EPPGridPanel extends LitElement {
 			await this._gridCtrl.loadTemplate(name);
 		} catch (err) {
 			console.error(`Failed to load template "${name}"`, err);
-			this._templateError = this._templateErrorKey(err);
+			this._templateError = this._templateErrorKey(err, "load");
 		}
 	}
 
@@ -1204,7 +1206,7 @@ export class EPPGridPanel extends LitElement {
 					? html`
           <div class="template-dialog template-error-dialog">
             <div class="template-dialog-card">
-              <h3>${this._localize("dialogs.template_apply_failed")}</h3>
+              <h3>${this._localize("dialogs.template_error_title")}</h3>
               <p class="overlay-help">${this._localize(this._templateError)}</p>
               <div class="template-dialog-actions">
                 <button class="wizard-btn wizard-btn-primary"
@@ -1520,15 +1522,6 @@ export class EPPGridPanel extends LitElement {
 				perspective: [0, 0, 0, 0, 0, 0, 0, 0],
 				room_width: 0,
 				room_depth: 0,
-			});
-			await this.hass.callWS({
-				type: "eppgrid/set_room_layout",
-				mac: this._selectedMac,
-				grid_bytes: Array.from(this._grid),
-				zone_slots: this._zoneConfigs.map((z, idx) =>
-					idx === 0 ? serializeSlot(z, 0) : null,
-				),
-				furniture: [],
 			});
 		} catch (e) {
 			console.error("Failed to delete calibration", e);

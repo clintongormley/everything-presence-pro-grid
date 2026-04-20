@@ -104,7 +104,9 @@
 		"load_template": "Load template",
 		"no_templates": "No saved templates.",
 		"template_name": "Template name",
-		"template_apply_failed": "Could not apply template",
+		"template_error_title": "Template error",
+		"template_save_failed": "Could not save template. Please try again.",
+		"template_load_failed": "Could not load template. Please try again.",
 		"template_not_calibrated": "This device isn't calibrated. Calibrate the room first, then try again."
 	},
 	"menu": {

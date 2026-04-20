@@ -104,7 +104,9 @@
 		"load_template": "Cargar plantilla",
 		"no_templates": "No hay plantillas guardadas.",
 		"template_name": "Nombre de la plantilla",
-		"template_apply_failed": "No se pudo aplicar la plantilla",
+		"template_error_title": "Error de plantilla",
+		"template_save_failed": "No se pudo guardar la plantilla. Inténtalo de nuevo.",
+		"template_load_failed": "No se pudo cargar la plantilla. Inténtalo de nuevo.",
 		"template_not_calibrated": "Este dispositivo no está calibrado. Calibra primero la habitación e inténtalo de nuevo."
 	},
 	"menu": {

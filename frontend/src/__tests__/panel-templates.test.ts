@@ -256,6 +256,26 @@ describe("_loadTemplate", () => {
 		document.body.removeChild(c);
 	});
 
+	it("error dialog heading uses distinct key from body", () => {
+		// Avoid the review-flagged bug where title and body localize the
+		// same key and the dialog shows the message twice.
+		const a = createPanel() as any;
+		a._templateError = "dialogs.template_save_failed";
+
+		const tpl = a._renderGlobalDialogs();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const heading = c.querySelector(".template-error-dialog h3");
+		const body = c.querySelector(".template-error-dialog .overlay-help");
+		expect(heading?.textContent).toBe("dialogs.template_error_title");
+		expect(body?.textContent).toBe("dialogs.template_save_failed");
+		expect(heading?.textContent).not.toBe(body?.textContent);
+
+		document.body.removeChild(c);
+	});
+
 	it("template error dialog not rendered when _templateError is null", () => {
 		const a = createPanel() as any;
 		a._templateError = null;
@@ -337,6 +357,56 @@ describe("_loadTemplate", () => {
 		expect(a._templateError).toBeTruthy();
 		// Specific not_calibrated message, not a generic one — so the user knows why
 		expect(a._templateError).toBe("dialogs.template_not_calibrated");
+	});
+
+	it("generic load error maps to template_load_failed (not template_save_failed)", async () => {
+		const a = createPanel() as any;
+		const grid = new Array(GRID_CELL_COUNT).fill(CELL_ROOM_BIT);
+		grid[0] = CELL_ROOM_BIT | (1 << 1);
+		a._gridCtrl.templates = [
+			{
+				name: "Saved",
+				grid,
+				zones: [
+					{
+						type: "normal",
+						trigger: 5,
+						renew: 3,
+						timeout: 10,
+						handoff_timeout: 3,
+					},
+					{ name: "Z", color: "#f00", type: "normal" },
+					null,
+					null,
+					null,
+					null,
+					null,
+					null,
+				],
+				roomWidth: 3000,
+				roomDepth: 4000,
+				furniture: [],
+			},
+		];
+		a.hass.callWS = vi.fn().mockRejectedValue(new Error("network boom"));
+
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		await a._loadTemplate("Saved");
+		errSpy.mockRestore();
+
+		expect(a._templateError).toBe("dialogs.template_load_failed");
+	});
+
+	it("generic save error maps to template_save_failed (not template_load_failed)", async () => {
+		const a = createPanel() as any;
+		a._templateName = "My layout";
+		a.hass.callWS = vi.fn().mockRejectedValue(new Error("network boom"));
+
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		await a._saveTemplate();
+		errSpy.mockRestore();
+
+		expect(a._templateError).toBe("dialogs.template_save_failed");
 	});
 
 	it("throws on old-format template with length-7 zones", async () => {
