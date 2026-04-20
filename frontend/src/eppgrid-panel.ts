@@ -253,6 +253,7 @@ export class EPPGridPanel extends LitElement {
 	@state() private _showTemplateSave = false;
 	@state() private _showTemplateLoad = false;
 	@state() private _templateName = "";
+	@state() private _templateError: string | null = null;
 
 	// Multi-device support
 	@state() private _devices: DeviceInfo[] = [];
@@ -784,11 +785,18 @@ export class EPPGridPanel extends LitElement {
 		return this._gridCtrl.templates;
 	}
 
+	private _templateErrorKey(err: unknown): string {
+		const code = (err as { code?: string } | null)?.code;
+		if (code === "not_calibrated") return "dialogs.template_not_calibrated";
+		return "dialogs.template_apply_failed";
+	}
+
 	private async _saveTemplate(): Promise<void> {
 		try {
 			await this._gridCtrl.saveTemplate();
 		} catch (err) {
 			console.error("Failed to save template", err);
+			this._templateError = this._templateErrorKey(err);
 		}
 	}
 
@@ -797,6 +805,7 @@ export class EPPGridPanel extends LitElement {
 			await this._gridCtrl.loadTemplate(name);
 		} catch (err) {
 			console.error(`Failed to load template "${name}"`, err);
+			this._templateError = this._templateErrorKey(err);
 		}
 	}
 
@@ -1190,6 +1199,25 @@ export class EPPGridPanel extends LitElement {
 		return html`
       ${this._showTemplateSave ? this._renderTemplateSaveDialog() : nothing}
       ${this._showTemplateLoad ? this._renderTemplateLoadDialog() : nothing}
+      ${
+				this._templateError
+					? html`
+          <div class="template-dialog template-error-dialog">
+            <div class="template-dialog-card">
+              <h3>${this._localize("dialogs.template_apply_failed")}</h3>
+              <p class="overlay-help">${this._localize(this._templateError)}</p>
+              <div class="template-dialog-actions">
+                <button class="wizard-btn wizard-btn-primary"
+                  @click=${() => {
+										this._templateError = null;
+									}}
+                >${this._localize("common.ok") || "OK"}</button>
+              </div>
+            </div>
+          </div>
+        `
+					: nothing
+			}
       ${
 				this._showUnsavedDialog
 					? html`
@@ -1861,15 +1889,29 @@ export class EPPGridPanel extends LitElement {
 												: nothing
 										}
                     <hr style="border: none; border-top: 1px solid var(--divider-color, #eee); margin: 4px 0;"/>
-                    <button class="sidebar-menu-item" @click=${() => {
-											this._showTemplateSave = true;
-										}}>
+                    <button class="sidebar-menu-item"
+                      aria-disabled=${!this._perspective}
+                      @click=${() => {
+												if (!this._perspective) {
+													this._templateError =
+														"dialogs.template_not_calibrated";
+													return;
+												}
+												this._showTemplateSave = true;
+											}}>
                       <ha-icon icon="mdi:content-save" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("dialogs.save_template")}
                     </button>
-                    <button class="sidebar-menu-item" @click=${async () => {
-											await this._gridCtrl.fetchTemplates();
-											this._showTemplateLoad = true;
-										}}>
+                    <button class="sidebar-menu-item"
+                      aria-disabled=${!this._perspective}
+                      @click=${async () => {
+												if (!this._perspective) {
+													this._templateError =
+														"dialogs.template_not_calibrated";
+													return;
+												}
+												await this._gridCtrl.fetchTemplates();
+												this._showTemplateLoad = true;
+											}}>
                       <ha-icon icon="mdi:folder-open" style="--mdc-icon-size: 18px;"></ha-icon> ${this._localize("dialogs.load_template")}
                     </button>
                   </div>

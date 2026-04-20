@@ -363,6 +363,7 @@ class TestWebSocketSetRoomLayout:
             host="192.168.1.50",
         )
         mock_dm.read_firmware_version.return_value = FIRMWARE_VERSION
+        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"calibration": {"perspective": [1.0] * 8}}
 
         from custom_components.eppgrid.websocket_api import websocket_set_room_layout
 
@@ -404,6 +405,7 @@ class TestWebSocketSetRoomLayout:
         mock_dm.async_update_zone_entities = AsyncMock()
         mock_dm._push_config_to_device = AsyncMock()
         mock_dm.devices["AA:BB:CC:DD:EE:FF"] = MagicMock(host="1.2.3.4")
+        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"calibration": {"perspective": [1.0] * 8}}
 
         zone_slots = [
             {"type": "normal", "trigger": 5, "renew": 3, "timeout": 10.0, "handoff_timeout": 3.0},
@@ -443,6 +445,49 @@ class TestWebSocketSetRoomLayout:
         assert "room_type" not in layout
         assert "room_trigger" not in layout
         mock_dm.async_update_zone_entities.assert_awaited_with("AA:BB:CC:DD:EE:FF", zone_slots)
+
+    async def test_set_room_layout_rejects_uncalibrated_device(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """set_room_layout rejects when the device has no stored perspective.
+
+        Applying a template to an uncalibrated device would otherwise write
+        room_layout to storage (and push to the device) without the perspective
+        needed to interpret it — leaving the device effectively uncalibrated
+        but with a "configured" layout. Fail closed at the boundary.
+        """
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.devices["AA:BB:CC:DD:EE:FF"] = MagicMock(host="1.2.3.4")
+        # Device has no "calibration" key in storage => uncalibrated.
+        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {}
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        zone_slots = [{"type": "normal"}] + [None] * 7
+        connection = MagicMock()
+        msg = {
+            "id": 9,
+            "type": "eppgrid/set_room_layout",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "grid_bytes": [0] * 400,
+            "zone_slots": zone_slots,
+            "furniture": [],
+        }
+
+        await call_async_handler(hass, websocket_set_room_layout, connection, msg)
+
+        # No storage write, no device push, no entity update
+        assert "room_layout" not in mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]
+        mock_dm._push_config_to_device.assert_not_awaited()
+        mock_dm.async_update_zone_entities.assert_not_awaited()
+
+        # User-facing error with translation key
+        connection.send_error.assert_called_once()
+        args, kwargs = connection.send_error.call_args
+        assert args[0] == 9
+        assert args[1] == "not_calibrated"
+        assert kwargs.get("translation_domain") == DOMAIN
+        assert kwargs.get("translation_key") == "not_calibrated"
 
 
 class TestZoneSlotsValidator:

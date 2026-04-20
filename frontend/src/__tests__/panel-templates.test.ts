@@ -46,7 +46,40 @@ function createPanel(): EPPGridPanel {
 	a._showTemplateSave = false;
 	a._showTemplateLoad = false;
 	a._templateName = "";
+	a._showLiveMenu = true;
+	a._targets = [];
+	a._sensorState = { occupancy: false };
+	a._zoneState = { occupancy: {}, target_counts: {}, frame_count: 0 };
+	a._devices = [
+		{
+			mac: "AA:BB:CC:DD:EE:01",
+			name: "Test",
+			host: null,
+			available: true,
+			configured: true,
+		},
+	];
+	a._selectedMac = "AA:BB:CC:DD:EE:01";
+	a._entitiesConfig = {};
+	a._targetAutoDistance = true;
+	a._targetMaxDistance = 6;
+	a._staticAutoDistance = true;
+	a._staticMinDistance = 0.3;
+	a._staticMaxDistance = 16;
+	a._openAccordions = new Set();
+	a._rawTargets = [];
 	return el;
+}
+
+function findMenuItemByLabel(
+	root: ParentNode,
+	label: string,
+): HTMLButtonElement | null {
+	const items = root.querySelectorAll<HTMLButtonElement>(".sidebar-menu-item");
+	for (const item of Array.from(items)) {
+		if (item.textContent?.includes(label)) return item;
+	}
+	return null;
 }
 
 describe("_getTemplates", () => {
@@ -207,6 +240,105 @@ describe("_loadTemplate", () => {
 		expect(payload.zone_slots[1]).not.toHaveProperty("trigger");
 	});
 
+	it("renders template error dialog when _templateError is set", () => {
+		const a = createPanel() as any;
+		a._templateError = "dialogs.template_not_calibrated";
+
+		const tpl = a._renderGlobalDialogs();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const dialog = c.querySelector(".template-error-dialog");
+		expect(dialog).not.toBeNull();
+		expect(dialog?.textContent).toContain("dialogs.template_not_calibrated");
+
+		document.body.removeChild(c);
+	});
+
+	it("template error dialog not rendered when _templateError is null", () => {
+		const a = createPanel() as any;
+		a._templateError = null;
+
+		const tpl = a._renderGlobalDialogs();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const dialog = c.querySelector(".template-error-dialog");
+		expect(dialog).toBeNull();
+
+		document.body.removeChild(c);
+	});
+
+	it("dismissing error dialog clears _templateError", () => {
+		const a = createPanel() as any;
+		a._templateError = "dialogs.template_not_calibrated";
+
+		const tpl = a._renderGlobalDialogs();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const dismissBtn = c.querySelector(
+			".template-error-dialog button",
+		) as HTMLButtonElement;
+		expect(dismissBtn).not.toBeNull();
+		dismissBtn.click();
+
+		expect(a._templateError).toBeNull();
+
+		document.body.removeChild(c);
+	});
+
+	it("surfaces backend not_calibrated error via _templateError", async () => {
+		const grid = new Array(GRID_CELL_COUNT).fill(CELL_ROOM_BIT);
+		grid[0] = CELL_ROOM_BIT | (1 << 1);
+		const a = createPanel() as any;
+		a._gridCtrl.templates = [
+			{
+				name: "Saved",
+				grid,
+				zones: [
+					{
+						type: "normal",
+						trigger: 5,
+						renew: 3,
+						timeout: 10,
+						handoff_timeout: 3,
+					},
+					{ name: "Z", color: "#f00", type: "normal" },
+					null,
+					null,
+					null,
+					null,
+					null,
+					null,
+				],
+				roomWidth: 3000,
+				roomDepth: 4000,
+				furniture: [],
+			},
+		];
+		// Backend rejects with not_calibrated (same shape HA's callWS produces
+		// for send_error responses: an Error with `code` on it).
+		const err = Object.assign(
+			new Error("Device must be calibrated before applying a layout"),
+			{
+				code: "not_calibrated",
+			},
+		);
+		a.hass.callWS = vi.fn().mockRejectedValue(err);
+
+		const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		await a._loadTemplate("Saved");
+		errSpy.mockRestore();
+
+		expect(a._templateError).toBeTruthy();
+		// Specific not_calibrated message, not a generic one — so the user knows why
+		expect(a._templateError).toBe("dialogs.template_not_calibrated");
+	});
+
 	it("throws on old-format template with length-7 zones", async () => {
 		const a = createPanel() as any;
 		a._gridCtrl.templates = [
@@ -262,6 +394,112 @@ describe("_deleteTemplate", () => {
 		expect(a.hass.callWS).toHaveBeenCalledWith(
 			expect.objectContaining({ type: "eppgrid/delete_template", name: "Old" }),
 		);
+	});
+});
+
+describe("template menu buttons (calibration gate)", () => {
+	it("Save Template button marked aria-disabled when uncalibrated", () => {
+		const a = createPanel() as any;
+		a._perspective = null;
+
+		const tpl = a._renderLiveOverview();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const saveBtn = findMenuItemByLabel(c, "dialogs.save_template");
+		expect(saveBtn).not.toBeNull();
+		expect(saveBtn?.getAttribute("aria-disabled")).toBe("true");
+
+		document.body.removeChild(c);
+	});
+
+	it("Load Template button marked aria-disabled when uncalibrated", () => {
+		const a = createPanel() as any;
+		a._perspective = null;
+
+		const tpl = a._renderLiveOverview();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const loadBtn = findMenuItemByLabel(c, "dialogs.load_template");
+		expect(loadBtn).not.toBeNull();
+		expect(loadBtn?.getAttribute("aria-disabled")).toBe("true");
+
+		document.body.removeChild(c);
+	});
+
+	it("Save Template button is interactive when calibrated", () => {
+		const a = createPanel() as any;
+		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+
+		const tpl = a._renderLiveOverview();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const saveBtn = findMenuItemByLabel(c, "dialogs.save_template");
+		expect(saveBtn).not.toBeNull();
+		expect(saveBtn?.getAttribute("aria-disabled")).toBe("false");
+
+		document.body.removeChild(c);
+	});
+
+	it("Load Template button is interactive when calibrated", () => {
+		const a = createPanel() as any;
+		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+
+		const tpl = a._renderLiveOverview();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const loadBtn = findMenuItemByLabel(c, "dialogs.load_template");
+		expect(loadBtn).not.toBeNull();
+		expect(loadBtn?.getAttribute("aria-disabled")).toBe("false");
+
+		document.body.removeChild(c);
+	});
+
+	it("tapping Save Template when uncalibrated shows the error dialog instead of opening save", () => {
+		const a = createPanel() as any;
+		a._perspective = null;
+
+		const tpl = a._renderLiveOverview();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const saveBtn = findMenuItemByLabel(c, "dialogs.save_template");
+		saveBtn?.click();
+
+		expect(a._showTemplateSave).toBe(false);
+		expect(a._templateError).toBe("dialogs.template_not_calibrated");
+
+		document.body.removeChild(c);
+	});
+
+	it("tapping Load Template when uncalibrated shows the error dialog instead of fetching templates", () => {
+		const a = createPanel() as any;
+		a._perspective = null;
+		const fetchSpy = vi
+			.spyOn(a._gridCtrl, "fetchTemplates")
+			.mockResolvedValue(undefined);
+
+		const tpl = a._renderLiveOverview();
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
+
+		const loadBtn = findMenuItemByLabel(c, "dialogs.load_template");
+		loadBtn?.click();
+
+		expect(fetchSpy).not.toHaveBeenCalled();
+		expect(a._showTemplateLoad).toBe(false);
+		expect(a._templateError).toBe("dialogs.template_not_calibrated");
+
+		document.body.removeChild(c);
 	});
 });
 

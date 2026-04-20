@@ -7,7 +7,8 @@
 		"close": "Cerrar",
 		"add": "Añadir",
 		"discard": "Descartar",
-		"loading": "Cargando..."
+		"loading": "Cargando...",
+		"ok": "Aceptar"
 	},
 	"furniture": {
 		"armchair": "Sillón",
@@ -102,7 +103,10 @@
 		"save_template": "Guardar plantilla",
 		"load_template": "Cargar plantilla",
 		"no_templates": "No hay plantillas guardadas.",
-		"template_name": "Nombre de la plantilla"
+		"template_name": "Nombre de la plantilla",
+		"template_requires_calibration": "Calibra primero el dispositivo",
+		"template_apply_failed": "No se pudo aplicar la plantilla",
+		"template_not_calibrated": "Este dispositivo no está calibrado. Calibra primero la habitación e inténtalo de nuevo."
 	},
 	"menu": {
 		"settings": "Ajustes",

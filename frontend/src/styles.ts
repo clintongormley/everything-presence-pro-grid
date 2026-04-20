@@ -1089,4 +1089,10 @@ export const liveMenuStyles = css`
   .sidebar-menu-item:hover {
     background: var(--secondary-background-color, #f5f5f5);
   }
+
+  .sidebar-menu-item[aria-disabled="true"] {
+    color: var(--disabled-text-color, rgba(0, 0, 0, 0.38));
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
 `;

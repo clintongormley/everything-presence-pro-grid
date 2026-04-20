@@ -228,6 +228,8 @@ Saves perspective calibration. Clears room layout. Pushes to device. Sets `setti
 
 Saves grid, zones, furniture. Pushes config to device. Updates zone entity enable/disable/rename via `async_update_zone_entities`. Zone presence entities are named `"Zone {name}"` (e.g. `"Zone Armchair"`), target count entities `"Zone {name} Target Count"`. Zone 0 uses `"Zone Rest of Room"` / `"Zone Rest of Room Target Count"`.
 
+Rejected with code `"not_calibrated"` when the device has no stored `calibration.perspective` — a room layout is only meaningful alongside a perspective, so the template-apply path can't silently leave a device "configured" but uncalibrated.
+
 **Request:** `{ "type": "eppgrid/set_room_layout", "mac": str, "grid_bytes": int[], "zone_slots": ZoneSlot[8], "furniture": list }`
 
 `zone_slots` is a fixed-length-8 array. Slot 0 is zone 0 (always present, no name/color); slots 1-7 are named zones or `null` when unused.

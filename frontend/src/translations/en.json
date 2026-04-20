@@ -7,7 +7,8 @@
 		"close": "Close",
 		"add": "Add",
 		"discard": "Discard",
-		"loading": "Loading..."
+		"loading": "Loading...",
+		"ok": "OK"
 	},
 	"furniture": {
 		"armchair": "Armchair",
@@ -102,7 +103,10 @@
 		"save_template": "Save template",
 		"load_template": "Load template",
 		"no_templates": "No saved templates.",
-		"template_name": "Template name"
+		"template_name": "Template name",
+		"template_requires_calibration": "Calibrate the device first",
+		"template_apply_failed": "Could not apply template",
+		"template_not_calibrated": "This device isn't calibrated. Calibrate the room first, then try again."
 	},
 	"menu": {
 		"settings": "Settings",

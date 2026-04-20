@@ -379,6 +379,19 @@ async def websocket_set_room_layout(
         return
     mac = msg["mac"]
     device_config = manager._store.devices.setdefault(mac, {})
+    # A room layout is only meaningful alongside a stored perspective — the
+    # device needs perspective to map cells/targets to room coordinates.
+    # Writing a layout before calibration leaves the device "configured" but
+    # uncalibrated, so fail closed here (belt-and-braces with the UI gate).
+    if not device_config.get("calibration", {}).get("perspective"):
+        connection.send_error(
+            msg["id"],
+            "not_calibrated",
+            "Device must be calibrated before applying a layout",
+            translation_domain=DOMAIN,
+            translation_key="not_calibrated",
+        )
+        return
     device_config["room_layout"] = {
         "grid_bytes": msg["grid_bytes"],
         "zone_slots": msg["zone_slots"],
