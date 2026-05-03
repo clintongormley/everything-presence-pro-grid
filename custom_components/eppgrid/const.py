@@ -19,7 +19,7 @@ EMPTY_ZONE_SLOTS: list[dict[str, str] | None] = [{"type": "default"}, *([None] *
 # Firmware version this integration requires.
 # Must match the firmware's Firmware Version text sensor value.
 # Bump when releasing new firmware. GitHub release tag is v{FIRMWARE_VERSION}.
-FIRMWARE_VERSION = "0.98.0"
+FIRMWARE_VERSION = "0.99.0"
 
 # Original EPP firmware identifiers (for device discovery)
 EPP_MANUFACTURER = "EverythingSmartTechnology"

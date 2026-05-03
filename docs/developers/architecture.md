@@ -191,15 +191,13 @@ is the monotonically-decreasing low-water mark (resets only on reboot), so
 cross-referencing it with `Uptime` and `Reset Reason` in HA history is the
 fastest way to distinguish OOM-driven reboots from network blips.
 
-**BLE Scan switch** (in `firmware/common/bluetooth-base.yaml`): runtime
-toggle for the `esp32_ble_tracker` scan, exposed as a config-category
-switch. Disabling reboots the device so any in-flight `bluetooth_proxy`
-GATT-client connections drop cleanly; an `esphome.on_boot` reconciliation
-re-applies the persisted OFF state immediately on restart (template
-switches restore state but don't replay actions). PR #149's OTA `on_error`
-hook checks the toggle before restarting scan, so a failed OTA can't
-silently override the user's preference. The BLE controller stack
-(~10-15 KB) stays loaded regardless.
+**OTA scan pause** (in `firmware/common/bluetooth-base.yaml`): the
+`ota_http_request` block is extended with `on_begin: stop_scan` and
+`on_error: start_scan` hooks so the BLE scan pauses for the duration
+of an OTA download. The mbedtls TLS context held during the multi-second
+binary fetch is the largest transient heap consumer on this firmware;
+combined with `bluetooth_proxy` + active scan it has caused OOM-driven
+reboots mid-OTA.
 
 ## HA Integration
 

@@ -7,78 +7,16 @@ esp32_ble_tracker:
 bluetooth_proxy:
   active: true
 
-# User-facing toggle for the BLE scan. Bluetooth proxy + 100%-duty-cycle
-# active scan is the dominant heap consumer on this firmware (~30-80 KB
-# resident with periodic transient spikes during scan-result processing).
-# Users who don't actually have BLE devices to proxy can free most of
-# that heap without reflashing.
-#
-# Scope of control:
-#   - Off: stops esp32_ble_tracker scanning and reboots so any in-flight
-#     bluetooth_proxy GATT-client connections drop cleanly.
-#   - On: restarts scanning. (No reboot required — proxy and controller
-#     stay loaded throughout.)
-#
-# What stays loaded even when off:
-#   - bluetooth_proxy component code
-#   - BLE controller stack (~10-15 KB) — initialized by ESPHome before
-#     our on_boot reconciliation runs.
-#
-# Defaults ON for backwards compatibility on first flash; a deliberate
-# OFF persists across reboots.
-switch:
-  - platform: template
-    name: "BLE Scan"
-    id: ble_scan_enabled
-    entity_category: config
-    restore_mode: RESTORE_DEFAULT_ON
-    optimistic: true
-    turn_on_action:
-      - logger.log: "BLE Scan enabled — starting tracker scan"
-      - esp32_ble_tracker.start_scan:
-    turn_off_action:
-      - logger.log: "BLE Scan disabled — stopping tracker scan and rebooting to drop active proxy connections"
-      - esp32_ble_tracker.stop_scan:
-      # Reboot so any in-flight bluetooth_proxy GATT-client connections
-      # drop cleanly; on_boot reconciliation re-applies the OFF state
-      # immediately on restart. Brief delay so HA receives the switch
-      # state change before the device disappears.
-      - delay: 2s
-      - lambda: 'App.safe_reboot();'
-
-# Reconcile scan with restored switch state on boot. Template switches
-# restore their state but don't replay the configured actions, so a user
-# who toggled OFF before reboot would otherwise still come back with
-# scanning active.
-esphome:
-  on_boot:
-    - priority: 100
-      then:
-        - if:
-            condition:
-              not:
-                switch.is_on: ble_scan_enabled
-            then:
-              - esp32_ble_tracker.stop_scan:
-              - logger.log: "BLE Scan disabled by user — tracker stopped on boot"
-
 # Pause BLE scan for the OTA download. The mbedtls TLS context held during the
 # multi-second binary fetch is the largest transient heap consumer on this
 # firmware; combined with bluetooth_proxy + active scan it has caused OOM-driven
 # reboots mid-OTA. On success the device reboots and scan resumes from boot; on
-# failure we restart it explicitly — but only if the user had it on, otherwise
-# a failed OTA would silently override the user's BLE-off preference.
+# failure we restart it explicitly.
 ota:
   - id: !extend ota_http_request
     on_begin:
       - logger.log: "OTA started — pausing BLE scan to free heap"
       - esp32_ble_tracker.stop_scan:
     on_error:
-      - if:
-          condition:
-            switch.is_on: ble_scan_enabled
-          then:
-            - logger.log: "OTA failed — resuming BLE scan"
-            - esp32_ble_tracker.start_scan:
-          else:
-            - logger.log: "OTA failed — BLE scan was disabled by user, leaving off"
+      - logger.log: "OTA failed — resuming BLE scan"
+      - esp32_ble_tracker.start_scan:
