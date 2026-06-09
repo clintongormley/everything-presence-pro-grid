@@ -25,14 +25,16 @@ on:
   release:
     types: [released]
 
-permissions:
-  contents: write
-  pull-requests: write
+# Least privilege: grant nothing by default. The bump job's GITHUB_TOKEN only
+# needs to read for the checkout — all PR/merge operations use RELEASE_PAT.
+permissions: {}
 
 jobs:
   bump:
     runs-on: ubuntu-latest
     name: Bump main to next minor
+    permissions:
+      contents: read
     steps:
       # The bump PR must be opened by a PAT/App token, NOT the default
       # GITHUB_TOKEN: GitHub deliberately does not trigger `on: pull_request`
