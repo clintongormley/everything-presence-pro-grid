@@ -1582,54 +1582,68 @@ class DeviceManager:
 
         for i in range(MAX_ZONES + 1):  # zones 0-7
             exists = _zone_exists(i)
+            # Zone 0 ("Rest of Room") has no user-supplied name; named slots
+            # carry one. Guard the slot read behind shape_ok — malformed
+            # shapes may be shorter than MAX_ZONES + 1.
+            slot = zone_slots[i] if shape_ok and i > 0 else None
+            # .get() with fallback — _resolve_zone_name tolerates zone_name=None.
+            zone_name = slot.get("name") if isinstance(slot, dict) else None
 
-            # Zone presence entity
             presence_entry = zone_entries.get((i, "presence"))
             if presence_entry is not None:
-                entity_id = presence_entry.entity_id
-                if not zone_presence or not exists:
-                    ent_reg.async_update_entity(entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION, name=None)
-                elif i == 0:
-                    ent_reg.async_update_entity(
-                        entity_id,
-                        disabled_by=None,
-                        name=_resolve_zone_name(language, index=0, zone_name=None, target_count=False),
-                    )
-                else:
-                    zone = zone_slots[i]
-                    if presence_entry.disabled_by == er.RegistryEntryDisabler.USER:
-                        pass  # Don't override user-disabled entities
-                    else:
-                        # .get() with fallback — _resolve_zone_name tolerates zone_name=None.
-                        zone_name = zone.get("name") if isinstance(zone, dict) else None
-                        ent_reg.async_update_entity(
-                            entity_id,
-                            disabled_by=None,
-                            name=_resolve_zone_name(language, index=i, zone_name=zone_name, target_count=False),
-                        )
+                enabled = zone_presence and exists
+                self._apply_zone_entity(
+                    ent_reg,
+                    presence_entry,
+                    enabled=enabled,
+                    name=(
+                        _resolve_zone_name(language, index=i, zone_name=zone_name, target_count=False)
+                        if enabled
+                        else None
+                    ),
+                )
 
-            # Zone target count entity
             tc_entry = zone_entries.get((i, "target_count"))
             if tc_entry is not None:
-                tc_entity_id = tc_entry.entity_id
-                if tc_entry.disabled_by == er.RegistryEntryDisabler.USER:
-                    pass  # Don't override user-disabled entities
-                elif zone_target_count and exists:
-                    if i == 0:
-                        ent_reg.async_update_entity(
-                            tc_entity_id,
-                            disabled_by=None,
-                            name=_resolve_zone_name(language, index=0, zone_name=None, target_count=True),
-                        )
-                    else:
-                        zone = zone_slots[i]
-                        zone_name = zone.get("name") if isinstance(zone, dict) else None
-                        ent_reg.async_update_entity(
-                            tc_entity_id,
-                            disabled_by=None,
-                            name=_resolve_zone_name(language, index=i, zone_name=zone_name, target_count=True),
-                        )
-                else:
-                    ent_reg.async_update_entity(
-                        tc_entity_id, disabled_by=er.RegistryEntryDisabler.INTEGRATION, name=None
-                    )
+                enabled = zone_target_count and exists
+                self._apply_zone_entity(
+                    ent_reg,
+                    tc_entry,
+                    enabled=enabled,
+                    name=(
+                        _resolve_zone_name(language, index=i, zone_name=zone_name, target_count=True)
+                        if enabled
+                        else None
+                    ),
+                )
+
+    @staticmethod
+    def _apply_zone_entity(
+        ent_reg: er.EntityRegistry,
+        entry: er.RegistryEntry,
+        *,
+        enabled: bool,
+        name: str | None,
+    ) -> None:
+        """Enable/disable + rename one zone entity, respecting the USER disabler.
+
+        Single implementation for all presence and target-count branches of
+        `async_update_zone_entities` — the previous three-way duplication is
+        what let the zone-0 branch ship without the USER guard:
+
+        - an entity the user disabled by hand is never touched: neither
+          re-enabled nor re-stamped with the INTEGRATION disabler;
+        - enabling applies the resolved zone name;
+        - disabling only writes when the entity isn't already disabled
+          (sets INTEGRATION and clears the name).
+        """
+        if entry.disabled_by == er.RegistryEntryDisabler.USER:
+            return
+        if enabled:
+            ent_reg.async_update_entity(entry.entity_id, disabled_by=None, name=name)
+        elif entry.disabled_by is None:
+            ent_reg.async_update_entity(
+                entry.entity_id,
+                disabled_by=er.RegistryEntryDisabler.INTEGRATION,
+                name=None,
+            )

@@ -6161,6 +6161,99 @@ class TestZoneEntities:
         zone1 = ent_reg.async_get(zone1_entry.entity_id)
         assert zone1.disabled_by == er.RegistryEntryDisabler.USER
 
+    async def test_update_zone_entities_respects_user_disabled_zone0(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """Zone-0 presence ("Rest of Room") with disabled_by=USER is not re-enabled.
+
+        The zone-0 branch lacked the USER skip-guard that the named-zone and
+        target-count branches have, so a user who manually disabled the
+        Rest of Room presence entity got it force-re-enabled on every zone
+        update.
+        """
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.50"}, title="EPP")
+        esphome_entry.add_to_hass(hass)
+
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP",
+        )
+
+        zone0_entry = ent_reg.async_get_or_create(
+            "binary_sensor",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FF-binary_sensor-zone_0_presence",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+        # User explicitly disabled the Rest of Room presence entity
+        ent_reg.async_update_entity(zone0_entry.entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
+            mac="AA:BB:CC:DD:EE:FF", name="EPP", host="192.168.1.50", device_id=device.id
+        )
+        manager._store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"zone_presence": True}}
+
+        zone_slots = [
+            {"type": "default", "trigger": 5, "renew": 3, "timeout": 10.0, "handoff_timeout": 3.0},
+        ] + [None] * MAX_ZONES
+        await manager.async_update_zone_entities("AA:BB:CC:DD:EE:FF", zone_slots)
+
+        zone0 = ent_reg.async_get(zone0_entry.entity_id)
+        assert zone0.disabled_by == er.RegistryEntryDisabler.USER, (
+            "zone 0 presence must stay user-disabled, not be force-re-enabled"
+        )
+
+    async def test_update_zone_entities_disable_does_not_overwrite_user_disabler(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """Disabling an unused zone must not stamp INTEGRATION over a USER disabler.
+
+        If the user disabled the entity by hand and the zone is later deleted,
+        overwriting USER with INTEGRATION would make a future zone re-create
+        silently re-enable an entity the user wanted off.
+        """
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.50"}, title="EPP")
+        esphome_entry.add_to_hass(hass)
+
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP",
+        )
+
+        zone1_entry = ent_reg.async_get_or_create(
+            "binary_sensor",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FF-binary_sensor-zone_1_presence",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+        ent_reg.async_update_entity(zone1_entry.entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
+            mac="AA:BB:CC:DD:EE:FF", name="EPP", host="192.168.1.50", device_id=device.id
+        )
+        manager._store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"zone_presence": True}}
+
+        # Zone 1 does not exist → disable path runs for its entities.
+        zone_slots = [
+            {"type": "default", "trigger": 5, "renew": 3, "timeout": 10.0, "handoff_timeout": 3.0},
+        ] + [None] * MAX_ZONES
+        await manager.async_update_zone_entities("AA:BB:CC:DD:EE:FF", zone_slots)
+
+        zone1 = ent_reg.async_get(zone1_entry.entity_id)
+        assert zone1.disabled_by == er.RegistryEntryDisabler.USER, (
+            "disable path must not overwrite a USER disabler with INTEGRATION"
+        )
+
     async def test_update_zone_entities_unknown_device(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """Unknown device is a no-op."""
         await manager.async_update_zone_entities("00:00:00:00:00:00", [None] * (MAX_ZONES + 1))
