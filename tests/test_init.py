@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import json
+import os
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+import pytest
 from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
+from custom_components.eppgrid import _PANEL_REGISTERED_KEY
 from custom_components.eppgrid import async_setup_entry
 from custom_components.eppgrid import async_unload_entry
 from custom_components.eppgrid.const import DOMAIN
@@ -302,6 +306,154 @@ async def test_register_frontend_resources_recomputes_hash_on_reload(hass: HomeA
     assert first.endswith("v=abcd1234")
     assert second.endswith("v=ef567890")
     hass.http.async_register_static_paths.assert_awaited_once()
+
+
+async def test_setup_entry_unwinds_on_start_failure_and_allows_retry(
+    hass: HomeAssistant, config_entry: MockConfigEntry
+) -> None:
+    """A failing manager.async_start leaves no panel, no hass.data entry, and a stopped manager.
+
+    HA never calls async_unload_entry for a failed setup, so anything left
+    behind (most critically the sidebar panel) would break every retry with
+    panel_custom's "Overwriting panel" ValueError until restart.
+    """
+    if hass.http is None:
+        hass.http = MagicMock()
+
+    with (
+        patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch(
+            "custom_components.eppgrid._register_frontend_resources",
+            new_callable=AsyncMock,
+            return_value="/eppgrid_static/eppgrid-panel.js?v=deadbeef",
+        ),
+        patch("custom_components.eppgrid._register_panel", new_callable=AsyncMock) as mock_panel,
+        patch("custom_components.eppgrid.async_remove_panel") as mock_remove_panel,
+    ):
+        mock_dm = mock_dm_cls.return_value
+        mock_dm.async_start = AsyncMock(side_effect=RuntimeError("device exploded"))
+        mock_dm.async_stop = AsyncMock()
+
+        with pytest.raises(RuntimeError):
+            await async_setup_entry(hass, config_entry)
+
+        # Nothing half-set-up may leak: the panel was never registered (so
+        # nothing to remove either), the manager is not published, and its
+        # listeners were torn down again.
+        mock_panel.assert_not_awaited()
+        mock_remove_panel.assert_not_called()
+        assert DOMAIN not in hass.data
+        assert _PANEL_REGISTERED_KEY not in hass.data
+        mock_dm.async_stop.assert_awaited_once()
+
+        # A retry must succeed — no stale panel registration blocking it.
+        mock_dm.async_start = AsyncMock()
+        assert await async_setup_entry(hass, config_entry) is True
+        assert hass.data[DOMAIN] is mock_dm
+        mock_panel.assert_awaited_once()
+
+
+async def test_setup_entry_unwinds_on_panel_failure(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+    """If panel registration itself fails, the started manager is stopped and unpublished."""
+    if hass.http is None:
+        hass.http = MagicMock()
+
+    with (
+        patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch(
+            "custom_components.eppgrid._register_frontend_resources",
+            new_callable=AsyncMock,
+            return_value="/eppgrid_static/eppgrid-panel.js?v=deadbeef",
+        ),
+        patch(
+            "custom_components.eppgrid._register_panel",
+            new_callable=AsyncMock,
+            side_effect=ValueError("Overwriting panel eppgrid"),
+        ),
+    ):
+        mock_dm = mock_dm_cls.return_value
+        mock_dm.async_start = AsyncMock()
+        mock_dm.async_stop = AsyncMock()
+
+        with pytest.raises(ValueError):
+            await async_setup_entry(hass, config_entry)
+
+    assert DOMAIN not in hass.data
+    assert _PANEL_REGISTERED_KEY not in hass.data
+    mock_dm.async_stop.assert_awaited_once()
+
+
+async def test_setup_entry_registers_panel_after_manager_start(
+    hass: HomeAssistant, config_entry: MockConfigEntry
+) -> None:
+    """The fallible manager.async_start runs before the irreversible panel registration."""
+    if hass.http is None:
+        hass.http = MagicMock()
+
+    order: list[str] = []
+
+    async def record_start() -> None:
+        order.append("start")
+
+    async def record_panel(*args: object) -> None:
+        order.append("panel")
+
+    with (
+        patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch(
+            "custom_components.eppgrid._register_frontend_resources",
+            new_callable=AsyncMock,
+            return_value="/eppgrid_static/eppgrid-panel.js?v=deadbeef",
+        ),
+        patch("custom_components.eppgrid._register_panel", side_effect=record_panel),
+    ):
+        mock_dm = mock_dm_cls.return_value
+        mock_dm.async_start = AsyncMock(side_effect=record_start)
+        await async_setup_entry(hass, config_entry)
+
+    assert order == ["start", "panel"]
+
+
+async def test_setup_entry_registers_proxy_view_once_across_reloads(
+    hass: HomeAssistant, config_entry: MockConfigEntry
+) -> None:
+    """The firmware proxy view registers once per HA process, not once per reload.
+
+    HomeAssistantView.register appends a fresh route on every call, so an
+    unguarded call would stack duplicate /api/eppgrid/firmware routes on each
+    options-change reload.
+    """
+    if hass.http is None:
+        hass.http = MagicMock()
+
+    with (
+        patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch(
+            "custom_components.eppgrid._register_frontend_resources",
+            new_callable=AsyncMock,
+            return_value="/eppgrid_static/eppgrid-panel.js?v=deadbeef",
+        ),
+        patch("custom_components.eppgrid._register_panel", new_callable=AsyncMock),
+        patch.object(hass.http, "register_view") as mock_register_view,
+    ):
+        mock_dm = mock_dm_cls.return_value
+        mock_dm.async_start = AsyncMock()
+        mock_dm.async_stop = AsyncMock()
+
+        await async_setup_entry(hass, config_entry)
+        await async_unload_entry(hass, config_entry)
+        await async_setup_entry(hass, config_entry)
+
+    assert mock_register_view.call_count == 1
+
+
+def test_manifest_declares_hard_dependencies() -> None:
+    """Setup hard-uses these HA components; declaring them guarantees load order."""
+    manifest_path = os.path.join(os.path.dirname(__file__), "..", "custom_components", "eppgrid", "manifest.json")
+    with open(manifest_path, encoding="utf-8") as f:
+        manifest = json.load(f)
+
+    assert manifest["dependencies"] == ["frontend", "http", "panel_custom", "repairs", "websocket_api"]
 
 
 async def test_hash_file(tmp_path) -> None:
