@@ -146,6 +146,21 @@ def _raise_service_unavailable(service: str) -> NoReturn:
     )
 
 
+def _raise_device_not_connected(operation: str) -> NoReturn:
+    """Raise translation-keyed HomeAssistantError for a dead connection.
+
+    Used by push paths that previously no-opped when ``_client`` was None
+    (``_on_stop`` racing the push): silently returning made callers report
+    success while nothing reached the device, so their failure/retry paths
+    never armed.
+    """
+    raise HomeAssistantError(
+        f"Cannot {operation}: device connection is closed",
+        translation_domain=DOMAIN,
+        translation_key="device_not_connected",
+    )
+
+
 _TARGET_ENTITY_KEYS = ("target_xy", "target_active", "target_signal", "target_zone", "target_count")
 _ZONE_ENTITY_KEYS = ("zone_presence", "zone_target_count")
 

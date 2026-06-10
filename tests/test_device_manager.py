@@ -124,15 +124,20 @@ class TestDeviceConnection:
                 await conn.async_connect()
 
             assert not conn.connected
-            mock_client.disconnect.assert_awaited_once()
+            # Plain failures clean up gracefully (no force).
+            mock_client.disconnect.assert_awaited_once_with()
 
     async def test_connect_cancelled_mid_handshake_disconnects(self) -> None:
         """Cancellation between a successful connect() and the entity/service
-        listing must still disconnect the client. Callers wrap async_connect
-        in asyncio.wait_for(..., 30); CancelledError is a BaseException, so a
-        bare `except Exception` cleanup misses it — the connected APIClient is
-        then orphaned (self._client never assigned, no handle to close it) and
-        holds one of the ESP32's hard-limited API slots forever."""
+        listing must still disconnect the client. Callers typically wrap
+        async_connect in asyncio.wait_for(..., 30); CancelledError is a
+        BaseException, so a bare `except Exception` cleanup misses it — the
+        connected APIClient is then orphaned (self._client never assigned, no
+        handle to close it) and holds one of the ESP32's hard-limited API
+        slots forever. The cleanup must use disconnect(force=True): the force
+        path is synchronous inside aioesphomeapi, so it can neither be
+        interrupted by a second cancellation nor stretch the caller's
+        deadline."""
         conn = DeviceConnection("192.168.1.100")
 
         with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
@@ -155,7 +160,7 @@ class TestDeviceConnection:
 
             assert not conn.connected
             assert conn._client is None
-            mock_client.disconnect.assert_awaited_once()
+            mock_client.disconnect.assert_awaited_once_with(force=True)
 
     async def test_subscribe_states_fans_out(self) -> None:
         """subscribe_states dispatches to all subscribers."""
@@ -324,11 +329,19 @@ class TestDeviceConnection:
             assert call_args[0][0] == mock_service
             assert call_args[0][1]["room_width"] == 3000.0
 
-    async def test_push_config_no_client(self) -> None:
-        """push_config is a no-op when not connected."""
+    async def test_push_config_no_client_raises(self) -> None:
+        """push_config on a dead client must raise, not silently no-op.
+
+        _on_stop can clear _client between get_session and the push; a silent
+        return makes _do_push_config_to_device report success, leaving the
+        device unsynced with the _failed_pushes recovery never armed.
+        """
+        from homeassistant.exceptions import HomeAssistantError
+
         conn = DeviceConnection("192.168.1.100")
-        # Should not raise
-        await conn.async_push_config({"calibration": {"perspective": [1.0] * 8}})
+        with pytest.raises(HomeAssistantError) as excinfo:
+            await conn.async_push_config({"calibration": {"perspective": [1.0] * 8}})
+        assert excinfo.value.translation_key == "device_not_connected"
 
     async def test_push_config_settings_translation(self) -> None:
         """Settings values are correctly translated to firmware service calls."""
@@ -449,6 +462,17 @@ class TestDeviceConnection:
             calls = mock_client.execute_service.await_args_list
             payloads = {c.args[0].name: c.args[1] for c in calls}
             assert payloads["epp_set_static_presence"]["on_delay"] == 2.0
+
+    async def test_push_distance_override_no_client_raises(self) -> None:
+        """push_distance_override on a dead client must raise, aligned with
+        async_push_config — a silent no-op reports success to the websocket
+        caller while the override never reaches the device."""
+        from homeassistant.exceptions import HomeAssistantError
+
+        conn = DeviceConnection("192.168.1.100")
+        with pytest.raises(HomeAssistantError) as excinfo:
+            await conn.async_push_distance_override({"target_max_distance": 6.0})
+        assert excinfo.value.translation_key == "device_not_connected"
 
     async def test_push_config_settings_defaults(self) -> None:
         """Missing settings keys fall back to correct defaults."""
@@ -4320,6 +4344,34 @@ class TestEventCallbacks:
 
         assert result is False
         assert mac not in manager._active_connections
+
+    async def test_push_config_dead_session_client_returns_false(
+        self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
+    ) -> None:
+        """A session whose APIClient died between get_session and the push
+        (_on_stop racing the push) must surface as push failure, not success.
+
+        With async_push_config silently no-opping on a dead client,
+        _do_push_config_to_device returned True — the device was left
+        unsynced and the _failed_pushes recovery never armed.
+        """
+        mac = "AA:BB:CC:DD:EE:FF"
+        store.devices[mac] = {"calibration": {"perspective": [1.0] * 8}}
+        manager.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50")
+
+        # Real DeviceConnection in the dying-client state: get_session's
+        # `connected` check passed, then _on_stop cleared _client before the
+        # push body ran.
+        dead_conn = DeviceConnection("192.168.1.50")
+        dead_conn.connected = True
+        assert dead_conn._client is None
+        manager._active_connections[mac] = dead_conn
+
+        with patch.object(manager, "read_firmware_version", return_value=FIRMWARE_VERSION):
+            result = await manager._push_config_to_device(mac)
+
+        assert result is False, "dead-client push must report failure so retry logic arms"
+        assert mac not in manager._active_connections  # stale session torn down
 
     # --- version-gated push: skip on firmware mismatch ---
 

@@ -18,6 +18,7 @@ from ..const import GRID_CELL_SIZE_MM
 from ..const import GRID_COLS
 from ._helpers import _ESPHOME_TO_PYTHON_LOG
 from ._helpers import _expand_zone_slot
+from ._helpers import _raise_device_not_connected
 from ._helpers import _raise_service_unavailable
 from ._helpers import _static_presence_args
 from ._helpers import is_valid_zone_slots_shape
@@ -57,14 +58,23 @@ class DeviceConnection:
         try:
             await client.connect(on_stop=_on_stop, login=True)
             entities, services = await client.list_entities_services()
-        except (Exception, asyncio.CancelledError):
-            # CancelledError must be cleaned up too: callers wrap us in
-            # asyncio.wait_for, so a timeout firing between a successful
-            # connect() and the entity listing lands here. Without the
-            # disconnect, the connected APIClient is orphaned (`self._client`
-            # was never assigned, so nothing can ever close it) and holds one
-            # of the ESP32's hard-limited API slots forever. The bare `raise`
-            # re-raises the original exception after the awaited cleanup.
+        except asyncio.CancelledError:
+            # CancelledError must be cleaned up too: callers typically wrap
+            # us in asyncio.wait_for, so a timeout firing between a
+            # successful connect() and the entity listing lands here. Without
+            # the disconnect, the connected APIClient is orphaned
+            # (`self._client` was never assigned, so nothing can ever close
+            # it) and holds one of the ESP32's hard-limited API slots
+            # forever. disconnect(force=True) tears down synchronously inside
+            # aioesphomeapi (no internal awaits), so the cleanup can neither
+            # be interrupted by a second cancellation nor stretch the
+            # caller's deadline; wait_for converts CancelledError to
+            # TimeoutError based on identity, hence the bare `raise`.
+            await client.disconnect(force=True)
+            raise
+        except Exception:
+            # Plain failures clean up gracefully — only the cancel path above
+            # needs the synchronous force teardown.
             await client.disconnect()
             raise
         self._client = client
@@ -258,9 +268,14 @@ class DeviceConnection:
         return decoded
 
     async def async_push_distance_override(self, override: dict[str, Any]) -> None:
-        """Push distance override to device without persisting."""
+        """Push distance override to device without persisting.
+
+        Raises ``HomeAssistantError`` when the client is dead (``_on_stop``
+        racing the push) — a silent no-op would report success to the
+        websocket caller while the override never reached the device.
+        """
         if self._client is None:
-            return
+            _raise_device_not_connected("push distance override")
         svc = self._services.get("epp_set_tracking")
         if svc:
             await self._client.execute_service(
@@ -279,9 +294,15 @@ class DeviceConnection:
         await self._client.execute_service(service, {"target_index": target_index, "cell_index": cell_index})
 
     async def async_push_config(self, config: dict[str, Any]) -> None:
-        """Push perspective, grid, and zones to the device."""
+        """Push perspective, grid, and zones to the device.
+
+        Raises ``HomeAssistantError`` when the client is dead (``_on_stop``
+        racing the push between ``get_session`` and this call) — a silent
+        no-op would make ``_do_push_config_to_device`` return True, leaving
+        the device unsynced with the ``_failed_pushes`` recovery never armed.
+        """
         if self._client is None:
-            return
+            _raise_device_not_connected("push config")
 
         # Per-section detail at debug; one info summary at the end. Push
         # happens on every reconnect so 10 lines per device used to flood the
