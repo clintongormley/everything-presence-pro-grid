@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 import logging
+import math
 import re
 from typing import Any
 
@@ -49,6 +51,28 @@ CONFIG_ENTRY_ID_SCHEMA: vol.All = vol.All(str, vol.Length(min=1, max=64))
 HOST_SCHEMA: vol.All = vol.All(str, vol.Length(min=1, max=253))
 COLOR_HEX_SCHEMA: vol.Match = vol.Match(r"^#[0-9A-Fa-f]{6}$")
 
+
+def _check_finite(value: float) -> float:
+    """Raise vol.Invalid unless the (already-coerced) float is finite.
+
+    vol.Coerce(float) happily accepts the strings "NaN" / "Infinity". A NaN
+    that reaches storage is re-serialized by orjson as `null`, which then
+    breaks config pushes after a restart. Must run BEFORE any vol.Range:
+    every comparison against NaN is False, so NaN slips straight through
+    Range's < / > checks.
+    """
+    if not math.isfinite(value):
+        raise vol.Invalid("must be a finite number")
+    return value
+
+
+# Finite-float schema for numeric fields with no natural tighter range.
+# ±1e6 generously bounds everything the frontend sends (mm coordinates,
+# metres, seconds, sensor offsets) while rejecting absurd magnitudes.
+# Fields with a tighter domain keep their own vol.Range but still chain
+# _check_finite before it (see set_settings / set_setup in _devices.py).
+FINITE_FLOAT_SCHEMA: vol.All = vol.All(vol.Coerce(float), _check_finite, vol.Range(min=-1e6, max=1e6))
+
 # Cap a configuration blob's serialized JSON size at 256 KiB. Stored
 # configurations include grid bytes (~400 ints), zone slots (8), and
 # settings (a few dozen scalars) — well under 32 KiB in practice. The
@@ -57,14 +81,23 @@ COLOR_HEX_SCHEMA: vol.Match = vol.Match(r"^#[0-9A-Fa-f]{6}$")
 _MAX_CONFIGURATION_JSON_BYTES = 256 * 1024
 
 
+def _json_size_bytes(value: Any) -> int:
+    """Return the UTF-8 byte size of a value's compact JSON serialization.
+
+    `ensure_ascii=False` + `.encode("utf-8")` measures what HA's storage
+    actually writes (orjson emits raw UTF-8, not \\uXXXX escapes). Counting
+    characters of ASCII-escaped JSON would over-count multi-byte text ~3x
+    and falsely reject legitimate non-ASCII configuration names/labels.
+    """
+    return len(json.dumps(value, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
+
+
 def _bounded_dict(value: Any) -> dict:
     """Validate a dict value's JSON-serialized size is under the configured cap."""
-    import json
-
     if not isinstance(value, dict):
         raise vol.Invalid("must be a dict")
     try:
-        size = len(json.dumps(value, separators=(",", ":")))
+        size = _json_size_bytes(value)
     except (TypeError, ValueError) as err:
         raise vol.Invalid(f"value not JSON-serializable: {err}") from err
     if size > _MAX_CONFIGURATION_JSON_BYTES:
@@ -73,6 +106,45 @@ def _bounded_dict(value: Any) -> dict:
 
 
 CONFIGURATION_DICT_SCHEMA: Any = _bounded_dict
+
+# Cap the furniture list's serialized JSON at 64 KiB. A real room holds a
+# couple dozen items at ~200 bytes each (~5 KiB); the cap keeps a malicious
+# client from filling .storage/eppgrid via thousands of items while staying
+# far above any legitimate layout.
+_MAX_FURNITURE_JSON_BYTES = 64 * 1024
+
+# A furniture item as serialized by the frontend (`applyLayout` in
+# grid-state-controller.ts / the overlay one-shot save in eppgrid-panel.ts):
+# explicit known keys only. `id` is stripped by the frontend before saving
+# (parseFurniture regenerates ids on load) but is accepted — bounded — for
+# safety. PREVENT_EXTRA plus bounded strings and finite geometry keep
+# arbitrary blobs out of storage.
+_FURNITURE_ITEM_SCHEMA = vol.Schema(
+    {
+        vol.Optional("id"): vol.All(str, vol.Length(max=64)),
+        vol.Optional("type"): vol.In(["icon", "svg"]),
+        vol.Optional("icon"): vol.All(str, vol.Length(max=128)),
+        vol.Optional("label"): vol.All(str, vol.Length(max=128)),
+        vol.Optional("x"): FINITE_FLOAT_SCHEMA,
+        vol.Optional("y"): FINITE_FLOAT_SCHEMA,
+        vol.Optional("width"): FINITE_FLOAT_SCHEMA,
+        vol.Optional("height"): FINITE_FLOAT_SCHEMA,
+        vol.Optional("rotation"): FINITE_FLOAT_SCHEMA,
+        vol.Optional("lockAspect"): bool,
+    },
+    extra=vol.PREVENT_EXTRA,
+)
+
+
+def _bounded_furniture_size(value: list) -> list:
+    """Validate the furniture list's total serialized size is under the cap."""
+    size = _json_size_bytes(value)
+    if size > _MAX_FURNITURE_JSON_BYTES:
+        raise vol.Invalid(f"serialized furniture size {size} bytes exceeds cap {_MAX_FURNITURE_JSON_BYTES}")
+    return value
+
+
+FURNITURE_SCHEMA: vol.All = vol.All([_FURNITURE_ITEM_SCHEMA], _bounded_furniture_size)
 
 # Per-slot length / format caps for `_validate_zone_slots`. Bound here so a
 # malicious client can't flood storage with megabyte-long zone names or types.

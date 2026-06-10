@@ -258,7 +258,9 @@ Saves perspective calibration. Clears room layout. Pushes to device. Sets `setti
 
 Saves grid, zones, furniture. Pushes config to device. Updates zone entity enable/disable/rename via `async_update_zone_entities`. Zone presence entities are named `"Zone {name}"` (e.g. `"Zone Armchair"`), target count entities `"Zone {name} Target Count"`. Zone 0 uses `"Zone Rest of Room"` / `"Zone Rest of Room Target Count"`.
 
-**Request:** `{ "type": "eppgrid/set_room_layout", "mac": str, "grid_bytes": int[], "zone_slots": ZoneSlot[8], "furniture": list }`
+**Request:** `{ "type": "eppgrid/set_room_layout", "mac": str, "grid_bytes": int[400], "zone_slots": ZoneSlot[8], "furniture": FurnitureItem[] }`
+
+`grid_bytes` must contain exactly `GRID_COLS * GRID_ROWS` (400) entries — firmware rejects partial grids, so the schema does too. Each `furniture` item is validated against the shape the frontend serializes (`type`/`icon`/`label` bounded strings, `x`/`y`/`width`/`height`/`rotation` finite numbers, `lockAspect` bool, optional bounded `id`; unknown keys rejected) and the list's serialized JSON is capped at 64 KiB.
 
 `zone_slots` is a fixed-length-8 array. Slot 0 is zone 0 (always present, no name/color); slots 1-7 are named zones or `null` when unused.
 
@@ -287,7 +289,7 @@ Each cell in `grid_bytes` is a uint8 with bit layout: bit 0 = room (inside/outsi
 
 ### `set_entity_enabled`
 
-Enables/disables an ESPHome entity.
+Enables/disables an ESPHome entity. Scoped to the requested device: the `entity_id` must belong to `mac`'s HA device, otherwise the command returns `entity_not_on_device` (or `entity_not_found` for unknown entity ids).
 
 **Request:** `{ "type": "eppgrid/set_entity_enabled", "mac": str, "entity_id": str, "enabled": bool }`
 
@@ -371,6 +373,8 @@ Per-device toggle for the calibration-tutorial overlay shown above the wizard. P
 | `list_configurations` | List saved configurations (grid + zones + sparse settings) |
 | `save_configuration` | Save the current configuration under a name |
 | `delete_configuration` | Delete a saved configuration |
+
+`save_configuration` caps each blob's serialized JSON at 256 KiB (measured as UTF-8 bytes, matching what HA storage writes) and the store at 50 named configurations — saving a new name beyond that returns `too_many_configurations`; overwriting an existing name is always allowed.
 
 Restoring a configuration is a frontend-side operation: the configuration
 dialog applies the saved `grid_bytes`/`zone_slots`/`settings` into panel

@@ -23,8 +23,11 @@ from ..const import empty_zone_slots
 from . import _LOGGER
 from . import CONFIGURATION_DICT_SCHEMA
 from . import ENTITY_ID_SCHEMA
+from . import FINITE_FLOAT_SCHEMA
+from . import FURNITURE_SCHEMA
 from . import MAC_SCHEMA
 from . import NAME_SCHEMA
+from . import _check_finite
 from . import _get_manager
 from . import _require_known_device
 from . import _require_manager
@@ -171,15 +174,15 @@ def websocket_get_config(
     {
         vol.Required("type"): "eppgrid/set_setup",
         vol.Required("mac"): MAC_SCHEMA,
-        vol.Required("perspective"): vol.All([vol.Coerce(float)], vol.Length(min=8, max=8)),
+        vol.Required("perspective"): vol.All([FINITE_FLOAT_SCHEMA], vol.Length(min=8, max=8)),
         # `room_width` / `room_depth` are millimetres (the firmware grid uses
         # GRID_CELL_SIZE_MM=300 mm cells and the connection layer feeds these
         # straight into the grid push). 0 is the "delete calibration" sentinel
         # (handled in the body). 50 000 mm = 50 m, far above any real room —
         # rejects negatives and absurd-large values that would otherwise be
         # persisted before the firmware push silently no-ops them.
-        vol.Required("room_width"): vol.All(vol.Coerce(float), vol.Range(min=0, max=50_000)),
-        vol.Required("room_depth"): vol.All(vol.Coerce(float), vol.Range(min=0, max=50_000)),
+        vol.Required("room_width"): vol.All(vol.Coerce(float), _check_finite, vol.Range(min=0, max=50_000)),
+        vol.Required("room_depth"): vol.All(vol.Coerce(float), _check_finite, vol.Range(min=0, max=50_000)),
     }
 )
 @websocket_api.require_admin
@@ -234,12 +237,15 @@ async def websocket_set_setup(
     {
         vol.Required("type"): "eppgrid/set_room_layout",
         vol.Required("mac"): MAC_SCHEMA,
+        # Firmware rejects any grid push that isn't exactly the full grid, so
+        # require all GRID_COLS*GRID_ROWS entries — a short list would persist
+        # to storage and then silently fail every subsequent config push.
         vol.Required("grid_bytes"): vol.All(
             [vol.All(int, vol.Range(min=0, max=255))],
-            vol.Length(min=1, max=GRID_COLS * GRID_ROWS),
+            vol.Length(min=GRID_COLS * GRID_ROWS, max=GRID_COLS * GRID_ROWS),
         ),
         vol.Required("zone_slots"): _validate_zone_slots,
-        vol.Optional("furniture", default=[]): list,
+        vol.Optional("furniture", default=[]): FURNITURE_SCHEMA,
     }
 )
 @websocket_api.require_admin
@@ -289,6 +295,12 @@ def websocket_list_configurations(
     connection.send_result(msg["id"], {"configurations": manager._store.configurations})
 
 
+# Cap on the number of stored named configurations. Each blob can be up to
+# _MAX_CONFIGURATION_JSON_BYTES, so without a count cap a client could grow
+# .storage/eppgrid without bound, one save_configuration call at a time.
+_MAX_CONFIGURATIONS = 50
+
+
 @websocket_api.websocket_command(
     {
         vol.Required("type"): "eppgrid/save_configuration",
@@ -306,7 +318,20 @@ async def websocket_save_configuration(
     manager: Any,
 ) -> None:
     """Save a named configuration."""
-    manager._store.configurations[msg["name"]] = msg["configuration"]
+    configurations = manager._store.configurations
+    # Overwriting an existing name is always allowed — only NEW names count
+    # against the cap.
+    if msg["name"] not in configurations and len(configurations) >= _MAX_CONFIGURATIONS:
+        connection.send_error(
+            msg["id"],
+            "too_many_configurations",
+            f"Cannot store more than {_MAX_CONFIGURATIONS} configurations — delete one first",
+            translation_domain=DOMAIN,
+            translation_key="too_many_configurations",
+            translation_placeholders={"max": str(_MAX_CONFIGURATIONS)},
+        )
+        return
+    configurations[msg["name"]] = msg["configuration"]
     await manager._store.async_save()
     connection.send_result(msg["id"])
 
@@ -845,8 +870,51 @@ def websocket_set_entity_enabled(
     msg: dict[str, Any],
     manager: Any,
 ) -> None:
-    """Enable or disable an ESPHome entity on a managed device."""
+    """Enable or disable an ESPHome entity on a managed device.
+
+    Scoped to entities belonging to `msg["mac"]`'s HA device — without the
+    ownership check this admin command could toggle ANY entity in the
+    installation (e.g. disable someone's alarm panel).
+    """
+    if not _require_known_device(connection, manager, msg):
+        return
+    dev = manager.devices[msg["mac"]]
+    if dev.device_id is None:
+        # HA device not resolved yet (ESPHome entry still setting up) — we
+        # can't verify ownership, so fail closed.
+        connection.send_error(
+            msg["id"],
+            "device_not_available",
+            "Device not available",
+            translation_domain=DOMAIN,
+            translation_key="device_not_available",
+        )
+        return
     ent_reg = er.async_get(hass)
+    # Registry lookup by entity_id includes disabled entities (unlike
+    # `async_entries_for_device`, which needs include_disabled_entities=True)
+    # — essential here since this command's whole job is re-enabling them.
+    entry = ent_reg.async_get(msg["entity_id"])
+    if entry is None:
+        # Curated error — letting async_update_entity raise KeyError would
+        # surface as an opaque unknown_error to the frontend.
+        connection.send_error(
+            msg["id"],
+            "entity_not_found",
+            "Entity not found",
+            translation_domain=DOMAIN,
+            translation_key="entity_not_found",
+        )
+        return
+    if entry.device_id != dev.device_id:
+        connection.send_error(
+            msg["id"],
+            "entity_not_on_device",
+            "Entity does not belong to this device",
+            translation_domain=DOMAIN,
+            translation_key="entity_not_on_device",
+        )
+        return
     if msg["enabled"]:
         ent_reg.async_update_entity(msg["entity_id"], disabled_by=None)
     else:
@@ -883,22 +951,24 @@ _SETTINGS_KEYS = (
     {
         vol.Required("type"): "eppgrid/set_settings",
         vol.Required("mac"): MAC_SCHEMA,
-        vol.Required("temperature_offset"): vol.Coerce(float),
-        vol.Required("humidity_offset"): vol.Coerce(float),
-        vol.Required("illuminance_offset"): vol.Coerce(float),
-        vol.Required("motion_timeout"): vol.Coerce(float),
+        vol.Required("temperature_offset"): FINITE_FLOAT_SCHEMA,
+        vol.Required("humidity_offset"): FINITE_FLOAT_SCHEMA,
+        vol.Required("illuminance_offset"): FINITE_FLOAT_SCHEMA,
+        vol.Required("motion_timeout"): FINITE_FLOAT_SCHEMA,
         vol.Required("target_auto_distance"): bool,
-        vol.Required("target_max_distance"): vol.Coerce(float),
-        vol.Required("stuck_target_timeout"): vol.All(vol.Coerce(float), vol.Range(min=0, max=600)),
+        vol.Required("target_max_distance"): FINITE_FLOAT_SCHEMA,
+        vol.Required("stuck_target_timeout"): vol.All(vol.Coerce(float), _check_finite, vol.Range(min=0, max=600)),
         vol.Required("static_auto_distance"): bool,
-        vol.Required("static_min_distance"): vol.Coerce(float),
-        vol.Required("static_max_distance"): vol.Coerce(float),
+        vol.Required("static_min_distance"): FINITE_FLOAT_SCHEMA,
+        vol.Required("static_max_distance"): FINITE_FLOAT_SCHEMA,
         vol.Required("static_trigger_threshold"): vol.Coerce(int),
         vol.Required("static_renew_threshold"): vol.Coerce(int),
-        vol.Required("static_timeout"): vol.Coerce(float),
-        vol.Required("static_on_delay"): vol.All(vol.Coerce(float), vol.Range(min=0, max=STATIC_ON_DELAY_MAX)),
+        vol.Required("static_timeout"): FINITE_FLOAT_SCHEMA,
+        vol.Required("static_on_delay"): vol.All(
+            vol.Coerce(float), _check_finite, vol.Range(min=0, max=STATIC_ON_DELAY_MAX)
+        ),
         vol.Required("led_mode"): vol.In(["Manual Control", "Presence", "Environmental", "Environmental + Presence"]),
-        vol.Required("led_brightness"): vol.All(vol.Coerce(float), vol.Range(min=0.1, max=1.0)),
+        vol.Required("led_brightness"): vol.All(vol.Coerce(float), _check_finite, vol.Range(min=0.1, max=1.0)),
         vol.Required("led_presence_color"): vol.Match(r"^#[0-9A-Fa-f]{6}$"),
         vol.Required("relay_trigger_mode"): vol.In(["disabled", "motion", "presence", "occupancy"]),
         vol.Required("relay_contact_mode"): vol.In(["no", "nc"]),
@@ -995,9 +1065,9 @@ async def websocket_set_settings(
     {
         vol.Required("type"): "eppgrid/set_distance_override",
         vol.Required("mac"): MAC_SCHEMA,
-        vol.Required("target_max_distance"): vol.Coerce(float),
-        vol.Required("static_min_distance"): vol.Coerce(float),
-        vol.Required("static_max_distance"): vol.Coerce(float),
+        vol.Required("target_max_distance"): FINITE_FLOAT_SCHEMA,
+        vol.Required("static_min_distance"): FINITE_FLOAT_SCHEMA,
+        vol.Required("static_max_distance"): FINITE_FLOAT_SCHEMA,
     }
 )
 @websocket_api.require_admin

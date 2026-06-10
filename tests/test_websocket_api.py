@@ -949,6 +949,29 @@ class TestSchemaInputBounds:
         with pytest.raises(vol.Invalid):
             self._validate(websocket_set_room_layout, payload)
 
+    def test_grid_bytes_rejects_short_list(self) -> None:
+        """grid_bytes must contain exactly GRID_COLS * GRID_ROWS entries.
+
+        Firmware rejects any push that isn't the full grid, so a short list
+        would persist to storage and then silently fail every config push.
+        """
+        import voluptuous as vol
+
+        from custom_components.eppgrid.const import GRID_COLS
+        from custom_components.eppgrid.const import GRID_ROWS
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/set_room_layout",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "grid_bytes": [0] * (GRID_COLS * GRID_ROWS - 1),
+            "zone_slots": [{"type": "default"}] + [None] * 7,
+            "furniture": [],
+        }
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, payload)
+
     def test_grid_bytes_rejects_value_above_255(self) -> None:
         """grid_bytes values must be in [0, 255]."""
         import voluptuous as vol
@@ -1446,6 +1469,236 @@ class TestSchemaInputBounds:
             },
         )
 
+    # ---- finite floats: NaN / Infinity must never reach storage ----
+    # vol.Coerce(float) happily accepts the strings "NaN" / "Infinity";
+    # NaN then persists to storage where orjson writes `null`, breaking
+    # config pushes after restart. vol.Range alone can't catch NaN because
+    # every comparison against NaN is False.
+
+    _SET_SETTINGS_FLOAT_FIELDS = (
+        "temperature_offset",
+        "humidity_offset",
+        "illuminance_offset",
+        "motion_timeout",
+        "target_max_distance",
+        "stuck_target_timeout",
+        "static_min_distance",
+        "static_max_distance",
+        "static_timeout",
+        "static_on_delay",
+        "led_brightness",
+    )
+
+    @pytest.mark.parametrize("field", _SET_SETTINGS_FLOAT_FIELDS)
+    @pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+    def test_set_settings_rejects_non_finite_floats(self, field: str, bad: str) -> None:
+        """Every float field in set_settings rejects NaN/Infinity."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_settings
+
+        payload = self._set_settings_payload(0.0)
+        payload[field] = bad
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_settings, payload)
+
+    @pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+    def test_set_setup_rejects_non_finite_perspective(self, bad: str) -> None:
+        """Perspective coefficients reject NaN/Infinity."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_setup
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/set_setup",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "perspective": [1.0] * 7 + [bad],
+            "room_width": 5_000.0,
+            "room_depth": 4_000.0,
+        }
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_setup, payload)
+
+    @pytest.mark.parametrize("field", ["room_width", "room_depth"])
+    def test_set_setup_rejects_nan_room_dimensions(self, field: str) -> None:
+        """Room dimensions reject NaN (slips through vol.Range unaided)."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_setup
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/set_setup",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "perspective": [1.0] * 8,
+            "room_width": 5_000.0,
+            "room_depth": 4_000.0,
+        }
+        payload[field] = "NaN"
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_setup, payload)
+
+    @staticmethod
+    def _distance_override_payload() -> dict:
+        return {
+            "id": 1,
+            "type": "eppgrid/set_distance_override",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "target_max_distance": 4.0,
+            "static_min_distance": 0.3,
+            "static_max_distance": 8.0,
+        }
+
+    @pytest.mark.parametrize(
+        "field",
+        ["target_max_distance", "static_min_distance", "static_max_distance"],
+    )
+    @pytest.mark.parametrize("bad", ["NaN", "Infinity", "-Infinity"])
+    def test_set_distance_override_rejects_non_finite(self, field: str, bad: str) -> None:
+        """All set_distance_override floats reject NaN/Infinity."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_distance_override
+
+        payload = self._distance_override_payload()
+        payload[field] = bad
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_distance_override, payload)
+
+    def test_set_distance_override_accepts_valid_floats(self) -> None:
+        """Normal finite distances still pass validation."""
+        from custom_components.eppgrid.websocket_api import websocket_set_distance_override
+
+        self._validate(websocket_set_distance_override, self._distance_override_payload())
+
+    # ---- furniture validation ----
+
+    @staticmethod
+    def _room_layout_payload(furniture: object) -> dict:
+        from custom_components.eppgrid.const import GRID_COLS
+        from custom_components.eppgrid.const import GRID_ROWS
+
+        return {
+            "id": 1,
+            "type": "eppgrid/set_room_layout",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "grid_bytes": [0] * (GRID_COLS * GRID_ROWS),
+            "zone_slots": [{"type": "default"}] + [None] * 7,
+            "furniture": furniture,
+        }
+
+    def test_furniture_accepts_frontend_shape(self) -> None:
+        """The exact item shape the frontend serializes passes validation."""
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        item = {
+            "type": "icon",
+            "icon": "mdi:bed-double",
+            "label": "furniture.bed",
+            "x": 100.0,
+            "y": 200.5,
+            "width": 1500.0,
+            "height": 2000.0,
+            "rotation": 90,
+            "lockAspect": True,
+        }
+        self._validate(websocket_set_room_layout, self._room_layout_payload([item]))
+
+    def test_furniture_rejects_non_list(self) -> None:
+        """furniture must be a list, not an arbitrary value."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, self._room_layout_payload({"a": 1}))
+
+    def test_furniture_rejects_non_dict_item(self) -> None:
+        """Each furniture item must be a dict."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, self._room_layout_payload(["garbage"]))
+
+    def test_furniture_rejects_unknown_keys(self) -> None:
+        """Unknown keys in a furniture item are rejected (no arbitrary blobs)."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        item = {"icon": "mdi:sofa", "evil": "payload"}
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, self._room_layout_payload([item]))
+
+    def test_furniture_rejects_oversized_strings(self) -> None:
+        """String fields in furniture items are length-bounded."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        item = {"icon": "mdi:sofa", "label": "x" * 1000}
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, self._room_layout_payload([item]))
+
+    @pytest.mark.parametrize("field", ["x", "y", "width", "height", "rotation"])
+    def test_furniture_rejects_non_finite_geometry(self, field: str) -> None:
+        """Geometry fields in furniture items must be finite numbers."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        item = {"icon": "mdi:sofa", field: "NaN"}
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, self._room_layout_payload([item]))
+
+    def test_furniture_rejects_oversized_total_payload(self) -> None:
+        """Many max-size items exceed the serialized-size cap and are rejected."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        item = {"icon": "mdi:" + "y" * 124, "label": "x" * 128}
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, self._room_layout_payload([dict(item) for _ in range(400)]))
+
+    # ---- save_configuration size cap measured in UTF-8 bytes ----
+
+    def test_save_configuration_size_cap_is_byte_accurate(self) -> None:
+        """A multibyte config under the cap in UTF-8 bytes is accepted.
+
+        60 000 'é' chars are ~360 KiB when measured as ASCII-escaped JSON
+        characters (the old, over-counting measure) but only ~120 KiB as raw
+        UTF-8 — which is what HA's storage actually writes. The cap must
+        measure the latter.
+        """
+        from custom_components.eppgrid.websocket_api import websocket_save_configuration
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/save_configuration",
+            "name": "multibyte",
+            "configuration": {"note": "é" * 60_000},
+        }
+        self._validate(websocket_save_configuration, payload)
+
+    def test_save_configuration_rejects_oversize_utf8_bytes(self) -> None:
+        """A config over the cap in raw UTF-8 bytes is still rejected."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_save_configuration
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/save_configuration",
+            "name": "multibyte",
+            "configuration": {"note": "é" * 200_000},  # ~400 KiB UTF-8
+        }
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_save_configuration, payload)
+
 
 class TestWebSocketConfigurations:
     """Tests for configuration CRUD commands."""
@@ -1484,6 +1737,58 @@ class TestWebSocketConfigurations:
         assert "office" in mock_dm._store.configurations
         mock_dm._store.async_save.assert_awaited()
         connection.send_result.assert_called_once_with(7)
+
+    async def test_save_configuration_rejects_new_name_at_cap(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Saving a NEW name when 50 configurations exist is rejected."""
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm._store.configurations = {f"cfg-{i}": {} for i in range(50)}
+
+        from custom_components.eppgrid.websocket_api import websocket_save_configuration
+
+        connection = MagicMock()
+        msg = {
+            "id": 70,
+            "type": "eppgrid/save_configuration",
+            "name": "one-too-many",
+            "configuration": {"grid_bytes": [0] * 400},
+        }
+
+        await call_async_handler(hass, websocket_save_configuration, connection, msg)
+
+        connection.send_result.assert_not_called()
+        connection.send_error.assert_called_once()
+        args = connection.send_error.call_args
+        assert args[0][0] == 70
+        assert args[0][1] == "too_many_configurations"
+        assert "50" in args[0][2]
+        assert "one-too-many" not in mock_dm._store.configurations
+        mock_dm._store.async_save.assert_not_awaited()
+
+    async def test_save_configuration_overwrite_allowed_at_cap(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Overwriting an EXISTING name is always allowed, even at the cap."""
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm._store.configurations = {f"cfg-{i}": {} for i in range(50)}
+
+        from custom_components.eppgrid.websocket_api import websocket_save_configuration
+
+        connection = MagicMock()
+        msg = {
+            "id": 71,
+            "type": "eppgrid/save_configuration",
+            "name": "cfg-7",
+            "configuration": {"grid_bytes": [1] * 400},
+        }
+
+        await call_async_handler(hass, websocket_save_configuration, connection, msg)
+
+        connection.send_error.assert_not_called()
+        connection.send_result.assert_called_once_with(71)
+        assert mock_dm._store.configurations["cfg-7"] == {"grid_bytes": [1] * 400}
+        mock_dm._store.async_save.assert_awaited()
 
     async def test_save_configuration_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """Non-admin users cannot save a configuration."""
@@ -2847,14 +3152,22 @@ class TestApplyEntityStates:
 class TestWebSocketEntityEnabled:
     """Tests for eppgrid/set_entity_enabled."""
 
+    @staticmethod
+    def _register_device_with_id(mock_dm: MagicMock, device_id: str = "ha-device-1") -> None:
+        """Register a managed device whose HA device_id is resolved."""
+        register_managed_device(mock_dm)
+        mock_dm.devices["AA:BB:CC:DD:EE:FF"].device_id = device_id
+
     async def test_set_entity_enabled(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """set_entity_enabled enables entities in the registry."""
-        await setup_integration(hass, config_entry)
+        mock_dm = await setup_integration(hass, config_entry)
+        self._register_device_with_id(mock_dm)
 
         from custom_components.eppgrid.websocket_api import websocket_set_entity_enabled
 
         with patch("custom_components.eppgrid.websocket_api._devices.er.async_get") as mock_er:
             mock_registry = mock_er.return_value
+            mock_registry.async_get.return_value = MagicMock(device_id="ha-device-1")
 
             connection = MagicMock()
             msg = {
@@ -2874,7 +3187,8 @@ class TestWebSocketEntityEnabled:
 
     async def test_set_entity_disabled(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """set_entity_enabled disables entities with INTEGRATION disabler."""
-        await setup_integration(hass, config_entry)
+        mock_dm = await setup_integration(hass, config_entry)
+        self._register_device_with_id(mock_dm)
 
         from homeassistant.helpers.entity_registry import RegistryEntryDisabler
 
@@ -2882,6 +3196,7 @@ class TestWebSocketEntityEnabled:
 
         with patch("custom_components.eppgrid.websocket_api._devices.er.async_get") as mock_er:
             mock_registry = mock_er.return_value
+            mock_registry.async_get.return_value = MagicMock(device_id="ha-device-1")
 
             connection = MagicMock()
             msg = {
@@ -2898,6 +3213,124 @@ class TestWebSocketEntityEnabled:
                 "binary_sensor.epp_zone_1_presence",
                 disabled_by=RegistryEntryDisabler.INTEGRATION,
             )
+
+    async def test_set_entity_enabled_unknown_mac_rejected(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """An unknown MAC gets device_not_found, and no registry write happens."""
+        await setup_integration(hass, config_entry)
+
+        from custom_components.eppgrid.websocket_api import websocket_set_entity_enabled
+
+        with patch("custom_components.eppgrid.websocket_api._devices.er.async_get") as mock_er:
+            mock_registry = mock_er.return_value
+
+            connection = MagicMock()
+            msg = {
+                "id": 80,
+                "type": "eppgrid/set_entity_enabled",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "entity_id": "binary_sensor.epp_zone_1_presence",
+                "enabled": True,
+            }
+
+            websocket_set_entity_enabled(hass, connection, msg)
+
+            mock_registry.async_update_entity.assert_not_called()
+            connection.send_result.assert_not_called()
+            connection.send_error.assert_called_once()
+            assert connection.send_error.call_args[0][1] == "device_not_found"
+
+    async def test_set_entity_enabled_unknown_entity_curated_error(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """An entity_id missing from the registry gets a curated error, not KeyError."""
+        mock_dm = await setup_integration(hass, config_entry)
+        self._register_device_with_id(mock_dm)
+
+        from custom_components.eppgrid.websocket_api import websocket_set_entity_enabled
+
+        with patch("custom_components.eppgrid.websocket_api._devices.er.async_get") as mock_er:
+            mock_registry = mock_er.return_value
+            mock_registry.async_get.return_value = None
+
+            connection = MagicMock()
+            msg = {
+                "id": 81,
+                "type": "eppgrid/set_entity_enabled",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "entity_id": "binary_sensor.does_not_exist",
+                "enabled": True,
+            }
+
+            websocket_set_entity_enabled(hass, connection, msg)
+
+            mock_registry.async_update_entity.assert_not_called()
+            connection.send_result.assert_not_called()
+            connection.send_error.assert_called_once()
+            assert connection.send_error.call_args[0][1] == "entity_not_found"
+
+    async def test_set_entity_enabled_other_device_rejected(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """An entity belonging to a different HA device is rejected.
+
+        Without scoping, this command could toggle ANY entity in the
+        installation (e.g. disable an alarm panel) from the EPP frontend.
+        """
+        mock_dm = await setup_integration(hass, config_entry)
+        self._register_device_with_id(mock_dm)
+
+        from custom_components.eppgrid.websocket_api import websocket_set_entity_enabled
+
+        with patch("custom_components.eppgrid.websocket_api._devices.er.async_get") as mock_er:
+            mock_registry = mock_er.return_value
+            mock_registry.async_get.return_value = MagicMock(device_id="some-other-device")
+
+            connection = MagicMock()
+            msg = {
+                "id": 82,
+                "type": "eppgrid/set_entity_enabled",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "entity_id": "switch.someone_elses_alarm",
+                "enabled": False,
+            }
+
+            websocket_set_entity_enabled(hass, connection, msg)
+
+            mock_registry.async_update_entity.assert_not_called()
+            connection.send_result.assert_not_called()
+            connection.send_error.assert_called_once()
+            assert connection.send_error.call_args[0][1] == "entity_not_on_device"
+
+    async def test_set_entity_enabled_unresolved_device_id_rejected(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """A known device whose HA device_id isn't resolved yet fails closed."""
+        mock_dm = await setup_integration(hass, config_entry)
+        register_managed_device(mock_dm)  # device_id stays None
+
+        from custom_components.eppgrid.websocket_api import websocket_set_entity_enabled
+
+        with patch("custom_components.eppgrid.websocket_api._devices.er.async_get") as mock_er:
+            mock_registry = mock_er.return_value
+            mock_registry.async_get.return_value = MagicMock(device_id="ha-device-1")
+
+            connection = MagicMock()
+            msg = {
+                "id": 83,
+                "type": "eppgrid/set_entity_enabled",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "entity_id": "binary_sensor.epp_zone_1_presence",
+                "enabled": True,
+            }
+
+            websocket_set_entity_enabled(hass, connection, msg)
+
+            mock_registry.async_update_entity.assert_not_called()
+            connection.send_result.assert_not_called()
+            connection.send_error.assert_called_once()
+            assert connection.send_error.call_args[0][1] == "device_not_available"
 
     async def test_set_entity_enabled_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """Non-admin users cannot toggle entity enabled state."""

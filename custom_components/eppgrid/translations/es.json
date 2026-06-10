@@ -37,7 +37,10 @@
     "only_esphome_can_be_deleted": { "message": "Solo las entradas de configuración de ESPHome pueden eliminarse con este comando" },
     "service_not_available": { "message": "El servicio {service} no está disponible" },
     "firmware_behind": { "message": "Actualización de firmware necesaria" },
-    "firmware_ahead": { "message": "Actualización de la integración necesaria" }
+    "firmware_ahead": { "message": "Actualización de la integración necesaria" },
+    "entity_not_found": { "message": "Entidad no encontrada" },
+    "entity_not_on_device": { "message": "La entidad no pertenece a este dispositivo" },
+    "too_many_configurations": { "message": "No se pueden guardar más de {max} configuraciones — elimina una primero" }
   },
   "issues": {
     "firmware_behind": {
