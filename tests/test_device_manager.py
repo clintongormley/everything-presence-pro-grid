@@ -125,6 +125,37 @@ class TestDeviceConnection:
             assert not conn.connected
             mock_client.disconnect.assert_awaited_once()
 
+    async def test_connect_cancelled_mid_handshake_disconnects(self) -> None:
+        """Cancellation between a successful connect() and the entity/service
+        listing must still disconnect the client. Callers wrap async_connect
+        in asyncio.wait_for(..., 30); CancelledError is a BaseException, so a
+        bare `except Exception` cleanup misses it — the connected APIClient is
+        then orphaned (self._client never assigned, no handle to close it) and
+        holds one of the ESP32's hard-limited API slots forever."""
+        conn = DeviceConnection("192.168.1.100")
+
+        with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.connect = AsyncMock()
+            listing_started = asyncio.Event()
+
+            async def hung_listing() -> None:
+                listing_started.set()
+                await asyncio.Event().wait()  # blocks until cancelled
+
+            mock_client.list_entities_services = AsyncMock(side_effect=hung_listing)
+            mock_client.disconnect = AsyncMock()
+
+            task = asyncio.create_task(conn.async_connect())
+            await listing_started.wait()
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+            assert not conn.connected
+            assert conn._client is None
+            mock_client.disconnect.assert_awaited_once()
+
     async def test_subscribe_states_fans_out(self) -> None:
         """subscribe_states dispatches to all subscribers."""
         conn = DeviceConnection("192.168.1.100")

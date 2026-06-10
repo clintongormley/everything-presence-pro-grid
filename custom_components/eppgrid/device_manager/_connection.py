@@ -57,7 +57,14 @@ class DeviceConnection:
         try:
             await client.connect(on_stop=_on_stop, login=True)
             entities, services = await client.list_entities_services()
-        except Exception:
+        except (Exception, asyncio.CancelledError):
+            # CancelledError must be cleaned up too: callers wrap us in
+            # asyncio.wait_for, so a timeout firing between a successful
+            # connect() and the entity listing lands here. Without the
+            # disconnect, the connected APIClient is orphaned (`self._client`
+            # was never assigned, so nothing can ever close it) and holds one
+            # of the ESP32's hard-limited API slots forever. The bare `raise`
+            # re-raises the original exception after the awaited cleanup.
             await client.disconnect()
             raise
         self._client = client
