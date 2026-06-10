@@ -13,6 +13,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 
 from ..const import DOMAIN
+from ..const import GRID_COLS
+from ..const import GRID_ROWS
 from . import _LOGGER
 from . import _OTA_LOG_CATEGORY
 from . import _OTA_LOG_LEVEL
@@ -62,6 +64,7 @@ async def websocket_update_firmware(
         vol.Required("mac"): MAC_SCHEMA,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 @_require_manager
 async def websocket_subscribe_ota_progress(
@@ -306,10 +309,11 @@ async def websocket_subscribe_ota_progress(
     {
         vol.Required("type"): "eppgrid/dismiss_target",
         vol.Required("mac"): MAC_SCHEMA,
-        vol.Required("target_index"): vol.Coerce(int),
-        vol.Required("cell_index"): vol.Coerce(int),
+        vol.Required("target_index"): vol.All(vol.Coerce(int), vol.Range(min=0, max=2)),
+        vol.Required("cell_index"): vol.All(vol.Coerce(int), vol.Range(min=0, max=GRID_COLS * GRID_ROWS - 1)),
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 @_require_manager
 async def websocket_dismiss_target(

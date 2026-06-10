@@ -55,6 +55,7 @@ def _parse_position_csv(raw: str) -> tuple[float, float, str | None] | None:
 
 
 @websocket_api.websocket_command({vol.Required("type"): "eppgrid/subscribe_device_list"})
+@websocket_api.require_admin
 @callback
 @_require_manager
 def websocket_subscribe_device_list(
@@ -89,6 +90,7 @@ def websocket_subscribe_device_list(
 
 
 @websocket_api.websocket_command({vol.Required("type"): "eppgrid/list_devices"})
+@websocket_api.require_admin
 @callback
 @_require_manager
 def websocket_list_devices(
@@ -145,6 +147,7 @@ async def websocket_set_show_room_calibration_tutorial(
         vol.Required("mac"): MAC_SCHEMA,
     }
 )
+@websocket_api.require_admin
 @callback
 @_require_manager
 def websocket_get_config(
@@ -273,6 +276,7 @@ async def websocket_set_room_layout(
 
 
 @websocket_api.websocket_command({vol.Required("type"): "eppgrid/list_configurations"})
+@websocket_api.require_admin
 @callback
 @_require_manager
 def websocket_list_configurations(
@@ -477,6 +481,7 @@ def _build_entity_key_map(entities: list) -> dict[str, int]:
         vol.Required("mac"): MAC_SCHEMA,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 @_require_manager
 async def websocket_subscribe_device(
@@ -535,6 +540,7 @@ async def websocket_subscribe_device(
         vol.Required("mac"): MAC_SCHEMA,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 @_require_manager
 async def websocket_subscribe_raw_targets(
@@ -611,6 +617,7 @@ async def websocket_subscribe_raw_targets(
         vol.Required("mac"): MAC_SCHEMA,
     }
 )
+@websocket_api.require_admin
 @websocket_api.async_response
 @_require_manager
 async def websocket_subscribe_grid_targets(

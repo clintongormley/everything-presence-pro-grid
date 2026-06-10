@@ -4314,6 +4314,342 @@ class TestProtocolVersionGuard:
         assert kwargs.get("translation_key") == "firmware_ahead"
 
 
+class TestAdminGateAllCommands:
+    """Every registered websocket command must require admin.
+
+    These tests exercise the decorator stack: a non-admin user must get
+    Unauthorized, not a handler response.
+    """
+
+    async def test_list_devices_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        """Non-admin cannot call list_devices."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_list_devices
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 1, "type": "eppgrid/list_devices"}
+        with pytest.raises(Unauthorized):
+            websocket_list_devices(hass, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_subscribe_device_list_requires_admin(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Non-admin cannot call subscribe_device_list."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_device_list
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 2, "type": "eppgrid/subscribe_device_list"}
+        with pytest.raises(Unauthorized):
+            websocket_subscribe_device_list(hass, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_get_config_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        """Non-admin cannot call get_config."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_get_config
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 3, "type": "eppgrid/get_config", "mac": "AA:BB:CC:DD:EE:FF"}
+        with pytest.raises(Unauthorized):
+            websocket_get_config(hass, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_list_configurations_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        """Non-admin cannot call list_configurations."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_list_configurations
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 4, "type": "eppgrid/list_configurations"}
+        with pytest.raises(Unauthorized):
+            websocket_list_configurations(hass, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_subscribe_device_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        """Non-admin cannot call subscribe_device."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_device
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 5, "type": "eppgrid/subscribe_device", "mac": "AA:BB:CC:DD:EE:FF"}
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_subscribe_device, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_subscribe_raw_targets_requires_admin(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Non-admin cannot call subscribe_raw_targets."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_raw_targets
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 6, "type": "eppgrid/subscribe_raw_targets", "mac": "AA:BB:CC:DD:EE:FF"}
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_subscribe_raw_targets, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_subscribe_grid_targets_requires_admin(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Non-admin cannot call subscribe_grid_targets."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_grid_targets
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 7, "type": "eppgrid/subscribe_grid_targets", "mac": "AA:BB:CC:DD:EE:FF"}
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_subscribe_grid_targets, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_dismiss_target_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        """Non-admin cannot call dismiss_target."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_dismiss_target
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {
+            "id": 8,
+            "type": "eppgrid/dismiss_target",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "target_index": 0,
+            "cell_index": 0,
+        }
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_dismiss_target, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_subscribe_ota_progress_requires_admin(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Non-admin cannot call subscribe_ota_progress."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 9, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_list_flashable_devices_requires_admin(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Non-admin cannot call list_flashable_devices."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_list_flashable_devices
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 10, "type": "eppgrid/list_flashable_devices"}
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_list_flashable_devices, connection, msg)
+        connection.send_result.assert_not_called()
+
+    async def test_subscribe_flashable_devices_requires_admin(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Non-admin cannot call subscribe_flashable_devices."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_flashable_devices
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {"id": 11, "type": "eppgrid/subscribe_flashable_devices"}
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_subscribe_flashable_devices, connection, msg)
+        connection.send_result.assert_not_called()
+
+    def test_all_registered_commands_are_admin_gated(self) -> None:
+        """Every command registered in async_register_websocket_commands must have
+        @websocket_api.require_admin in its decorator stack.
+
+        This is a meta-test: it walks the __wrapped__ chain on each handler and
+        checks __code__.co_name for "with_admin" (the inner function that
+        require_admin creates). @wraps copies __name__/__qualname__ so those
+        are not reliable; co_name reflects the actual source name.
+        """
+        import ast
+        import pathlib
+        import types
+
+        # Parse the __init__.py to extract all handler names passed to
+        # async_register_command, then verify each has require_admin.
+        init_src = pathlib.Path(
+            "/Users/clintongormley/workspace/worktrees/epp-fable/custom_components/eppgrid/websocket_api/__init__.py"
+        ).read_text()
+        tree = ast.parse(init_src)
+        registered: list[str] = []
+        for node in ast.walk(tree):
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "async_register_command"
+                and len(node.args) == 2
+            ):
+                arg = node.args[1]
+                if isinstance(arg, ast.Name):
+                    registered.append(arg.id)
+
+        import importlib
+
+        ws_mod = importlib.import_module("custom_components.eppgrid.websocket_api")
+        ungated: list[str] = []
+        for name in registered:
+            fn = getattr(ws_mod, name, None)
+            if fn is None:
+                continue
+            # Walk the __wrapped__ chain. @wraps copies __name__ but preserves
+            # __code__.co_name which reflects the actual source name.
+            found_admin = False
+            cur = fn
+            while cur is not None:
+                if isinstance(cur, types.FunctionType) and cur.__code__.co_name == "with_admin":
+                    found_admin = True
+                    break
+                cur = getattr(cur, "__wrapped__", None)
+            if not found_admin:
+                ungated.append(name)
+
+        assert ungated == [], f"These commands are not admin-gated: {ungated}"
+
+
+class TestDismissTargetBounds:
+    """Schema-level vol.Range validation for dismiss_target indices."""
+
+    @staticmethod
+    def _validate(handler, payload: dict) -> None:
+        handler._ws_schema(payload)
+
+    def test_target_index_above_max_rejected(self) -> None:
+        """target_index > 2 must be rejected at schema level."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_dismiss_target
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/dismiss_target",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "target_index": 3,
+            "cell_index": 0,
+        }
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_dismiss_target, payload)
+
+    def test_target_index_negative_rejected(self) -> None:
+        """Negative target_index must be rejected."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_dismiss_target
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/dismiss_target",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "target_index": -1,
+            "cell_index": 0,
+        }
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_dismiss_target, payload)
+
+    def test_cell_index_above_max_rejected(self) -> None:
+        """cell_index >= GRID_COLS*GRID_ROWS must be rejected."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.const import GRID_COLS
+        from custom_components.eppgrid.const import GRID_ROWS
+        from custom_components.eppgrid.websocket_api import websocket_dismiss_target
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/dismiss_target",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "target_index": 0,
+            "cell_index": GRID_COLS * GRID_ROWS,  # one past the end
+        }
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_dismiss_target, payload)
+
+    def test_cell_index_negative_rejected(self) -> None:
+        """Negative cell_index must be rejected."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_dismiss_target
+
+        payload = {
+            "id": 1,
+            "type": "eppgrid/dismiss_target",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "target_index": 0,
+            "cell_index": -1,
+        }
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_dismiss_target, payload)
+
+    def test_valid_boundary_values_accepted(self) -> None:
+        """Boundary values (target_index=0..2, cell_index=0..GRID_COLS*GRID_ROWS-1) pass."""
+        from custom_components.eppgrid.const import GRID_COLS
+        from custom_components.eppgrid.const import GRID_ROWS
+        from custom_components.eppgrid.websocket_api import websocket_dismiss_target
+
+        # min boundary
+        self._validate(
+            websocket_dismiss_target,
+            {
+                "id": 1,
+                "type": "eppgrid/dismiss_target",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "target_index": 0,
+                "cell_index": 0,
+            },
+        )
+        # max boundary
+        self._validate(
+            websocket_dismiss_target,
+            {
+                "id": 2,
+                "type": "eppgrid/dismiss_target",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "target_index": 2,
+                "cell_index": GRID_COLS * GRID_ROWS - 1,
+            },
+        )
+
+
 class TestWebSocketDismissTarget:
     """Tests for eppgrid/dismiss_target."""
 

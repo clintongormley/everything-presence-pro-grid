@@ -36,6 +36,7 @@ async def _flashable_payload(hass: HomeAssistant, manager: Any) -> dict[str, Any
 
 
 @websocket_api.websocket_command({vol.Required("type"): "eppgrid/subscribe_flashable_devices"})
+@websocket_api.require_admin
 @websocket_api.async_response
 @_require_manager
 async def websocket_subscribe_flashable_devices(
@@ -121,6 +122,7 @@ async def websocket_subscribe_flashable_devices(
 
 
 @websocket_api.websocket_command({vol.Required("type"): "eppgrid/list_flashable_devices"})
+@websocket_api.require_admin
 @websocket_api.async_response
 @_require_manager
 async def websocket_list_flashable_devices(
