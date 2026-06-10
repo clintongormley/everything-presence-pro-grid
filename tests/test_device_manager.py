@@ -1014,37 +1014,6 @@ class TestDeviceManager:
         release.set()
         await first_task
 
-    async def test_open_session_re_drains_pending_close_inside_lock(
-        self, hass: HomeAssistant, manager: DeviceManager
-    ) -> None:
-        """`async_open_session` checks `_pending_closes` BOTH before and
-        inside the lock. The in-lock check guards the race where a close
-        gets scheduled while open is queued for the lock — forcing this
-        timing in test is brittle, so we verify the in-lock check exists
-        by counting `_pending_closes.get(mac)` invocations instead."""
-        mac = "AA:BB:CC:DD:EE:FF"
-        manager.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50")
-
-        get_calls: list[str] = []
-
-        class CountingDict(dict):
-            def get(self, key, default=None):
-                if key == mac:
-                    get_calls.append("call")
-                return super().get(key, default)
-
-        manager._pending_closes = CountingDict(manager._pending_closes)  # type: ignore[assignment]
-
-        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_conn_cls:
-            conn = mock_conn_cls.return_value
-            conn.async_connect = AsyncMock()
-            conn.async_disconnect = AsyncMock()
-            conn.connected = True
-            await manager.async_open_session(mac)
-
-        # Pre-lock check + in-lock check = at least 2 lookups for the mac.
-        assert len(get_calls) >= 2, f"expected at least 2 _pending_closes.get calls, got {get_calls}"
-
     async def test_state_changed_offline_transition_uses_schedule_close(
         self, hass: HomeAssistant, manager: DeviceManager
     ) -> None:
@@ -1182,6 +1151,56 @@ class TestDeviceManager:
         assert result is fresh
         seeded.async_disconnect.assert_awaited_once()
         fresh.async_connect.assert_awaited_once()
+
+    async def test_open_session_close_scheduled_while_queued_does_not_deadlock(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """A close scheduled while a second open is QUEUED on the per-mac lock
+        must not deadlock. Interleaving: open A holds the lock through a slow
+        `async_connect`; open B queues on the lock; close C is scheduled (the
+        device flipped offline) and its lock acquisition queues behind B. If B
+        awaited the pending close while HOLDING the lock, B would wait on C
+        and C on B's lock — a permanent per-mac hang."""
+        mac = "AA:BB:CC:DD:EE:FF"
+        manager.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50")
+
+        connect_started = asyncio.Event()
+        connect_release = asyncio.Event()
+
+        async def slow_connect() -> None:
+            connect_started.set()
+            await connect_release.wait()
+
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_conn_cls:
+            mock_conn = mock_conn_cls.return_value
+            mock_conn.async_connect = slow_connect
+            mock_conn.async_disconnect = AsyncMock()
+            mock_conn.connected = True
+
+            open_a = asyncio.create_task(manager.async_open_session(mac))
+            await connect_started.wait()  # A holds the lock, inside connect
+
+            open_b = asyncio.create_task(manager.async_open_session(mac))
+            # Yield so B passes the pre-lock drain and queues on the lock.
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            assert not open_b.done()
+
+            # Device flips offline while B is queued → close C is scheduled.
+            close_c = manager.schedule_close_session(mac)
+
+            # A finishes connect, stores the conn, releases the lock.
+            connect_release.set()
+
+            results = await asyncio.wait_for(asyncio.gather(open_a, open_b, close_c), timeout=5)
+
+        assert results[0] is mock_conn
+        assert results[1] is mock_conn
+        # The queued close ran after B released the lock and tore the
+        # just-stored session down — that ordering is correct: C pops
+        # `_active_connections` and disconnects.
+        mock_conn.async_disconnect.assert_awaited_once()
+        assert manager.get_session(mac) is None
 
     async def test_close_session_serializes_with_in_flight_open(
         self, hass: HomeAssistant, manager: DeviceManager

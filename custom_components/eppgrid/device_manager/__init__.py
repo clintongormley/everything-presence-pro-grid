@@ -1289,13 +1289,15 @@ class DeviceManager:
         # Wait for any pending close to complete first — otherwise a quick
         # unsubscribe→re-subscribe sequence races the close task and the
         # caller gets back a connection that's about to be disconnected.
-        # We drain *outside* the lock to avoid holding it during a slow
-        # disconnect, AND *inside* the lock to catch a close scheduled
-        # while we were queued for the lock.
+        # Drain BEFORE taking the lock only. Draining again inside the lock
+        # would deadlock: a close scheduled while we were queued for the
+        # lock also queues on this lock (async_close_session acquires it),
+        # so awaiting it while holding the lock waits forever. Such a close
+        # simply runs after we release — which is correct: it pops
+        # `_active_connections` and disconnects whatever we stored.
         await self._await_pending_close(mac)
         lock = self._session_locks.setdefault(mac, asyncio.Lock())
         async with lock:
-            await self._await_pending_close(mac)
             if mac in self._active_connections:
                 conn = self._active_connections[mac]
                 if conn.connected:
