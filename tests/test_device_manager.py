@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 import pytest
+from aioesphomeapi import LogLevel
 from homeassistant.const import STATE_UNAVAILABLE
 from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
@@ -236,6 +237,48 @@ class TestDeviceConnection:
         assert conn._state_subscribers == [good]
         # Second dispatch only hits good — bad isn't called again.
         conn._dispatch_state(MagicMock())
+        assert bad.call_count == 1
+        assert good.call_count == 2
+
+    async def test_on_log_isolates_callback_exceptions(self) -> None:
+        """A log callback raising must not stop later callbacks from receiving
+        the message, nor propagate into aioesphomeapi's packet path."""
+        conn = DeviceConnection("192.168.1.100")
+        conn._client = MagicMock()
+        bad = MagicMock(side_effect=RuntimeError("boom"))
+        good = MagicMock()
+        conn.add_log_callback(bad)
+        conn.add_log_callback(good)
+        conn.subscribe_logs()
+        on_log = conn._client.subscribe_logs.call_args.args[0]
+
+        msg = MagicMock()
+        msg.level = LogLevel.LOG_LEVEL_INFO
+        msg.message = b"hello"
+        on_log(msg)  # must not raise
+        good.assert_called_once_with(msg)
+
+    async def test_on_log_drops_failed_callback(self) -> None:
+        """A log callback that raises is dropped after logging once — mirrors
+        _dispatch_state: keeping it registered would flood HA logs at the
+        device's log-emit rate."""
+        conn = DeviceConnection("192.168.1.100")
+        conn._client = MagicMock()
+        bad = MagicMock(side_effect=RuntimeError("boom"))
+        good = MagicMock()
+        conn.add_log_callback(bad)
+        conn.add_log_callback(good)
+        conn.subscribe_logs()
+        on_log = conn._client.subscribe_logs.call_args.args[0]
+
+        msg = MagicMock()
+        msg.level = LogLevel.LOG_LEVEL_INFO
+        msg.message = b"hello"
+        on_log(msg)
+        # Bad callback dropped; only good remains.
+        assert conn._log_callbacks == [good]
+        # Second message only hits good — bad isn't called again.
+        on_log(msg)
         assert bad.call_count == 1
         assert good.call_count == 2
 

@@ -168,8 +168,21 @@ class DeviceConnection:
             text = text.rstrip()
             if text:
                 _DEVICE_LOGGER.log(py_level, "[%s] %s", self._host, text)
-            for cb in self._log_callbacks:
-                cb(msg)
+            # Per-callback isolation, mirroring _dispatch_state: a raising
+            # callback must not skip the rest or propagate into
+            # aioesphomeapi's packet path. It is dropped after logging once —
+            # keeping it registered would flood HA logs at the device's
+            # log-emit rate.
+            failed: list[Any] = []
+            for cb in list(self._log_callbacks):
+                try:
+                    cb(msg)
+                except Exception:
+                    _LOGGER.exception("Log callback raised; dropping callback")
+                    failed.append(cb)
+            for cb in failed:
+                with contextlib.suppress(ValueError):
+                    self._log_callbacks.remove(cb)
 
         self._unsub_logs = self._client.subscribe_logs(_on_log, log_level=log_level)
         _LOGGER.debug("Subscribed to device logs from %s (level=%s)", self._host, log_level)
