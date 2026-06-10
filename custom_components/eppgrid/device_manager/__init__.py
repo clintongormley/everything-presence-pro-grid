@@ -633,13 +633,26 @@ class DeviceManager:
                 self._pushing.discard(mac)
                 if mac in self._active_connections:
                     await self.async_close_session(mac)
-            self.devices[mac] = ManagedDevice(
-                mac=mac,
-                name=device.name_by_user or device.name or "EPP Device",
-                host=host,
-                esphome_config_entry_id=entry.config_entry_id,
-                device_id=device.id,
-            )
+            if existing is None:
+                self.devices[mac] = ManagedDevice(
+                    mac=mac,
+                    name=device.name_by_user or device.name or "EPP Device",
+                    host=host,
+                    esphome_config_entry_id=entry.config_entry_id,
+                    device_id=device.id,
+                )
+            else:
+                # Update discovery-derived fields in place, preserving runtime
+                # state (`available`). Replacing the object would reset
+                # `available` to the dataclass default (False), and the next
+                # real offline transition would then fail the `dev.available`
+                # guard in `_on_state_changed` and never fire the device-list
+                # broadcast — the panel would show the device available
+                # through the whole outage.
+                existing.name = device.name_by_user or device.name or "EPP Device"
+                existing.host = host
+                existing.esphome_config_entry_id = entry.config_entry_id
+                existing.device_id = device.id
             self._device_id_to_mac[device.id] = mac
             # Re-register the listener on every discovery — `_ensure_esphome_entry_listener`
             # is idempotent (skips if already subscribed for this entry_id), so this

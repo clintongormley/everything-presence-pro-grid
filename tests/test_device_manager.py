@@ -823,6 +823,62 @@ class TestDeviceManager:
         await manager.async_discover()
         assert len(manager.devices) == 0
 
+    async def test_rediscovery_preserves_runtime_availability(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """Re-running async_discover must not reset a device's runtime state.
+
+        async_discover re-runs whenever a new ESPHome entity appears anywhere.
+        Recreating the ManagedDevice resets `available` to the dataclass
+        default (False), so the next real offline transition fails the
+        `dev.available` guard in `_on_state_changed` and never fires the
+        device-list broadcast — the panel shows the device available through
+        the whole outage.
+        """
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.50"}, title="EPP")
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP",
+            manufacturer="EverythingSmartTechnology",
+            model="Everything Presence Pro",
+        )
+        entity = ent_reg.async_get_or_create(
+            "sensor",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FF-sensor-firmware_version",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+
+        await manager.async_discover()
+        mac = "AA:BB:CC:DD:EE:FF"
+        # Device came online at some point after the initial discovery.
+        manager.devices[mac].available = True
+
+        # A new ESPHome entity appearing anywhere re-runs discovery.
+        await manager.async_discover()
+        assert manager.devices[mac].available is True, "rediscovery reset runtime availability"
+
+        # The next real offline transition must still fire the broadcast.
+        fire_calls: list[None] = []
+        manager.on_device_list_changed(lambda: fire_calls.append(None))
+        old = MagicMock()
+        old.state = "1.2.3"
+        new = MagicMock()
+        new.state = STATE_UNAVAILABLE
+        event = MagicMock()
+        event.data = {"entity_id": entity.entity_id, "old_state": old, "new_state": new}
+        manager._on_state_changed(event)
+        await hass.async_block_till_done()
+
+        assert len(fire_calls) == 1, "offline transition after rediscovery must fire broadcast"
+        assert manager.devices[mac].available is False
+
     async def test_list_devices(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """list_devices returns serializable device list."""
         manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
