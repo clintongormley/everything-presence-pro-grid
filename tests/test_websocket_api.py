@@ -4508,8 +4508,12 @@ class TestAdminGateAllCommands:
 
         # Parse the __init__.py to extract all handler names passed to
         # async_register_command, then verify each has require_admin.
-        init_src = pathlib.Path(
-            "/Users/clintongormley/workspace/worktrees/epp-fable/custom_components/eppgrid/websocket_api/__init__.py"
+        init_src = (
+            pathlib.Path(__file__).resolve().parents[1]
+            / "custom_components"
+            / "eppgrid"
+            / "websocket_api"
+            / "__init__.py"
         ).read_text()
         tree = ast.parse(init_src)
         registered: list[str] = []

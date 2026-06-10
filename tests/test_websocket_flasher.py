@@ -543,6 +543,29 @@ class TestDeleteEsphomeDevice:
         connection.send_error.assert_called_once_with(3, "delete_failed", "not found")
         connection.send_result.assert_not_called()
 
+    async def test_delete_esphome_device_requires_admin(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Non-admin users cannot delete ESPHome devices."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+
+        from custom_components.eppgrid.websocket_api import websocket_delete_esphome_device
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {
+            "id": 5,
+            "type": "eppgrid/delete_esphome_device",
+            "config_entry_id": "some-entry-id",
+        }
+
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_delete_esphome_device, connection, msg)
+
+        connection.send_result.assert_not_called()
+
     async def test_delete_rejects_non_esphome_entry(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """delete_esphome_device rejects entries that aren't ESPHome."""
         await setup_integration(hass, config_entry)
@@ -808,3 +831,24 @@ class TestAddEsphomeDevice:
         msg_id, payload = connection.send_result.call_args[0]
         assert msg_id == 8
         assert payload == {"type": "added"}
+
+    async def test_add_esphome_device_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        """Non-admin users cannot add ESPHome devices."""
+        from homeassistant.exceptions import Unauthorized
+
+        await setup_integration(hass, config_entry)
+
+        from custom_components.eppgrid.websocket_api import websocket_add_esphome_device
+
+        connection = MagicMock()
+        connection.user.is_admin = False
+        msg = {
+            "id": 9,
+            "type": "eppgrid/add_esphome_device",
+            "host": "192.168.1.99",
+        }
+
+        with pytest.raises(Unauthorized):
+            await call_async_handler(hass, websocket_add_esphome_device, connection, msg)
+
+        connection.send_result.assert_not_called()
