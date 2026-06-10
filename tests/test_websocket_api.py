@@ -3770,6 +3770,68 @@ class TestSubscriptionCallbacks:
         assert event["event"]["sensors"]["target_presence"] is True
         assert event["event"]["sensors"]["mmwave"] is True
 
+    async def test_grid_targets_drops_wrong_shape_zone_state_frames(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Valid-JSON-wrong-shape zone-state frames are dropped, not fatal.
+
+        If a TypeError/AttributeError escapes `_on_state`,
+        `DeviceConnection._dispatch_state` drops the subscriber permanently
+        and the client's grid stream silently freezes. Each malformed frame
+        must be swallowed AND a subsequent good frame must still arrive.
+        """
+        import json
+
+        mock_dm = await setup_integration(hass, config_entry)
+
+        zone_state_entity = MagicMock()
+        zone_state_entity.key = 300
+        zone_state_entity.name = "Zone State"
+
+        mock_device_conn = MagicMock()
+        mock_device_conn._entities = [zone_state_entity]
+        mock_device_conn.subscribe_states = AsyncMock()
+        mock_device_conn.unsubscribe_states = MagicMock()
+        mock_dm.get_session = MagicMock(return_value=mock_device_conn)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_grid_targets
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 44, "type": "eppgrid/subscribe_grid_targets", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        await call_async_handler(hass, websocket_subscribe_grid_targets, connection, msg)
+
+        on_state = mock_device_conn.subscribe_states.await_args[0][0]
+
+        from aioesphomeapi import TextSensorState
+
+        bad_frames = [
+            json.dumps(5),  # non-dict root → AttributeError on .get
+            json.dumps({"targets": 5}),  # non-iterable targets → TypeError on enumerate
+            json.dumps({"targets": [5]}),  # non-dict target entry → AttributeError on .get
+            json.dumps({"zones": 5}),  # non-dict zones → AttributeError on .get
+            json.dumps({"zones": {"occupancy": 5}}),  # non-iterable occupancy → TypeError
+        ]
+        for bad in bad_frames:
+            # Must not raise — a raise here means the subscriber gets dropped.
+            on_state(TextSensorState(key=300, state=bad, missing_state=False))
+        connection.send_message.assert_not_called()
+
+        good = json.dumps(
+            {
+                "targets": [{"signal": 80, "status": "active"}],
+                "zones": {"occupancy": [True], "tracking": True},
+                "frame_count": 7,
+            }
+        )
+        on_state(TextSensorState(key=300, state=good, missing_state=False))
+
+        connection.send_message.assert_called_once()
+        event = connection.send_message.call_args[0][0]
+        assert event["event"]["zones"]["frame_count"] == 7
+        assert event["event"]["targets"][0]["signal"] == 80
+
     async def test_grid_targets_on_state_binary_sensor(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:

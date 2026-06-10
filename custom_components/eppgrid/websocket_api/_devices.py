@@ -760,10 +760,15 @@ async def websocket_subscribe_grid_targets(
                             },
                         )
                     )
-                except (ValueError, KeyError) as err:
+                except (ValueError, KeyError, TypeError, AttributeError) as err:
                     # Malformed zone-state JSON from firmware (truncated buffer,
-                    # boot-time garbage). Drop the frame but log so we don't lose
-                    # visibility when a real parse bug regresses.
+                    # boot-time garbage), or valid JSON of the wrong shape
+                    # (non-dict root → AttributeError on .get; scalar `targets` →
+                    # TypeError on enumerate). Drop the frame but log so we don't
+                    # lose visibility when a real parse bug regresses. Letting any
+                    # of these escape would make DeviceConnection._dispatch_state
+                    # drop this subscriber permanently, silently freezing the
+                    # client's grid stream.
                     _LOGGER.debug(
                         "subscribe_grid_targets: bad zone-state JSON for %s: %s",
                         mac,
