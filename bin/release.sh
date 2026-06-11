@@ -27,20 +27,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Must be on main.
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
 if [ "$CURRENT_BRANCH" != "main" ]; then
-  echo "error: must be on main (currently on $CURRENT_BRANCH)" >&2
+  echo "✗ must be on main (currently on $CURRENT_BRANCH)" >&2
   exit 1
 fi
 
 # Working tree must be clean.
 if [ -n "$(git status --porcelain)" ]; then
-  echo "error: working tree is not clean; commit or stash first" >&2
+  echo "✗ working tree is not clean; commit or stash first" >&2
   exit 1
 fi
 
 # Tag must not exist locally or on origin.
 TAG="v$VERSION"
 if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
-  echo "error: tag $TAG already exists locally" >&2
+  echo "✗ tag $TAG already exists locally" >&2
   exit 1
 fi
 
@@ -59,7 +59,7 @@ if [ "$HAS_ORIGIN" = "true" ]; then
     exit 1
   fi
   if grep -q "refs/tags/$TAG\$" <<<"$REMOTE_TAGS"; then
-    echo "error: tag $TAG already exists on origin" >&2
+    echo "✗ tag $TAG already exists on origin" >&2
     exit 1
   fi
 fi
@@ -70,7 +70,7 @@ if [ "$HAS_ORIGIN" = "true" ]; then
   LOCAL=$(git rev-parse main)
   REMOTE=$(git rev-parse origin/main)
   if [ "$LOCAL" != "$REMOTE" ]; then
-    echo "error: local main is not up to date with origin/main" >&2
+    echo "✗ local main is not up to date with origin/main" >&2
     echo "  local:  $LOCAL" >&2
     echo "  origin: $REMOTE" >&2
     exit 1
@@ -85,7 +85,7 @@ fi
 
 # Detect firmware changes since last tag.
 PREV_TAG=$(git describe --tags --abbrev=0 2>/dev/null) || {
-  echo "error: no tags found; cannot determine previous release for firmware-change detection" >&2
+  echo "✗ no tags found; cannot determine previous release for firmware-change detection" >&2
   exit 1
 }
 FIRMWARE_DIFF=$(git diff "$PREV_TAG..HEAD" -- firmware/ || true)
@@ -101,7 +101,7 @@ fi
 # releases (e.g. tag v1.0.4 with firmware still at 1.0.0).
 FW_VERSION=$(sed -n 's/^FIRMWARE_VERSION = "\([^"]*\)".*/\1/p' custom_components/eppgrid/const.py)
 if [ -z "$FW_VERSION" ]; then
-  echo "error: could not read FIRMWARE_VERSION from custom_components/eppgrid/const.py" >&2
+  echo "✗ could not read FIRMWARE_VERSION from custom_components/eppgrid/const.py" >&2
   exit 1
 fi
 
@@ -123,7 +123,7 @@ cleanup_on_failure() {
       echo "  Do NOT rerun bin/release.sh: it requires main + a clean tree, and the"
       echo "  release branch already exists locally and on origin."
       echo "  Recover by creating the PR manually:"
-      echo "    gh pr create --head $BRANCH --title \"chore: release $TAG\""
+      echo "    gh pr create --head $BRANCH --title \"chore: release $TAG\" --fill"
       echo "  Or discard the release branch and start over:"
       echo "    git checkout main"
       echo "    git branch -D $BRANCH"

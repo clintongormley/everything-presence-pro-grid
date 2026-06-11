@@ -30,7 +30,7 @@ from ..const import MAX_ZONES
 from ..const import empty_zone_slots
 from ..storage import EPPGridStore
 from ._connection import DeviceConnection
-from ._connection import OtaWatcherState as OtaWatcherState  # re-export for websocket_api / tests
+from ._connection import OtaWatcherState as OtaWatcherState  # re-export for tests
 from ._helpers import ZONE_TYPE_DEFAULTS as ZONE_TYPE_DEFAULTS  # re-export for tests
 from ._helpers import _compare_firmware_version
 from ._helpers import _compute_pipeline
@@ -76,6 +76,11 @@ _OFFLINE_STATES: frozenset[str] = frozenset({STATE_UNAVAILABLE, STATE_UNKNOWN})
 # second transition has `old_state=""` which the narrower `_OFFLINE_STATES`
 # set wouldn't match, and the push retrigger would never fire.
 _FW_OFFLINE_STATES: frozenset[str] = frozenset({STATE_UNAVAILABLE, STATE_UNKNOWN, ""})
+
+#: Default debounce delay for `_request_push` / `request_push`.
+_PUSH_DEBOUNCE_DEFAULT: float = 0.1
+#: Default delay for `_schedule_entity_update_clear` / `schedule_entity_update_clear`.
+_ENTITY_UPDATE_CLEAR_DEFAULT: float = 60.0
 
 #: Type for device-list-change callbacks. The shared payload must be treated
 #: as read-only — all subscribers receive the **same** list object, so
@@ -234,9 +239,16 @@ class DeviceManager:
     # `_`-prefixed members of the manager.
 
     @callback
-    def request_push(self, mac: str, delay: float = 0.1) -> None:
-        """Request a debounced config push for `mac` — see `_request_push`."""
-        self._request_push(mac, delay)
+    def request_push(self, mac: str, delay: float | None = None) -> None:
+        """Request a debounced config push for `mac` — see `_request_push`.
+
+        ``delay`` overrides the default debounce window
+        (``_PUSH_DEBOUNCE_DEFAULT``); omit to use the default.
+        """
+        if delay is None:
+            self._request_push(mac)
+        else:
+            self._request_push(mac, delay)
 
     @callback
     def fire_device_list_changed(self) -> None:
@@ -244,10 +256,17 @@ class DeviceManager:
         self._fire_device_list_changed()
 
     @callback
-    def schedule_entity_update_clear(self, mac: str, delay: float = 60.0) -> None:
+    def schedule_entity_update_clear(self, mac: str, delay: float | None = None) -> None:
         """Arm the entity-registry-update reload guard for `mac` — see
-        `_schedule_entity_update_clear`."""
-        self._schedule_entity_update_clear(mac, delay)
+        ``_schedule_entity_update_clear``.
+
+        ``delay`` overrides the default clear window
+        (``_ENTITY_UPDATE_CLEAR_DEFAULT``); omit to use the default.
+        """
+        if delay is None:
+            self._schedule_entity_update_clear(mac)
+        else:
+            self._schedule_entity_update_clear(mac, delay)
 
     @callback
     def set_connection_failed(self, mac: str, failed: bool) -> None:
@@ -359,7 +378,7 @@ class DeviceManager:
                 self._spawn(self._on_device_available(mac))
 
     @callback
-    def _schedule_entity_update_clear(self, mac: str, delay: float = 60.0) -> None:
+    def _schedule_entity_update_clear(self, mac: str, delay: float = _ENTITY_UPDATE_CLEAR_DEFAULT) -> None:
         """Flag mac as having a pending entity-registry-update reload, then
         clear that flag after `delay` seconds.
 
@@ -1219,7 +1238,7 @@ class DeviceManager:
         else:
             conn.unsubscribe_logs()
 
-    def _request_push(self, mac: str, delay: float = 0.1) -> None:
+    def _request_push(self, mac: str, delay: float = _PUSH_DEBOUNCE_DEFAULT) -> None:
         """Request a debounced config push for `mac` (trailing-edge).
 
         Multiple rapid-fire calls within `delay` seconds collapse into a
@@ -1291,16 +1310,16 @@ class DeviceManager:
                 _LOGGER.debug("Device %s does not expose epp_set_pipeline", mac)
 
     @contextlib.asynccontextmanager
-    async def _temp_connection(self, mac: str, timeout: float | None = None) -> AsyncIterator[DeviceConnection]:
+    async def _temp_connection(self, mac: str) -> AsyncIterator[DeviceConnection]:
         """Open a short-lived connection to `mac`'s device for one operation.
 
         Shared by every temporary-connection site (OTA fallback, build-flags
-        fetch, on-boot config push): connect is bounded by ``timeout``
-        (default ``_temp_connection_timeout``) and the connection is always
-        torn down on exit. Disconnect failures are logged and swallowed so
-        cleanup can't mask the body's real error. Error handling around the
-        *body* stays at each call site — the semantics differ (wrap as
-        ``ota_trigger_failed``, drop transient errors, return push failure).
+        fetch, on-boot config push): connect is bounded by
+        ``_temp_connection_timeout`` and the connection is always torn down on
+        exit. Disconnect failures are logged and swallowed so cleanup can't
+        mask the body's real error. Error handling around the *body* stays at
+        each call site — the semantics differ (wrap as ``ota_trigger_failed``,
+        drop transient errors, return push failure).
         """
         from ..const import DOMAIN as _DOMAIN
 
@@ -1320,7 +1339,7 @@ class DeviceManager:
         try:
             await asyncio.wait_for(
                 conn.async_connect(),
-                timeout=self._temp_connection_timeout if timeout is None else timeout,
+                timeout=self._temp_connection_timeout,
             )
             yield conn
         finally:

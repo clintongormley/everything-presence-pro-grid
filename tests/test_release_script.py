@@ -317,7 +317,7 @@ def _run_with_fake_tools(repo: Path, fake_bin: Path, *args: str) -> subprocess.C
     )
 
 
-def test_pushes_and_opens_pr(tmp_path: Path, monkeypatch):
+def test_pushes_and_opens_pr(tmp_path: Path):
     repo = tmp_path / "repo"
     repo.mkdir()
     _init_repo(repo)
@@ -459,6 +459,48 @@ def test_pre_existing_branch_survives_name_collision(tmp_path: Path):
     # Its unique commit must still be reachable.
     log = _git("log", "release-v0.93.0", "--oneline", cwd=tmp_path, capture_output=True, text=True).stdout
     assert unique_sha[:7] in log, f"unique commit {unique_sha[:7]} lost; log:\n{log}"
+
+
+def test_push_failure_cleans_up_local_branch(tmp_path: Path):
+    """When git push fails (PUSHED stays false), the trap must return to main
+    and delete the local release branch — the on-main / clean-tree pre-flights
+    would otherwise block a rerun."""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    fake_bin, _log = _make_fake_tools(tmp_path, push_exit=1)
+
+    result = _run_with_fake_tools(repo, fake_bin, "0.93.0")
+    assert result.returncode != 0
+
+    # Must be back on main
+    head = _git("rev-parse", "--abbrev-ref", "HEAD", cwd=repo, capture_output=True, text=True).stdout.strip()
+    assert head == "main", f"repo left on {head!r} after push failure"
+
+    # Release branch must have been deleted
+    branches = _git("branch", "--list", "release-v0.93.0", cwd=repo, capture_output=True, text=True).stdout
+    assert "release-v0.93.0" not in branches, "release branch was not cleaned up after push failure"
+
+
+def test_aborts_on_garbled_fw_version(tmp_path: Path):
+    """When FIRMWARE_VERSION cannot be read from const.py (garbled or absent),
+    the script must abort loudly before creating a release branch."""
+    _init_repo(tmp_path)
+    # Overwrite const.py with content that has no FIRMWARE_VERSION assignment
+    (tmp_path / "custom_components" / "eppgrid" / "const.py").write_text("# no version here\n")
+    _git("add", ".", cwd=tmp_path)
+    _git("commit", "-qm", "chore: garble const.py", cwd=tmp_path)
+
+    result = _run(tmp_path, "0.93.0", "--no-push")
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    # Must mention FIRMWARE_VERSION or const.py so the user knows what went wrong
+    assert "firmware_version" in combined.lower() or "const.py" in combined.lower(), (
+        f"expected loud abort for garbled const.py:\n{combined}"
+    )
+    # Must abort before creating the release branch
+    branches = _git("branch", "--list", "release-v0.93.0", cwd=tmp_path, capture_output=True, text=True).stdout
+    assert "release-v0.93.0" not in branches, "release branch created despite garbled const.py"
 
 
 def test_does_not_leak_to_parent_git_dir_via_env(tmp_path: Path, monkeypatch):

@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Callable
 from typing import Any
+from typing import Literal
 
 import voluptuous as vol
 from aioesphomeapi import BinarySensorState
@@ -595,8 +597,8 @@ async def _start_target_stream(
     msg: dict[str, Any],
     manager: Any,
     *,
-    counter_attr: str,
-    make_on_state: Any,
+    counter_attr: Literal["raw_target_subs", "grid_target_subs"],
+    make_on_state: Callable[[Any], Callable[[Any], None]],
 ) -> None:
     """Shared scaffolding for `subscribe_raw_targets` / `subscribe_grid_targets`.
 
