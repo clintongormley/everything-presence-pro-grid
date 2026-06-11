@@ -331,3 +331,18 @@ def test_missing_arg_errors(tmp_path: Path) -> None:
     result = _run(tmp_path)
     assert result.returncode != 0
     assert "usage" in (result.stdout + result.stderr).lower()
+
+
+# --- git-diff failures must be loud, not a silent pass -------------------
+
+
+def test_invalid_range_fails_loudly(tmp_path: Path) -> None:
+    """A bad range / missing ref must NOT silently no-op the guard (exit 0
+    with empty diff); it must fail with a visible error."""
+    repo = _init_repo(tmp_path)
+    _commit(repo, "add lib", {"frontend/src/lib/new-thing.ts": "export {};\n"})
+    result = _run(repo, "no-such-ref..HEAD")
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "no-such-ref" in combined  # git's own error surfaced
+    assert "git diff" in combined.lower()  # plus our loud explanation

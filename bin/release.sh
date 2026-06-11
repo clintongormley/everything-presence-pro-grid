@@ -20,12 +20,9 @@ fi
 
 VERSION="$1"
 
-SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
-if ! [[ "$VERSION" =~ $SEMVER_RE ]]; then
-  echo "error: not a valid semver version: $VERSION" >&2
-  echo "expected format: MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-(alpha|beta|rc).N" >&2
-  exit 1
-fi
+# Semver validation is shared with bin/bump-version.sh (single source of truth).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$SCRIPT_DIR/bump-version.sh" --validate "$VERSION"
 
 # Must be on main.
 CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
@@ -46,13 +43,29 @@ if git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
   echo "error: tag $TAG already exists locally" >&2
   exit 1
 fi
-if git ls-remote --tags origin 2>/dev/null | grep -q "refs/tags/$TAG$"; then
-  echo "error: tag $TAG already exists on origin" >&2
-  exit 1
+
+HAS_ORIGIN=false
+if git remote get-url origin >/dev/null 2>&1; then
+  HAS_ORIGIN=true
+fi
+
+# When origin is configured, the remote duplicate-tag check must actually
+# run: an ls-remote failure (offline, auth) silently skipping the guard
+# could let a duplicate tag through.
+if [ "$HAS_ORIGIN" = "true" ]; then
+  if ! REMOTE_TAGS=$(git ls-remote --tags origin); then
+    echo "✗ git ls-remote --tags origin failed; cannot verify $TAG is unused on origin" >&2
+    echo "  check network/auth and retry" >&2
+    exit 1
+  fi
+  if grep -q "refs/tags/$TAG\$" <<<"$REMOTE_TAGS"; then
+    echo "error: tag $TAG already exists on origin" >&2
+    exit 1
+  fi
 fi
 
 # Local main must be up to date with origin/main.
-if git remote get-url origin >/dev/null 2>&1; then
+if [ "$HAS_ORIGIN" = "true" ]; then
   git fetch -q origin main
   LOCAL=$(git rev-parse main)
   REMOTE=$(git rev-parse origin/main)
@@ -82,13 +95,52 @@ else
   FIRMWARE_CHANGED=false
 fi
 
+# The current firmware version, for the PR body of an integration-only
+# release. NOT the same thing as the previous git tag — the integration
+# version (tags) and FIRMWARE_VERSION drift apart on integration-only
+# releases (e.g. tag v1.0.4 with firmware still at 1.0.0).
+FW_VERSION=$(sed -n 's/^FIRMWARE_VERSION = "\([^"]*\)".*/\1/p' custom_components/eppgrid/const.py)
+if [ -z "$FW_VERSION" ]; then
+  echo "error: could not read FIRMWARE_VERSION from custom_components/eppgrid/const.py" >&2
+  exit 1
+fi
+
 BRANCH="release-$TAG"
+PUSHED=false
+
+# From the moment the release branch exists, a failure must not strand the
+# repo on a half-prepared branch (the on-main / clean-tree pre-flights would
+# then block a rerun). On failure before the push: return to main and drop
+# the local branch. On failure after the push (gh pr create): keep the
+# branch — it's the recovery artifact — and print explicit recovery steps.
+cleanup_on_failure() {
+  local status=$?
+  [ "$status" -eq 0 ] && return 0
+  if [ "$PUSHED" = "true" ]; then
+    {
+      echo "✗ branch $BRANCH was pushed, but creating the PR failed."
+      echo "  Do NOT rerun bin/release.sh: it requires main + a clean tree, and the"
+      echo "  release branch already exists locally and on origin."
+      echo "  Recover by creating the PR manually:"
+      echo "    gh pr create --head $BRANCH --title \"chore: release $TAG\""
+      echo "  Or discard the release branch and start over:"
+      echo "    git checkout main"
+      echo "    git branch -D $BRANCH"
+      echo "    git push origin --delete $BRANCH"
+    } >&2
+    return 0
+  fi
+  echo "✗ release preparation failed; returning to main and deleting $BRANCH" >&2
+  git checkout -qf main || true
+  git branch -qD "$BRANCH" 2>/dev/null || true
+}
+trap cleanup_on_failure EXIT
+
 git checkout -q -b "$BRANCH"
 
-# Always bump manifest.json version.
-sed -i.bak "s/\"version\": \".*\"/\"version\": \"$VERSION\"/" custom_components/eppgrid/manifest.json
-rm -f custom_components/eppgrid/manifest.json.bak
-grep -q "\"version\": \"$VERSION\"" custom_components/eppgrid/manifest.json
+# Always bump manifest.json version (delegated to bump-version.sh, the single
+# owner of the manifest edit and its non-greedy sed pattern).
+"$SCRIPT_DIR/bump-version.sh" "$VERSION"
 
 if [ "$FIRMWARE_CHANGED" = "true" ]; then
   # Bump FIRMWARE_VERSION in const.py.
@@ -121,12 +173,13 @@ fi
 
 # Push the release branch.
 git push -u origin "$BRANCH"
+PUSHED=true
 
 # Open the PR.
 if [ "$FIRMWARE_CHANGED" = "true" ]; then
   BODY="Firmware-changing release: firmware version bumped to \`$VERSION\`."
 else
-  BODY="Integration-only release: firmware version unchanged at \`$PREV_TAG\`."
+  BODY="Integration-only release: firmware version unchanged at \`$FW_VERSION\`."
 fi
 
 gh pr create \

@@ -47,7 +47,12 @@ DOC_FILES_PATTERN='^docs/developers/(architecture|data-catalog)\.md$'
 # Get name-status diff with rename detection. Format:
 #   "X<TAB>path"            for A/D/M/T
 #   "Rnnn<TAB>old<TAB>new"  for renames (and similarly C for copies)
-status_lines=$(git diff --name-status -M "$RANGE" 2>/dev/null || true)
+# A git-diff failure (bad range, missing ref) must fail the guard loudly —
+# swallowing it would silently no-op the whole check.
+if ! status_lines=$(git diff --name-status -M "$RANGE"); then
+    echo "✗ git diff failed for range '$RANGE'; cannot check docs coverage." >&2
+    exit 1
+fi
 [ -z "$status_lines" ] && exit 0
 
 # Walk the diff. A path is doc-described if it matches DOC_PATTERN.

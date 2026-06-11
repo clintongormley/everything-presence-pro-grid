@@ -99,3 +99,23 @@ def test_missing_manifest_errors(tmp_path: Path):
     assert result.returncode != 0
     combined = (result.stdout + result.stderr).lower()
     assert "manifest.json" in combined or "not found" in combined
+
+
+def test_invalid_semver_rejected_identically_across_scripts(tmp_path: Path):
+    """release.sh and promote.sh delegate semver validation to
+    `bump-version.sh --validate` (single source of truth), so the same bad
+    input must produce the same error from all three scripts."""
+    errors: dict[str, str] = {}
+    for script in ("bump-version.sh", "release.sh", "promote.sh"):
+        result = subprocess.run(
+            ["bash", str(REPO_ROOT / "bin" / script), "1.2"],
+            cwd=tmp_path,
+            capture_output=True,
+            text=True,
+            env=_clean_env(),
+        )
+        assert result.returncode != 0, f"{script} accepted invalid semver 1.2"
+        assert "semver" in (result.stdout + result.stderr).lower(), script
+        errors[script] = result.stderr
+    assert errors["release.sh"] == errors["bump-version.sh"]
+    assert errors["promote.sh"] == errors["bump-version.sh"]

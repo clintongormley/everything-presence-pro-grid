@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Promotes a pre-release to the latest full release.
 #
-# Usage: bin/promote.sh <version>
+# Usage: bin/promote.sh <version> [--force]
 #
 # Example: bin/promote.sh 1.0.4
 #
@@ -10,20 +10,42 @@
 # flip the release to a full, latest release — which also re-fires pages.yml
 # to stage fw/latest/ from it. Idempotent: re-running on an already-promoted
 # release is a no-op.
+#
+# Pre-release versions (-alpha/-beta/-rc) are refused unless --force is given:
+# promoting marks the release GitHub "latest" and re-stages fw/latest/, the
+# auto-update channel for every device.
 
 set -euo pipefail
 
-if [ $# -lt 1 ]; then
-  echo "usage: $0 <version>" >&2
+usage() {
+  echo "usage: $0 <version> [--force]" >&2
   exit 2
+}
+
+if [ $# -lt 1 ]; then
+  usage
 fi
 
 VERSION="$1"
+shift
+FORCE=false
+for arg in "$@"; do
+  case "$arg" in
+    --force) FORCE=true ;;
+    *) usage ;;
+  esac
+done
 
-SEMVER_RE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
-if ! [[ "$VERSION" =~ $SEMVER_RE ]]; then
-  echo "error: not a valid semver version: $VERSION" >&2
-  echo "expected format: MAJOR.MINOR.PATCH or MAJOR.MINOR.PATCH-(alpha|beta|rc).N" >&2
+# Semver validation is shared with bin/bump-version.sh (single source of truth).
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+"$SCRIPT_DIR/bump-version.sh" --validate "$VERSION"
+
+# The semver gate above only allows -alpha/-beta/-rc suffixes, so any dash
+# means a pre-release version.
+if [[ "$VERSION" == *-* ]] && [ "$FORCE" != "true" ]; then
+  echo "✗ refusing to promote pre-release version $VERSION to the latest release" >&2
+  echo "  Promotion marks it GitHub \"latest\" and re-stages fw/latest/ — the auto-update" >&2
+  echo "  channel for every device. If you really mean it: $0 $VERSION --force" >&2
   exit 1
 fi
 

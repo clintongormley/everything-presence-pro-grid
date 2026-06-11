@@ -87,3 +87,28 @@ def test_errors_when_release_missing(tmp_path: Path):
     # gh's own error must be surfaced, not swallowed and misattributed to a
     # missing release (it could equally be an auth/network/cwd failure).
     assert "simulated by gh stub" in (result.stdout + result.stderr)
+
+
+def test_rejects_prerelease_promotion_without_force(tmp_path: Path):
+    """Promoting a -alpha/-beta/-rc version marks it GitHub "latest" and
+    re-stages fw/latest/ — every device's auto-update channel. Refuse unless
+    --force is given."""
+    result = _run(tmp_path, "1.2.3-rc.1", GH_STUB_PRERELEASE="true")
+    assert result.returncode != 0
+    combined = result.stdout + result.stderr
+    assert "pre-release" in combined.lower() or "prerelease" in combined.lower()
+    assert "--force" in combined  # tells the user the escape hatch
+    assert _edit_log(tmp_path) == ""
+
+
+def test_force_promotes_prerelease(tmp_path: Path):
+    result = _run(tmp_path, "1.2.3-rc.1", "--force", GH_STUB_PRERELEASE="true")
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "release edit v1.2.3-rc.1 --prerelease=false --latest=true" in _edit_log(tmp_path)
+
+
+def test_rejects_unknown_extra_arg(tmp_path: Path):
+    result = _run(tmp_path, "1.2.3", "--bogus")
+    assert result.returncode != 0
+    assert "usage" in (result.stdout + result.stderr).lower()
+    assert _edit_log(tmp_path) == ""
