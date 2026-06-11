@@ -208,7 +208,7 @@ class DeviceManager:
 
     @property
     def store(self) -> EPPGridStore:
-        """The persistent store backing this manager (read-only accessor)."""
+        """The persistent store backing this manager (no setter; the store object itself is mutable)."""
         return self._store
 
     # -- public wrappers ----------------------------------------------------

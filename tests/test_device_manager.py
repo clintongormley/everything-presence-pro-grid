@@ -789,6 +789,12 @@ class TestDeviceConnection:
 class TestDeviceManager:
     """Tests for DeviceManager discovery and session management."""
 
+    async def test_exposes_public_store(self, hass: HomeAssistant) -> None:
+        """DeviceManager.store returns the store passed at construction."""
+        s = EPPGridStore(hass)
+        m = DeviceManager(hass, s)
+        assert m.store is s
+
     async def test_discover_finds_firmware_version_device(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """Discover finds ESPHome devices with firmware_version entity."""
         dev_reg = dr.async_get(hass)

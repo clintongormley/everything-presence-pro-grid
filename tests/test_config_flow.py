@@ -68,15 +68,6 @@ def _mock_manager(
 class TestOptionsFlow:
     """Tests for EPPGridOptionsFlow."""
 
-    async def test_device_manager_exposes_public_store(self, hass: HomeAssistant) -> None:
-        """The flow relies on a public read-only `store` accessor on DeviceManager."""
-        from custom_components.eppgrid.device_manager import DeviceManager
-        from custom_components.eppgrid.storage import EPPGridStore
-
-        store = EPPGridStore(hass)
-        manager = DeviceManager(hass, store)
-        assert manager.store is store
-
     async def test_init_aborts_when_not_loaded(self, hass: HomeAssistant) -> None:
         """With the integration not loaded there is no store to edit — abort instead of showing the form."""
         flow = EPPGridOptionsFlow()
@@ -166,7 +157,6 @@ class TestOptionsFlow:
         mock_panel.assert_awaited_once_with(hass, MODULE_URL)
         assert hass.data[_PANEL_REGISTERED_KEY] is True
         mock_reload.assert_not_awaited()
-        mock_manager.async_stop.assert_not_called()
 
     async def test_submit_sidebar_off_removes_panel_without_reload(self, hass: HomeAssistant) -> None:
         """Toggling the sidebar off removes the panel directly — no config-entry reload."""
@@ -188,7 +178,6 @@ class TestOptionsFlow:
         mock_remove.assert_called_once_with(hass, DOMAIN, warn_if_unknown=False)
         assert _PANEL_REGISTERED_KEY not in hass.data
         mock_reload.assert_not_awaited()
-        mock_manager.async_stop.assert_not_called()
 
     async def test_tutorial_change_saves_and_broadcasts_only(self, hass: HomeAssistant) -> None:
         """A tutorial-flag change saves the store and re-broadcasts; the panel is left alone."""

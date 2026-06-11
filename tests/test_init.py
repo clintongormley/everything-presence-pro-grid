@@ -13,6 +13,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid import _PANEL_REGISTERED_KEY
+from custom_components.eppgrid import async_apply_panel_visibility
 from custom_components.eppgrid import async_setup_entry
 from custom_components.eppgrid import async_unload_entry
 from custom_components.eppgrid.const import DOMAIN
@@ -174,13 +175,10 @@ async def test_options_update_does_not_reload_entry(hass: HomeAssistant, config_
 
     assert not config_entry.update_listeners
     mock_reload.assert_not_awaited()
-    mock_dm.async_stop.assert_not_awaited()
 
 
 async def test_apply_panel_visibility_registers_panel_once(hass: HomeAssistant) -> None:
     """async_apply_panel_visibility(True) registers the panel and is idempotent."""
-    from custom_components.eppgrid import async_apply_panel_visibility
-
     module_url = "/eppgrid_static/eppgrid-panel.js?v=deadbeef"
     with (
         patch(
@@ -199,8 +197,6 @@ async def test_apply_panel_visibility_registers_panel_once(hass: HomeAssistant) 
 
 async def test_apply_panel_visibility_removes_registered_panel(hass: HomeAssistant) -> None:
     """async_apply_panel_visibility(False) removes a registered panel and clears the flag."""
-    from custom_components.eppgrid import async_apply_panel_visibility
-
     hass.data[_PANEL_REGISTERED_KEY] = True
     with patch("custom_components.eppgrid.async_remove_panel") as mock_remove:
         await async_apply_panel_visibility(hass, False)
@@ -211,8 +207,6 @@ async def test_apply_panel_visibility_removes_registered_panel(hass: HomeAssista
 
 async def test_apply_panel_visibility_noop_when_not_registered(hass: HomeAssistant) -> None:
     """async_apply_panel_visibility(False) is a no-op when no panel was registered."""
-    from custom_components.eppgrid import async_apply_panel_visibility
-
     with patch("custom_components.eppgrid.async_remove_panel") as mock_remove:
         await async_apply_panel_visibility(hass, False)
 

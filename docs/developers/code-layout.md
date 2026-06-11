@@ -191,7 +191,7 @@ This site. MkDocs Material source.
 
 ## CI (`.github/workflows/`)
 
-- **`tests.yml`** — Python (HA 2025.2.0 floor, HA stable, HA dev), Frontend (Vitest + coverage), C++ tests (CMake + CTest, both libs).
+- **`tests.yml`** — Python (HA 2026.5.0 floor, HA stable, HA dev), Frontend (Vitest + coverage), C++ tests (CMake + CTest, both libs).
 - **`firmware.yml`** — compiles each firmware variant on changes under `firmware/`.
 - **`hacs.yml`** — HACS integration validation.
 - **`hassfest.yml`** — HA integration metadata validation.

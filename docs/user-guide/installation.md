@@ -4,7 +4,7 @@ Everything Presence Pro Grid is distributed as a **HACS custom repository** — 
 
 ## Prerequisites
 
-- Home Assistant 2025.2.0 or newer.
+- Home Assistant 2026.5.0 or newer.
 - [HACS](https://hacs.xyz/) installed (recommended).
 
 ## Install via HACS (recommended)
