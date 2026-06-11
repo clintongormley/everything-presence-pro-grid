@@ -352,6 +352,58 @@ describe("autoComputeRoomDimensions", () => {
 		const result = autoComputeRoomDimensions(corners);
 		expect(result.width).toBe(500);
 	});
+
+	it("adds corner offsets back so dims are wall-to-wall (65cm plant corner)", () => {
+		// The wizard's own example: room is 4000x5000mm wall-to-wall, but a
+		// plant blocks corner 3 (back-left), so the user marked it 650mm from
+		// the left wall and 650mm from the back wall. Sensor space == room
+		// space here, so the marked points are (hand-computed):
+		const corners = [
+			{ raw_x: 0, raw_y: 0, offset_side: 0, offset_fb: 0 },
+			{ raw_x: 4000, raw_y: 0, offset_side: 0, offset_fb: 0 },
+			{ raw_x: 4000, raw_y: 5000, offset_side: 0, offset_fb: 0 },
+			{ raw_x: 650, raw_y: 4350, offset_side: 650, offset_fb: 650 },
+		];
+		// width = dist(c0,c1) = 4000 (no side offsets on corners 0/1).
+		// depthLeft: dist(c0,c3) = sqrt(650² + 4350²) = sqrt(19,345,000);
+		//   the along-wall component is sqrt(19,345,000 − 650²) = 4350,
+		//   plus fb offsets (0 + 650) = 5000.
+		// depthRight = dist(c1,c2) = 5000. depth = (5000+5000)/2 = 5000.
+		const result = autoComputeRoomDimensions(corners);
+		expect(result.width).toBe(4000);
+		expect(result.depth).toBe(5000);
+	});
+
+	it("adds symmetric offsets back (marks 100mm inside every wall)", () => {
+		// User can't touch any wall and marks 100mm inside each one.
+		// Room is 4000x5000 wall-to-wall.
+		const corners = [
+			{ raw_x: 100, raw_y: 100, offset_side: 100, offset_fb: 100 },
+			{ raw_x: 3900, raw_y: 100, offset_side: 100, offset_fb: 100 },
+			{ raw_x: 3900, raw_y: 4900, offset_side: 100, offset_fb: 100 },
+			{ raw_x: 100, raw_y: 4900, offset_side: 100, offset_fb: 100 },
+		];
+		// width = (3900-100) + 100 + 100 = 4000
+		// depth = (4900-100) + 100 + 100 = 5000 on both sides
+		const result = autoComputeRoomDimensions(corners);
+		expect(result.width).toBe(4000);
+		expect(result.depth).toBe(5000);
+	});
+
+	it("clamps the along-wall component at zero for nonsense offsets", () => {
+		// Offsets larger than the marked-point separation would make
+		// dist² − Δoffset² negative; the sqrt must clamp to 0 instead of NaN.
+		const corners = [
+			{ raw_x: 0, raw_y: 0, offset_side: 0, offset_fb: 0 },
+			{ raw_x: 100, raw_y: 0, offset_side: 0, offset_fb: 0 },
+			{ raw_x: 100, raw_y: 100, offset_side: 9000, offset_fb: 0 },
+			{ raw_x: 0, raw_y: 100, offset_side: 0, offset_fb: 0 },
+		];
+		const result = autoComputeRoomDimensions(corners);
+		expect(Number.isFinite(result.width)).toBe(true);
+		expect(Number.isFinite(result.depth)).toBe(true);
+		expect(result.depth).toBeGreaterThanOrEqual(0);
+	});
 });
 
 describe("median", () => {

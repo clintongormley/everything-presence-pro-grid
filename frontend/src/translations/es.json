@@ -72,6 +72,8 @@
 		"no_target": "No se detecta ningún objetivo. Asegúrate de que el sensor pueda verte.",
 		"multiple_targets": "Se detectan varios objetivos. Solo debe haber una persona en la habitación durante la calibración.",
 		"save_prompt": "Haz clic en Guardar para almacenar la calibración de esta habitación, o haz clic en una esquina superior para volver a marcarla.",
+		"save_failed": "No se pudo guardar la calibración. Comprueba que el dispositivo está en línea y vuelve a intentarlo.",
+		"invalid_corners": "Las esquinas marcadas no forman una sala válida. Vuelve a marcar las esquinas e inténtalo de nuevo.",
 		"walk_instruction_full": "<strong>Camina hasta cada esquina</strong> en orden (1 → 2 → 3 → 4) y haz clic en Marcar. Permanece inmóvil unos segundos para que el sensor pueda registrar tu posición.",
 		"cant_reach": "<strong>¿No puedes llegar a una esquina?</strong> Acércate todo lo que puedas e introduce la distancia a cada pared en los campos de desplazamiento, como en la esquina 4 del diagrama superior, donde hay una planta en el camino.",
 		"corner_sensor_hint": "En este ejemplo, el sensor está montado en la esquina 2, pero puede estar en cualquier lugar. Puedes colocarte justo delante de él.",

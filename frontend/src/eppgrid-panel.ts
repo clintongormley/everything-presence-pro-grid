@@ -9,6 +9,7 @@ import "./components/epp-live-sidebar.js";
 import type { ZoneStateSummary } from "./components/epp-live-sidebar.js";
 import "./components/epp-settings-view.js";
 import "./components/epp-wizard.js";
+import type { EppWizard } from "./components/epp-wizard.js";
 import "./components/epp-overlay-sidebar.js";
 import "./components/epp-zone-sidebar.js";
 import { DeviceController } from "./controllers/device-controller.js";
@@ -1976,8 +1977,6 @@ export class EPPGridPanel extends LitElement {
         <div class="panel">
           ${this._renderHeader()}
           <epp-wizard
-            .hass=${this.hass}
-            .selectedMac=${this._selectedMac}
             .rawTargets=${this._rawTargets}
             .sensorState=${{ occupancy: this._sensorState.occupancy }}
             .localize=${this._localize}
@@ -1988,25 +1987,7 @@ export class EPPGridPanel extends LitElement {
             @begin-corners=${() => {
 							this._view = "calibrate";
 						}}
-            @calibration-complete=${async (e: CustomEvent) => {
-							const { perspective, roomWidth, roomDepth } = e.detail;
-							this._perspective = perspective;
-							this._roomWidth = roomWidth;
-							this._roomDepth = roomDepth;
-							this._initGridFromRoom();
-							// Furniture is anchored to the old room dimensions/footprint; clear it
-							// so the user re-places it under the new calibration.
-							this._furniture = [];
-							this._view = "live";
-							// set_setup enables zone_presence — update local state
-							this._entitiesConfig = {
-								...this._entitiesConfig,
-								zone_presence: true,
-							};
-							await this._gridCtrl.applyLayout().catch((err: unknown) => {
-								console.error("Failed to apply layout after calibration", err);
-							});
-						}}
+            @wizard-save=${(e: CustomEvent) => this._onWizardSave(e)}
           @wizard-cancel=${() => {
 						this._view = "live";
 					}}
@@ -2093,6 +2074,52 @@ export class EPPGridPanel extends LitElement {
 					: this._renderLiveOverview();
 
 		return html`<div class="tab-layout">${this._renderTabBar()}${content}${this._renderGlobalDialogs()}</div>`;
+	}
+
+	/**
+	 * Persist a finished calibration from the wizard.
+	 *
+	 * Contract: the wizard validates + computes the homography, dispatches
+	 * `wizard-save` with the payload and disables its Save button; the panel
+	 * owns the `eppgrid/set_setup` call (matching how every other view
+	 * persists). On success the panel navigates to live, unmounting the
+	 * wizard; on failure it calls `saveFailed()` on the wizard element so the
+	 * wizard re-enables Save and shows a localized error.
+	 */
+	private async _onWizardSave(e: CustomEvent): Promise<void> {
+		// currentTarget is only valid during synchronous dispatch — capture it
+		// before the first await.
+		const wizard = e.currentTarget as EppWizard;
+		const { perspective, roomWidth, roomDepth } = e.detail;
+		try {
+			await this.hass.callWS({
+				type: "eppgrid/set_setup",
+				mac: this._selectedMac,
+				perspective,
+				room_width: roomWidth,
+				room_depth: roomDepth,
+			});
+		} catch (err) {
+			console.error("Failed to save calibration", err);
+			wizard.saveFailed();
+			return;
+		}
+		this._perspective = perspective;
+		this._roomWidth = roomWidth;
+		this._roomDepth = roomDepth;
+		this._initGridFromRoom();
+		// Furniture is anchored to the old room dimensions/footprint; clear it
+		// so the user re-places it under the new calibration.
+		this._furniture = [];
+		this._view = "live";
+		// set_setup enables zone_presence — update local state
+		this._entitiesConfig = {
+			...this._entitiesConfig,
+			zone_presence: true,
+		};
+		await this._gridCtrl.applyLayout().catch((err: unknown) => {
+			console.error("Failed to apply layout after calibration", err);
+		});
 	}
 
 	private async _deleteCalibration(): Promise<void> {

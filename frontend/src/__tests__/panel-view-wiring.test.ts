@@ -600,32 +600,43 @@ describe("Wizard completion event wiring", () => {
 		return [el, container];
 	}
 
-	it("calibration-complete sets perspective, dimensions, returns to live", () => {
+	it("wizard-save persists via eppgrid/set_setup and updates panel state", async () => {
 		const [el, container] = wizardPanel();
 		const a = el as any;
 		const wizard = container.querySelector("epp-wizard")!;
 		wizard.dispatchEvent(
-			new CustomEvent("calibration-complete", {
+			new CustomEvent("wizard-save", {
 				detail: {
 					perspective: [1, 0, 0, 0, 1, 0, 0, 0],
 					roomWidth: 4000,
 					roomDepth: 5000,
 				},
 				bubbles: true,
+			}),
+		);
+		await vi.waitFor(() => {
+			expect(a._view).toBe("live");
+		});
+		expect(el.hass.callWS).toHaveBeenCalledWith(
+			expect.objectContaining({
+				type: "eppgrid/set_setup",
+				mac: "AA:BB:CC:DD:EE:01",
+				perspective: [1, 0, 0, 0, 1, 0, 0, 0],
+				room_width: 4000,
+				room_depth: 5000,
 			}),
 		);
 		expect(a._perspective).toEqual([1, 0, 0, 0, 1, 0, 0, 0]);
 		expect(a._roomWidth).toBe(4000);
 		expect(a._roomDepth).toBe(5000);
-		expect(a._view).toBe("live");
 	});
 
-	it("calibration-complete initializes grid from room dimensions", () => {
+	it("wizard-save initializes grid from room dimensions", async () => {
 		const [el, container] = wizardPanel();
 		const a = el as any;
 		const wizard = container.querySelector("epp-wizard")!;
 		wizard.dispatchEvent(
-			new CustomEvent("calibration-complete", {
+			new CustomEvent("wizard-save", {
 				detail: {
 					perspective: [1, 0, 0, 0, 1, 0, 0, 0],
 					roomWidth: 4000,
@@ -634,12 +645,15 @@ describe("Wizard completion event wiring", () => {
 				bubbles: true,
 			}),
 		);
+		await vi.waitFor(() => {
+			expect(a._view).toBe("live");
+		});
 		// Grid should match initGridFromRoom(4000, 5000)
 		const expected = initGridFromRoom(4000, 5000);
 		expect(a._grid).toEqual(expected);
 	});
 
-	it("calibration-complete clears furniture", () => {
+	it("wizard-save clears furniture", async () => {
 		const [el, container] = wizardPanel();
 		const a = el as any;
 		// Pre-populate furniture so we can verify it gets cleared.
@@ -659,7 +673,7 @@ describe("Wizard completion event wiring", () => {
 		];
 		const wizard = container.querySelector("epp-wizard")!;
 		wizard.dispatchEvent(
-			new CustomEvent("calibration-complete", {
+			new CustomEvent("wizard-save", {
 				detail: {
 					perspective: [1, 0, 0, 0, 1, 0, 0, 0],
 					roomWidth: 4000,
@@ -668,7 +682,39 @@ describe("Wizard completion event wiring", () => {
 				bubbles: true,
 			}),
 		);
+		await vi.waitFor(() => {
+			expect(a._view).toBe("live");
+		});
 		expect(a._furniture).toEqual([]);
+	});
+
+	it("wizard-save failure keeps the wizard mounted and reports back via saveFailed", async () => {
+		const [el, container] = wizardPanel();
+		const a = el as any;
+		el.hass.callWS = vi.fn().mockRejectedValue(new Error("device offline"));
+		const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+		try {
+			const wizard = container.querySelector("epp-wizard")! as any;
+			const failSpy = vi.spyOn(wizard, "saveFailed");
+			wizard.dispatchEvent(
+				new CustomEvent("wizard-save", {
+					detail: {
+						perspective: [1, 0, 0, 0, 1, 0, 0, 0],
+						roomWidth: 4000,
+						roomDepth: 5000,
+					},
+					bubbles: true,
+				}),
+			);
+			await vi.waitFor(() => {
+				expect(failSpy).toHaveBeenCalled();
+			});
+			// Panel state untouched — the user stays in the wizard to retry.
+			expect(a._view).toBe("calibrate");
+			expect(a._roomWidth).toBe(3000);
+		} finally {
+			consoleSpy.mockRestore();
+		}
 	});
 
 	it("wizard-cancel returns to live", () => {

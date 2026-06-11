@@ -9,8 +9,7 @@ import {
 	FOV_X_EXTENT,
 	TARGET_COLORS,
 } from "../constants.js";
-import type { SmoothBufferEntry } from "../lib/coordinates.js";
-import { getSmoothedValue, rawToFovPct } from "../lib/coordinates.js";
+import { rawToFovPct } from "../lib/coordinates.js";
 import { MAX_RANGE } from "../lib/grid.js";
 import { solvePerspective } from "../lib/perspective.js";
 import {
@@ -25,8 +24,6 @@ export type SetupStep = "guide" | "corners";
 
 export class EppWizard extends LitElement {
 	// --- Properties set by the parent panel ---
-	@property({ attribute: false }) hass: any;
-	@property({ type: String }) selectedMac = "";
 	@property({ attribute: false }) rawTargets: RawTarget[] = [];
 	@property({ attribute: false }) sensorState: {
 		occupancy: boolean;
@@ -61,20 +58,28 @@ export class EppWizard extends LitElement {
 	@state() private _wizardOffsetSide = "";
 	@state() private _wizardOffsetFb = "";
 	@state() private _dismissTutorial = false;
+	// Translation key of the error shown next to the Save button, or null.
+	@state() private _saveError: string | null = null;
 
 	private _wizardCaptureCancelled = false;
 	private _captureRafId: number | null = null;
-	private _smoothBuffer: SmoothBufferEntry[] = [];
+	private _initializedFromProps = false;
 
 	// Perspective computed during wizard (not emitted until finish)
 	private _perspective: number[] | null = null;
 
 	connectedCallback(): void {
 		super.connectedCallback();
+		// Initialise from props only on the FIRST connect. HA detaches and
+		// re-attaches the panel during dashboard rebuilds and hidden-tab
+		// suspends; re-running this on every re-attach wiped the
+		// auto-computed room dims (while _wizardCorners survived), so a
+		// post-suspend Save solved a homography against a zero-size room.
+		if (this._initializedFromProps) return;
+		this._initializedFromProps = true;
 		this._wizardRoomWidth = this.initialRoomWidth;
 		this._wizardRoomDepth = this.initialRoomDepth;
 		if (this.initialStep !== null) this._setupStep = this.initialStep;
-		if (this._wizardCapturing) this._attachCaptureOverlayListeners();
 	}
 
 	private _captureOverlayListenersAttached = false;
@@ -123,6 +128,11 @@ export class EppWizard extends LitElement {
 		super.disconnectedCallback();
 		this._detachCaptureOverlayListeners();
 		this._wizardCaptureCancelled = true;
+		// Stop the capture outright: the RAF loop is dead after detach, so a
+		// surviving _wizardCapturing would re-render a frozen overlay on
+		// re-attach with no way to finish or cancel it.
+		this._wizardCapturing = false;
+		this._wizardCapturePaused = false;
 		if (this._captureRafId !== null) {
 			cancelAnimationFrame(this._captureRafId);
 			this._captureRafId = null;
@@ -138,24 +148,6 @@ export class EppWizard extends LitElement {
 		this._wizardOffsetFb = corner?.offset_fb
 			? String(corner.offset_fb / 10)
 			: "";
-	}
-
-	// --- Smoothing ---
-	_getSmoothedRaw(): { x: number; y: number } | null {
-		const active = this.rawTargets.find(
-			(t): t is RawTarget & { raw_x: number; raw_y: number } =>
-				t.raw_x != null && t.raw_y != null,
-		);
-		if (!active) return null;
-
-		const result = getSmoothedValue(
-			this._smoothBuffer,
-			active.raw_x,
-			active.raw_y,
-			Date.now(),
-		);
-		this._smoothBuffer = result.buffer;
-		return { x: result.x, y: result.y };
 	}
 
 	// --- Capture ---
@@ -248,11 +240,15 @@ export class EppWizard extends LitElement {
 		this._wizardRoomDepth = result.depth;
 	}
 
-	_solvePerspective(
-		src: { x: number; y: number }[],
-		dst: { x: number; y: number }[],
-	): number[] | null {
-		return solvePerspective(src, dst);
+	/**
+	 * Offsets feed the wall-to-wall dimension estimate, so editing one after
+	 * the 4th capture must refresh the auto-computed dims — otherwise Save
+	 * solves the homography against stale dimensions.
+	 */
+	private _recomputeDimsIfAllMarked(): void {
+		if (this._wizardCorners.every((c) => c !== null)) {
+			this._autoComputeRoomDimensions();
+		}
 	}
 
 	_computeWizardPerspective(): void {
@@ -270,47 +266,51 @@ export class EppWizard extends LitElement {
 			{ x: corners[3].offset_side, y: d - corners[3].offset_fb },
 		];
 
-		this._perspective = this._solvePerspective(sensorPts, roomPts);
+		this._perspective = solvePerspective(sensorPts, roomPts);
 	}
 
-	async _wizardFinish(): Promise<void> {
-		if (!this._perspective) return;
-
-		this._wizardSaving = true;
-		try {
-			await this.hass.callWS({
-				type: "eppgrid/set_setup",
-				mac: this.selectedMac,
-				perspective: this._perspective,
-				room_width: this._wizardRoomWidth,
-				room_depth: this._wizardRoomDepth,
-			});
-			this.dispatchEvent(
-				new CustomEvent("calibration-complete", {
-					detail: {
-						perspective: this._perspective,
-						roomWidth: this._wizardRoomWidth,
-						roomDepth: this._wizardRoomDepth,
-					},
-					bubbles: true,
-					composed: true,
-				}),
-			);
-		} finally {
-			this._wizardSaving = false;
+	/**
+	 * Save contract with the parent panel:
+	 *  1. The wizard validates and computes the homography locally, then
+	 *     dispatches `wizard-save` with { perspective, roomWidth, roomDepth }
+	 *     and enters its saving state (Save disabled).
+	 *  2. The panel owns persistence (`eppgrid/set_setup`), like every other
+	 *     view. On success it navigates away, unmounting the wizard.
+	 *  3. On failure the panel calls `saveFailed()` on this element so the
+	 *     wizard re-enables Save and shows a localized error.
+	 */
+	_wizardFinish(): void {
+		this._computeWizardPerspective();
+		if (!this._perspective) {
+			// Degenerate corners (duplicate/collinear points) — the homography
+			// has no solution. Surface it instead of silently doing nothing.
+			this._saveError = "wizard.invalid_corners";
+			return;
 		}
+		this._saveError = null;
+		this._wizardSaving = true;
+		this.dispatchEvent(
+			new CustomEvent("wizard-save", {
+				detail: {
+					perspective: this._perspective,
+					roomWidth: this._wizardRoomWidth,
+					roomDepth: this._wizardRoomDepth,
+				},
+				bubbles: true,
+				composed: true,
+			}),
+		);
+	}
+
+	/** Called by the panel when persisting the calibration failed. */
+	saveFailed(): void {
+		this._wizardSaving = false;
+		this._saveError = "wizard.save_failed";
 	}
 
 	// --- FOV helpers ---
-	_rawToFovPct(rawX: number, rawY: number): { xPct: number; yPct: number } {
-		return rawToFovPct(rawX, rawY);
-	}
-
 	_getWizardTargetStyle(target: RawTarget): string {
-		const { xPct, yPct } = this._rawToFovPct(
-			target.raw_x ?? 0,
-			target.raw_y ?? 0,
-		);
+		const { xPct, yPct } = rawToFovPct(target.raw_x ?? 0, target.raw_y ?? 0);
 		return `left: ${xPct}%; top: ${yPct}%;`;
 	}
 
@@ -436,6 +436,13 @@ export class EppWizard extends LitElement {
         color: var(--error-color, #f44336);
         font-size: 13px;
         text-align: center;
+      }
+
+      .save-error {
+        color: var(--error-color, #f44336);
+        font-size: 13px;
+        text-align: center;
+        margin: 0;
       }
 
       .corner-progress {
@@ -834,8 +841,9 @@ export class EppWizard extends LitElement {
 										this._wizardCorners = [...this._wizardCorners];
 										this._wizardCorners[i] = null;
 										// Re-marking a corner invalidates any previously
-										// computed perspective.
+										// computed perspective and stale save errors.
 										this._perspective = null;
+										this._saveError = null;
 										this._wizardOffsetSide = prev?.offset_side
 											? String(prev.offset_side / 10)
 											: "";
@@ -857,7 +865,7 @@ export class EppWizard extends LitElement {
 					})}
         </div>
 
-        <div class="corner-offsets" key="${idx}">
+        <div class="corner-offsets">
           <span class="offset-label">${this.localize("wizard.distance_from")}</span>
           <input
             type="number"
@@ -870,7 +878,10 @@ export class EppWizard extends LitElement {
 							this._wizardOffsetSide = (e.target as HTMLInputElement).value;
 							const val = 10 * (parseFloat(this._wizardOffsetSide) || 0);
 							const corner = this._wizardCorners[idx];
-							if (corner) corner.offset_side = val;
+							if (corner) {
+								corner.offset_side = val;
+								this._recomputeDimsIfAllMarked();
+							}
 						}}
           />
           <input
@@ -884,7 +895,10 @@ export class EppWizard extends LitElement {
 							this._wizardOffsetFb = (e.target as HTMLInputElement).value;
 							const val = 10 * (parseFloat(this._wizardOffsetFb) || 0);
 							const corner = this._wizardCorners[idx];
-							if (corner) corner.offset_fb = val;
+							if (corner) {
+								corner.offset_fb = val;
+								this._recomputeDimsIfAllMarked();
+							}
 						}}
           />
         </div>
@@ -909,6 +923,12 @@ export class EppWizard extends LitElement {
         `
 				}
 
+        ${
+					this._saveError !== null
+						? html`<p class="save-error" role="alert">${this.localize(this._saveError)}</p>`
+						: nothing
+				}
+
         <div class="wizard-actions">
           <button
             class="wizard-btn wizard-btn-back"
@@ -922,10 +942,7 @@ export class EppWizard extends LitElement {
             <button
               class="wizard-btn wizard-btn-primary"
               ?disabled=${this._wizardSaving}
-              @click=${() => {
-								this._computeWizardPerspective();
-								this._wizardFinish();
-							}}
+              @click=${() => this._wizardFinish()}
             >
               ${this._wizardSaving ? this.localize("common.saving") : this.localize("common.save")}
             </button>
@@ -996,19 +1013,21 @@ export class EppWizard extends LitElement {
             <!-- Sensor dot -->
             <circle cx="0" cy="0" r="100" fill="var(--primary-color, #03a9f4)" stroke="#fff" stroke-width="40" />
           </svg>
-          <!-- Marked corners (positioned via CSS %) -->
-          ${this._wizardCorners
-						.filter((c): c is WizardCorner => c !== null)
-						.map((c, i) => {
-							const { xPct, yPct } = this._rawToFovPct(c.raw_x, c.raw_y);
-							return html`
+          <!-- Marked corners (positioned via CSS %). Map over ALL corners and
+               skip nulls so each dot keeps its ORIGINAL corner index — a
+               filter+map would shift labels when an earlier corner is being
+               re-marked. -->
+          ${this._wizardCorners.map((c, i) => {
+						if (c === null) return nothing;
+						const { xPct, yPct } = rawToFovPct(c.raw_x, c.raw_y);
+						return html`
                 <div
                   class="mini-grid-captured"
                   style="left: ${xPct}%; top: ${yPct}%;"
                   title="${this.localize(CORNER_LABELS[i])}"
                 ></div>
               `;
-						})}
+					})}
           <!-- Live targets (per-target colors) -->
           ${this.rawTargets.map((t, i) =>
 						t.raw_x != null && t.raw_y != null
@@ -1138,8 +1157,8 @@ export class EppWizard extends LitElement {
 		this._wizardCornerIndex = 0;
 		this._wizardOffsetSide = "";
 		this._wizardOffsetFb = "";
-		this._smoothBuffer = [];
 		this._perspective = null;
+		this._saveError = null;
 		this.dispatchEvent(
 			new CustomEvent("wizard-cancel", {
 				bubbles: true,

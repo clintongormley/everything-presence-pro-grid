@@ -72,6 +72,8 @@
 		"no_target": "No target detected. Make sure you are visible to the sensor.",
 		"multiple_targets": "Multiple targets detected. Only one person should be in the room during calibration.",
 		"save_prompt": "Click Save to store this room's calibration, or click a corner above to re-mark it.",
+		"save_failed": "Saving the calibration failed. Check that the device is online and try again.",
+		"invalid_corners": "The marked corners don't form a valid room shape. Re-mark the corners and try again.",
 		"walk_instruction_full": "<strong>Walk to each corner</strong> in order (1 → 2 → 3 → 4) and click Mark. Stand still for a few seconds so the sensor can lock on.",
 		"cant_reach": "<strong>Can't reach a corner?</strong> Stand as close as you can and enter the distance from each wall in the offset fields — like corner 4 in the diagram above, where a plant is in the way.",
 		"corner_sensor_hint": "In this example, your sensor is mounted in Corner 2, but it can be anywhere. You can stand right in front of it.",

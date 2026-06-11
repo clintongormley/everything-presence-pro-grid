@@ -6,13 +6,8 @@ import { CAPTURE_DURATION_S } from "../constants.js";
 function createWizard(): EppWizard {
 	const el = document.createElement("epp-wizard") as EppWizard;
 	const a = el as any;
-	a.hass = {
-		callWS: vi.fn().mockResolvedValue({}),
-	};
-	a.selectedMac = "AA:BB:CC:DD:EE:01";
 	a.rawTargets = [];
 	a.sensorState = { occupancy: false };
-	a.devices = [{ mac: "AA:BB:CC:DD:EE:01", name: "Test" }];
 	a.localize = (k: string) => k;
 	a.initialRoomWidth = 0;
 	a.initialRoomDepth = 0;
@@ -30,7 +25,6 @@ function createWizard(): EppWizard {
 	a._wizardCaptureCancelled = false;
 	a._wizardOffsetSide = "";
 	a._wizardOffsetFb = "";
-	a._smoothBuffer = [];
 	a._perspective = null;
 	return el;
 }
@@ -363,90 +357,70 @@ describe("_computeWizardPerspective", () => {
 });
 
 describe("_wizardFinish", () => {
-	it("does nothing when perspective is null", async () => {
+	const SQUARE_CORNERS = [
+		{ raw_x: -1500, raw_y: 1000, offset_side: 0, offset_fb: 0 },
+		{ raw_x: 1500, raw_y: 1000, offset_side: 0, offset_fb: 0 },
+		{ raw_x: 2000, raw_y: 4000, offset_side: 0, offset_fb: 0 },
+		{ raw_x: -2000, raw_y: 4000, offset_side: 0, offset_fb: 0 },
+	];
+
+	it("shows the invalid_corners error and dispatches nothing for a degenerate layout", () => {
 		const el = createWizard();
 		const a = el as any;
-		a._perspective = null;
-
-		await a._wizardFinish();
-
-		expect(a.hass.callWS).not.toHaveBeenCalled();
-	});
-
-	it("saves calibration and dispatches calibration-complete event", async () => {
-		const el = createWizard();
-		const a = el as any;
-		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-		a.selectedMac = "AA:BB:CC:DD:EE:01";
+		// Four identical points — solvePerspective returns null.
+		a._wizardCorners = Array.from({ length: 4 }, () => ({
+			raw_x: 100,
+			raw_y: 100,
+			offset_side: 0,
+			offset_fb: 0,
+		}));
 		a._wizardRoomWidth = 3000;
 		a._wizardRoomDepth = 4000;
 
-		a.hass = {
-			callWS: vi.fn().mockResolvedValue({}),
-		};
+		const events: CustomEvent[] = [];
+		el.addEventListener("wizard-save", (e) => events.push(e as CustomEvent));
 
-		let eventFired = false;
-		el.addEventListener("calibration-complete", () => {
-			eventFired = true;
-		});
+		a._wizardFinish();
 
-		await a._wizardFinish();
-
-		expect(a.hass.callWS).toHaveBeenCalledWith(
-			expect.objectContaining({
-				type: "eppgrid/set_setup",
-				mac: "AA:BB:CC:DD:EE:01",
-				perspective: [1, 0, 0, 0, 1, 0, 0, 0],
-				room_width: 3000,
-				room_depth: 4000,
-			}),
-		);
+		expect(events).toHaveLength(0);
 		expect(a._wizardSaving).toBe(false);
-		expect(eventFired).toBe(true);
+		expect(a._saveError).toBe("wizard.invalid_corners");
 	});
 
-	it("resets saving flag on error", async () => {
+	it("dispatches wizard-save with the calibration payload and enters saving state", () => {
 		const el = createWizard();
 		const a = el as any;
-		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-		a.selectedMac = "AA:BB:CC:DD:EE:01";
+		a._wizardCorners = SQUARE_CORNERS.map((c) => ({ ...c }));
 		a._wizardRoomWidth = 3000;
 		a._wizardRoomDepth = 4000;
 
-		a.hass = {
-			callWS: vi.fn().mockRejectedValue(new Error("fail")),
-		};
+		const events: CustomEvent[] = [];
+		el.addEventListener("wizard-save", (e) => events.push(e as CustomEvent));
 
-		await expect(a._wizardFinish()).rejects.toThrow("fail");
+		a._wizardFinish();
+
+		expect(events).toHaveLength(1);
+		expect(events[0].detail.perspective).toHaveLength(8);
+		expect(events[0].detail.roomWidth).toBe(3000);
+		expect(events[0].detail.roomDepth).toBe(4000);
+		expect(a._wizardSaving).toBe(true);
+		expect(a._saveError).toBeNull();
+	});
+
+	it("saveFailed() resets the saving flag and records the error key", () => {
+		const el = createWizard();
+		const a = el as any;
+		a._wizardCorners = SQUARE_CORNERS.map((c) => ({ ...c }));
+		a._wizardRoomWidth = 3000;
+		a._wizardRoomDepth = 4000;
+
+		a._wizardFinish();
+		expect(a._wizardSaving).toBe(true);
+
+		el.saveFailed();
+
 		expect(a._wizardSaving).toBe(false);
-	});
-});
-
-describe("_getSmoothedRaw", () => {
-	it("returns null when no active target", () => {
-		const el = createWizard();
-		const a = el as any;
-		a.rawTargets = [];
-
-		expect(a._getSmoothedRaw()).toBeNull();
-	});
-
-	it("returns smoothed value when active raw target exists", () => {
-		const el = createWizard();
-		const a = el as any;
-		a.rawTargets = [
-			{
-				raw_x: 500,
-				raw_y: 1000,
-			},
-		];
-		a._smoothBuffer = [];
-
-		const result = a._getSmoothedRaw();
-
-		expect(result).not.toBeNull();
-		expect(result.x).toBeCloseTo(500, 0);
-		expect(result.y).toBeCloseTo(1000, 0);
+		expect(a._saveError).toBe("wizard.save_failed");
 	});
 });
 
@@ -467,34 +441,11 @@ describe("_getWizardTargetStyle", () => {
 	});
 });
 
-describe("_rawToFovPct", () => {
-	it("maps sensor center to approximately 50% x", () => {
+describe("_getWizardTargetStyle FOV mapping", () => {
+	it("maps the sensor centreline to approximately 50% x", () => {
 		const el = createWizard();
 		const a = el as any;
-		const result = a._rawToFovPct(0, 3000);
-		expect(result.xPct).toBeCloseTo(50, 0);
-	});
-});
-
-describe("_solvePerspective", () => {
-	it("delegates to perspective lib", () => {
-		const el = createWizard();
-		const a = el as any;
-		const src = [
-			{ x: 0, y: 0 },
-			{ x: 1, y: 0 },
-			{ x: 1, y: 1 },
-			{ x: 0, y: 1 },
-		];
-		const dst = [
-			{ x: 0, y: 0 },
-			{ x: 100, y: 0 },
-			{ x: 100, y: 100 },
-			{ x: 0, y: 100 },
-		];
-
-		const result = a._solvePerspective(src, dst);
-		expect(result).not.toBeNull();
-		expect(result).toHaveLength(8);
+		const style = a._getWizardTargetStyle({ raw_x: 0, raw_y: 3000 });
+		expect(style).toMatch(/left: 50(\.\d+)?%/);
 	});
 });

@@ -255,26 +255,65 @@ export function autoDetectionRange(
 	return Math.ceil(m * 2) / 2;
 }
 
+/** A wizard corner point: marked position plus optional wall offsets (mm). */
+interface CornerPoint {
+	raw_x: number;
+	raw_y: number;
+	/** Distance from the nearest side wall when the corner couldn't be reached. */
+	offset_side?: number;
+	/** Distance from the nearest front/back wall when the corner couldn't be reached. */
+	offset_fb?: number;
+}
+
 /**
  * Compute room dimensions from wizard corner measurements.
  *
- * Width = distance between corners 0 and 1.
- * Depth = average of distance(corner 0, corner 3) and distance(corner 1, corner 2).
+ * Width = wall-to-wall span along the front wall (corners 0↔1).
+ * Depth = average of the left (0↔3) and right (1↔2) wall-to-wall spans.
  *
- * @param corners Array of 4 corner points with raw_x, raw_y coordinates
+ * Corners may be MARKED away from the true wall intersection (offsets):
+ * the raw distance between two marked points then under-measures the
+ * wall span. Sensor coordinates are metric (a rigid transform of room
+ * space), so we recover the span exactly: project out the cross-wall
+ * offset delta, then add both corners' along-wall offsets back:
+ *
+ *   span = sqrt(dist² − (Δcross)²) + offsetA + offsetB
+ *
+ * For width the along-wall offsets are the side offsets and the cross
+ * component is the fb-offset delta; for depth it's the reverse. The
+ * sqrt argument is clamped at 0 so nonsense offsets degrade gracefully
+ * instead of producing NaN.
+ *
+ * @param corners Array of 4 corner points (offsets optional, in mm)
  * @returns { width, depth } in integer mm
  */
-export function autoComputeRoomDimensions(
-	corners: { raw_x: number; raw_y: number }[],
-): { width: number; depth: number } {
-	const dist = (
-		a: { raw_x: number; raw_y: number },
-		b: { raw_x: number; raw_y: number },
-	): number => Math.sqrt((a.raw_x - b.raw_x) ** 2 + (a.raw_y - b.raw_y) ** 2);
+export function autoComputeRoomDimensions(corners: CornerPoint[]): {
+	width: number;
+	depth: number;
+} {
+	const dist = (a: CornerPoint, b: CornerPoint): number =>
+		Math.sqrt((a.raw_x - b.raw_x) ** 2 + (a.raw_y - b.raw_y) ** 2);
 
-	const width = Math.round(dist(corners[0], corners[1]));
-	const depthLeft = dist(corners[0], corners[3]);
-	const depthRight = dist(corners[1], corners[2]);
+	const span = (
+		a: CornerPoint,
+		b: CornerPoint,
+		alongA: number,
+		alongB: number,
+		crossA: number,
+		crossB: number,
+	): number => {
+		const d = dist(a, b);
+		const cross = crossA - crossB;
+		return Math.sqrt(Math.max(d * d - cross * cross, 0)) + alongA + alongB;
+	};
+
+	const os = (c: CornerPoint) => c.offset_side ?? 0;
+	const ofb = (c: CornerPoint) => c.offset_fb ?? 0;
+	const [c0, c1, c2, c3] = corners;
+
+	const width = Math.round(span(c0, c1, os(c0), os(c1), ofb(c0), ofb(c1)));
+	const depthLeft = span(c0, c3, ofb(c0), ofb(c3), os(c0), os(c3));
+	const depthRight = span(c1, c2, ofb(c1), ofb(c2), os(c1), os(c2));
 	const depth = Math.round((depthLeft + depthRight) / 2);
 
 	return { width, depth };
