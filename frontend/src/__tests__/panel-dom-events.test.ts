@@ -82,7 +82,6 @@ function createPanel(): EPPGridPanel {
 	a._staticMinDistance = 0.3;
 	a._staticMaxDistance = 16;
 	// Zone 0 defaults live on _zoneConfigs[0]; set up above.
-	a._showHitCounts = false;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
@@ -782,11 +781,14 @@ describe("_renderZoneSidebar DOM events", () => {
 			events.push(e as CustomEvent),
 		);
 
-		const zoneItems = c.querySelectorAll(".zone-item");
-		if (zoneItems.length > 0) {
-			(zoneItems[0] as HTMLElement).click();
-			expect(events.some((e) => e.detail.zone === 0)).toBe(true);
-		}
+		// The zone-0 row is a real <button> (keyboard a11y); the click
+		// handler lives there, not on the .zone-item container.
+		const rowBtn = c.querySelector(
+			".zone-item button.zone-item-row",
+		) as HTMLElement;
+		expect(rowBtn).not.toBeNull();
+		rowBtn.click();
+		expect(events.some((e) => e.detail.zone === 0)).toBe(true);
 	});
 
 	it("named zone click", () => {

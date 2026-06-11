@@ -85,7 +85,6 @@ function createPanel(): EPPGridPanel {
 	a._staticAutoDistance = true;
 	a._staticMinDistance = 0.3;
 	a._staticMaxDistance = 16;
-	a._showHitCounts = false;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";

@@ -79,7 +79,6 @@ function createPanel(): EPPGridPanel {
 	a._staticMinDistance = 0.3;
 	a._staticMaxDistance = 16;
 	// Zone 0 defaults live on _zoneConfigs[0]; set up above.
-	a._showHitCounts = false;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
@@ -631,10 +630,9 @@ describe("_renderLiveGrid", () => {
 		expect(result).toBeDefined();
 	});
 
-	it("renders with hit counts enabled", () => {
+	it("renders with an active target", () => {
 		const a = createPanel() as any;
 		a._grid = initGridFromRoom(3000, 4000);
-		a._showHitCounts = true;
 		a._targets = [
 			{
 				x: 1500,

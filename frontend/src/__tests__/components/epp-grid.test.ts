@@ -27,10 +27,8 @@ function createGrid(overrides: Record<string, any> = {}): EppGrid {
 	el.sidebarTab = "zones";
 	el.editable = false;
 	el.activeZone = null;
-	el.showHitCounts = false;
 	el.occupancy = {};
 	el.targetPrevXY = [];
-	el.heatmapColors = null;
 	el.localize = (k: string) => k;
 	el.maxGridPx = 480;
 	el.frozenBounds = null;
@@ -391,6 +389,25 @@ describe("epp-grid target rendering", () => {
 
 		document.body.removeChild(el);
 	});
+
+	it("renders nothing for a pending target whose prevXY fallback is ALSO off-grid", async () => {
+		// Off-grid positions must never render pinned to the clamped edge —
+		// the same rule active targets already follow.
+		const targets: Target[] = [
+			{ x: 999999, y: 999999, status: "pending", signal: 5 },
+		];
+		const el = createGrid({
+			targets,
+			targetPrevXY: [{ x: 888888, y: 888888 }],
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const dots = el.shadowRoot!.querySelectorAll(".target-dot");
+		expect(dots.length).toBe(0);
+
+		document.body.removeChild(el);
+	});
 });
 
 describe("epp-grid occupancy", () => {
@@ -495,42 +512,6 @@ describe("epp-grid occupancy", () => {
 		expect(css).toContain("position: relative");
 		expect(css).toContain("z-index: 1");
 		expect(css).toMatch(/box-shadow:[^;]*\b([1-9]\d*)px\b/);
-
-		document.body.removeChild(el);
-	});
-});
-
-describe("epp-grid heatmap", () => {
-	it("applies heatmap overlay to zone cells", async () => {
-		const grid = initGridFromRoom(3000, 4000);
-		const zoneConfigs = new Array(7).fill(null);
-		zoneConfigs[0] = { name: "Zone 1", color: ZONE_COLORS[0], type: "default" };
-
-		for (let i = 0; i < grid.length; i++) {
-			if (grid[i] & CELL_ROOM_BIT) {
-				grid[i] = cellSetZone(grid[i], 1);
-			}
-		}
-
-		const heatmapColors = new Map<number, string>();
-		heatmapColors.set(1, "rgba(255,0,0,0.5)");
-
-		const el = createGrid({
-			grid,
-			zoneConfigs,
-			showHitCounts: true,
-			heatmapColors,
-		});
-		document.body.appendChild(el);
-		await el.updateComplete;
-
-		const cells = el.shadowRoot!.querySelectorAll(
-			".cell",
-		) as NodeListOf<HTMLElement>;
-		const hasGradient = Array.from(cells).some((c) =>
-			c.style.background.includes("linear-gradient"),
-		);
-		expect(hasGradient).toBe(true);
 
 		document.body.removeChild(el);
 	});

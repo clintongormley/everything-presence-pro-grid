@@ -681,39 +681,6 @@ describe("TargetController", () => {
 	});
 
 	// -------------------------------------------------------------------------
-	// computeHeatmapColors
-	// -------------------------------------------------------------------------
-	describe("computeHeatmapColors", () => {
-		it("returns a Map", () => {
-			const result = ctrl.computeHeatmapColors();
-			expect(result).toBeInstanceOf(Map);
-		});
-
-		it("returns colours for zones with non-zero target counts", () => {
-			host._zoneConfigs = [
-				host._zoneConfigs[0],
-				{ name: "Study", color: "#56B4E9", type: "default" },
-				null,
-				null,
-				null,
-				null,
-				null,
-				null,
-			];
-			host._zoneState.target_counts = { 1: 3 };
-			const result = ctrl.computeHeatmapColors();
-			// Zone 1 has hits so it should have an entry
-			expect(result.has(1)).toBe(true);
-		});
-
-		it("returns empty map when target_counts is empty", () => {
-			host._zoneState.target_counts = {};
-			const result = ctrl.computeHeatmapColors();
-			expect(result.size).toBe(0);
-		});
-	});
-
-	// -------------------------------------------------------------------------
 	// runLocalZoneEngine — default resolution by zone type
 	// -------------------------------------------------------------------------
 	describe("runLocalZoneEngine default resolution", () => {

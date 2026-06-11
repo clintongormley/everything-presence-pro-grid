@@ -5,6 +5,7 @@ import { FLOOR_PLAN_SVGS } from "../constants.js";
 import type { FurnitureItem } from "../lib/furniture.js";
 import { getResizeCursor, mmToPx } from "../lib/furniture.js";
 import { roomStartCol } from "../lib/grid.js";
+import type { SidebarTab } from "../lib/view-hash.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 
 export class EppFurnitureOverlay extends LitElement {
@@ -16,7 +17,7 @@ export class EppFurnitureOverlay extends LitElement {
 	@property({ type: Number }) minRow = 0;
 	@property({ type: Number }) visCols = 20;
 	@property({ type: Number }) visRows = 20;
-	@property({ attribute: false }) sidebarTab = "zones";
+	@property({ attribute: false }) sidebarTab: SidebarTab = "zones";
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
 
 	static styles = css`
@@ -243,7 +244,9 @@ export class EppFurnitureOverlay extends LitElement {
 							@pointerdown=${(e: PointerEvent) => this._onItemPointerDown(e, item.id)}
 						>
 							${
-								item.type === "svg" && FLOOR_PLAN_SVGS[item.icon]
+								// Object.hasOwn: a plain-object catalog makes prototype
+								// members ("constructor", …) truthy under bare indexing.
+								item.type === "svg" && Object.hasOwn(FLOOR_PLAN_SVGS, item.icon)
 									? svg`<svg viewBox="${FLOOR_PLAN_SVGS[item.icon].viewBox}" preserveAspectRatio="none" class="furn-svg">
 										${unsafeSVG(FLOOR_PLAN_SVGS[item.icon].content)}
 									</svg>`

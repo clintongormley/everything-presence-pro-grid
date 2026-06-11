@@ -2,26 +2,19 @@ import { css, html, LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import {
 	resolveZoneParams,
-	ZONE_TYPE_DEFAULTS,
 	ZONE_TYPE_KEYS,
 	type Zone0Config,
 	type ZoneConfig,
 } from "../lib/zone-defaults.js";
+import type { ZoneState } from "../lib/zone-engine.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
-import { toggleStyles } from "../styles.js";
-
-export interface LocalZoneInfo {
-	occupied: boolean;
-	pendingSince: number | null;
-	confirmedTargets: Set<number>;
-}
+import { sidebarRowStyles, toggleStyles } from "../styles.js";
 
 export class EppZoneSidebar extends LitElement {
-	@property({ attribute: false }) grid!: Uint8Array;
 	@property({ attribute: false }) zoneConfigs: (ZoneConfig | null)[] = [];
 	@property({ attribute: false }) activeZone: number | null = null;
 	@property({ attribute: false }) zone0: Zone0Config = { type: "default" };
-	@property({ attribute: false }) localZoneState: Map<number, LocalZoneInfo> =
+	@property({ attribute: false }) localZoneState: Map<number, ZoneState> =
 		new Map();
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
 
@@ -67,6 +60,7 @@ export class EppZoneSidebar extends LitElement {
 
 	static styles = [
 		toggleStyles,
+		sidebarRowStyles,
 		css`
 			:host {
 				display: block;
@@ -137,10 +131,17 @@ export class EppZoneSidebar extends LitElement {
 				border-color: var(--primary-color, #03a9f4);
 			}
 
-			.zone-item-row {
-				display: flex;
-				align-items: center;
-				gap: 8px;
+			/* Reset for the zone-0 row, which is a real <button> for keyboard
+			   access (it has no interactive children, unlike named-zone rows). */
+			button.zone-item-row {
+				width: 100%;
+				background: none;
+				border: none;
+				padding: 0;
+				font: inherit;
+				color: inherit;
+				text-align: left;
+				cursor: pointer;
 			}
 
 			.zone-settings-row {
@@ -165,19 +166,6 @@ export class EppZoneSidebar extends LitElement {
 			.zone-name {
 				flex: 1;
 				font-size: 14px;
-			}
-
-			.zone-remove-btn {
-				background: none;
-				border: none;
-				color: var(--secondary-text-color, #757575);
-				cursor: pointer;
-				padding: 4px;
-				border-radius: 4px;
-			}
-
-			.zone-remove-btn:hover {
-				color: var(--error-color, #f44336);
 			}
 
 			.add-zone-btn {
@@ -224,20 +212,25 @@ export class EppZoneSidebar extends LitElement {
 	private _renderZoneSidebar() {
 		return html`
 			<div class="zone-scroll-area">
-				<!-- Room -->
-				<div
-					class="zone-item ${this.activeZone === 0 ? "active" : ""}"
-					@click=${() => {
-						this.dispatchEvent(
-							new CustomEvent("zone-select", {
-								detail: { zone: 0 },
-								bubbles: true,
-								composed: true,
-							}),
-						);
-					}}
-				>
-					<div class="zone-item-row">
+				<!-- Room. The selectable row is a real <button> for keyboard
+				     access; named-zone rows below can't be (they contain a name
+				     <input> and a remove <button> — interactive content is
+				     invalid inside a button — and already have a keyboard path
+				     via the name input's focus handler). -->
+				<div class="zone-item ${this.activeZone === 0 ? "active" : ""}">
+					<button
+						type="button"
+						class="zone-item-row"
+						@click=${() => {
+							this.dispatchEvent(
+								new CustomEvent("zone-select", {
+									detail: { zone: 0 },
+									bubbles: true,
+									composed: true,
+								}),
+							);
+						}}
+					>
 						<div
 							class="zone-color-dot"
 							style="background: #fff; border: 1px solid #ccc;${this.localZoneState.get(0)?.occupied ? " box-shadow: 0 0 6px 2px #999;" : ""}"
@@ -245,7 +238,7 @@ export class EppZoneSidebar extends LitElement {
 						<span class="zone-name"
 							>${this.localize("sidebar.room")}</span
 						>
-					</div>
+					</button>
 					${
 						this.activeZone === 0
 							? html` ${this._renderBoundaryTypeControls()} `
@@ -406,14 +399,56 @@ export class EppZoneSidebar extends LitElement {
 	}
 
 	private _renderBoundaryTypeControls() {
-		const z0 = this.zone0;
-		const isCustom = z0.type === "custom";
-		const resolved = resolveZoneParams(z0);
-		const trigger = resolved.trigger;
-		const renew = resolved.renew;
-		const timeout = resolved.timeout;
-		const handoffTimeout = resolved.handoff_timeout;
+		return this._renderTypeControls(
+			this.zone0,
+			resolveZoneParams(this.zone0),
+			(updates) => this._emitZone0Change(updates),
+		);
+	}
+
+	private _renderZoneTypeControls(zone: ZoneConfig, index: number) {
+		return this._renderTypeControls(
+			zone,
+			resolveZoneParams(zone),
+			(updates) => {
+				this.dispatchEvent(
+					new CustomEvent("zone-config-change", {
+						detail: { index, updates },
+						bubbles: true,
+						composed: true,
+					}),
+				);
+			},
+		);
+	}
+
+	/**
+	 * Shared type/trigger/renew/timeout controls for zone 0 and named zones.
+	 * Displayed values come from `resolved` (resolveZoneParams), never from
+	 * raw stored fields: the engine uses type defaults EXCLUSIVELY for
+	 * non-custom types, so legacy slots with stale stored timings must not
+	 * display numbers that don't match behavior. (The two previous
+	 * near-duplicate renderers diverged on exactly this point.)
+	 */
+	private _renderTypeControls(
+		config: Zone0Config,
+		resolved: ReturnType<typeof resolveZoneParams>,
+		emit: (updates: Partial<Zone0Config>) => void,
+	) {
+		const isCustom = config.type === "custom";
 		const rowStyle = `width: 100%; display: flex; align-items: center; gap: 4px; font-size: 12px; opacity: ${isCustom ? 1 : 0.5};`;
+		// Markup min/max on number inputs are advisory only (typed values
+		// bypass them) — clamp in the handler before emitting.
+		const clampedEmit = (
+			field: "timeout" | "handoff_timeout",
+			raw: string,
+			max: number,
+		) => {
+			const v = Number(raw);
+			if (v > 0) {
+				emit({ [field]: Math.min(Math.max(v, 1), max) });
+			}
+		};
 		return html`
 			<div
 				class="zone-item-row zone-settings-row"
@@ -429,25 +464,18 @@ export class EppZoneSidebar extends LitElement {
 					<select
 						class="sensitivity-select"
 						style="flex: 1; min-width: 0;"
-						data-value=${z0.type}
+						data-value=${config.type}
 						@change=${(e: Event) => {
 							const val = (e.target as HTMLSelectElement)
 								.value as Zone0Config["type"];
-							// Non-custom types resolve timing from ZONE_TYPE_DEFAULTS on read;
-							// emit only the type so we don't persist dead data. Switching
-							// INTO custom seeds the sliders with the current type's defaults
-							// so the user has a sane starting point.
+							// Non-custom types resolve timing from ZONE_TYPE_DEFAULTS on
+							// read; emit only the type so we don't persist dead data.
+							// Switching INTO custom seeds the controls with the current
+							// type's defaults so the user has a sane starting point.
 							if (val === "custom") {
-								const d = resolveZoneParams(this.zone0);
-								this._emitZone0Change({
-									type: val,
-									trigger: d.trigger,
-									renew: d.renew,
-									timeout: d.timeout,
-									handoff_timeout: d.handoff_timeout,
-								});
+								emit({ ...resolved, type: val });
 							} else {
-								this._emitZone0Change({
+								emit({
 									type: val,
 									trigger: undefined,
 									renew: undefined,
@@ -473,18 +501,16 @@ export class EppZoneSidebar extends LitElement {
 						min="1"
 						max="9"
 						style="flex: 1; min-width: 0;"
-						.value=${String(trigger)}
+						.value=${String(resolved.trigger)}
 						?disabled=${!isCustom}
 						@input=${(e: Event) => {
-							this._emitZone0Change({
-								trigger: Number((e.target as HTMLInputElement).value),
-							});
+							emit({ trigger: Number((e.target as HTMLInputElement).value) });
 						}}
 						@click=${(e: Event) => e.stopPropagation()}
 					/>
 					<span
 						style="width: 10px; text-align: right; flex-shrink: 0;"
-						>${trigger}</span
+						>${resolved.trigger}</span
 					>
 				</div>
 				<div style="${rowStyle}">
@@ -496,18 +522,16 @@ export class EppZoneSidebar extends LitElement {
 						min="1"
 						max="9"
 						style="flex: 1; min-width: 0;"
-						.value=${String(renew)}
+						.value=${String(resolved.renew)}
 						?disabled=${!isCustom}
 						@input=${(e: Event) => {
-							this._emitZone0Change({
-								renew: Number((e.target as HTMLInputElement).value),
-							});
+							emit({ renew: Number((e.target as HTMLInputElement).value) });
 						}}
 						@click=${(e: Event) => e.stopPropagation()}
 					/>
 					<span
 						style="width: 10px; text-align: right; flex-shrink: 0;"
-						>${renew}</span
+						>${resolved.renew}</span
 					>
 				</div>
 				<div style="${rowStyle}">
@@ -520,13 +544,14 @@ export class EppZoneSidebar extends LitElement {
 						min="1"
 						max="3600"
 						style="width: 48px; text-align: right; font: inherit; font-size: 12px;"
-						.value=${String(timeout)}
+						.value=${String(resolved.timeout)}
 						?disabled=${!isCustom}
 						@input=${(e: Event) => {
-							const v = Number((e.target as HTMLInputElement).value);
-							if (v > 0) {
-								this._emitZone0Change({ timeout: v });
-							}
+							clampedEmit(
+								"timeout",
+								(e.target as HTMLInputElement).value,
+								3600,
+							);
 						}}
 						@click=${(e: Event) => e.stopPropagation()}
 					/>
@@ -545,205 +570,14 @@ export class EppZoneSidebar extends LitElement {
 						min="1"
 						max="300"
 						style="width: 48px; text-align: right; font: inherit; font-size: 12px;"
-						.value=${String(handoffTimeout)}
+						.value=${String(resolved.handoff_timeout)}
 						?disabled=${!isCustom}
 						@input=${(e: Event) => {
-							const v = Number((e.target as HTMLInputElement).value);
-							if (v > 0) {
-								this._emitZone0Change({ handoff_timeout: v });
-							}
-						}}
-						@click=${(e: Event) => e.stopPropagation()}
-					/>
-					<span
-						style="width: 10px; text-align: right; flex-shrink: 0; font-size: 12px;"
-						>${this.localize("zones.seconds_suffix")}</span
-					>
-				</div>
-			</div>
-		`;
-	}
-
-	private _renderZoneTypeControls(zone: ZoneConfig, index: number) {
-		const isCustom = zone.type === "custom";
-		const defaults =
-			ZONE_TYPE_DEFAULTS[zone.type] || ZONE_TYPE_DEFAULTS.default;
-		const trigger = zone.trigger ?? defaults.trigger;
-		const renew = zone.renew ?? defaults.renew;
-		const timeout = zone.timeout ?? defaults.timeout;
-		const handoffTimeout = zone.handoff_timeout ?? defaults.handoff_timeout;
-		const rowStyle = `width: 100%; display: flex; align-items: center; gap: 4px; font-size: 12px; opacity: ${isCustom ? 1 : 0.5};`;
-		return html`
-			<div
-				class="zone-item-row zone-settings-row"
-				style="flex-wrap: wrap; gap: 3px; padding: 4px 8px;"
-			>
-				<div
-					style="width: 100%; display: flex; align-items: center; gap: 4px;"
-				>
-					<label
-						style="width: 80px; flex-shrink: 0; font-size: 12px;"
-						>${this.localize("zones.type")}</label
-					>
-					<select
-						class="sensitivity-select"
-						style="flex: 1; min-width: 0;"
-						data-value=${zone.type}
-						@change=${(e: Event) => {
-							const val = (e.target as HTMLSelectElement)
-								.value as ZoneConfig["type"];
-							// Mirror the zone-0 contract: only custom persists timing;
-							// other types are resolved from ZONE_TYPE_DEFAULTS at read/push.
-							const updates: Partial<ZoneConfig> =
-								val === "custom"
-									? { ...resolveZoneParams(zone), type: val }
-									: {
-											type: val,
-											trigger: undefined,
-											renew: undefined,
-											timeout: undefined,
-											handoff_timeout: undefined,
-										};
-							this.dispatchEvent(
-								new CustomEvent("zone-config-change", {
-									detail: { index, updates },
-									bubbles: true,
-									composed: true,
-								}),
+							clampedEmit(
+								"handoff_timeout",
+								(e.target as HTMLInputElement).value,
+								300,
 							);
-						}}
-						@click=${(e: Event) => e.stopPropagation()}
-					>
-						${ZONE_TYPE_KEYS.map(
-							(k) =>
-								html`<option value=${k}>${this.localize(`zones.${k}`)}</option>`,
-						)}
-					</select>
-				</div>
-				<div style="${rowStyle}">
-					<label style="width: 80px; flex-shrink: 0;"
-						>${this.localize("zones.trigger")}</label
-					>
-					<input
-						type="range"
-						min="1"
-						max="9"
-						style="flex: 1; min-width: 0;"
-						.value=${String(trigger)}
-						?disabled=${!isCustom}
-						@input=${(e: Event) => {
-							this.dispatchEvent(
-								new CustomEvent("zone-config-change", {
-									detail: {
-										index,
-										updates: {
-											trigger: Number((e.target as HTMLInputElement).value),
-										},
-									},
-									bubbles: true,
-									composed: true,
-								}),
-							);
-						}}
-						@click=${(e: Event) => e.stopPropagation()}
-					/>
-					<span
-						style="width: 10px; text-align: right; flex-shrink: 0;"
-						>${trigger}</span
-					>
-				</div>
-				<div style="${rowStyle}">
-					<label style="width: 80px; flex-shrink: 0;"
-						>${this.localize("zones.renew")}</label
-					>
-					<input
-						type="range"
-						min="1"
-						max="9"
-						style="flex: 1; min-width: 0;"
-						.value=${String(renew)}
-						?disabled=${!isCustom}
-						@input=${(e: Event) => {
-							this.dispatchEvent(
-								new CustomEvent("zone-config-change", {
-									detail: {
-										index,
-										updates: {
-											renew: Number((e.target as HTMLInputElement).value),
-										},
-									},
-									bubbles: true,
-									composed: true,
-								}),
-							);
-						}}
-						@click=${(e: Event) => e.stopPropagation()}
-					/>
-					<span
-						style="width: 10px; text-align: right; flex-shrink: 0;"
-						>${renew}</span
-					>
-				</div>
-				<div style="${rowStyle}">
-					<label style="width: 80px; flex-shrink: 0;"
-						>${this.localize("zones.presence_timeout")}</label
-					>
-					<span style="flex: 1;"></span>
-					<input
-						type="number"
-						min="1"
-						max="3600"
-						style="width: 48px; text-align: right; font: inherit; font-size: 12px; margin-right: 0;"
-						.value=${String(timeout)}
-						?disabled=${!isCustom}
-						@input=${(e: Event) => {
-							const v = Number((e.target as HTMLInputElement).value);
-							if (v > 0) {
-								this.dispatchEvent(
-									new CustomEvent("zone-config-change", {
-										detail: {
-											index,
-											updates: { timeout: v },
-										},
-										bubbles: true,
-										composed: true,
-									}),
-								);
-							}
-						}}
-						@click=${(e: Event) => e.stopPropagation()}
-					/>
-					<span
-						style="width: 10px; text-align: right; flex-shrink: 0; font-size: 12px;"
-						>${this.localize("zones.seconds_suffix")}</span
-					>
-				</div>
-				<div style="${rowStyle}">
-					<label style="width: 80px; flex-shrink: 0;"
-						>${this.localize("zones.handoff_timeout")}</label
-					>
-					<span style="flex: 1;"></span>
-					<input
-						type="number"
-						min="1"
-						max="300"
-						style="width: 48px; text-align: right; font: inherit; font-size: 12px; margin-right: 0;"
-						.value=${String(handoffTimeout)}
-						?disabled=${!isCustom}
-						@input=${(e: Event) => {
-							const v = Number((e.target as HTMLInputElement).value);
-							if (v > 0) {
-								this.dispatchEvent(
-									new CustomEvent("zone-config-change", {
-										detail: {
-											index,
-											updates: { handoff_timeout: v },
-										},
-										bubbles: true,
-										composed: true,
-									}),
-								);
-							}
 						}}
 						@click=${(e: Event) => e.stopPropagation()}
 					/>

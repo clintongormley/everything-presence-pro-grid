@@ -183,7 +183,7 @@ describe("epp-zone-sidebar element", () => {
 });
 
 describe("epp-zone-sidebar events", () => {
-	it("fires zone-select on boundary click", () => {
+	it("fires zone-select on boundary row click (a real button for keyboard access)", () => {
 		const el = createSidebar({ activeZone: null });
 		const handler = vi.fn();
 		el.addEventListener("zone-select", handler);
@@ -191,8 +191,11 @@ describe("epp-zone-sidebar events", () => {
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
-		const zoneItems = c.querySelectorAll(".zone-item");
-		(zoneItems[0] as HTMLElement).click();
+		const rowBtn = c.querySelector(
+			".zone-item button.zone-item-row",
+		) as HTMLElement;
+		expect(rowBtn).not.toBeNull();
+		rowBtn.click();
 
 		expect(handler).toHaveBeenCalledTimes(1);
 		expect(handler.mock.calls[0][0].detail.zone).toBe(0);
@@ -530,6 +533,117 @@ describe("epp-zone-sidebar events", () => {
 		expect(handler).toHaveBeenCalledTimes(1);
 		expect(handler.mock.calls[0][0].detail.index).toBe(0);
 		expect(handler.mock.calls[0][0].detail.updates.type).toBe("seating");
+
+		document.body.removeChild(c);
+	});
+});
+
+describe("epp-zone-sidebar resolved timings for non-custom zones", () => {
+	it("displays the type-default timings for a non-custom zone with stale stored values", () => {
+		// The engine uses type defaults EXCLUSIVELY for non-custom zones —
+		// a legacy slot that still carries stored timings must not display
+		// numbers that don't match runtime behavior.
+		const el = createSidebar();
+		const zone = {
+			name: "Z1",
+			color: "#ff0000",
+			type: "seating" as const,
+			trigger: 9,
+			renew: 9,
+			timeout: 999,
+			handoff_timeout: 99,
+		};
+		const tpl = (el as any)._renderZoneTypeControls(zone, 0);
+		const c = renderTo(tpl);
+
+		const d = ZONE_TYPE_DEFAULTS.seating;
+		const ranges = c.querySelectorAll(
+			'input[type="range"]',
+		) as NodeListOf<HTMLInputElement>;
+		expect(ranges[0].value).toBe(String(d.trigger));
+		expect(ranges[1].value).toBe(String(d.renew));
+		const numbers = c.querySelectorAll(
+			'input[type="number"]',
+		) as NodeListOf<HTMLInputElement>;
+		expect(numbers[0].value).toBe(String(d.timeout));
+		expect(numbers[1].value).toBe(String(d.handoff_timeout));
+
+		document.body.removeChild(c);
+	});
+});
+
+describe("epp-zone-sidebar timeout/handoff input clamping", () => {
+	const customZone = {
+		name: "Z1",
+		color: "#ff0000",
+		type: "custom" as const,
+		trigger: 5,
+		renew: 3,
+		timeout: 10,
+		handoff_timeout: 3,
+	};
+
+	function typeInto(input: HTMLInputElement, value: string): void {
+		input.value = value;
+		input.dispatchEvent(new Event("input", { bubbles: true }));
+	}
+
+	it("clamps a named zone's presence timeout to 3600 (markup max is advisory only)", () => {
+		const el = createSidebar();
+		const handler = vi.fn();
+		el.addEventListener("zone-config-change", handler);
+		const c = renderTo((el as any)._renderZoneTypeControls(customZone, 0));
+
+		const numbers = c.querySelectorAll(
+			'input[type="number"]',
+		) as NodeListOf<HTMLInputElement>;
+		typeInto(numbers[0], "999999");
+
+		expect(handler).toHaveBeenCalledTimes(1);
+		expect(handler.mock.calls[0][0].detail.updates.timeout).toBe(3600);
+
+		document.body.removeChild(c);
+	});
+
+	it("clamps a named zone's handoff timeout to 300", () => {
+		const el = createSidebar();
+		const handler = vi.fn();
+		el.addEventListener("zone-config-change", handler);
+		const c = renderTo((el as any)._renderZoneTypeControls(customZone, 0));
+
+		const numbers = c.querySelectorAll(
+			'input[type="number"]',
+		) as NodeListOf<HTMLInputElement>;
+		typeInto(numbers[1], "999999");
+
+		expect(handler).toHaveBeenCalledTimes(1);
+		expect(handler.mock.calls[0][0].detail.updates.handoff_timeout).toBe(300);
+
+		document.body.removeChild(c);
+	});
+
+	it("clamps the boundary's presence timeout to 3600 and handoff to 300", () => {
+		const el = createSidebar({ activeZone: 0 });
+		el.zone0 = {
+			type: "custom",
+			trigger: 5,
+			renew: 3,
+			timeout: 10,
+			handoff_timeout: 3,
+		};
+		const handler = vi.fn();
+		el.addEventListener("zone0-change", handler);
+		const c = renderTo((el as any)._renderBoundaryTypeControls());
+
+		const numbers = c.querySelectorAll(
+			'input[type="number"]',
+		) as NodeListOf<HTMLInputElement>;
+		typeInto(numbers[0], "999999");
+		typeInto(numbers[1], "999999");
+
+		expect(handler).toHaveBeenCalledTimes(2);
+		expect(handler.mock.calls[0][0].detail.timeout).toBe(3600);
+		expect(handler.mock.calls[1][0].detail.handoff_timeout).toBe(300);
 
 		document.body.removeChild(c);
 	});

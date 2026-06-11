@@ -1,7 +1,37 @@
 import { css, html, LitElement } from "lit";
 import { property } from "lit/decorators.js";
-import type { OverlayMode } from "../lib/grid.js";
+import {
+	CELL_OVERLAY_ENTRY,
+	CELL_OVERLAY_INTERFERENCE,
+	CELL_OVERLAY_SUPPRESS,
+	type OverlayMode,
+} from "../lib/grid.js";
+import { overlayStripeGradient } from "../lib/heatmap.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
+
+// Swatches share the canonical stripe gradients with the grid cells
+// (see overlayStripeGradient), at a 4px pitch fitting the 16px dot.
+const OVERLAY_ITEMS: {
+	mode: NonNullable<OverlayMode>;
+	labelKey: string;
+	dotCss: string;
+}[] = [
+	{
+		mode: "entry",
+		labelKey: "overlays.entry_exit",
+		dotCss: overlayStripeGradient(CELL_OVERLAY_ENTRY, 4),
+	},
+	{
+		mode: "interference",
+		labelKey: "overlays.interference",
+		dotCss: overlayStripeGradient(CELL_OVERLAY_INTERFERENCE, 4),
+	},
+	{
+		mode: "suppress",
+		labelKey: "overlays.suppress",
+		dotCss: overlayStripeGradient(CELL_OVERLAY_SUPPRESS, 4),
+	},
+];
 
 export class EppOverlaySidebar extends LitElement {
 	@property({ attribute: false }) overlayMode: OverlayMode = null;
@@ -18,6 +48,7 @@ export class EppOverlaySidebar extends LitElement {
 			gap: 6px;
 		}
 
+		/* Real <button>s for keyboard access; reset the UA button chrome. */
 		.overlay-item {
 			display: flex;
 			flex-direction: column;
@@ -27,6 +58,11 @@ export class EppOverlaySidebar extends LitElement {
 			cursor: pointer;
 			border: 2px solid var(--divider-color, #e0e0e0);
 			transition: border-color 0.2s;
+			background: none;
+			font: inherit;
+			color: inherit;
+			text-align: left;
+			width: 100%;
 		}
 
 		.overlay-item:hover {
@@ -66,96 +102,47 @@ export class EppOverlaySidebar extends LitElement {
 	render() {
 		return html`
 			<div class="overlay-scroll-area">
-				<!-- Entry / Exit -->
-				<div
-					class="overlay-item ${this.overlayMode === "entry" ? "active" : ""}"
-					@click=${() => {
-						this.dispatchEvent(
-							new CustomEvent("overlay-select", {
-								detail: { mode: this.overlayMode === "entry" ? null : "entry" },
-								bubbles: true,
-								composed: true,
-							}),
-						);
-					}}
-				>
-					<div class="overlay-item-row">
-						<div
-							class="overlay-dot"
-							style="background: repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(60,60,60,0.6) 4px, rgba(60,60,60,0.6) 6px);"
-						></div>
-						<span class="overlay-name"
-							>${this.localize("overlays.entry_exit")}</span
+				${OVERLAY_ITEMS.map(
+					(item) => html`
+						<button
+							type="button"
+							class="overlay-item ${this.overlayMode === item.mode ? "active" : ""}"
+							@click=${() => {
+								// Clicking the active mode toggles painting off.
+								this.dispatchEvent(
+									new CustomEvent("overlay-select", {
+										detail: {
+											mode: this.overlayMode === item.mode ? null : item.mode,
+										},
+										bubbles: true,
+										composed: true,
+									}),
+								);
+							}}
 						>
-						<span class="overlay-hint"
-							>${this.localize("overlays.click_to_paint")}</span
-						>
-					</div>
-				</div>
-
-				<!-- Interference -->
-				<div
-					class="overlay-item ${this.overlayMode === "interference" ? "active" : ""}"
-					@click=${() => {
-						this.dispatchEvent(
-							new CustomEvent("overlay-select", {
-								detail: {
-									mode:
-										this.overlayMode === "interference" ? null : "interference",
-								},
-								bubbles: true,
-								composed: true,
-							}),
-						);
-					}}
-				>
-					<div class="overlay-item-row">
-						<div
-							class="overlay-dot"
-							style="background: repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(200,0,0,0.6) 4px, rgba(200,0,0,0.6) 6px);"
-						></div>
-						<span class="overlay-name"
-							>${this.localize("overlays.interference")}</span
-						>
-						<span class="overlay-hint"
-							>${this.localize("overlays.click_to_paint")}</span
-						>
-					</div>
-				</div>
-
-				<!-- Suppress -->
-				<div
-					class="overlay-item ${this.overlayMode === "suppress" ? "active" : ""}"
-					@click=${() => {
-						this.dispatchEvent(
-							new CustomEvent("overlay-select", {
-								detail: {
-									mode: this.overlayMode === "suppress" ? null : "suppress",
-								},
-								bubbles: true,
-								composed: true,
-							}),
-						);
-					}}
-				>
-					<div class="overlay-item-row">
-						<div
-							class="overlay-dot"
-							style="background: repeating-linear-gradient(-45deg, transparent, transparent 4px, rgba(200,0,0,0.6) 4px, rgba(200,0,0,0.6) 6px), repeating-linear-gradient(45deg, transparent, transparent 4px, rgba(200,0,0,0.6) 4px, rgba(200,0,0,0.6) 6px);"
-						></div>
-						<span class="overlay-name"
-							>${this.localize("overlays.suppress")}</span
-						>
-						<span class="overlay-hint"
-							>${this.localize("overlays.click_to_paint")}</span
-						>
-					</div>
-				</div>
+							<div class="overlay-item-row">
+								<div
+									class="overlay-dot"
+									style="background: ${item.dotCss};"
+								></div>
+								<span class="overlay-name"
+									>${this.localize(item.labelKey)}</span
+								>
+								<span class="overlay-hint"
+									>${this.localize("overlays.click_to_paint")}</span
+								>
+							</div>
+						</button>
+					`,
+				)}
 			</div>
 		`;
 	}
 }
 
+/* v8 ignore start — the already-defined path only triggers on HA panel
+   re-import (module re-eval), unreachable in a single test environment */
 if (!customElements.get("epp-overlay-sidebar")) {
 	customElements.define("epp-overlay-sidebar", EppOverlaySidebar);
 }
+/* v8 ignore stop */

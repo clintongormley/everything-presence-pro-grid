@@ -6,6 +6,7 @@ import "./components/epp-furniture-overlay.js";
 import "./components/epp-furniture-sidebar.js";
 import "./components/epp-grid.js";
 import "./components/epp-live-sidebar.js";
+import type { ZoneStateSummary } from "./components/epp-live-sidebar.js";
 import "./components/epp-settings-view.js";
 import "./components/epp-wizard.js";
 import "./components/epp-overlay-sidebar.js";
@@ -127,13 +128,7 @@ const createInitialSensorState = (): SensorState => ({
 	co2: null,
 });
 
-type ZoneState = {
-	occupancy: Record<number, boolean>;
-	target_counts: Record<number, number>;
-	frame_count: number;
-};
-
-const createInitialZoneState = (): ZoneState => ({
+const createInitialZoneState = (): ZoneStateSummary => ({
 	occupancy: {},
 	target_counts: {},
 	frame_count: 0,
@@ -490,8 +485,7 @@ export class EPPGridPanel extends LitElement {
 	@state() _targets: Target[] = [];
 	@state() _rawTargets: RawTarget[] = [];
 	@state() _sensorState: SensorState = createInitialSensorState();
-	@state() _zoneState: ZoneState = createInitialZoneState();
-	@state() private _showHitCounts = false;
+	@state() _zoneState: ZoneStateSummary = createInitialZoneState();
 	@state() _showDebugLog = false;
 	_debugLogLines: string[] = [];
 	_debugLogPrev: string | null = null;
@@ -2343,10 +2337,8 @@ export class EPPGridPanel extends LitElement {
 				.furniture=${this._furniture}
 				.selectedFurnitureId=${this._selectedFurnitureId}
 				.sidebarTab=${this._sidebarTab}
-				.showHitCounts=${this._showHitCounts}
 				.occupancy=${occupancy}
 				.targetPrevXY=${this._zoneEngineState.targetPrevXY}
-				.heatmapColors=${this._showHitCounts ? this._computeHeatmapColors() : null}
 				.localize=${this._localize}
 				.maxGridPx=${480}
 				.maxRangeMm=${this._computeMaxRangeMm()}
@@ -2773,10 +2765,8 @@ export class EPPGridPanel extends LitElement {
                 .sidebarTab=${this._sidebarTab}
                 .editable=${true}
                 .activeZone=${this._activeZone}
-                .showHitCounts=${this._showHitCounts}
                 .occupancy=${editorOccupancy}
                 .targetPrevXY=${this._zoneEngineState.targetPrevXY}
-                .heatmapColors=${this._showHitCounts ? this._computeHeatmapColors() : null}
                 .localize=${this._localize}
                 .maxGridPx=${480}
                 .maxRangeMm=${this._editorMaxRangeMm()}
@@ -3033,11 +3023,6 @@ export class EPPGridPanel extends LitElement {
 	/** Enrich a raw debug log string — delegated to TargetController. */
 	private _enrichDebugLog(raw: string): string {
 		return this._targetCtrl.enrichDebugLog(raw);
-	}
-
-	/** Compute rgba overlay colour per zone — delegated to TargetController. */
-	private _computeHeatmapColors(): Map<number, string> {
-		return this._targetCtrl.computeHeatmapColors();
 	}
 
 	/** Get trigger/renew/timeout for a zone from the current editor state. */

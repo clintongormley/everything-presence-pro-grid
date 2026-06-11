@@ -120,8 +120,12 @@ export function renderConfigurationThumbnail(
 		const fh = item.height / GRID_CELL_MM;
 		const cx = fx + fw / 2;
 		const cy = fy + fh / 2;
+		// Object.hasOwn: a plain-object catalog makes prototype members
+		// ("constructor", …) truthy under bare indexing.
 		const floorPlan =
-			item.type === "svg" ? FLOOR_PLAN_SVGS[item.icon] : undefined;
+			item.type === "svg" && Object.hasOwn(FLOOR_PLAN_SVGS, item.icon)
+				? FLOOR_PLAN_SVGS[item.icon]
+				: undefined;
 
 		if (floorPlan) {
 			// Parse viewBox to get the SVG's native coordinate space

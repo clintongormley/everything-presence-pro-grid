@@ -421,3 +421,60 @@ describe("epp-furniture-sidebar DOM events", () => {
 		document.body.removeChild(c);
 	});
 });
+
+describe("width/height input guards", () => {
+	function dimsInputs(el: any): NodeListOf<HTMLInputElement> {
+		const tpl = el._renderFurnitureSidebar();
+		const c = renderTo(tpl);
+		return c.querySelectorAll(".furn-dims input");
+	}
+
+	it("ignores a cleared width field (NaN must not reach state)", () => {
+		const el = createSidebar({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+		const handler = vi.fn();
+		el.addEventListener("furniture-update", handler);
+		const inputs = dimsInputs(el);
+
+		inputs[0].value = "";
+		inputs[0].dispatchEvent(new Event("change"));
+
+		// Pre-guard this emitted { width: NaN }, which rendered width: NaNpx.
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("ignores a cleared height field", () => {
+		const el = createSidebar({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+		const handler = vi.fn();
+		el.addEventListener("furniture-update", handler);
+		const inputs = dimsInputs(el);
+
+		inputs[1].value = "";
+		inputs[1].dispatchEvent(new Event("change"));
+
+		expect(handler).not.toHaveBeenCalled();
+	});
+
+	it("clamps width and height to >= 100mm", () => {
+		const el = createSidebar({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+		const handler = vi.fn();
+		el.addEventListener("furniture-update", handler);
+		const inputs = dimsInputs(el);
+
+		inputs[0].value = "5"; // 5cm = 50mm — below the 100mm floor
+		inputs[0].dispatchEvent(new Event("change"));
+		expect(handler.mock.calls[0][0].detail.updates.width).toBe(100);
+
+		inputs[1].value = "0";
+		inputs[1].dispatchEvent(new Event("change"));
+		expect(handler.mock.calls[1][0].detail.updates.height).toBe(100);
+	});
+});

@@ -1,5 +1,8 @@
 import type { ReactiveControllerHost } from "lit";
-import type { SensorState, ZoneState } from "../components/epp-live-sidebar.js";
+import type {
+	SensorState,
+	ZoneStateSummary,
+} from "../components/epp-live-sidebar.js";
 import type { PaintAction } from "../lib/cell-painting.js";
 import type { FurnitureItem } from "../lib/furniture.js";
 import type { OverlayMode } from "../lib/grid.js";
@@ -121,7 +124,7 @@ export interface PanelHost extends ReactiveControllerHost {
 	_targets: Target[];
 	_rawTargets: RawTarget[];
 	_sensorState: SensorState;
-	_zoneState: ZoneState;
+	_zoneState: ZoneStateSummary;
 	_showDebugLog: boolean;
 	_showBackendDebugLog: boolean;
 	_debugLogLines: string[];

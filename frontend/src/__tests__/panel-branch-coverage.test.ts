@@ -84,7 +84,6 @@ function createPanel() {
 	a._staticMinDistance = 0.3;
 	a._staticMaxDistance = 16;
 	// Zone 0 defaults live on _zoneConfigs[0]; set up above.
-	a._showHitCounts = false;
 	a._zoneEngineState = createZoneEngineState();
 	a._showCustomIconPicker = false;
 	a._customIconValue = "";
@@ -361,10 +360,9 @@ describe("_renderEditor target rendering branches", () => {
 		expect(tpl).toBeDefined();
 	});
 
-	it("renders signal label when showHitCounts and not pending", () => {
+	it("renders signal label for an active target", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
-		a._showHitCounts = true;
 		a._targets = [
 			{
 				x: 1500,
@@ -381,7 +379,6 @@ describe("_renderEditor target rendering branches", () => {
 	it("does not render signal label when pending", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
-		a._showHitCounts = true;
 		a._targets = [
 			{
 				x: 1500,
@@ -1157,7 +1154,6 @@ describe("editor target signal display branches", () => {
 	it("signal > 0 and not pending shows signal label", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
-		a._showHitCounts = false; // signal shown only when showHitCounts=true
 		a._targets = [
 			{
 				x: 1500,
@@ -1198,9 +1194,8 @@ describe("uncalibrated FOV target color (via EppWizard)", () => {
 // _renderLiveGrid: hit count signal check
 // =========================================================
 describe("live grid hit count and signal", () => {
-	it("shows signal label when showHitCounts and signal > 0", () => {
+	it("shows signal label when signal > 0", () => {
 		const a = createPanel() as any;
-		a._showHitCounts = true;
 		a._targets = [
 			{
 				x: 1500,
@@ -1215,7 +1210,6 @@ describe("live grid hit count and signal", () => {
 
 	it("no signal label when signal is 0", () => {
 		const a = createPanel() as any;
-		a._showHitCounts = true;
 		a._targets = [
 			{
 				x: 1500,

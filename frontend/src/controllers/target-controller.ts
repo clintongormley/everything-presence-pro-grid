@@ -2,7 +2,6 @@ import type { ReactiveController } from "lit";
 import { DEBUG_LOG_MAX } from "../constants.js";
 import { mapTargetToGridCell } from "../lib/coordinates.js";
 import { cellIsInside, cellZone, GRID_COLS, GRID_ROWS } from "../lib/grid.js";
-import { computeHeatmapColors } from "../lib/heatmap.js";
 import { resolveZoneParams, type ZoneConfig } from "../lib/zone-defaults.js";
 import {
 	createZoneEngineState,
@@ -268,20 +267,6 @@ export class TargetController implements ReactiveController {
 			return `${sStr} | ${tStr} | ${zStr}`;
 		}
 		return `${tStr} | ${zStr}`;
-	}
-
-	// =====================================================================
-	// Heatmap delegation
-	// =====================================================================
-
-	/**
-	 * Compute rgba overlay colour per zone based on hit counts.
-	 */
-	computeHeatmapColors(): Map<number, string> {
-		return computeHeatmapColors(
-			this.host._zoneState.target_counts,
-			this.host._zoneConfigs.slice(1) as (ZoneConfig | null)[],
-		);
 	}
 
 	// =====================================================================

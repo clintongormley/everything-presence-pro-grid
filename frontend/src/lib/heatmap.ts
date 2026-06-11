@@ -1,4 +1,11 @@
-import { cellIsInside, cellZone, MAX_ZONES } from "./grid.js";
+import {
+	CELL_OVERLAY_ENTRY,
+	CELL_OVERLAY_INTERFERENCE,
+	CELL_OVERLAY_SUPPRESS,
+	cellIsInside,
+	cellZone,
+	MAX_ZONES,
+} from "./grid.js";
 import type { ZoneConfig } from "./zone-defaults.js";
 
 /**
@@ -42,59 +49,33 @@ export function getCellColor(
 	return CELL_COLOR_ROOM;
 }
 
-/**
- * Parse a hex color string (#RRGGBB) into RGB components.
- *
- * @param hex Color string like "#E69F00"
- * @returns { r, g, b } with values 0-255
- */
-export function hexToRgb(hex: string): { r: number; g: number; b: number } {
-	return {
-		r: parseInt(hex.slice(1, 3), 16),
-		g: parseInt(hex.slice(3, 5), 16),
-		b: parseInt(hex.slice(5, 7), 16),
-	};
+// Canonical overlay-stripe colors: theme error-color for interference and
+// suppress, neutral dark for entry/exit. Both the grid cells and the
+// overlay-sidebar swatches must derive from these — they had silently
+// diverged (hardcoded rgba in the sidebar vs theme var on the cells).
+const ENTRY_STRIPE_COLOR = "rgba(60,60,60,0.7)";
+const ERROR_STRIPE_COLOR = "var(--error-color, #cc3333)";
+
+function stripe(angleDeg: number, color: string, gapPx: number): string {
+	// 2px-wide stripes separated by gapPx of transparency.
+	return `repeating-linear-gradient(${angleDeg}deg, transparent, transparent ${gapPx}px, ${color} ${gapPx}px, ${color} ${gapPx + 2}px)`;
 }
 
 /**
- * Compute rgba overlay colour per zone based on hit counts (target_counts).
- *
- * The opacity scales linearly from 0 to 0.6 based on the hit count (capped at 9).
- * Zone 0 uses a blue default; zones 1-7 use their configured color.
- *
- * @param targetCounts Map of zone ID (as string keys) to hit counts
- * @param zoneConfigs Array of zone configurations
- * @returns Map of zone ID → CSS rgba color string
+ * Single source for the entry / interference / suppress stripe patterns.
+ * Returns a repeating-linear-gradient list usable as background(-image).
+ * The stripe pitch is the caller's: grid cells use 5-6px, the
+ * overlay-sidebar's 16px swatches use 4px. Returns "" for unknown kinds.
  */
-export function computeHeatmapColors(
-	targetCounts: Record<string, number>,
-	zoneConfigs: (ZoneConfig | null)[],
-): Map<number, string> {
-	const result = new Map<number, string>();
-
-	for (const [zoneIdStr, hitCount] of Object.entries(targetCounts)) {
-		const zoneId = Number(zoneIdStr);
-		if (hitCount <= 0) continue;
-
-		const signal = Math.min(hitCount, 9);
-		const opacity = (signal / 9) * 0.6;
-
-		let r = 100,
-			g = 180,
-			b = 255; // zone 0 default blue
-
-		if (zoneId > 0 && zoneId <= MAX_ZONES) {
-			const config = zoneConfigs[zoneId - 1];
-			if (config) {
-				const rgb = hexToRgb(config.color);
-				r = rgb.r;
-				g = rgb.g;
-				b = rgb.b;
-			}
-		}
-
-		result.set(zoneId, `rgba(${r}, ${g}, ${b}, ${opacity})`);
+export function overlayStripeGradient(kind: number, gapPx: number): string {
+	switch (kind) {
+		case CELL_OVERLAY_ENTRY:
+			return stripe(45, ENTRY_STRIPE_COLOR, gapPx);
+		case CELL_OVERLAY_INTERFERENCE:
+			return stripe(-45, ERROR_STRIPE_COLOR, gapPx);
+		case CELL_OVERLAY_SUPPRESS:
+			return `${stripe(-45, ERROR_STRIPE_COLOR, gapPx)}, ${stripe(45, ERROR_STRIPE_COLOR, gapPx)}`;
+		default:
+			return "";
 	}
-
-	return result;
 }

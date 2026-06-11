@@ -503,3 +503,21 @@ describe("touch support CSS", () => {
 		);
 	});
 });
+
+describe("FLOOR_PLAN_SVGS own-property lookup", () => {
+	it("falls back to ha-icon for an svg item whose icon name hits the prototype chain", async () => {
+		// "constructor" is truthy via Object.prototype on a plain-object SVG
+		// catalog — a truthiness check would try to render it as a floor-plan
+		// SVG with viewBox undefined.
+		const el = createOverlay({
+			furniture: [{ ...SAMPLE_FURNITURE, type: "svg", icon: "constructor" }],
+		});
+		document.body.appendChild(el);
+		await (el as any).updateComplete;
+
+		expect(el.shadowRoot!.querySelector(".furn-svg")).toBeNull();
+		expect(el.shadowRoot!.querySelector("ha-icon")).not.toBeNull();
+
+		document.body.removeChild(el);
+	});
+});

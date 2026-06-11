@@ -1,6 +1,5 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property } from "lit/decorators.js";
-import { repeat } from "lit/directives/repeat.js";
 import { MAX_TARGETS, TARGET_COLORS } from "../constants.js";
 import { mapTargetToGridCell, targetCellIndex } from "../lib/coordinates.js";
 import type { FurnitureItem } from "../lib/furniture.js";
@@ -11,6 +10,7 @@ import {
 	cellIsInside,
 	cellOverlay,
 	cellZone,
+	GRID_CELL_COUNT,
 	GRID_COLS,
 	GRID_ROWS,
 	MAX_RANGE,
@@ -19,26 +19,29 @@ import {
 	CELL_BG_BEYOND_MAX_RANGE,
 	CELL_BG_OUT_OF_RANGE,
 	getCellColor,
+	overlayStripeGradient,
 } from "../lib/heatmap.js";
 import {
+	type CellRangeStatus,
 	classifyCellInSensor,
 	computeSensorFov,
 	getGridRoomMetrics,
 	getVisibleRoomBounds,
 	type SensorFov,
 } from "../lib/room-geometry.js";
+import type { SidebarTab } from "../lib/view-hash.js";
 import type { ZoneConfig } from "../lib/zone-defaults.js";
 import type { Target } from "../types.js";
 import "./epp-furniture-overlay.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 
+// Cell decorations for painted overlays. Pitch (6px entry, 5px the others)
+// preserved from the original hand-written gradients; the gradient itself is
+// shared with the overlay-sidebar swatches via overlayStripeGradient.
 const OVERLAY_STRIPE_CSS: Record<number, string> = {
-	[CELL_OVERLAY_ENTRY]:
-		"background-image: repeating-linear-gradient(45deg, transparent, transparent 6px, rgba(60,60,60,0.7) 6px, rgba(60,60,60,0.7) 8px);",
-	[CELL_OVERLAY_INTERFERENCE]:
-		"background-image: repeating-linear-gradient(-45deg, transparent, transparent 5px, var(--error-color, #cc3333) 5px, var(--error-color, #cc3333) 7px);",
-	[CELL_OVERLAY_SUPPRESS]:
-		"background-image: repeating-linear-gradient(-45deg, transparent, transparent 5px, var(--error-color, #cc3333) 5px, var(--error-color, #cc3333) 7px), repeating-linear-gradient(45deg, transparent, transparent 5px, var(--error-color, #cc3333) 5px, var(--error-color, #cc3333) 7px);",
+	[CELL_OVERLAY_ENTRY]: `background-image: ${overlayStripeGradient(CELL_OVERLAY_ENTRY, 6)};`,
+	[CELL_OVERLAY_INTERFERENCE]: `background-image: ${overlayStripeGradient(CELL_OVERLAY_INTERFERENCE, 5)};`,
+	[CELL_OVERLAY_SUPPRESS]: `background-image: ${overlayStripeGradient(CELL_OVERLAY_SUPPRESS, 5)};`,
 };
 
 export class EppGrid extends LitElement {
@@ -50,25 +53,22 @@ export class EppGrid extends LitElement {
 	@property({ attribute: false }) perspective: number[] | null = null;
 	@property({ attribute: false }) furniture: FurnitureItem[] = [];
 	@property({ attribute: false }) selectedFurnitureId: string | null = null;
-	@property({ attribute: false }) sidebarTab: string = "zones";
+	@property({ attribute: false }) sidebarTab: SidebarTab = "zones";
 	@property({ type: Boolean, reflect: true }) editable = false;
 	@property({ attribute: false }) activeZone: number | null = null;
-	@property({ type: Boolean }) showHitCounts = false;
 	@property({ attribute: false }) occupancy: Record<number, boolean> = {};
 	@property({ attribute: false }) targetPrevXY: ({
 		x: number;
 		y: number;
 	} | null)[] = [];
-	@property({ attribute: false }) heatmapColors: Map<number, string> | null =
-		null;
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
 	/** Maximum detection range in mm */
 	@property({ type: Number }) maxRangeMm = MAX_RANGE;
-	/** Maximum pixel size for the grid (live=480, editor=520) */
+	/** Maximum pixel size for the grid (both call sites currently pass 480) */
+	@property({ type: Number }) maxGridPx = 480;
 	/** Map of target index → dismissed cell index (ephemeral, not persisted) */
 	@property({ attribute: false }) dismissedTargets: Map<number, number> =
 		new Map();
-	@property({ type: Number }) maxGridPx = 480;
 	/** Frozen bounds during painting (editor only) */
 	@property({ attribute: false }) frozenBounds: {
 		minCol: number;
@@ -204,14 +204,8 @@ export class EppGrid extends LitElement {
 	}
 
 	render() {
-		const bounds =
-			this.frozenBounds ??
-			getVisibleRoomBounds(
-				this.grid,
-				this._getSensorFov(),
-				this.roomWidth,
-				this.maxRangeMm,
-			);
+		const scan = this._getScan();
+		const bounds = this.frozenBounds ?? scan.bounds;
 		const noRoom = bounds.minCol > bounds.maxCol;
 		const minCol = noRoom ? 0 : bounds.minCol;
 		const maxCol = noRoom ? GRID_COLS - 1 : bounds.maxCol;
@@ -233,12 +227,12 @@ export class EppGrid extends LitElement {
 					@pointerup=${this.editable ? this._onStrokeEnd : nothing}
 					@pointercancel=${this.editable ? this._onStrokeEnd : nothing}
 				>
-					${this._renderVisibleCells(minCol, maxCol, minRow, maxRow, cellPx)}
+					${this._renderVisibleCells(scan.status, minCol, maxCol, minRow, maxRow, cellPx)}
 				</div>
 				${this._renderFurnitureOverlay(cellPx, minCol, minRow, visCols, visRows)}
 				${this._renderTargetDots(minCol, maxCol, minRow, maxRow, visCols, visRows)}
 			</div>
-			${this._renderGridDimensions()}
+			${this._renderGridDimensions(scan.metrics)}
 		`;
 	}
 
@@ -261,41 +255,101 @@ export class EppGrid extends LitElement {
 		return this._fovCache;
 	}
 
+	// Full-grid scan cache, following the _fovCache invalidation pattern:
+	// reference keys (grid / perspective / fov) rely on the same contract —
+	// callers replace those values, never mutate them in place. Holds the
+	// per-cell FOV classification, the visible room bounds and the room
+	// metrics; without it every render — each live tick, every painted
+	// cell — re-ran ~4 full-grid scans (≈1600 classifyCellInSensor calls).
+	private _scanCache: {
+		grid: Uint8Array;
+		fov: SensorFov | null;
+		perspective: number[] | null;
+		roomWidth: number;
+		maxRangeMm: number;
+		status: CellRangeStatus[];
+		bounds: { minCol: number; maxCol: number; minRow: number; maxRow: number };
+		metrics: { widthM: number; depthM: number; furthestM: number } | null;
+	} | null = null;
+
+	private _getScan(): NonNullable<EppGrid["_scanCache"]> {
+		const fov = this._getSensorFov();
+		const c = this._scanCache;
+		if (
+			c &&
+			c.grid === this.grid &&
+			c.fov === fov &&
+			// perspective participates beyond fov: getGridRoomMetrics falls back
+			// to it directly when the fov is degenerate (computeSensorFov → null).
+			c.perspective === this.perspective &&
+			c.roomWidth === this.roomWidth &&
+			c.maxRangeMm === this.maxRangeMm
+		) {
+			return c;
+		}
+		const status: CellRangeStatus[] = new Array(GRID_CELL_COUNT);
+		for (let r = 0; r < GRID_ROWS; r++) {
+			for (let col = 0; col < GRID_COLS; col++) {
+				status[r * GRID_COLS + col] = classifyCellInSensor(
+					col,
+					r,
+					fov,
+					this.roomWidth,
+					this.maxRangeMm,
+				);
+			}
+		}
+		this._scanCache = {
+			grid: this.grid,
+			fov,
+			perspective: this.perspective,
+			roomWidth: this.roomWidth,
+			maxRangeMm: this.maxRangeMm,
+			status,
+			bounds: getVisibleRoomBounds(
+				this.grid,
+				fov,
+				this.roomWidth,
+				this.maxRangeMm,
+			),
+			metrics: getGridRoomMetrics(
+				this.grid,
+				this.roomWidth,
+				this.perspective,
+				fov,
+				this.maxRangeMm,
+			),
+		};
+		return this._scanCache;
+	}
+
 	private _renderVisibleCells(
+		status: CellRangeStatus[],
 		minCol: number,
 		maxCol: number,
 		minRow: number,
 		maxRow: number,
 		cellPx: number,
 	) {
-		const heatmap = this.heatmapColors;
 		const occupancy = this.occupancy;
-		const fov = this._getSensorFov();
-		const maxRange = this.maxRangeMm;
 
 		const cells = [];
 		for (let r = minRow; r <= maxRow; r++) {
 			for (let c = minCol; c <= maxCol; c++) {
 				const idx = r * GRID_COLS + c;
 				const cellVal = this.grid[idx];
-				const status = classifyCellInSensor(
-					c,
-					r,
-					fov,
-					this.roomWidth,
-					maxRange,
-				);
-				const inRange = status === "in_range";
+				const cellStatus = status[idx];
+				const inRange = cellStatus === "in_range";
 				const inside = cellIsInside(cellVal);
 				let bg: string;
-				if (status === "in_range") {
+				if (cellStatus === "in_range") {
 					bg = getCellColor(cellVal, this.zoneConfigs);
-				} else if (status === "beyond_max_range" && inside) {
+				} else if (cellStatus === "beyond_max_range" && inside) {
 					// Only inside-room cells get the hatch-on-white "configured out"
 					// decoration; outside-room padding rendered as plain outside so
 					// it doesn't read as an inside-room cell limited by config.
 					bg = CELL_BG_BEYOND_MAX_RANGE;
-				} else if (status === "beyond_max_range") {
+				} else if (cellStatus === "beyond_max_range") {
 					bg = getCellColor(cellVal, this.zoneConfigs);
 				} else {
 					bg = CELL_BG_OUT_OF_RANGE;
@@ -303,12 +357,6 @@ export class EppGrid extends LitElement {
 				let occupancyStyle = "";
 				if (inRange && cellIsInside(cellVal)) {
 					const zoneId = cellZone(cellVal);
-					if (heatmap) {
-						const overlay = heatmap.get(zoneId);
-						if (overlay) {
-							bg = `linear-gradient(${overlay}, ${overlay}), linear-gradient(${bg}, ${bg})`;
-						}
-					}
 					if (occupancy[zoneId]) {
 						const namedColor =
 							zoneId > 0 ? this.zoneConfigs[zoneId - 1]?.color : null;
@@ -325,6 +373,9 @@ export class EppGrid extends LitElement {
 				// the live grid is a passive display (hover there used to dispatch
 				// cell-paint events nothing listened to).
 				const paintable = this.editable && inRange;
+				// Cells stay <div>s deliberately: they form a pointer-driven
+				// painting surface (no discrete click semantics), and 400 focusable
+				// buttons would wreck both keyboard navigation and render cost.
 				cells.push(html`
 					<div
 						class="cell"
@@ -408,116 +459,134 @@ export class EppGrid extends LitElement {
 		visCols: number,
 		visRows: number,
 	) {
+		// Plain indexed loop: dots are identified by their positional index,
+		// so repeat()'s keyed-reordering machinery (previously keyed BY that
+		// index) bought nothing over positional reuse.
+		const dots = [];
+		const count = Math.min(this.targets.length, MAX_TARGETS);
+		for (let i = 0; i < count; i++) {
+			dots.push(
+				this._renderTargetDot(
+					this.targets[i],
+					i,
+					minCol,
+					maxCol,
+					minRow,
+					maxRow,
+					visCols,
+					visRows,
+				),
+			);
+		}
 		return html`
-			<div class="targets-overlay" style="pointer-events: none;">
-				${repeat(
-					this.targets.slice(0, MAX_TARGETS),
-					(_t, i) => i,
-					(t, i) => {
-						if (t.status === "inactive") return nothing;
-						let pos =
-							t.x != null && t.y != null
-								? mapTargetToGridCell(t.x, t.y, this.roomWidth, this.roomDepth)
-								: null;
-						const onGrid =
-							pos &&
-							pos.col >= minCol &&
-							pos.col <= maxCol &&
-							pos.row >= minRow &&
-							pos.row <= maxRow;
-						if (t.status === "pending" && !onGrid && this.targetPrevXY[i]) {
-							pos = mapTargetToGridCell(
-								this.targetPrevXY[i]!.x,
-								this.targetPrevXY[i]!.y,
-								this.roomWidth,
-								this.roomDepth,
-							);
-						} else if (!onGrid) {
-							// Active target with a position outside the visible bounds
-							// must not render at the clamped edge.
-							return nothing;
-						}
-						if (!pos) return nothing;
-						const xPct = Math.max(
-							0,
-							Math.min(100, ((pos.col - minCol) / visCols) * 100),
-						);
-						const yPct = Math.max(
-							0,
-							Math.min(100, ((pos.row - minRow) / visRows) * 100),
-						);
-						// Bounds-checked cell index (null when off-grid, e.g. a pending
-						// fallback position) shared by the dismissed + overlay checks.
-						const cellIdx = targetCellIndex(pos);
-						// Hide dismissed targets while they remain on the dismissed cell.
-						// Detection of "moved off the cell" lives in willUpdate, where
-						// the target-undismissed event is dispatched. The child never
-						// mutates this.dismissedTargets — that's the parent's prop.
-						if (cellIdx !== null && this.dismissedTargets.get(i) === cellIdx) {
-							return nothing;
-						}
-						// Interference/suppress cells don't confirm presence by themselves:
-						// suppress is skipped by the engine, interference requires continuity.
-						// Hide the dot when the zone isn't already occupied via another path.
-						if (cellIdx !== null && cellIdx < this.grid.length) {
-							const overlay = cellOverlay(this.grid[cellIdx]);
-							if (
-								overlay === CELL_OVERLAY_INTERFERENCE ||
-								overlay === CELL_OVERLAY_SUPPRESS
-							) {
-								const zid = cellZone(this.grid[cellIdx]);
-								if (!this.occupancy[zid]) {
-									return nothing;
-								}
-							}
-						}
-						const opacity = t.status === "pending" ? 0.3 : 1;
-						return html`
-							<div
-								class="target-dot ${this.editable ? "" : "clickable"}"
-								style="left: ${xPct}%; top: ${yPct}%; background: ${TARGET_COLORS[i]}; opacity: ${opacity}; transition: opacity 0.5s ease;"
-								@click=${(e: Event) => {
-									if (this.editable) return;
-									e.stopPropagation();
-									this.dispatchEvent(
-										new CustomEvent("target-click", {
-											detail: {
-												targetIndex: i,
-												x: t.x,
-												y: t.y,
-												pctX: xPct,
-												pctY: yPct,
-											},
-											bubbles: true,
-											composed: true,
-										}),
-									);
-								}}
-							></div>
-							${
-								t.status === "active" && t.signal > 0
-									? html`
-										<div style="position: absolute; left: ${xPct}%; top: ${yPct}%; transform: translate(-50%, -280%); background: rgba(0,0,0,0.7); color: #fff; font-size: 10px; font-weight: bold; padding: 0 4px; border-radius: 6px; pointer-events: none;">
-											${t.signal}
-										</div>
-									`
-									: nothing
-							}
-						`;
-					},
-				)}
-			</div>
+			<div class="targets-overlay" style="pointer-events: none;">${dots}</div>
 		`;
 	}
 
-	private _renderGridDimensions() {
-		const metrics = getGridRoomMetrics(
-			this.grid,
-			this.roomWidth,
-			this.perspective,
-			this._getSensorFov(),
-			this.maxRangeMm,
+	private _renderTargetDot(
+		t: Target,
+		i: number,
+		minCol: number,
+		maxCol: number,
+		minRow: number,
+		maxRow: number,
+		visCols: number,
+		visRows: number,
+	) {
+		if (t.status === "inactive") return nothing;
+		const inBounds = (p: { col: number; row: number } | null) =>
+			p !== null &&
+			p.col >= minCol &&
+			p.col <= maxCol &&
+			p.row >= minRow &&
+			p.row <= maxRow;
+		let pos =
+			t.x != null && t.y != null
+				? mapTargetToGridCell(t.x, t.y, this.roomWidth, this.roomDepth)
+				: null;
+		if (t.status === "pending" && !inBounds(pos) && this.targetPrevXY[i]) {
+			pos = mapTargetToGridCell(
+				this.targetPrevXY[i].x,
+				this.targetPrevXY[i].y,
+				this.roomWidth,
+				this.roomDepth,
+			);
+		}
+		// Off-grid positions never render — neither an active target nor a
+		// pending target whose prevXY fallback is also off-grid may show up
+		// pinned to the clamped edge.
+		if (pos === null || !inBounds(pos)) return nothing;
+		const xPct = Math.max(
+			0,
+			Math.min(100, ((pos.col - minCol) / visCols) * 100),
 		);
+		const yPct = Math.max(
+			0,
+			Math.min(100, ((pos.row - minRow) / visRows) * 100),
+		);
+		// Bounds-checked cell index (null when off-grid) shared by the
+		// dismissed + overlay checks.
+		const cellIdx = targetCellIndex(pos);
+		// Hide dismissed targets while they remain on the dismissed cell.
+		// Detection of "moved off the cell" lives in willUpdate, where
+		// the target-undismissed event is dispatched. The child never
+		// mutates this.dismissedTargets — that's the parent's prop.
+		if (cellIdx !== null && this.dismissedTargets.get(i) === cellIdx) {
+			return nothing;
+		}
+		// Interference/suppress cells don't confirm presence by themselves:
+		// suppress is skipped by the engine, interference requires continuity.
+		// Hide the dot when the zone isn't already occupied via another path.
+		if (cellIdx !== null && cellIdx < this.grid.length) {
+			const overlay = cellOverlay(this.grid[cellIdx]);
+			if (
+				overlay === CELL_OVERLAY_INTERFERENCE ||
+				overlay === CELL_OVERLAY_SUPPRESS
+			) {
+				const zid = cellZone(this.grid[cellIdx]);
+				if (!this.occupancy[zid]) {
+					return nothing;
+				}
+			}
+		}
+		const opacity = t.status === "pending" ? 0.3 : 1;
+		return html`
+			<div
+				class="target-dot ${this.editable ? "" : "clickable"}"
+				style="left: ${xPct}%; top: ${yPct}%; background: ${TARGET_COLORS[i]}; opacity: ${opacity}; transition: opacity 0.5s ease;"
+				@click=${(e: Event) => {
+					if (this.editable) return;
+					e.stopPropagation();
+					this.dispatchEvent(
+						new CustomEvent("target-click", {
+							detail: {
+								targetIndex: i,
+								x: t.x,
+								y: t.y,
+								pctX: xPct,
+								pctY: yPct,
+							},
+							bubbles: true,
+							composed: true,
+						}),
+					);
+				}}
+			></div>
+			${
+				t.status === "active" && t.signal > 0
+					? html`
+						<div style="position: absolute; left: ${xPct}%; top: ${yPct}%; transform: translate(-50%, -280%); background: rgba(0,0,0,0.7); color: #fff; font-size: 10px; font-weight: bold; padding: 0 4px; border-radius: 6px; pointer-events: none;">
+							${t.signal}
+						</div>
+					`
+					: nothing
+			}
+		`;
+	}
+
+	private _renderGridDimensions(
+		metrics: { widthM: number; depthM: number; furthestM: number } | null,
+	) {
 		if (!metrics) return nothing;
 		return html`
 			<div class="grid-dimensions">
@@ -539,6 +608,9 @@ export class EppGrid extends LitElement {
 	) {
 		if (!this.furniture.length) return nothing;
 
+		// The overlay's furniture-* events are `composed: true` and bubble
+		// straight through this component's shadow boundary to the panel —
+		// no stopPropagation/re-dispatch pass-through wrappers needed.
 		return html`
 			<epp-furniture-overlay
 				.furniture=${this.furniture}
@@ -551,36 +623,6 @@ export class EppGrid extends LitElement {
 				.visRows=${visRows}
 				.sidebarTab=${this.sidebarTab}
 				.localize=${this.localize}
-				@furniture-select=${(e: CustomEvent) => {
-					e.stopPropagation();
-					this.dispatchEvent(
-						new CustomEvent("furniture-select", {
-							detail: e.detail,
-							bubbles: true,
-							composed: true,
-						}),
-					);
-				}}
-				@furniture-pointer-down=${(e: CustomEvent) => {
-					e.stopPropagation();
-					this.dispatchEvent(
-						new CustomEvent("furniture-pointer-down", {
-							detail: e.detail,
-							bubbles: true,
-							composed: true,
-						}),
-					);
-				}}
-				@furniture-delete=${(e: CustomEvent) => {
-					e.stopPropagation();
-					this.dispatchEvent(
-						new CustomEvent("furniture-delete", {
-							detail: e.detail,
-							bubbles: true,
-							composed: true,
-						}),
-					);
-				}}
 			></epp-furniture-overlay>
 		`;
 	}

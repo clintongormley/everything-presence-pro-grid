@@ -8,7 +8,7 @@ import {
 	filterAndSortStickers,
 } from "../lib/furniture.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
-import { buttonStyles, dialogStyles } from "../styles.js";
+import { buttonStyles, dialogStyles, sidebarRowStyles } from "../styles.js";
 
 export class EppFurnitureSidebar extends LitElement {
 	@property({ attribute: false }) furniture: FurnitureItem[] = [];
@@ -22,28 +22,10 @@ export class EppFurnitureSidebar extends LitElement {
 	static styles = [
 		dialogStyles,
 		buttonStyles,
+		sidebarRowStyles,
 		css`
 			:host {
 				display: block;
-			}
-
-			.zone-item-row {
-				display: flex;
-				align-items: center;
-				gap: 8px;
-			}
-
-			.zone-remove-btn {
-				background: none;
-				border: none;
-				color: var(--secondary-text-color, #757575);
-				cursor: pointer;
-				padding: 4px;
-				border-radius: 4px;
-			}
-
-			.zone-remove-btn:hover {
-				color: var(--error-color, #f44336);
 			}
 
 			.furn-selected-info {
@@ -172,13 +154,13 @@ export class EppFurnitureSidebar extends LitElement {
 								<label>
 									${this.localize("dimensions.width_cm")}
 									<input type="number" min="10" step="5" .value=${String(Math.round(selected.width / 10))}
-										@change=${(e: Event) => this._fireUpdate(selected.id, { width: parseInt((e.target as HTMLInputElement).value, 10) * 10 })}
+										@change=${(e: Event) => this._fireDimensionUpdate(selected.id, "width", (e.target as HTMLInputElement).value)}
 									/>
 								</label>
 								<label>
 									${this.localize("dimensions.height_cm")}
 									<input type="number" min="10" step="5" .value=${String(Math.round(selected.height / 10))}
-										@change=${(e: Event) => this._fireUpdate(selected.id, { height: parseInt((e.target as HTMLInputElement).value, 10) * 10 })}
+										@change=${(e: Event) => this._fireDimensionUpdate(selected.id, "height", (e.target as HTMLInputElement).value)}
 									/>
 								</label>
 								<label>
@@ -214,7 +196,9 @@ export class EppFurnitureSidebar extends LitElement {
 					(s) => html`
 						<button class="furn-sticker" @click=${() => this._fireAdd(s)}>
 							${
-								s.type === "svg" && FLOOR_PLAN_SVGS[s.icon]
+								// Object.hasOwn: a plain-object catalog makes prototype
+								// members ("constructor", …) truthy under bare indexing.
+								s.type === "svg" && Object.hasOwn(FLOOR_PLAN_SVGS, s.icon)
 									? svg`<svg viewBox="${FLOOR_PLAN_SVGS[s.icon].viewBox}" class="furn-sticker-svg">
 										${unsafeSVG(FLOOR_PLAN_SVGS[s.icon].content)}
 									</svg>`
@@ -349,6 +333,22 @@ export class EppFurnitureSidebar extends LitElement {
 				composed: true,
 			}),
 		);
+	}
+
+	/**
+	 * Width/height mirror the rotation handler's Number.isFinite guard —
+	 * a cleared field parses to NaN, which previously flowed straight into
+	 * state and rendered as `width: NaNpx`. Values clamp to ≥ 100mm so the
+	 * item can't collapse below a grabbable size.
+	 */
+	private _fireDimensionUpdate(
+		id: string,
+		field: "width" | "height",
+		rawCm: string,
+	): void {
+		const v = parseInt(rawCm, 10);
+		if (!Number.isFinite(v)) return;
+		this._fireUpdate(id, { [field]: Math.max(100, v * 10) });
 	}
 }
 
