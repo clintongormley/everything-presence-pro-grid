@@ -106,8 +106,24 @@ void EPPComponent::loop() {
     // each raw frame's transformed position directly. The flag is sticky:
     // set when any frame lands on an overlay cell, cleared when a frame
     // lands on a non-overlay room cell.
+    //
+    // NOTE: this is component glue (no host-test coverage) — the equivalent
+    // logic IS host-tested on the TS side (frontend overlay-tracker) and the
+    // parity harness simulates this stage for the fixture scenarios; keep
+    // all three in lockstep when editing.
     for (int i = 0; i < NUM_TARGETS; i++) {
-      if (raw_inputs[i].active) {
+      bool raw_active = raw_inputs[i].active;
+      // Slot-reuse guard: the LD2450 reuses target slots, so an
+      // inactive→active transition means a brand-new target. Without this
+      // reset the sticky flag from the previous occupant leaks into the new
+      // target, granting it instant entry-overlay confirmation it never
+      // earned. Tradeoff: a single dropped raw frame also resets the flag —
+      // acceptable, since a real entry re-touches the overlay cell within a
+      // frame or two while a ghost popping up mid-room never does.
+      if (raw_active && !target_prev_raw_active_[i]) {
+        target_touched_overlay_[i] = false;
+      }
+      if (raw_active) {
         float fx = raw_inputs[i].x;
         float fy = raw_inputs[i].y;
         if (xform) {
@@ -127,6 +143,7 @@ void EPPComponent::loop() {
       } else {
         // Target inactive — don't clear, let zone engine use the flag
       }
+      target_prev_raw_active_[i] = raw_active;
     }
 
     // Stage 3: Zone engine tick — uses transformed positions + frame counts

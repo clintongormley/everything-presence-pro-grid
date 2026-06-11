@@ -500,37 +500,39 @@ export function runLocalZoneEngine(
 		const lastZid = state.lastZone[i];
 		if ((isGone || leftRoom) && state.lastOnOverlay[i] && lastZid !== null) {
 			// Mirror firmware `find_zone_index(prev_zid) >= 0`: an
-			// unconfigured zone has no runtime to accelerate.
-			const st = isZoneConfigured(lastZid, params.zoneConfigs)
-				? state.localZoneState.get(lastZid)
-				: undefined;
-			if (st?.occupied) {
-				// Check if this target is the only confirmed target remaining
-				let remaining = 0;
-				for (const tid of st.confirmedTargets) {
-					if (tid !== i) remaining++;
-				}
-				if (remaining === 0) {
-					const th = getZoneThresholds(
-						lastZid,
-						params.zoneConfigs,
-						params.roomType,
-						params.roomTrigger,
-						params.roomRenew,
-						params.roomTimeout,
-						params.roomHandoffTimeout,
-					);
-					const accel = now - (th.timeout - th.handoffTimeout);
-					if (st.pendingSince === null) {
-						st.pendingSince = accel;
-					} else if (st.pendingSince > accel) {
-						st.pendingSince = accel;
+			// unconfigured zone has no runtime to accelerate — and the
+			// handoff state is consumed ONLY when the lookup succeeds, so a
+			// disabled zone never silently swallows it.
+			if (isZoneConfigured(lastZid, params.zoneConfigs)) {
+				const st = state.localZoneState.get(lastZid);
+				if (st?.occupied) {
+					// Check if this target is the only confirmed target remaining
+					let remaining = 0;
+					for (const tid of st.confirmedTargets) {
+						if (tid !== i) remaining++;
+					}
+					if (remaining === 0) {
+						const th = getZoneThresholds(
+							lastZid,
+							params.zoneConfigs,
+							params.roomType,
+							params.roomTrigger,
+							params.roomRenew,
+							params.roomTimeout,
+							params.roomHandoffTimeout,
+						);
+						const accel = now - (th.timeout - th.handoffTimeout);
+						if (st.pendingSince === null) {
+							st.pendingSince = accel;
+						} else if (st.pendingSince > accel) {
+							st.pendingSince = accel;
+						}
 					}
 				}
+				// Consume so subsequent ticks don't re-fire the same handoff.
+				state.lastZone[i] = null;
+				state.lastOnOverlay[i] = false;
 			}
-			// Consume so subsequent ticks don't re-fire the same handoff.
-			state.lastZone[i] = null;
-			state.lastOnOverlay[i] = false;
 		}
 	}
 

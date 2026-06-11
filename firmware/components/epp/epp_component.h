@@ -164,6 +164,11 @@ class EPPComponent : public esphome::Component {
   RollingWindow window_;
   ZoneEngine zone_engine_;
   bool target_touched_overlay_[MAX_TARGETS]{};
+  // Previous raw-frame active state per slot. The overlay-touch flag above is
+  // sticky; without tracking the inactive→active transition, a brand-new
+  // target reusing slot i would silently inherit the previous occupant's
+  // overlay-touch history (see Stage 2b in loop()).
+  bool target_prev_raw_active_[MAX_TARGETS]{};
 
   // NVS persistence
   void restore_from_nvs_();

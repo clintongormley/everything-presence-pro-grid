@@ -1466,6 +1466,57 @@ describe("reset semantics (firmware set_grid / set_zones parity)", () => {
 	});
 });
 
+describe("overlay-exit handoff consume gating (Step 2b)", () => {
+	it("does NOT consume lastZone/lastOnOverlay when the zone is unconfigured", () => {
+		// Mirrors the firmware fix: Step 2b used to consume the handoff state
+		// even when find_zone_index returned -1 (disabled zone), throwing the
+		// state away without ever using it. Both engines now consume only
+		// when the zone lookup succeeds.
+		const state = createZoneEngineState();
+		const grid = makeParityGrid();
+		// Paint (10,1) as zone 2 with an entry overlay; zone 2 has no config.
+		grid[1 * GRID_COLS + 10] = cellSetOverlay(
+			cellSetZone(CELL_ROOM_BIT, 2),
+			CELL_OVERLAY_ENTRY,
+		);
+
+		// Tick 1: target on the unconfigured zone-2 entry cell.
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(750, 450, 9)], grid, now: 100 }),
+		);
+		expect(state.lastZone[0]).toBe(2);
+		expect(state.lastOnOverlay[0]).toBe(true);
+
+		// Tick 2: target gone. Zone 2 is unconfigured → no runtime to
+		// accelerate → the handoff state must NOT be consumed.
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [], grid, now: 101 }),
+		);
+		expect(state.lastZone[0]).toBe(2);
+		expect(state.lastOnOverlay[0]).toBe(true);
+	});
+
+	it("consumes lastZone/lastOnOverlay when the zone is configured", () => {
+		const state = createZoneEngineState();
+		const grid = makeOverlayGrid();
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 100 }),
+		);
+		expect(state.lastZone[0]).toBe(1);
+		expect(state.lastOnOverlay[0]).toBe(true);
+
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [], grid, now: 101 }),
+		);
+		expect(state.lastZone[0]).toBeNull();
+		expect(state.lastOnOverlay[0]).toBe(false);
+	});
+});
+
 describe("stale zone cleanup", () => {
 	it("clears occupancy for zones no longer in the grid", () => {
 		const state = createZoneEngineState();

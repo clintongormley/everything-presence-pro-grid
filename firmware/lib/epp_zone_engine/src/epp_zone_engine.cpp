@@ -537,10 +537,13 @@ const ProcessingResult& ZoneEngine::tick(const WindowOutput& window, float times
                     log_(LogLevel::DEBUG, "T%d overlay exit handoff: zone %d, handoff=%.1fs",
                          i, prev_zid, rt.config.handoff_timeout);
                 }
+                // Consume: don't re-fire on subsequent ticks. Only when the
+                // zone lookup succeeded — consuming for a disabled zone would
+                // throw the handoff state away without ever using it (the TS
+                // engine mirrors this exactly).
+                target_last_zone_[i] = -1;
+                target_overlay_sticky_[i] = false;
             }
-            // Consume: don't re-fire on subsequent ticks
-            target_last_zone_[i] = -1;
-            target_overlay_sticky_[i] = false;
         }
     }
 
