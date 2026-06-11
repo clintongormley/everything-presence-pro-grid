@@ -7,6 +7,7 @@ import re
 
 import aiohttp
 from aiohttp import web
+from homeassistant.components.http import KEY_HASS
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -15,8 +16,11 @@ from .const import MANIFEST_BASE_URL
 
 _LOGGER = logging.getLogger(__name__)
 
-# Only allow expected firmware filenames (no path traversal)
-_VALID_FILENAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\.(json|bin|ota\.bin)$")
+# Only allow expected firmware filenames (no path traversal).
+# \Z (not $) is used so that a trailing newline in the string does NOT slip
+# past validation — in Python, $ matches before a final "\n", so "wifi.bin\n"
+# would pass a $-anchored pattern.
+_VALID_FILENAME = re.compile(r"^[a-z0-9][a-z0-9._-]*\.(json|bin|ota\.bin)\Z")
 
 # Cap on a single proxied response. Real firmware artifacts are ~1-2 MiB; 16 MiB
 # leaves plenty of headroom while bounding the memory cost of a hostile or
@@ -43,13 +47,15 @@ class FirmwareProxyView(HomeAssistantView):
     # and DoS amplifier.
     requires_auth = True
 
-    async def get(self, request: web.Request, filename: str) -> web.Response:
-        """Fetch a firmware file from GitHub Releases and return it."""
+    async def get(self, request: web.Request, filename: str) -> web.StreamResponse:
+        """Fetch a firmware file from GitHub Releases and stream it to the client."""
         if not _VALID_FILENAME.match(filename):
             _LOGGER.warning("firmware-proxy: rejected invalid filename %s", filename)
             return web.Response(status=400, text="Invalid filename")
 
-        hass: HomeAssistant = request.app["hass"]
+        # KEY_HASS is the typed AppKey introduced in HA 2023.9; the old string
+        # key "hass" is a deprecated back-compat alias and will be removed.
+        hass: HomeAssistant = request.app[KEY_HASS]
         session = async_get_clientsession(hass)
         url = f"{MANIFEST_BASE_URL}/{filename}"
 
@@ -76,30 +82,37 @@ class FirmwareProxyView(HomeAssistantView):
                         )
                         return web.Response(status=502, text="Firmware too large")
 
+                content_type = "application/json" if filename.endswith(".json") else "application/octet-stream"
+                stream_resp = web.StreamResponse(status=200, headers={"Content-Type": content_type})
+                await stream_resp.prepare(request)
+
                 # Stream-read with a running cap so a chunked-transfer upstream
                 # can't bypass the Content-Length check above.
-                chunks: list[bytes] = []
+                # If the cap is exceeded mid-stream we have already sent the 200
+                # header and cannot send a clean 4xx/5xx.  The correct action is
+                # to call force_close() which terminates the TCP connection; the
+                # client will see a truncated / connection-reset response and
+                # must retry or surface an error.
                 total = 0
                 async for chunk in resp.content.iter_chunked(64 * 1024):
                     total += len(chunk)
                     if total > _MAX_RESPONSE_BYTES:
                         _LOGGER.warning(
-                            "firmware-proxy: streamed body for %s exceeded %d-byte cap",
+                            "firmware-proxy: streamed body for %s exceeded %d-byte cap; closing connection mid-stream",
                             url,
                             _MAX_RESPONSE_BYTES,
                         )
-                        return web.Response(status=502, text="Firmware too large")
-                    chunks.append(chunk)
+                        stream_resp.force_close()
+                        return stream_resp
+                    await stream_resp.write(chunk)
 
-                data = b"".join(chunks)
-                content_type = "application/json" if filename.endswith(".json") else "application/octet-stream"
                 _LOGGER.info(
                     "firmware-proxy: served %s (%d bytes, %s)",
                     filename,
-                    len(data),
+                    total,
                     content_type,
                 )
-                return web.Response(body=data, content_type=content_type)
+                return stream_resp
         except TimeoutError:
             _LOGGER.warning("firmware-proxy: upstream %s timed out", url)
             return web.Response(status=504, text="Upstream timeout")
