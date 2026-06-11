@@ -475,6 +475,88 @@ describe("FlasherController", () => {
 			ctrl.resetUsbState();
 			expect(ctrl.serialPort).toBeNull();
 		});
+
+		it("closes an open serial port and releases its locks", async () => {
+			// The panel's tab-bar buttons call resetUsbState directly when the
+			// user switches tabs mid-flash. Without close() the OS keeps the
+			// port open and unreachable until the page reloads.
+			const reader = { releaseLock: vi.fn() };
+			const writer = { releaseLock: vi.fn() };
+			const port = { close: vi.fn().mockResolvedValue(undefined) };
+			(ctrl as any)._serialReader = reader;
+			(ctrl as any)._serialWriter = writer;
+			ctrl.serialPort = port as any;
+
+			await ctrl.resetUsbState();
+
+			expect(reader.releaseLock).toHaveBeenCalled();
+			expect(writer.releaseLock).toHaveBeenCalled();
+			expect(port.close).toHaveBeenCalledTimes(1);
+			expect(ctrl.serialPort).toBeNull();
+			expect((ctrl as any)._serialReader).toBeNull();
+			expect((ctrl as any)._serialWriter).toBeNull();
+		});
+
+		it("awaits port.close before resolving", async () => {
+			let resolveClose!: () => void;
+			const port = {
+				close: vi.fn().mockReturnValue(
+					new Promise<void>((r) => {
+						resolveClose = r;
+					}),
+				),
+			};
+			ctrl.serialPort = port as any;
+
+			let settled = false;
+			const p = Promise.resolve(ctrl.resetUsbState()).then(() => {
+				settled = true;
+			});
+			await new Promise((r) => setTimeout(r, 0));
+			expect(settled).toBe(false);
+
+			resolveClose();
+			await p;
+			expect(settled).toBe(true);
+		});
+
+		it("aborts an in-flight wifi check and closes the port only after it settles", async () => {
+			// Mirrors the panel's flasher-cancel teardown: abort the
+			// queryImprovState poll, wait for it to settle (so its reader
+			// lock is released), THEN close the port — close() rejects while
+			// a lock is still held, leaving the port half-open.
+			const abort = { abort: vi.fn() };
+			let settleWifi!: () => void;
+			const wifiPromise = new Promise<void>((r) => {
+				settleWifi = r;
+			});
+			(ctrl as any)._wifiCheckAbort = abort;
+			(ctrl as any)._wifiCheckPromise = wifiPromise;
+			const port = { close: vi.fn().mockResolvedValue(undefined) };
+			ctrl.serialPort = port as any;
+
+			const p = Promise.resolve(ctrl.resetUsbState());
+			expect(abort.abort).toHaveBeenCalledTimes(1);
+			expect(port.close).not.toHaveBeenCalled();
+
+			settleWifi();
+			await p;
+
+			expect(port.close).toHaveBeenCalledTimes(1);
+			expect((ctrl as any)._wifiCheckAbort).toBeNull();
+			expect((ctrl as any)._wifiCheckPromise).toBeNull();
+		});
+
+		it("tolerates a rejecting in-flight wifi check", async () => {
+			(ctrl as any)._wifiCheckAbort = { abort: vi.fn() };
+			(ctrl as any)._wifiCheckPromise = Promise.reject(new Error("aborted"));
+			const port = { close: vi.fn().mockResolvedValue(undefined) };
+			ctrl.serialPort = port as any;
+
+			await ctrl.resetUsbState();
+
+			expect(port.close).toHaveBeenCalledTimes(1);
+		});
 	});
 
 	describe("hostDisconnected with USB", () => {

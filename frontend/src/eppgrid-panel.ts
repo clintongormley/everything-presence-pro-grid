@@ -3635,34 +3635,14 @@ export class EPPGridPanel extends LitElement {
 		if (state?.step === "wifi_configured" && state.ip) {
 			ctrl.setCancelledDeviceIpHint(state.ip);
 		}
-		// Abort any in-flight polling (queryImprovState during wifi_check).
-		const abortCtrl = (ctrl as any)._wifiCheckAbort;
-		const inFlight = (ctrl as any)._wifiCheckPromise as
-			| Promise<unknown>
-			| undefined;
-		if (abortCtrl?.abort) {
-			abortCtrl.abort();
-			(ctrl as any)._wifiCheckAbort = null;
-		}
-		const port = ctrl.serialPort;
-		ctrl.bumpOpId();
 		ctrl.opRunning = false;
-		// Wait for the aborted op to actually settle before closing the
-		// port — otherwise close() runs while the reader lock is still
-		// held, rejects with "the port has a readable or writable stream",
-		// and the port stays open + unusable for the next flash attempt.
-		if (inFlight) {
-			try {
-				await inFlight;
-			} catch {}
-			(ctrl as any)._wifiCheckPromise = null;
-		}
-		if (port) {
-			try {
-				await port.close();
-			} catch {}
-		}
-		ctrl.resetUsbState();
+		// resetUsbState bumps opId, aborts any in-flight polling
+		// (queryImprovState during wifi_check), waits for the aborted op to
+		// settle so its serial locks are released, and only then closes the
+		// port — close() while a lock is still held rejects with "the port
+		// has a readable or writable stream" and leaves the port open +
+		// unusable for the next flash attempt.
+		await ctrl.resetUsbState();
 	}
 
 	private async _handleWifiScan(): Promise<void> {

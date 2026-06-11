@@ -140,9 +140,14 @@ export async function flashFirmware(
 		// Reset device
 		await loader.after("hard_reset");
 	} finally {
-		await transport.disconnect();
-		// Restore the real close method
-		port.close = originalClose;
+		try {
+			await transport.disconnect();
+		} finally {
+			// Restore the real close method — even when disconnect() throws,
+			// or port.close stays a no-op stub forever and the CH340 port
+			// zombies until a page reload.
+			port.close = originalClose;
+		}
 	}
 }
 
@@ -257,77 +262,88 @@ export async function runWifiScan(
 }> {
 	const writer = await _connectImprov(port, timings);
 
-	const infoCmd = buildGetInfoCommand();
-	await sendImprovPacket(writer, infoCmd);
-	await new Promise((r) => setTimeout(r, 500));
+	// Anything past this point can throw with the writer lock held — e.g.
+	// `port.readable!.getReader()` raises a TypeError when the device is
+	// unplugged mid-scan (readable becomes null). Release the writer on
+	// the way out so the port isn't left with an orphaned lock.
+	try {
+		const infoCmd = buildGetInfoCommand();
+		await sendImprovPacket(writer, infoCmd);
+		await new Promise((r) => setTimeout(r, 500));
 
-	// ESPHome's improv_serial returns CACHED WiFi scan results — it doesn't
-	// trigger a new scan. If the WiFi component hasn't completed a background
-	// scan yet (common right after boot), the first attempt returns empty.
-	// Retry up to 3 times with a delay to allow the scan to complete.
-	for (let attempt = 0; attempt < 3; attempt++) {
-		if (attempt > 0) {
-			await new Promise((r) => setTimeout(r, timings?.retryDelay ?? 3000));
-		}
-
-		// Send scan command
-		const scanCmd = buildScanCommand();
-		await sendImprovPacket(writer, scanCmd);
-
-		// Get reader for scan results
-		const reader = port.readable!.getReader();
-
-		// Collect scan results (multiple RPC_RESULT packets, terminated by empty data)
-		// Pass a persistent buffer through readImprovResponse calls so packets
-		// split across serial reads are not lost.
-		const networks: WifiNetwork[] = [];
-		const deadline = Date.now() + 5000;
-		const buffer: number[] = [];
-		let scanComplete = false;
-
-		while (Date.now() < deadline && !scanComplete) {
-			try {
-				const result = await readImprovResponse(
-					reader,
-					deadline - Date.now(),
-					buffer,
-				);
-				for (const pkt of result.packets) {
-					if (pkt.type === TYPE_RPC_RESULT && pkt.data[0] === 0x04) {
-						// RPC result format: [command(1), data_length(1), ...strings, checksum(1)]
-						// Skip command + data_length to get the string data
-						const resultData = pkt.data.slice(2, 2 + pkt.data[1]);
-						const network = parseScanResults(resultData);
-						if (network === null) {
-							// Empty data = scan complete
-							scanComplete = true;
-							if (networks.length > 0) {
-								return { writer, reader, networks };
-							}
-							break;
-						}
-						networks.push(network);
-					}
-				}
-			} catch {
-				// Timeout — break inner loop
-				break;
+		// ESPHome's improv_serial returns CACHED WiFi scan results — it doesn't
+		// trigger a new scan. If the WiFi component hasn't completed a background
+		// scan yet (common right after boot), the first attempt returns empty.
+		// Retry up to 3 times with a delay to allow the scan to complete.
+		for (let attempt = 0; attempt < 3; attempt++) {
+			if (attempt > 0) {
+				await new Promise((r) => setTimeout(r, timings?.retryDelay ?? 3000));
 			}
+
+			// Send scan command
+			const scanCmd = buildScanCommand();
+			await sendImprovPacket(writer, scanCmd);
+
+			// Get reader for scan results
+			const reader = port.readable!.getReader();
+
+			// Collect scan results (multiple RPC_RESULT packets, terminated by empty data)
+			// Pass a persistent buffer through readImprovResponse calls so packets
+			// split across serial reads are not lost.
+			const networks: WifiNetwork[] = [];
+			const deadline = Date.now() + 5000;
+			const buffer: number[] = [];
+			let scanComplete = false;
+
+			while (Date.now() < deadline && !scanComplete) {
+				try {
+					const result = await readImprovResponse(
+						reader,
+						deadline - Date.now(),
+						buffer,
+					);
+					for (const pkt of result.packets) {
+						if (pkt.type === TYPE_RPC_RESULT && pkt.data[0] === 0x04) {
+							// RPC result format: [command(1), data_length(1), ...strings, checksum(1)]
+							// Skip command + data_length to get the string data
+							const resultData = pkt.data.slice(2, 2 + pkt.data[1]);
+							const network = parseScanResults(resultData);
+							if (network === null) {
+								// Empty data = scan complete
+								scanComplete = true;
+								if (networks.length > 0) {
+									return { writer, reader, networks };
+								}
+								break;
+							}
+							networks.push(network);
+						}
+					}
+				} catch {
+					// Timeout — break inner loop
+					break;
+				}
+			}
+
+			if (networks.length > 0) {
+				return { writer, reader, networks };
+			}
+
+			// No results — release reader and retry. Use the helper so the
+			// in-flight read entry tracked in improv-serial's WeakMap is cleaned
+			// up too (release/re-acquire loops would otherwise grow it).
+			releaseReader(reader);
 		}
 
-		if (networks.length > 0) {
-			return { writer, reader, networks };
-		}
-
-		// No results — release reader and retry. Use the helper so the
-		// in-flight read entry tracked in improv-serial's WeakMap is cleaned
-		// up too (release/re-acquire loops would otherwise grow it).
-		releaseReader(reader);
+		// All attempts exhausted — return empty with a fresh reader
+		const reader = port.readable!.getReader();
+		return { writer, reader, networks: [] };
+	} catch (err) {
+		try {
+			writer.releaseLock();
+		} catch {}
+		throw err;
 	}
-
-	// All attempts exhausted — return empty with a fresh reader
-	const reader = port.readable!.getReader();
-	return { writer, reader, networks: [] };
 }
 
 /**

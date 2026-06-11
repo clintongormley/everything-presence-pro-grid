@@ -621,6 +621,31 @@ describe("flashFirmware", () => {
 		// The no-op override was called (did not throw)
 		expect(closeCalledDuringFlash).toBe(true);
 	});
+
+	it("restores port.close even when transport.disconnect() throws (CH340 zombie-port guard)", async () => {
+		// If disconnect() throws, skipping the restore leaves port.close as
+		// the no-op stub forever — every later close() silently does nothing
+		// and the CH340 port zombies until a page reload.
+		const port = mockPort();
+		const closeMock = port.close as ReturnType<typeof vi.fn>;
+
+		vi.mocked(Transport).mockImplementationOnce(function () {
+			return {
+				connect: vi.fn(),
+				disconnect: vi.fn().mockRejectedValue(new Error("disconnect failed")),
+				device: {},
+			} as any;
+		});
+
+		await expect(
+			flashFirmware(port, "wifi-ble-co2", vi.fn(), { baseUrl: TEST_BASE_URL }),
+		).rejects.toThrow("disconnect failed");
+
+		// flashFirmware restores the (bound) real close; calling close()
+		// must reach the original implementation, not the no-op stub.
+		await port.close();
+		expect(closeMock).toHaveBeenCalledTimes(1);
+	});
 });
 
 describe("runWifiScan", () => {
@@ -1128,6 +1153,56 @@ describe("runWifiScan", () => {
 		} catch (err: any) {
 			expect(err.errorKey).toBe("usb.errors.no_device_response");
 		}
+	});
+
+	it("releases the writer when port.readable disappears mid-scan (device unplugged)", async () => {
+		// `port.readable!.getReader()` in the scan loop throws when the
+		// device is unplugged mid-scan (readable becomes null). The writer
+		// acquired in _connectImprov must not stay locked on that rethrow.
+		const mockWriter = {
+			write: vi.fn().mockResolvedValue(undefined),
+			releaseLock: vi.fn(),
+			close: vi.fn().mockResolvedValue(undefined),
+			closed: Promise.resolve(undefined),
+			abort: vi.fn().mockResolvedValue(undefined),
+			desiredSize: 1024,
+			ready: Promise.resolve(undefined),
+		} as unknown as WritableStreamDefaultWriter<Uint8Array>;
+
+		const realReadable = {
+			getReader: vi.fn().mockImplementation(() => ({
+				read: vi.fn().mockImplementation(() => new Promise(() => {})),
+				cancel: vi.fn().mockResolvedValue(undefined),
+				releaseLock: vi.fn(),
+				closed: Promise.resolve(undefined),
+			})),
+		};
+
+		// _connectImprov touches port.readable 3 times (open-check, drain
+		// reader, handshake reader); the 4th access is the scan loop's
+		// getReader — by then the device has been unplugged.
+		let readableAccess = 0;
+		const port = {
+			open: vi.fn().mockResolvedValue(undefined),
+			close: vi.fn().mockResolvedValue(undefined),
+			setSignals: vi.fn().mockResolvedValue(undefined),
+			writable: { getWriter: vi.fn().mockReturnValue(mockWriter) },
+			get readable() {
+				readableAccess++;
+				return readableAccess <= 3 ? realReadable : null;
+			},
+		} as unknown as SerialPort;
+
+		await expect(
+			runWifiScan(port, {
+				retryDelay: 0,
+				drainDelay: 0,
+				handshakeDelay: 0,
+				handshakeRetryDelay: 0,
+			}),
+		).rejects.toThrow();
+
+		expect(mockWriter.releaseLock).toHaveBeenCalled();
 	});
 });
 
