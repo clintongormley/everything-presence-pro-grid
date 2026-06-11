@@ -182,11 +182,27 @@ _ZONE_TYPE_VOCAB: frozenset[str] = frozenset(
     }
 )
 
-# Timing-field schema factories — bounds match the frontend slider/input ranges
+
+def _round_half_up(value: float) -> int:
+    """Round to the nearest int, halves up — matches the firmware parser's
+    lroundf() on the positive timing domain. Python's round() banker-rounds
+    (round(3.5) == 4 but round(2.5) == 2), which would drift from the device.
+    """
+    return math.floor(value + 0.5)
+
+
+# Timing-field schemas — bounds match the frontend slider/input ranges
 # in frontend/src/components/epp-zone-sidebar.ts (trigger/renew: range 1-9;
 # timeout: number 0-3600; handoff_timeout: number 0-300). Lower bounds are
 # inclusive-0 for timeout/handoff so legacy stored values of 0 still pass.
-_TRIGGER_RENEW_SCHEMA: vol.All = finite_float(min=1, max=9)
+#
+# Canonical OUTPUT types mirror the firmware extraction in
+# epp_zone_config_parser.h: trigger/renew must be stored as int — ArduinoJson
+# v7's `z["trigger"] | 5` is type-strict (`is<int>()` is false for a
+# float-typed 7.0), so a float in the pushed JSON silently becomes the
+# default on-device. timeout/handoff_timeout are read with float defaults,
+# so canonical float is safe there.
+_TRIGGER_RENEW_SCHEMA: vol.All = vol.All(finite_float(min=1, max=9), _round_half_up)
 _TIMEOUT_SCHEMA: vol.All = finite_float(min=0, max=3600)
 _HANDOFF_TIMEOUT_SCHEMA: vol.All = finite_float(min=0, max=300)
 
@@ -216,8 +232,10 @@ def _validate_slot_timing(slot: dict, index: int) -> None:
 
     Two-stage check: a strict type gate first (str/bool must NOT slip through
     `vol.Coerce(float)` — "5" coerces fine and `bool ⊂ int`), then the bounded
-    finite-float schema from _TIMING_SCHEMAS. Coerced values are written back
-    so storage holds plain floats.
+    schema from _TIMING_SCHEMAS. Normalised values are written back in the
+    canonical stored types — int for trigger/renew, float for
+    timeout/handoff_timeout — matching the firmware parser's type-strict
+    extraction (see the _TIMING_SCHEMAS comment).
     """
     for field, schema in _TIMING_SCHEMAS.items():
         if field not in slot:

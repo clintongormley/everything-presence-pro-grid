@@ -1029,7 +1029,12 @@ class TestZoneSlotsValidator:
             _validate_zone_slots([{"type": "default", "timeout": float("nan")}] + [None] * 7)
 
     def test_accepts_valid_timing_bounds(self) -> None:
-        """Timing fields at boundary values must be accepted."""
+        """Timing fields at boundary values must be accepted.
+
+        Also pins the canonical stored TYPES: trigger/renew are ints (the
+        firmware's ArduinoJson extraction is type-strict — a float-typed 7.0
+        silently becomes the default), timeout/handoff_timeout are floats.
+        """
         from custom_components.eppgrid.websocket_api import _validate_zone_slots
 
         # min boundaries
@@ -1037,16 +1042,68 @@ class TestZoneSlotsValidator:
             {"type": "custom", "trigger": 1, "renew": 1, "timeout": 0.0, "handoff_timeout": 0.0},
         ] + [None] * 7
         result = _validate_zone_slots(slots)
-        assert result[0]["trigger"] == 1.0
+        assert result[0]["trigger"] == 1
+        assert type(result[0]["trigger"]) is int
+        assert type(result[0]["renew"]) is int
         assert result[0]["timeout"] == 0.0
+        assert type(result[0]["timeout"]) is float
+        assert type(result[0]["handoff_timeout"]) is float
 
         # max boundaries
         slots = [
             {"type": "custom", "trigger": 9, "renew": 9, "timeout": 3600.0, "handoff_timeout": 300.0},
         ] + [None] * 7
         result = _validate_zone_slots(slots)
-        assert result[0]["trigger"] == 9.0
+        assert result[0]["trigger"] == 9
+        assert type(result[0]["trigger"]) is int
+        assert type(result[0]["renew"]) is int
         assert result[0]["timeout"] == 3600.0
+
+    def test_custom_timing_preserves_integer_wire_format(self) -> None:
+        """A custom zone's trigger/renew must survive validation as ints.
+
+        Regression: the validator briefly normalised timing fields to float
+        in place, so a stored custom zone reached the device as
+        `"trigger": 7.0`. The firmware parser's `z["trigger"] | 5` is
+        type-strict in ArduinoJson v7 (`is<int>()` is false for float-typed
+        values), so the user's trigger=7/renew=4 silently became the defaults
+        5/3 on-device. Trace the full push path — _validate_zone_slots →
+        _expand_zone_slot → json.dumps (the payload ArduinoJson actually
+        parses, see device_manager/_connection.py) — and pin the integer
+        wire format.
+        """
+        import json
+
+        from custom_components.eppgrid.device_manager._helpers import _expand_zone_slot
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        slots = [
+            {"type": "default"},
+            {
+                "name": "Office",
+                "color": "#ff0000",
+                "type": "custom",
+                "trigger": 7,
+                "renew": 4,
+                "timeout": 30,
+                "handoff_timeout": 5,
+            },
+        ] + [None] * 6
+        result = _validate_zone_slots(slots)
+        assert result[1]["trigger"] == 7
+        assert type(result[1]["trigger"]) is int
+        assert result[1]["renew"] == 4
+        assert type(result[1]["renew"]) is int
+
+        # The pushed JSON must carry integer trigger/renew — `7`, never `7.0`.
+        expanded = [_expand_zone_slot(s) if s is not None else None for s in result]
+        zones_json = json.dumps({"zone_slots": expanded})
+        assert '"trigger": 7,' in zones_json
+        assert '"renew": 4,' in zones_json
+        assert "7.0" not in zones_json
+        # timeout/handoff_timeout are canonically floats — the firmware reads
+        # them with float defaults, so float-typed JSON is safe there.
+        assert '"timeout": 30.0,' in zones_json
 
     def test_rejects_unknown_type_value(self) -> None:
         """type must be from the known vocabulary; arbitrary strings are rejected."""
@@ -1103,7 +1160,12 @@ class TestZoneSlotsValidator:
             _validate_zone_slots(slots)
 
     def test_accepts_numeric_timing_fields(self) -> None:
-        """int and float values for timing fields are both accepted."""
+        """int and float values for timing fields are both accepted.
+
+        Values are normalised to the canonical stored types: trigger/renew
+        become ints (non-integral values round half-up, matching the firmware
+        parser's lroundf), timeout/handoff_timeout become floats.
+        """
         from custom_components.eppgrid.websocket_api import _validate_zone_slots
 
         slots = [
@@ -1124,7 +1186,15 @@ class TestZoneSlotsValidator:
                 "handoff_timeout": 2,
             },
         ] + [None] * 6
-        assert _validate_zone_slots(slots) == slots
+        result = _validate_zone_slots(slots)
+        assert result[0]["trigger"] == 5
+        assert result[0]["renew"] == 4  # 3.5 rounds half-up, matching lroundf
+        assert result[0]["timeout"] == 10.0
+        assert result[1]["renew"] == 2
+        assert type(result[1]["renew"]) is int
+        assert result[1]["timeout"] == 12.5
+        assert result[1]["handoff_timeout"] == 2.0
+        assert type(result[1]["handoff_timeout"]) is float
 
 
 class TestSchemaInputBounds:

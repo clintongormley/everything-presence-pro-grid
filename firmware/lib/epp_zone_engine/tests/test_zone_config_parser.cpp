@@ -83,6 +83,51 @@ TEST_CASE("zone 0 timing values from wire are respected") {
   CHECK(configs[0].handoff_timeout == doctest::Approx(10.0f));
 }
 
+TEST_CASE("float-typed trigger/renew parse to the wire value, not the default") {
+  // Regression: the HA validator briefly normalised timing values to float
+  // in storage, so a custom zone arrived as "trigger": 7.0. ArduinoJson v7's
+  // `|` operator is type-strict — is<int>() is false for a float-typed
+  // value — so an int-default extraction (`z["trigger"] | 5`) silently
+  // returned the DEFAULT (5/3) instead of the user's timing. The parser must
+  // tolerate float-typed integers as defense-in-depth.
+  const char *json =
+      "{"
+      "\"zone_slots\":["
+      "{\"type\":\"custom\",\"trigger\":7.0,\"renew\":4.0,\"timeout\":30.0,\"handoff_timeout\":5.0},"
+      "null,null,null,null,null,null,null"
+      "]"
+      "}";
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = parse_from_string(json, configs);
+
+  REQUIRE(count == 1);
+  CHECK(configs[0].trigger == 7);
+  CHECK(configs[0].renew == 4);
+  CHECK(configs[0].timeout == doctest::Approx(30.0f));
+  CHECK(configs[0].handoff_timeout == doctest::Approx(5.0f));
+}
+
+TEST_CASE("non-integral trigger/renew round to nearest (matching backend half-up)") {
+  // Nothing legitimate sends 6.6, but legacy storage predating the websocket
+  // validator could. Round-to-nearest matches the backend's half-up coercion
+  // so device and HA agree on the effective timing.
+  const char *json =
+      "{"
+      "\"zone_slots\":["
+      "{\"trigger\":6.6,\"renew\":2.4,\"timeout\":10.0,\"handoff_timeout\":3.0},"
+      "null,null,null,null,null,null,null"
+      "]"
+      "}";
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = parse_from_string(json, configs);
+
+  REQUIRE(count == 1);
+  CHECK(configs[0].trigger == 7);
+  CHECK(configs[0].renew == 2);
+}
+
 TEST_CASE("null at zone_slots[0] emits no zone-0 entry") {
   // If backend guarantee fails (zone 0 missing), the parser must not
   // fabricate one. Downstream, ZoneEngine::set_zones falls back to

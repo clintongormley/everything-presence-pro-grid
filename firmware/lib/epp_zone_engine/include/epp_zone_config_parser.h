@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -53,6 +54,14 @@ enum class ZonesJsonStatus : uint8_t {
 /// "always trigger" which is degenerate). Timeout/handoff_timeout are clamped
 /// to >= 0 to fail-safe on malformed payloads.
 ///
+/// All four timing fields are extracted as float and trigger/renew rounded
+/// half-up: ArduinoJson v7's `|` operator is type-strict — `is<int>()` is
+/// FALSE for a float-typed `7.0` — so an int-default extraction
+/// (`z["trigger"] | 5`) would silently return the DEFAULT for a payload
+/// carrying `"trigger": 7.0`. `is<float>()` accepts both integer- and
+/// float-typed JSON numbers, so the float extraction handles either wire
+/// format.
+///
 /// Callers must pass a freshly-initialised `out` and `count == 0`.
 inline void parse_zone_configs(const JsonDocument &doc, ZoneConfig out[], int &count) {
   JsonArrayConst slots = doc["zone_slots"].as<JsonArrayConst>();
@@ -65,16 +74,22 @@ inline void parse_zone_configs(const JsonDocument &doc, ZoneConfig out[], int &c
       continue;  // corrupt/non-object entry — don't fabricate a zone from bad data
     }
     JsonObjectConst z = slots[i].as<JsonObjectConst>();
-    int trigger = z["trigger"] | 5;
-    int renew = z["renew"] | 3;
+    // Extract as float (tolerates both int- and float-typed JSON numbers —
+    // see the doc comment above), clamp BEFORE rounding so a huge wire value
+    // can't overflow the float→int conversion, then round half-up to match
+    // the backend's canonical int coercion.
+    float trigger_f = z["trigger"] | 5.0f;
+    float renew_f = z["renew"] | 3.0f;
     float timeout = z["timeout"] | 10.0f;
     float handoff_timeout = z["handoff_timeout"] | 3.0f;
-    if (trigger < 1) trigger = 1;
-    if (trigger > 9) trigger = 9;
-    if (renew < 1) renew = 1;
-    if (renew > 9) renew = 9;
+    if (trigger_f < 1.0f) trigger_f = 1.0f;
+    if (trigger_f > 9.0f) trigger_f = 9.0f;
+    if (renew_f < 1.0f) renew_f = 1.0f;
+    if (renew_f > 9.0f) renew_f = 9.0f;
     if (timeout < 0.0f) timeout = 0.0f;
     if (handoff_timeout < 0.0f) handoff_timeout = 0.0f;
+    int trigger = static_cast<int>(std::lround(trigger_f));
+    int renew = static_cast<int>(std::lround(renew_f));
     out[count] = {
         static_cast<int>(i),  // index = slot position (0 = zone 0, 1-7 = named)
         trigger,
