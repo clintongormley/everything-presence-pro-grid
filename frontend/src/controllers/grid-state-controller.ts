@@ -22,6 +22,7 @@ import {
 	cellIsInside,
 	cellZone,
 	computeAlignmentOffset,
+	GRID_CELL_COUNT,
 	GRID_CELL_MM,
 	getRoomBounds,
 	gridHasInsideRoom,
@@ -34,8 +35,8 @@ import {
 } from "../lib/grid.js";
 import { autoDetectionRange, boundsToRoomMm } from "../lib/room-geometry.js";
 import {
+	cloneSettingsDefault,
 	ENTITY_DEFAULTS,
-	SETTINGS_DEFAULTS,
 	SETTINGS_FIELD_MAP,
 	type SettingsHostProp,
 } from "../lib/settings-defaults.js";
@@ -199,10 +200,11 @@ export class GridStateController implements ReactiveController {
 		}
 		if (newValue === null || newValue === this.host._grid[index]) return;
 
+		// Clone-then-mutate: _grid is a Lit @state, so the reference swap
+		// alone schedules the re-render (no requestUpdate needed).
 		this.host._grid = new Uint8Array(this.host._grid);
 		this.host._grid[index] = newValue;
 		this.host._dirty = true;
-		this.host.requestUpdate();
 	}
 
 	initGridFromRoom(): void {
@@ -334,13 +336,26 @@ export class GridStateController implements ReactiveController {
 			centerY = 0,
 			startAngle = 0;
 		if (type === "rotate") {
-			// Pierce through epp-grid -> epp-furniture-overlay shadow DOMs
-			const el = this.host.shadowRoot
+			// Pierce through epp-grid -> epp-furniture-overlay shadow DOMs.
+			// Match data-id in JS rather than interpolating the id into an
+			// attribute selector: ids come from stored config blobs, and a
+			// crafted id with quotes/brackets would make querySelector throw
+			// a SyntaxError (CSS.escape-d strings additionally trip
+			// happy-dom's stricter selector parser in tests).
+			const overlayRoot = this.host.shadowRoot
 				?.querySelector("epp-grid")
-				?.shadowRoot?.querySelector("epp-furniture-overlay")
-				?.shadowRoot?.querySelector(
-					`.furniture-item[data-id="${id}"]`,
-				) as HTMLElement | null;
+				?.shadowRoot?.querySelector("epp-furniture-overlay")?.shadowRoot;
+			let el: HTMLElement | null = null;
+			if (overlayRoot) {
+				for (const candidate of overlayRoot.querySelectorAll<HTMLElement>(
+					".furniture-item",
+				)) {
+					if (candidate.dataset.id === id) {
+						el = candidate;
+						break;
+					}
+				}
+			}
 			if (el) {
 				const rect = el.getBoundingClientRect();
 				centerX = rect.left + rect.width / 2;
@@ -502,17 +517,31 @@ export class GridStateController implements ReactiveController {
 			furniture: this.host._furniture.map((f) => ({ ...f })),
 			settings: this.host._buildSparseSettings(),
 		};
-		await this.host.hass.callWS({
-			type: "eppgrid/save_configuration",
-			name,
-			configuration,
-		});
+		try {
+			await this.host.hass.callWS({
+				type: "eppgrid/save_configuration",
+				name,
+				configuration,
+			});
+		} catch (err) {
+			this.onError?.("save_configuration", err);
+			throw err;
+		}
 		this.host._showConfigurationBackup = false;
 		this.host._configurationName = "";
 		await this.fetchConfigurations();
 	}
 
 	async loadConfiguration(name: string): Promise<void> {
+		try {
+			await this._loadConfiguration(name);
+		} catch (err) {
+			this.onError?.("load_configuration", err);
+			throw err;
+		}
+	}
+
+	private async _loadConfiguration(name: string): Promise<void> {
 		const cfg = this.configurations.find((t) => t.name === name);
 		if (!cfg) return;
 		const zones = cfg.zones || [];
@@ -542,6 +571,18 @@ export class GridStateController implements ReactiveController {
 			if (!isNamedZoneShape(zones[i])) {
 				throw oldFormatError;
 			}
+		}
+		// Grid is fail-closed like zones: a saved configuration has a re-save
+		// recourse, so corrupt data errors loudly instead of silently loading
+		// a half-empty room. (Contrast with parseGrid in config-serialization,
+		// which zero-pad-repairs the device's own stored layout blob — there
+		// is no re-save recourse for that path.)
+		if (
+			!Array.isArray(cfg.grid) ||
+			cfg.grid.length !== GRID_CELL_COUNT ||
+			!cfg.grid.every((v) => typeof v === "number" && Number.isFinite(v))
+		) {
+			throw oldFormatError;
 		}
 
 		// Snapshot pre-load state so we can roll back if the BEFORE-applyLayout
@@ -623,8 +664,14 @@ export class GridStateController implements ReactiveController {
 						...(sparse || {}),
 					};
 				} else {
+					// cloneSettingsDefault (not SETTINGS_DEFAULTS[key]) so
+					// object-valued defaults (log_levels) land in host state
+					// as fresh copies — the canonical objects are frozen and
+					// must never be aliased into mutable panel state.
 					(this.host as any)[prop] =
-						key in s ? (s as Record<string, any>)[key] : SETTINGS_DEFAULTS[key];
+						key in s
+							? (s as Record<string, any>)[key]
+							: cloneSettingsDefault(key);
 				}
 			}
 		}
@@ -653,7 +700,9 @@ export class GridStateController implements ReactiveController {
 				});
 			} catch (err) {
 				// Settings push failed — restore pre-load snapshot so the
-				// panel doesn't claim a state the device doesn't have.
+				// panel doesn't claim a state the device doesn't have. Every
+				// restored field is a Lit @state, so the assignments schedule
+				// the re-render themselves.
 				this.host._grid = snapshot.grid;
 				this.host._zoneConfigs = snapshot.zoneConfigs;
 				this.host._roomWidth = snapshot.roomWidth;
@@ -664,7 +713,6 @@ export class GridStateController implements ReactiveController {
 				for (const [prop, value] of snapshot.settings) {
 					(this.host as any)[prop] = value;
 				}
-				this.host.requestUpdate();
 				throw err;
 			}
 		}
@@ -721,19 +769,23 @@ export class GridStateController implements ReactiveController {
 			);
 		}
 
+		// References at save time: edits made while the WS round-trip is in
+		// flight replace these (clone-then-mutate everywhere), so reference
+		// inequality afterwards means "the user kept editing" — those edits
+		// were NOT saved and must stay dirty / un-clobbered.
+		const gridAtSave = this.host._grid;
+		const zonesAtSave = this.host._zoneConfigs;
+		const furnitureAtSave = this.host._furniture;
+
 		this.host._saving = true;
 		try {
 			await this.host.hass.callWS({
 				type: "eppgrid/set_room_layout",
 				mac: this.host._selectedMac,
-				grid_bytes: Array.from(this.host._grid),
+				grid_bytes: Array.from(gridAtSave),
 				zone_slots: prunedSlots.map((z, idx) => serializeSlot(z, idx)),
 				furniture: filteredFurniture.map(serializeFurniture),
 			});
-			// Commit pruned slots and filtered furniture only after the
-			// backend acknowledges the layout save.
-			this.host._zoneConfigs = prunedSlots as unknown as ZoneSlots;
-			this.host._furniture = filteredFurniture;
 			// Save settings after layout — only needed when auto distances
 			// may have changed; manual distances don't change with layout.
 			if (this.host._targetAutoDistance || this.host._staticAutoDistance) {
@@ -782,10 +834,26 @@ export class GridStateController implements ReactiveController {
 					entities: this.host._entitiesConfig || {},
 				});
 			}
-			this.host._dirty = false;
+			// Commit pruned slots / filtered furniture and clear _dirty only
+			// after every save acknowledged AND only if the user didn't edit
+			// meanwhile: the pruned/filtered copies were derived from the
+			// pre-save state and would clobber newer edits, and in-flight
+			// edits were never sent — the Apply button must survive them.
+			const editedDuringSave =
+				this.host._grid !== gridAtSave ||
+				this.host._zoneConfigs !== zonesAtSave ||
+				this.host._furniture !== furnitureAtSave;
+			if (!editedDuringSave) {
+				this.host._zoneConfigs = prunedSlots as unknown as ZoneSlots;
+				this.host._furniture = filteredFurniture;
+				this.host._dirty = false;
+			}
 			this.host._selectedFurnitureId = null;
 			this.host._overlayMode = null;
 			this.host._view = "live";
+		} catch (err) {
+			this.onError?.("apply_layout", err);
+			throw err;
 		} finally {
 			this.host._saving = false;
 		}

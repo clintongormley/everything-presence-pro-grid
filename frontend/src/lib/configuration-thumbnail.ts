@@ -17,6 +17,13 @@ import {
 import { getCellColor } from "./heatmap.js";
 import type { ZoneConfig } from "./zone-defaults.js";
 
+// Per-render sequence for SVG pattern ids. All saved-configuration
+// thumbnails render into the SAME shadow root, and url(#…) resolves
+// document-wide to the FIRST matching id — duplicate ids would make every
+// thumbnail draw the first one's overlay patterns. A monotonically
+// increasing counter keeps ids unique and deterministic.
+let _thumbnailRenderSeq = 0;
+
 /**
  * Render an SVG thumbnail of a saved configuration.
  *
@@ -46,6 +53,9 @@ export function renderConfigurationThumbnail(
 	const cellRects: SVGTemplateResult[] = [];
 	const overlayRects: SVGTemplateResult[] = [];
 	const neededPatterns = new Set<string>();
+	// Unique id suffix for this render — see _thumbnailRenderSeq above.
+	const uid = ++_thumbnailRenderSeq;
+	const patternId = (kind: string) => `overlay-${kind}-${uid}`;
 
 	for (let r = minRow; r <= maxRow; r++) {
 		for (let c = minCol; c <= maxCol; c++) {
@@ -64,17 +74,17 @@ export function renderConfigurationThumbnail(
 			if (overlay === CELL_OVERLAY_ENTRY) {
 				neededPatterns.add("entry");
 				overlayRects.push(
-					svg`<rect x="${x}" y="${y}" width="1" height="1" fill="url(#overlay-entry)" />`,
+					svg`<rect x="${x}" y="${y}" width="1" height="1" fill="url(#${patternId("entry")})" />`,
 				);
 			} else if (overlay === CELL_OVERLAY_INTERFERENCE) {
 				neededPatterns.add("interference");
 				overlayRects.push(
-					svg`<rect x="${x}" y="${y}" width="1" height="1" fill="url(#overlay-interference)" />`,
+					svg`<rect x="${x}" y="${y}" width="1" height="1" fill="url(#${patternId("interference")})" />`,
 				);
 			} else if (overlay === CELL_OVERLAY_SUPPRESS) {
 				neededPatterns.add("suppress");
 				overlayRects.push(
-					svg`<rect x="${x}" y="${y}" width="1" height="1" fill="url(#overlay-suppress)" />`,
+					svg`<rect x="${x}" y="${y}" width="1" height="1" fill="url(#${patternId("suppress")})" />`,
 				);
 			}
 		}
@@ -86,21 +96,21 @@ export function renderConfigurationThumbnail(
 			? svg`<defs>
 			${
 				neededPatterns.has("entry")
-					? svg`<pattern id="overlay-entry" width="0.25" height="0.25" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+					? svg`<pattern id="${patternId("entry")}" width="0.25" height="0.25" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
 				<line x1="0" y1="0" x2="0" y2="0.25" stroke="rgba(80,80,80,0.5)" stroke-width="0.08" />
 			</pattern>`
 					: ""
 			}
 			${
 				neededPatterns.has("interference")
-					? svg`<pattern id="overlay-interference" width="0.25" height="0.25" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
+					? svg`<pattern id="${patternId("interference")}" width="0.25" height="0.25" patternUnits="userSpaceOnUse" patternTransform="rotate(-45)">
 				<line x1="0" y1="0" x2="0" y2="0.25" stroke="rgba(244,67,54,0.5)" stroke-width="0.08" />
 			</pattern>`
 					: ""
 			}
 			${
 				neededPatterns.has("suppress")
-					? svg`<pattern id="overlay-suppress" width="0.25" height="0.25" patternUnits="userSpaceOnUse">
+					? svg`<pattern id="${patternId("suppress")}" width="0.25" height="0.25" patternUnits="userSpaceOnUse">
 				<line x1="0" y1="0" x2="0.25" y2="0.25" stroke="rgba(244,67,54,0.5)" stroke-width="0.06" />
 				<line x1="0.25" y1="0" x2="0" y2="0.25" stroke="rgba(244,67,54,0.5)" stroke-width="0.06" />
 			</pattern>`

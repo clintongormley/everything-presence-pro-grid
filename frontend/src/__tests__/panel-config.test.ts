@@ -936,6 +936,57 @@ describe("_applyLayout", () => {
 		expect(a._saving).toBe(false);
 	});
 
+	it("surfaces a WS failure as the controller-error banner state", async () => {
+		const a = el as any;
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
+		a._dirty = true;
+		a._controllerError = null;
+
+		el.hass = {
+			callWS: vi.fn().mockRejectedValue(new Error("fail")),
+		};
+
+		await expect(a._applyLayout()).rejects.toThrow("fail");
+		expect(a._controllerError).toBe("apply_layout");
+	});
+
+	it("clears the previous controller error when a new apply starts", async () => {
+		const a = el as any;
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
+		a._dirty = true;
+		a._controllerError = "save_configuration"; // stale from an earlier op
+
+		el.hass = {
+			callWS: vi.fn().mockResolvedValue({}),
+		};
+
+		await a._applyLayout();
+		expect(a._controllerError).toBeNull();
+	});
+
+	it("renders a dismissible banner when a controller error is set", () => {
+		const a = el as any;
+		a._controllerError = "apply_layout";
+
+		const tpl = a._renderControllerErrorBanner();
+		expect(tpl).not.toBe(nothing);
+
+		// The dismiss button's @click handler is one of the template values —
+		// invoking it must clear the error state.
+		const dismiss = (tpl.values as unknown[]).find(
+			(v) => typeof v === "function",
+		) as () => void;
+		expect(dismiss).toBeDefined();
+		dismiss();
+		expect(a._controllerError).toBeNull();
+	});
+
+	it("renders nothing when no controller error is set", () => {
+		const a = el as any;
+		a._controllerError = null;
+		expect(a._renderControllerErrorBanner()).toBe(nothing);
+	});
+
 	it("sends auto-computed distances in set_settings when auto is on", async () => {
 		const a = el as any;
 		a._selectedMac = "AA:BB:CC:DD:EE:01";

@@ -651,6 +651,30 @@ describe("TargetController", () => {
 			expect(host._backendDebugLogLines.length).toBe(1);
 		});
 
+		it("resets the line array when the container remounts (Copy all matches the display)", () => {
+			// A view switch destroys and recreates the live view; the fresh
+			// container starts empty (placeholder only) while the backing
+			// array still holds the old lines — "Copy all" would then copy
+			// lines that aren't displayed.
+			ctrl.appendBackendDebugLog("T0:Z1:A:5|Z1:O:1");
+			ctrl.appendBackendDebugLog("T0:Z1:A:7|Z1:O:1");
+			expect(host._backendDebugLogLines.length).toBe(2);
+
+			// Simulate remount: new empty container with just the placeholder.
+			const fresh = document.createElement("div");
+			fresh.id = "backend-debug-log-scroll";
+			const placeholder = document.createElement("div");
+			placeholder.textContent = "Waiting for events...";
+			fresh.appendChild(placeholder);
+			host._mockBackendContainer = fresh;
+
+			ctrl.appendBackendDebugLog("T0:Z1:A:9|Z1:O:1");
+
+			expect(host._backendDebugLogLines.length).toBe(1);
+			expect(host._backendDebugLogLines[0]).toContain("9");
+			expect(fresh.querySelectorAll(".debug-log-line").length).toBe(1);
+		});
+
 		it("skips sensor-prefix injection when log already has 3 sections", () => {
 			ctrl.appendBackendDebugLog("S:A M:I Occ:1|T0:Z1:A:5|Z1:O:1");
 			expect(host._backendDebugLogLines.length).toBe(1);

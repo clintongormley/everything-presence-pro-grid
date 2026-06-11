@@ -5,6 +5,7 @@ import {
 	MAX_ZONES,
 	NUM_ZONE_SLOTS,
 } from "./grid.js";
+import { SETTINGS_DEFAULTS } from "./settings-defaults.js";
 import {
 	ZONE_COLORS,
 	ZONE_TYPE_KEYS,
@@ -278,33 +279,40 @@ export function parseSettings(
 	logLevels?: any,
 ): ParsedSettings {
 	const s = raw || {};
+	// Fallbacks come from SETTINGS_DEFAULTS — the canonical defaults map —
+	// rather than hard-coded copies of the same values, so a default change
+	// can never leave this parser silently disagreeing with sparse-save /
+	// restore. (entities/logLevels arrive as separate arguments and default
+	// to empty maps by design: "no data" rather than "canonical defaults".)
+	const d = SETTINGS_DEFAULTS;
 	return {
-		temperatureOffset: s.temperature_offset ?? 0,
-		humidityOffset: s.humidity_offset ?? 0,
-		illuminanceOffset: s.illuminance_offset ?? 0,
-		motionTimeout: s.motion_timeout ?? 5,
-		targetAutoDistance: s.target_auto_distance ?? true,
-		targetMaxDistance: s.target_max_distance ?? 6,
-		stuckTargetTimeout: s.stuck_target_timeout ?? 300,
-		staticAutoDistance: s.static_auto_distance ?? true,
-		staticMinDistance: s.static_min_distance ?? 0.3,
-		staticMaxDistance: s.static_max_distance ?? 16,
-		staticTriggerThreshold: s.static_trigger_threshold ?? 3,
-		staticRenewThreshold: s.static_renew_threshold ?? 3,
-		staticTimeout: s.static_timeout ?? 30,
+		temperatureOffset: s.temperature_offset ?? d.temperature_offset,
+		humidityOffset: s.humidity_offset ?? d.humidity_offset,
+		illuminanceOffset: s.illuminance_offset ?? d.illuminance_offset,
+		motionTimeout: s.motion_timeout ?? d.motion_timeout,
+		targetAutoDistance: s.target_auto_distance ?? d.target_auto_distance,
+		targetMaxDistance: s.target_max_distance ?? d.target_max_distance,
+		stuckTargetTimeout: s.stuck_target_timeout ?? d.stuck_target_timeout,
+		staticAutoDistance: s.static_auto_distance ?? d.static_auto_distance,
+		staticMinDistance: s.static_min_distance ?? d.static_min_distance,
+		staticMaxDistance: s.static_max_distance ?? d.static_max_distance,
+		staticTriggerThreshold:
+			s.static_trigger_threshold ?? d.static_trigger_threshold,
+		staticRenewThreshold: s.static_renew_threshold ?? d.static_renew_threshold,
+		staticTimeout: s.static_timeout ?? d.static_timeout,
 		staticOnDelay: Math.min(
-			Math.max(s.static_on_delay ?? 0, 0),
+			Math.max(s.static_on_delay ?? d.static_on_delay, 0),
 			STATIC_ON_DELAY_MAX,
 		),
 		entities: entities || {},
 		logLevels: logLevels ?? {},
-		ledMode: s.led_mode ?? "Manual Control",
-		ledBrightness: s.led_brightness ?? 1.0,
-		ledPresenceColor: s.led_presence_color ?? "#CC33FF",
-		relayTriggerMode: s.relay_trigger_mode ?? "disabled",
-		relayContactMode: s.relay_contact_mode ?? "no",
-		targetUpdateRateMs: s.target_update_rate_ms ?? 1000,
-		zoneUpdateRateMs: s.zone_update_rate_ms ?? 1000,
+		ledMode: s.led_mode ?? d.led_mode,
+		ledBrightness: s.led_brightness ?? d.led_brightness,
+		ledPresenceColor: s.led_presence_color ?? d.led_presence_color,
+		relayTriggerMode: s.relay_trigger_mode ?? d.relay_trigger_mode,
+		relayContactMode: s.relay_contact_mode ?? d.relay_contact_mode,
+		targetUpdateRateMs: s.target_update_rate_ms ?? d.target_update_rate_ms,
+		zoneUpdateRateMs: s.zone_update_rate_ms ?? d.zone_update_rate_ms,
 	};
 }
 

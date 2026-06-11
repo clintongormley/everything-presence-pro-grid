@@ -8,6 +8,7 @@ import {
 	parseZoneConfigs,
 } from "../config-serialization.js";
 import { cellIsInside, GRID_CELL_COUNT, MAX_ZONES } from "../grid.js";
+import { SETTINGS_DEFAULTS, SETTINGS_FIELD_MAP } from "../settings-defaults.js";
 import { ZONE_COLORS } from "../zone-defaults.js";
 
 describe("parseCalibration", () => {
@@ -601,6 +602,22 @@ describe("parseSettings", () => {
 		expect(s.staticTimeout).toBe(30);
 		expect(s.staticOnDelay).toBe(0);
 		expect(s.entities).toEqual({});
+	});
+
+	it("agrees with SETTINGS_DEFAULTS for every mapped scalar fallback", () => {
+		// parseSettings derives its fallbacks FROM SETTINGS_DEFAULTS, so a
+		// change to the canonical defaults must be reflected here without a
+		// second edit. entities/log_levels arrive as separate args and
+		// default to empty maps ("no data"), so they're excluded.
+		const parsed = parseSettings(undefined) as unknown as Record<
+			string,
+			unknown
+		>;
+		for (const [key, prop] of SETTINGS_FIELD_MAP) {
+			if (key === "entities" || key === "log_levels") continue;
+			const parsedKey = prop.slice(1); // "_motionTimeout" -> "motionTimeout"
+			expect(parsed[parsedKey], `field ${key}`).toEqual(SETTINGS_DEFAULTS[key]);
+		}
 	});
 
 	it("reads values from settings object", () => {

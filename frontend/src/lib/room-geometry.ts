@@ -125,17 +125,22 @@ export function isCellInSensorRange(
 }
 
 /**
- * Room bounds (with 1-cell padding) of inside cells that the sensor could
- * physically reach — i.e. that are not out of the FOV cone.  Cells that are
- * inside but beyond the user's configured max range stay in bounds so the
- * "beyond-max-range" decoration can be drawn on them; only true blind-spot
- * cells (outside the 120° cone or past MAX_RANGE) collapse the grid.
+ * Single scan over the grid's visible cells: inside cells that are not
+ * out-of-cone (cells beyond the configured max range still count — they get
+ * a "beyond-max-range" decoration but must not collapse anything).
+ *
+ * Returns the UNPADDED cell bounds (minCol > maxCol when nothing is
+ * visible). The optional `onVisibleCell` callback fires once per visible
+ * cell so callers (e.g. `getGridRoomMetrics`'s furthest-distance fold) can
+ * piggyback per-cell work onto the same pass instead of re-classifying
+ * every cell in a second loop.
  */
-export function getVisibleRoomBounds(
+export function visibleCellBounds(
 	grid: Uint8Array,
 	fov: SensorFov | null,
 	roomWidth: number,
 	maxRangeMm: number,
+	onVisibleCell?: (col: number, row: number) => void,
 ): { minCol: number; maxCol: number; minRow: number; maxRow: number } {
 	let minCol = GRID_COLS;
 	let maxCol = 0;
@@ -154,8 +159,27 @@ export function getVisibleRoomBounds(
 		if (col > maxCol) maxCol = col;
 		if (row < minRow) minRow = row;
 		if (row > maxRow) maxRow = row;
+		onVisibleCell?.(col, row);
 	}
-	if (minCol > maxCol) return { minCol, maxCol, minRow, maxRow };
+	return { minCol, maxCol, minRow, maxRow };
+}
+
+/**
+ * Room bounds (with 1-cell padding) of inside cells that the sensor could
+ * physically reach — i.e. that are not out of the FOV cone.  Cells that are
+ * inside but beyond the user's configured max range stay in bounds so the
+ * "beyond-max-range" decoration can be drawn on them; only true blind-spot
+ * cells (outside the 120° cone or past MAX_RANGE) collapse the grid.
+ */
+export function getVisibleRoomBounds(
+	grid: Uint8Array,
+	fov: SensorFov | null,
+	roomWidth: number,
+	maxRangeMm: number,
+): { minCol: number; maxCol: number; minRow: number; maxRow: number } {
+	const bounds = visibleCellBounds(grid, fov, roomWidth, maxRangeMm);
+	const { minCol, maxCol, minRow, maxRow } = bounds;
+	if (minCol > maxCol) return bounds;
 	return {
 		minCol: Math.max(0, minCol - 1),
 		maxCol: Math.min(GRID_COLS - 1, maxCol + 1),
@@ -372,59 +396,51 @@ export function getGridRoomMetrics(
 	fov?: SensorFov | null,
 	maxRangeMm?: number,
 ): { widthM: number; depthM: number; furthestM: number } | null {
-	// Compute bounds first, then compute furthest distance in a second pass.
-	let minCol = GRID_COLS;
-	let maxCol = 0;
-	let minRow = GRID_ROWS;
-	let maxRow = 0;
+	// Classification only applies when both fov and maxRangeMm are supplied
+	// (matching isCellInSensorRange's callers); otherwise scan with fov=null,
+	// which classifyCellInSensor short-circuits to "in_range" for free.
+	const classifyFov = fov && maxRangeMm != null ? fov : null;
+	const classifyRange = maxRangeMm ?? 0;
+
+	// Sensor position: prefer fov (when provided), then perspective. When
+	// known up-front, the furthest-distance fold rides along the bounds scan
+	// so each cell is classified exactly once.
+	const sensorPos = fov?.sensorPos ?? getSensorRoomPosition(perspective);
 
 	let maxDistSq = 0;
+	const foldFurthest =
+		(sensorMmX: number, sensorMmY: number) => (col: number, row: number) => {
+			const { x: cellMmX, y: cellMmY } = cellCentreMm(col, row, roomWidth);
+			const dx = cellMmX - sensorMmX;
+			const dy = cellMmY - sensorMmY;
+			const distSq = dx * dx + dy * dy;
+			if (distSq > maxDistSq) maxDistSq = distSq;
+		};
 
-	// First pass: determine bounds (needed for fallback sensor position)
-	for (let i = 0; i < GRID_CELL_COUNT; i++) {
-		if (!cellIsInside(grid[i])) continue;
-		const col = i % GRID_COLS;
-		const row = Math.floor(i / GRID_COLS);
-		if (
-			fov &&
-			maxRangeMm != null &&
-			classifyCellInSensor(col, row, fov, roomWidth, maxRangeMm) ===
-				"out_of_cone"
-		)
-			continue;
-		if (col < minCol) minCol = col;
-		if (col > maxCol) maxCol = col;
-		if (row < minRow) minRow = row;
-		if (row > maxRow) maxRow = row;
-	}
+	const bounds = visibleCellBounds(
+		grid,
+		classifyFov,
+		roomWidth,
+		classifyRange,
+		sensorPos ? foldFurthest(sensorPos.x, sensorPos.y) : undefined,
+	);
+	if (bounds.minCol > bounds.maxCol) return null;
 
-	if (minCol > maxCol) return null;
+	const widthMm = (bounds.maxCol - bounds.minCol + 1) * GRID_CELL_MM;
+	const depthMm = (bounds.maxRow - bounds.minRow + 1) * GRID_CELL_MM;
 
-	const widthMm = (maxCol - minCol + 1) * GRID_CELL_MM;
-	const depthMm = (maxRow - minRow + 1) * GRID_CELL_MM;
-
-	// Sensor position: prefer fov (when provided), then perspective, then fallback
-	const sensorPos = fov?.sensorPos ?? getSensorRoomPosition(perspective);
-	const sensorMmX = sensorPos ? sensorPos.x : widthMm / 2;
-	const sensorMmY = sensorPos ? sensorPos.y : 0;
-
-	// Second pass: furthest visible cell from sensor
-	for (let i = 0; i < GRID_CELL_COUNT; i++) {
-		if (!cellIsInside(grid[i])) continue;
-		const col = i % GRID_COLS;
-		const row = Math.floor(i / GRID_COLS);
-		if (
-			fov &&
-			maxRangeMm != null &&
-			classifyCellInSensor(col, row, fov, roomWidth, maxRangeMm) ===
-				"out_of_cone"
-		)
-			continue;
-		const { x: cellMmX, y: cellMmY } = cellCentreMm(col, row, roomWidth);
-		const dx = cellMmX - sensorMmX;
-		const dy = cellMmY - sensorMmY;
-		const distSq = dx * dx + dy * dy;
-		if (distSq > maxDistSq) maxDistSq = distSq;
+	if (!sensorPos) {
+		// No sensor position known — its fallback (top-centre of the visible
+		// width) needs the bounds first, so fold in a second scan. fov must
+		// be null here (a SensorFov always carries sensorPos), making the
+		// re-scan classification-free.
+		visibleCellBounds(
+			grid,
+			classifyFov,
+			roomWidth,
+			classifyRange,
+			foldFurthest(widthMm / 2, 0),
+		);
 	}
 
 	return {

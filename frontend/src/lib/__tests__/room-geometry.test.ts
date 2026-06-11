@@ -22,6 +22,7 @@ import {
 	median,
 	medianPoint,
 	type SensorFov,
+	visibleCellBounds,
 } from "../room-geometry.js";
 
 // Helper: create a simple identity-like perspective where sensor-space ≈ room-space
@@ -656,6 +657,61 @@ describe("getGridRoomMetrics", () => {
 		const coneLimited = getGridRoomMetrics(grid, 3000, null, fov, 6000);
 		expect(coneLimited).not.toBeNull();
 		expect(coneLimited!.depthM).toBeLessThan(full!.depthM);
+	});
+
+	it("classifies each cell at most once (single shared scan)", () => {
+		// classifyCellInSensor reads fov.dirX exactly once per invocation
+		// (the cone dot-product), so counting dirX getter accesses counts
+		// classifications. The bounds pass and the furthest-distance pass
+		// must share one scan instead of re-classifying every cell.
+		const grid = new Uint8Array(GRID_CELL_COUNT);
+		let insideCells = 0;
+		for (let r = 1; r < 6; r++) {
+			for (let c = 7; c <= 12; c++) {
+				grid[r * GRID_COLS + c] = CELL_ROOM_BIT;
+				insideCells++;
+			}
+		}
+
+		let dirXReads = 0;
+		const countingFov: SensorFov = {
+			sensorPos: { x: 900, y: 0 },
+			get dirX() {
+				dirXReads++;
+				return 0;
+			},
+			dirY: 1,
+		} as SensorFov;
+
+		const result = getGridRoomMetrics(grid, 1800, null, countingFov, 6000);
+		expect(result).not.toBeNull();
+		expect(dirXReads).toBeLessThanOrEqual(insideCells);
+	});
+});
+
+describe("visibleCellBounds", () => {
+	it("returns unpadded bounds that getVisibleRoomBounds pads by one cell", () => {
+		const grid = initGridFromRoom(3000, 3000);
+		const raw = visibleCellBounds(grid, null, 3000, 6000);
+		const padded = getVisibleRoomBounds(grid, null, 3000, 6000);
+		expect(padded.minCol).toBe(Math.max(0, raw.minCol - 1));
+		expect(padded.maxCol).toBe(Math.min(GRID_COLS - 1, raw.maxCol + 1));
+		expect(padded.minRow).toBe(Math.max(0, raw.minRow - 1));
+		expect(padded.maxRow).toBe(Math.min(GRID_ROWS - 1, raw.maxRow + 1));
+	});
+
+	it("invokes the per-cell callback once per visible cell", () => {
+		const grid = new Uint8Array(GRID_CELL_COUNT);
+		grid[2 * GRID_COLS + 9] = CELL_ROOM_BIT;
+		grid[3 * GRID_COLS + 9] = CELL_ROOM_BIT;
+		const seen: [number, number][] = [];
+		visibleCellBounds(grid, null, 600, 6000, (col, row) =>
+			seen.push([col, row]),
+		);
+		expect(seen).toEqual([
+			[9, 2],
+			[9, 3],
+		]);
 	});
 });
 

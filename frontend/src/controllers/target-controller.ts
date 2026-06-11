@@ -275,11 +275,10 @@ export class TargetController implements ReactiveController {
 
 	/**
 	 * Shared dedupe + timestamp + cap pipeline for backend / frontend logs.
-	 * Updates the named host fields and appends directly to the visible DOM.
-	 * The push() call mutates the array in place (no Lit re-render); the
-	 * slice() at the cap boundary replaces the array reference, which does
-	 * trigger a Lit re-render — both paths converge on the same final state
-	 * because `_appendToLogContainer` updates the live DOM unconditionally.
+	 * The line arrays are plain fields (NOT Lit @state), so neither push()
+	 * nor the cap-slice triggers a re-render — the visible DOM is updated
+	 * imperatively by `_appendToLogContainer`, and the arrays exist solely
+	 * to back the "Copy all" button.
 	 */
 	private _appendLog(
 		body: string,
@@ -289,6 +288,19 @@ export class TargetController implements ReactiveController {
 	): void {
 		if (body === this.host[prevField]) return;
 		this.host[prevField] = body;
+		// Container remount (a view switch destroys and recreates the live
+		// view while the toggle stays on) leaves a fresh, empty container
+		// but a full backing array — "Copy all" would copy lines that are
+		// no longer displayed. Reset the array whenever the container holds
+		// no rendered log lines.
+		const container = this.host.shadowRoot?.getElementById(containerId);
+		if (
+			container &&
+			!container.querySelector(".debug-log-line") &&
+			this.host[linesField].length > 0
+		) {
+			this.host[linesField] = [];
+		}
 		const ts = new Date().toLocaleTimeString(
 			this.host._localize?.lang ?? "en-GB",
 			{

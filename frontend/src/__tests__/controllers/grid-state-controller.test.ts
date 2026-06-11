@@ -19,6 +19,7 @@ import {
 	getRoomBounds,
 	MAX_ZONES,
 } from "../../lib/grid.js";
+import { SETTINGS_DEFAULTS } from "../../lib/settings-defaults.js";
 import {
 	ZONE_COLORS,
 	type Zone0Config,
@@ -51,6 +52,8 @@ function mockHost(overrides: Record<string, any> = {}) {
 		updateComplete: Promise.resolve(true),
 		// Settings (subset — extended via overrides per test).
 		_motionTimeout: 5 as number,
+		_logLevels: {} as Record<string, string>,
+		_entitiesConfig: {} as Record<string, boolean>,
 		_localize: undefined as
 			| ((key: string, params?: Record<string, any>) => string)
 			| undefined,
@@ -912,6 +915,58 @@ describe("GridStateController", () => {
 			expect(host._motionTimeout).toBe(beforeMotionTimeout);
 		});
 
+		it("rejects a configuration whose grid is too short (fail-closed like zones)", async () => {
+			// Note the asymmetry with parseGrid (config-serialization), which
+			// repairs the device's own stored layout by zero-padding: a saved
+			// configuration has a re-save recourse, so corrupt data fails
+			// loudly instead of silently loading a half-empty room.
+			ctrl.configurations = [
+				{ name: "ShortGrid", ...TEMPLATE_DATA, grid: [1, 2, 3] },
+			];
+			const beforeGrid = host._grid;
+			await expect(ctrl.loadConfiguration("ShortGrid")).rejects.toThrow(
+				/old format/,
+			);
+			expect(host._grid).toBe(beforeGrid);
+		});
+
+		it("rejects a configuration whose grid contains non-numeric entries", async () => {
+			const corrupt = Array.from({ length: GRID_CELL_COUNT }, () => 0);
+			(corrupt as unknown[])[5] = "evil";
+			ctrl.configurations = [
+				{ name: "BadGrid", ...TEMPLATE_DATA, grid: corrupt },
+			];
+			await expect(ctrl.loadConfiguration("BadGrid")).rejects.toThrow(
+				/old format/,
+			);
+		});
+
+		it("rejects a configuration whose grid is missing entirely", async () => {
+			ctrl.configurations = [
+				{ name: "NoGrid", ...TEMPLATE_DATA, grid: undefined as any },
+			];
+			await expect(ctrl.loadConfiguration("NoGrid")).rejects.toThrow(
+				/old format/,
+			);
+		});
+
+		it("restores object-valued setting defaults as clones, not the canonical objects", async () => {
+			// SETTINGS_DEFAULTS is the canonical source of truth; handing its
+			// log_levels object to host state by reference means one future
+			// in-place mutation corrupts the default for every later restore.
+			const applySpy = vi
+				.spyOn(ctrl, "applyLayout")
+				.mockResolvedValue(undefined);
+			ctrl.configurations = [
+				{ name: "EmptySettings", ...TEMPLATE_DATA, settings: {} },
+			];
+			await ctrl.loadConfiguration("EmptySettings");
+			expect(host._logLevels).toEqual(SETTINGS_DEFAULTS.log_levels);
+			expect(host._logLevels).not.toBe(SETTINGS_DEFAULTS.log_levels);
+			expect(host._entitiesConfig).not.toBe(SETTINGS_DEFAULTS.entities);
+			applySpy.mockRestore();
+		});
+
 		it("throws on old-format configuration (length-7 zones)", async () => {
 			ctrl.configurations = [
 				{
@@ -1494,6 +1549,115 @@ describe("GridStateController", () => {
 	// =========================================================================
 	// applyPaintToCell(index)
 	// =========================================================================
+	describe("applyLayout() in-flight edit tracking", () => {
+		function deferredRoomLayoutWS() {
+			let resolveWS: (v: unknown) => void = () => {};
+			host.hass.callWS.mockImplementation((msg: any) => {
+				if (msg.type === "eppgrid/set_room_layout") {
+					return new Promise((r) => {
+						resolveWS = r;
+					});
+				}
+				return Promise.resolve({});
+			});
+			return () => resolveWS({});
+		}
+
+		it("keeps _dirty when the grid is painted while the save is in flight", async () => {
+			host._dirty = true;
+			const resolve = deferredRoomLayoutWS();
+
+			const inFlight = ctrl.applyLayout();
+			// Paint during the await (clone-then-mutate replaces the reference)
+			const painted = new Uint8Array(host._grid);
+			painted[7] = CELL_ROOM_BIT;
+			host._grid = painted;
+			resolve();
+			await inFlight;
+
+			expect(host._dirty).toBe(true);
+			expect(host._grid).toBe(painted);
+		});
+
+		it("does not clobber furniture replaced while the save is in flight", async () => {
+			host._dirty = true;
+			const resolve = deferredRoomLayoutWS();
+
+			const inFlight = ctrl.applyLayout();
+			const newItem: FurnitureItem = {
+				id: "f_new",
+				type: "icon",
+				icon: "mdi:sofa",
+				label: "Sofa",
+				x: 0,
+				y: 0,
+				width: 600,
+				height: 400,
+				rotation: 0,
+				lockAspect: false,
+			};
+			host._furniture = [newItem];
+			resolve();
+			await inFlight;
+
+			expect(host._furniture).toEqual([newItem]);
+			expect(host._dirty).toBe(true);
+		});
+
+		it("clears _dirty when nothing changed during the save", async () => {
+			host._dirty = true;
+			const resolve = deferredRoomLayoutWS();
+			const inFlight = ctrl.applyLayout();
+			resolve();
+			await inFlight;
+			expect(host._dirty).toBe(false);
+		});
+	});
+
+	describe("onError routing", () => {
+		it("routes applyLayout WS failure through onError and rethrows", async () => {
+			const onError = vi.fn();
+			ctrl.onError = onError;
+			host.hass.callWS.mockRejectedValue(new Error("layout boom"));
+
+			await expect(ctrl.applyLayout()).rejects.toThrow("layout boom");
+			expect(onError).toHaveBeenCalledWith("apply_layout", expect.any(Error));
+		});
+
+		it("routes saveConfiguration WS failure through onError and rethrows", async () => {
+			const onError = vi.fn();
+			ctrl.onError = onError;
+			host._configurationName = "My backup";
+			host.hass.callWS.mockRejectedValue(new Error("save boom"));
+
+			await expect(ctrl.saveConfiguration()).rejects.toThrow("save boom");
+			expect(onError).toHaveBeenCalledWith(
+				"save_configuration",
+				expect.any(Error),
+			);
+		});
+
+		it("routes loadConfiguration failure through onError and rethrows", async () => {
+			const onError = vi.fn();
+			ctrl.onError = onError;
+			ctrl.configurations = [
+				{
+					name: "Old",
+					grid: Array.from({ length: GRID_CELL_COUNT }, () => 0),
+					zones: [],
+					roomWidth: 0,
+					roomDepth: 0,
+				},
+			];
+
+			await expect(ctrl.loadConfiguration("Old")).rejects.toThrow(/old format/);
+			expect(onError).toHaveBeenCalledWith(
+				"load_configuration",
+				expect.any(Error),
+			);
+		});
+	});
+
 	describe("applyPaintToCell(index)", () => {
 		it("does nothing when _activeZone is null", () => {
 			host._activeZone = null;
@@ -1525,11 +1689,11 @@ describe("GridStateController", () => {
 			expect(host._dirty).toBe(true);
 		});
 
-		it("calls requestUpdate", () => {
+		it("does not call requestUpdate (grid is @state — assignment schedules the update)", () => {
 			host._activeZone = 0;
 			host._paintAction = "set";
 			ctrl.applyPaintToCell(5);
-			expect(host.requestUpdate).toHaveBeenCalled();
+			expect(host.requestUpdate).not.toHaveBeenCalled();
 		});
 
 		it("paints a zone onto an inside cell", () => {
@@ -1561,7 +1725,6 @@ describe("GridStateController", () => {
 			// Calibrated room dimensions must be preserved (perspective depends on them)
 			expect(host._roomWidth).toBe(3000);
 			expect(host._roomDepth).toBe(3000);
-			expect(host.requestUpdate).toHaveBeenCalled();
 		});
 	});
 
@@ -1833,6 +1996,89 @@ describe("GridStateController", () => {
 			expect(host._dragState.centerX).toBe(230); // 200 + 60/2
 			expect(host._dragState.centerY).toBe(115); // 100 + 30/2
 			expect(host._dragState.startAngle).not.toBe(0);
+		});
+
+		it("escapes crafted furniture ids in the querySelector (no SyntaxError)", () => {
+			// Furniture ids come from stored config blobs — a crafted id with
+			// quotes/brackets must not blow up the attribute selector.
+			const craftedId = 'f"]<img src=x>';
+			const item: FurnitureItem = {
+				id: craftedId,
+				type: "icon",
+				icon: "",
+				label: "",
+				x: 500,
+				y: 500,
+				width: 600,
+				height: 300,
+				rotation: 45,
+				lockAspect: false,
+			};
+			host._furniture = [item];
+
+			const furnitureEl = document.createElement("div");
+			furnitureEl.classList.add("furniture-item");
+			furnitureEl.setAttribute("data-id", craftedId);
+			furnitureEl.getBoundingClientRect = () =>
+				({
+					left: 200,
+					top: 100,
+					width: 60,
+					height: 30,
+					right: 260,
+					bottom: 130,
+					x: 200,
+					y: 100,
+					toJSON: () => {},
+				}) as DOMRect;
+
+			const overlayShadow = document.createElement("div");
+			overlayShadow.appendChild(furnitureEl);
+			const overlay = document.createElement("div");
+			Object.defineProperty(overlay, "shadowRoot", { value: overlayShadow });
+
+			const eppGridShadow = document.createElement("div");
+			eppGridShadow.appendChild(overlay);
+			const origGridQS = eppGridShadow.querySelector.bind(eppGridShadow);
+			eppGridShadow.querySelector = ((sel: string) => {
+				if (sel === "epp-furniture-overlay") return overlay;
+				return origGridQS(sel);
+			}) as any;
+
+			const eppGrid = document.createElement("div");
+			Object.defineProperty(eppGrid, "shadowRoot", { value: eppGridShadow });
+
+			const hostShadow = document.createElement("div");
+			hostShadow.appendChild(eppGrid);
+			const origHostQS = hostShadow.querySelector.bind(hostShadow);
+			hostShadow.querySelector = ((sel: string) => {
+				if (sel === "epp-grid") return eppGrid;
+				return origHostQS(sel);
+			}) as any;
+
+			host.shadowRoot = hostShadow as any;
+
+			const ev = new PointerEvent("pointerdown", {
+				clientX: 250,
+				clientY: 130,
+			});
+			const addSpy = vi
+				.spyOn(window, "addEventListener")
+				.mockImplementation(() => {});
+
+			// try/finally so a failing assertion can't leak the
+			// addEventListener mock into later tests in this file.
+			try {
+				expect(() =>
+					ctrl.onFurniturePointerDown(ev, craftedId, "rotate"),
+				).not.toThrow();
+			} finally {
+				addSpy.mockRestore();
+			}
+
+			// And the element was actually FOUND (center computed from rect)
+			expect(host._dragState.centerX).toBe(230);
+			expect(host._dragState.centerY).toBe(115);
 		});
 	});
 

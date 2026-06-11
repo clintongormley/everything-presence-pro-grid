@@ -440,5 +440,11 @@
 			"ssid_too_long": "WiFi network name is too long (max 32 bytes)",
 			"password_too_long": "WiFi password is too long (max 64 bytes)"
 		}
+	},
+	"errors": {
+		"apply_layout": "Saving the room layout failed. Check that the device is online and try again.",
+		"save_settings": "Saving the settings failed. Check that the device is online and try again.",
+		"save_configuration": "Saving the configuration backup failed. Try again.",
+		"load_configuration": "Restoring the configuration failed. It may be in an old format — re-save it and try again."
 	}
 }

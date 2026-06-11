@@ -78,7 +78,29 @@ export const SETTINGS_DEFAULTS = {
 	log_levels: {} as Record<string, string>,
 } as const;
 
+// `as const` only constrains the TYPE — at runtime the object-valued
+// entries (entities, log_levels) are still mutable, and they get handed
+// around by reference. One in-place mutation would silently corrupt the
+// canonical default for every later restore/sparse-save. Freeze both maps
+// (and ENTITY_DEFAULTS, which seeds `entities`) so such a mutation throws
+// immediately instead. Readers that need a mutable copy must go through
+// `cloneSettingsDefault`.
+Object.freeze(ENTITY_DEFAULTS);
+Object.freeze(SETTINGS_DEFAULTS.entities);
+Object.freeze(SETTINGS_DEFAULTS.log_levels);
+Object.freeze(SETTINGS_DEFAULTS);
+
 export type SettingsKey = keyof typeof SETTINGS_DEFAULTS;
+
+/**
+ * Default value for a settings key, safe to assign into mutable state:
+ * object-valued defaults (entities, log_levels) are returned as shallow
+ * copies so callers can never alias the frozen canonical object.
+ */
+export function cloneSettingsDefault(key: SettingsKey): unknown {
+	const value = SETTINGS_DEFAULTS[key];
+	return typeof value === "object" && value !== null ? { ...value } : value;
+}
 
 /**
  * Compare a value against its canonical default.

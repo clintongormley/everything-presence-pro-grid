@@ -189,16 +189,18 @@ describe("renderConfigurationThumbnail", () => {
 		render(result, container);
 
 		const svgEl = container.querySelector("svg")!;
-		// Should have a <defs> with a pattern for entry overlay
+		// Should have a <defs> with a pattern for entry overlay (id carries a
+		// per-render suffix so multiple thumbnails in one shadow root can't
+		// collide)
 		const patterns = svgEl.querySelectorAll("defs pattern");
-		const entryPattern = Array.from(patterns).find(
-			(p) => p.id === "overlay-entry",
+		const entryPattern = Array.from(patterns).find((p) =>
+			p.id.startsWith("overlay-entry"),
 		);
 		expect(entryPattern).toBeTruthy();
 
-		// Should have a rect using the entry pattern
+		// Should have a rect using THAT pattern instance
 		const overlayRects = Array.from(svgEl.querySelectorAll("rect")).filter(
-			(r) => r.getAttribute("fill") === "url(#overlay-entry)",
+			(r) => r.getAttribute("fill") === `url(#${entryPattern!.id})`,
 		);
 		expect(overlayRects.length).toBe(1);
 	});
@@ -222,13 +224,13 @@ describe("renderConfigurationThumbnail", () => {
 
 		const svgEl = container.querySelector("svg")!;
 		const patterns = svgEl.querySelectorAll("defs pattern");
-		const interferencePattern = Array.from(patterns).find(
-			(p) => p.id === "overlay-interference",
+		const interferencePattern = Array.from(patterns).find((p) =>
+			p.id.startsWith("overlay-interference"),
 		);
 		expect(interferencePattern).toBeTruthy();
 
 		const overlayRects = Array.from(svgEl.querySelectorAll("rect")).filter(
-			(r) => r.getAttribute("fill") === "url(#overlay-interference)",
+			(r) => r.getAttribute("fill") === `url(#${interferencePattern!.id})`,
 		);
 		expect(overlayRects.length).toBe(1);
 	});
@@ -252,15 +254,47 @@ describe("renderConfigurationThumbnail", () => {
 
 		const svgEl = container.querySelector("svg")!;
 		const patterns = svgEl.querySelectorAll("defs pattern");
-		const suppressPattern = Array.from(patterns).find(
-			(p) => p.id === "overlay-suppress",
+		const suppressPattern = Array.from(patterns).find((p) =>
+			p.id.startsWith("overlay-suppress"),
 		);
 		expect(suppressPattern).toBeTruthy();
 
 		const overlayRects = Array.from(svgEl.querySelectorAll("rect")).filter(
-			(r) => r.getAttribute("fill") === "url(#overlay-suppress)",
+			(r) => r.getAttribute("fill") === `url(#${suppressPattern!.id})`,
 		);
 		expect(overlayRects.length).toBe(1);
+	});
+
+	it("gives each rendered thumbnail its own pattern ids (no cross-thumbnail collisions)", async () => {
+		// All saved-configuration thumbnails render into the SAME shadow
+		// root; with duplicate ids every url(#…) resolves to the FIRST
+		// thumbnail's pattern, so later thumbnails draw the wrong overlay.
+		const grid = makeGrid([
+			{ col: 10, row: 0 },
+			{ col: 10, row: 1, overlay: CELL_OVERLAY_ENTRY },
+		]);
+		const renderOnce = async () => {
+			const result = renderConfigurationThumbnail(
+				grid,
+				new Array(7).fill(null),
+				300,
+				600,
+				[],
+			);
+			const container = document.createElement("div");
+			const { render } = await import("lit");
+			render(result, container);
+			return Array.from(container.querySelectorAll("svg defs pattern")).map(
+				(p) => p.id,
+			);
+		};
+
+		const first = await renderOnce();
+		const second = await renderOnce();
+		expect(first.length).toBeGreaterThan(0);
+		for (const id of first) {
+			expect(second).not.toContain(id);
+		}
 	});
 
 	it("renders SVG furniture with actual floor plan drawing", async () => {

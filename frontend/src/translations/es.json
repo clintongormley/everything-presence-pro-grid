@@ -440,5 +440,11 @@
 			"ssid_too_long": "El nombre de la red WiFi es demasiado largo (máximo 32 bytes)",
 			"password_too_long": "La contraseña WiFi es demasiado larga (máximo 64 bytes)"
 		}
+	},
+	"errors": {
+		"apply_layout": "No se pudo guardar la distribución de la habitación. Comprueba que el dispositivo está en línea e inténtalo de nuevo.",
+		"save_settings": "No se pudieron guardar los ajustes. Comprueba que el dispositivo está en línea e inténtalo de nuevo.",
+		"save_configuration": "No se pudo guardar la copia de seguridad de la configuración. Inténtalo de nuevo.",
+		"load_configuration": "No se pudo restaurar la configuración. Puede que esté en un formato antiguo — vuelve a guardarla e inténtalo de nuevo."
 	}
 }

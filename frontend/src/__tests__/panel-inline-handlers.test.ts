@@ -484,8 +484,11 @@ describe("_onFurniturePointerDown with rotate type", () => {
 			},
 		];
 
-		// Mock nested shadow DOM: host -> epp-grid -> epp-furniture-overlay -> .furniture-item
+		// Mock nested shadow DOM: host -> epp-grid -> epp-furniture-overlay -> .furniture-item.
+		// The controller queries all .furniture-item elements and matches
+		// dataset.id in JS (no id interpolation into the selector).
 		const mockFurnitureItem = {
+			dataset: { id: "f1" },
 			getBoundingClientRect: () => ({
 				left: 100,
 				top: 100,
@@ -494,8 +497,8 @@ describe("_onFurniturePointerDown with rotate type", () => {
 			}),
 		};
 		const overlayShadow = {
-			querySelector: (sel: string) =>
-				sel.includes("f1") ? mockFurnitureItem : null,
+			querySelectorAll: (sel: string) =>
+				sel === ".furniture-item" ? [mockFurnitureItem] : [],
 		};
 		const overlay = { shadowRoot: overlayShadow };
 		const eppGridShadow = {

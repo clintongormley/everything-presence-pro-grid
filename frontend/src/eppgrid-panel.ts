@@ -153,6 +153,31 @@ const panelStyles = css`
     margin: 0 auto;
     font-size: 14px;
   }
+
+  .controller-error-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 12px 16px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--error-color, #db4437);
+    color: var(--text-primary-color, #fff);
+    font-size: 14px;
+  }
+
+  .controller-error-banner span {
+    flex: 1;
+  }
+
+  .controller-error-dismiss {
+    display: flex;
+    background: none;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 2px;
+  }
 `;
 
 const protocolFullpageStyles = css`
@@ -415,7 +440,15 @@ export class EPPGridPanel extends LitElement {
 	// here with the declared type). The panel's `@state _field`s are public
 	// so the contract holds — the `_` prefix is the social marker for
 	// internal-only state.
-	private _gridCtrl = new GridStateController(this);
+	// The IIFE wires the error hook at construction (not connectedCallback)
+	// so failures surface even when ops run before/without attachment.
+	private _gridCtrl = (() => {
+		const ctrl = new GridStateController(this);
+		ctrl.onError = (op) => {
+			this._controllerError = op;
+		};
+		return ctrl;
+	})();
 	// Target controller — owns target/sensor/zone state processing, zone engine, debug logging
 	private _targetCtrl = new TargetController(this);
 	// Flasher controller — owns OTA flash state and flashable device list
@@ -521,6 +554,11 @@ export class EPPGridPanel extends LitElement {
 	} | null = null;
 	@state() _saving = false;
 	@state() _dirty = false;
+	// Failed grid-controller op (applyLayout/saveSettings/save/load
+	// configuration) — rendered as a dismissible banner; the op name doubles
+	// as the `errors.*` translation-key suffix. Cleared when a new op starts
+	// or the user dismisses it.
+	@state() private _controllerError: string | null = null;
 	@state() private _showUnsavedDialog = false;
 	private _pendingNavigation: (() => void) | null = null;
 	@state() _showConfigurationBackup = false;
@@ -1219,6 +1257,7 @@ export class EPPGridPanel extends LitElement {
 
 	/** Save the current grid and zone config to the backend */
 	private async _applyLayout(): Promise<void> {
+		this._controllerError = null;
 		return this._gridCtrl.applyLayout();
 	}
 
@@ -1289,6 +1328,7 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private async _saveSettings(payload?: Record<string, any>): Promise<void> {
+		this._controllerError = null;
 		return this._gridCtrl.saveSettings(payload || {});
 	}
 
@@ -1355,14 +1395,18 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private async _saveConfiguration(): Promise<void> {
+		this._controllerError = null;
 		try {
 			await this._gridCtrl.saveConfiguration();
 		} catch (err) {
+			// Banner state is set by the controller's onError hook; this
+			// catch just keeps the rejection from surfacing as unhandled.
 			console.error("Failed to save configuration", err);
 		}
 	}
 
 	private async _loadConfiguration(name: string): Promise<void> {
+		this._controllerError = null;
 		try {
 			await this._gridCtrl.loadConfiguration(name);
 		} catch (err) {
@@ -2068,7 +2112,7 @@ export class EPPGridPanel extends LitElement {
 					? this._renderEditor()
 					: this._renderLiveOverview();
 
-		return html`<div class="tab-layout">${this._renderTabBar()}${content}${this._renderGlobalDialogs()}</div>`;
+		return html`<div class="tab-layout">${this._renderTabBar()}${this._renderControllerErrorBanner()}${content}${this._renderGlobalDialogs()}</div>`;
 	}
 
 	/**
@@ -2249,6 +2293,30 @@ export class EPPGridPanel extends LitElement {
         ></ha-select>
       </div>
     `;
+	}
+
+	/**
+	 * Dismissible banner for failed grid-controller operations (apply
+	 * layout, save settings, save/load configuration). The op name set by
+	 * the controller's onError hook selects the `errors.*` translation.
+	 */
+	private _renderControllerErrorBanner() {
+		if (!this._controllerError) return nothing;
+		return html`
+			<div class="controller-error-banner" role="alert">
+				<ha-icon icon="mdi:alert-circle-outline"></ha-icon>
+				<span>${this._localize(`errors.${this._controllerError}`)}</span>
+				<button
+					class="controller-error-dismiss"
+					aria-label=${this._localize("common.close")}
+					@click=${() => {
+						this._controllerError = null;
+					}}
+				>
+					<ha-icon icon="mdi:close"></ha-icon>
+				</button>
+			</div>
+		`;
 	}
 
 	private _renderProtocolBanner() {
