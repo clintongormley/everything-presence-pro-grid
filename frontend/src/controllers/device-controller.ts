@@ -3,6 +3,13 @@ import { safeUnsub } from "../lib/safe-unsub.js";
 import { persistSelectedMac, readStoredMac } from "../lib/storage.js";
 import type { DeviceInfo, RawTarget, Target, TargetStatus } from "../types.js";
 
+// Cap for the grid/raw-target subscribe retries. The first attempt counts:
+// after SUBSCRIBE_RETRY_LIMIT total attempts the controller stops retrying
+// and surfaces `connectionFailed` so the panel shows the connection banner
+// instead of silently spinning forever.
+const SUBSCRIBE_RETRY_LIMIT = 5;
+const SUBSCRIBE_RETRY_DELAY_MS = 2000;
+
 /**
  * Structured target/sensor/zone data delivered by the grid-targets subscription.
  */
@@ -51,6 +58,11 @@ export class DeviceController implements ReactiveController {
 	/** Selected device transitioned to available. Host decides whether to
 	 * reopen the session (config already loaded) or load config fresh. */
 	onSelectedAvailable?: (mac: string) => void;
+	/** Host's unsaved-edits state. While true, _applyDeviceList defers the
+	 * auto-switch to another device when the selected mac disappears from a
+	 * non-empty push — switching would make the host load the replacement
+	 * device's config straight over the user's edits with no prompt. */
+	isHostDirty?: () => boolean;
 
 	private _host: ReactiveControllerHost;
 	private _hass: any = null;
@@ -59,6 +71,7 @@ export class DeviceController implements ReactiveController {
 	private _unsubTargets?: () => void;
 	private _unsubDisplay?: () => void;
 	private _targetRetryTimer?: ReturnType<typeof setTimeout>;
+	private _displayRetryTimer?: ReturnType<typeof setTimeout>;
 	private _reconnecting = false;
 	private _connectionFailed = false;
 	private _lastSelectedOnline: boolean | null = null;
@@ -79,6 +92,13 @@ export class DeviceController implements ReactiveController {
 	// and on connection swap; checked after every await in the session-open
 	// pipeline.
 	private _sessionGen = 0;
+	// Device-list subscription *intent* — true between subscribeDeviceList()
+	// entry and unsubscribeDeviceList()/hostDisconnected(). Distinct from
+	// `_unsubDeviceList`, which only tracks *completed* subscriptions; we
+	// need intent so a connection swap mid-`subscribeMessage()` still
+	// triggers resubscribe instead of silently dropping the request (same
+	// pattern as flasher-controller).
+	private _wantDeviceListSub = false;
 
 	constructor(host: ReactiveControllerHost) {
 		this._host = host;
@@ -100,7 +120,13 @@ export class DeviceController implements ReactiveController {
 		const oldConn = this._hass?.connection;
 		this._hass = value;
 		if (value?.connection && value.connection !== oldConn && oldConn) {
-			// Connection changed — stale subscriptions are dead
+			// Connection changed — stale subscriptions are dead.
+			// Use subscription *intent* (`_wantDeviceListSub`), not the
+			// completed-subscription flag (`_unsubDeviceList`): if the swap
+			// lands while subscribeMessage() is still pending, the unsub
+			// hasn't been stashed yet — gating on it would silently drop the
+			// request and leave the device list stale after the reconnect.
+			const wantsDeviceListSub = this._wantDeviceListSub;
 			this._unsubDevice = undefined;
 			this._unsubTargets = undefined;
 			this._unsubDisplay = undefined;
@@ -109,6 +135,10 @@ export class DeviceController implements ReactiveController {
 				clearTimeout(this._targetRetryTimer);
 				this._targetRetryTimer = undefined;
 			}
+			if (this._displayRetryTimer) {
+				clearTimeout(this._displayRetryTimer);
+				this._displayRetryTimer = undefined;
+			}
 			// Bump generation tokens so any in-flight subscribeMessage
 			// promises against the old connection drop their unsub when
 			// they finally resolve.
@@ -116,6 +146,13 @@ export class DeviceController implements ReactiveController {
 			this._displayGen++;
 			this._deviceListGen++;
 			this._sessionGen++;
+			if (wantsDeviceListSub) {
+				// .catch in case subscribeDeviceList ever throws outside its
+				// try/catch (loadDevices fallback etc.) — fire-and-forget
+				// without a rejection handler would surface as an unhandled
+				// promise rejection.
+				void this.subscribeDeviceList().catch(() => {});
+			}
 		}
 	}
 
@@ -159,10 +196,17 @@ export class DeviceController implements ReactiveController {
 			return;
 		}
 
+		const prevSelectedMac = this.selectedMac;
 		const stored = readStoredMac();
 		const match =
 			stored && this.devices.find((d: DeviceInfo) => d.mac === stored);
 		this.selectedMac = match ? stored! : (this.devices[0]?.mac ?? "");
+		if (prevSelectedMac !== this.selectedMac) {
+			// Same reset as _applyDeviceList: treat the next push as an
+			// initial observation for the new device so we don't fire a stale
+			// false→true rising edge latched from the previous selection.
+			this._lastSelectedOnline = null;
+		}
 		this._host.requestUpdate();
 	}
 
@@ -171,7 +215,16 @@ export class DeviceController implements ReactiveController {
 	 * Receives the initial list immediately, then pushes updates on add/remove.
 	 */
 	async subscribeDeviceList(): Promise<void> {
-		this.unsubscribeDeviceList();
+		// Mark intent first, then inline the unsubscribe-style teardown
+		// (gen bump + safeUnsub of any prior unsub). We can't reuse
+		// unsubscribeDeviceList() here because it clears
+		// `_wantDeviceListSub` — and we need that flag to stay true so a
+		// connection swap landing while subscribeMessage() is in flight
+		// still triggers a resubscribe.
+		this._wantDeviceListSub = true;
+		this._deviceListGen++;
+		safeUnsub(this._unsubDeviceList);
+		this._unsubDeviceList = undefined;
 		if (!this._hass) return;
 		const token = ++this._deviceListGen;
 		try {
@@ -198,6 +251,7 @@ export class DeviceController implements ReactiveController {
 	}
 
 	unsubscribeDeviceList(): void {
+		this._wantDeviceListSub = false;
 		this._deviceListGen++;
 		safeUnsub(this._unsubDeviceList);
 		this._unsubDeviceList = undefined;
@@ -216,7 +270,23 @@ export class DeviceController implements ReactiveController {
 		const stored = readStoredMac();
 		if (this.devices.length > 0) {
 			const match = stored && this.devices.find((d) => d.mac === stored);
-			this.selectedMac = match ? stored! : this.devices[0].mac;
+			const next = match ? stored! : this.devices[0].mac;
+			// Dirty-guard the auto-switch: if the selected device vanished
+			// from a non-empty push while the host has unsaved edits, keep it
+			// selected instead of flipping to the replacement — the render
+			// path already treats missing-from-list as offline, and the user
+			// can still switch via the picker's unsaved-changes guard. The
+			// switch happens on the next push once the host is clean, and a
+			// re-added device (USB reflash) reconnects through the normal
+			// offline→online edge below.
+			const deferSwitch =
+				next !== this.selectedMac &&
+				!!this.selectedMac &&
+				!this.devices.some((d) => d.mac === this.selectedMac) &&
+				(this.isHostDirty?.() ?? false);
+			if (!deferSwitch) {
+				this.selectedMac = next;
+			}
 		} else if (!this.selectedMac && stored) {
 			// Empty list but a previous selection is persisted — seed from
 			// localStorage so the UI falls through to the offline banner
@@ -430,7 +500,7 @@ export class DeviceController implements ReactiveController {
 		this._unsubTargets = undefined;
 	}
 
-	private _subscribeGridTargets(conn: any, mac: string): void {
+	private _subscribeGridTargets(conn: any, mac: string, attempt = 1): void {
 		const token = ++this._targetsGen;
 		conn
 			.subscribeMessage(
@@ -496,14 +566,22 @@ export class DeviceController implements ReactiveController {
 			})
 			.catch(() => {
 				if (this._targetsGen !== token) return;
+				if (attempt >= SUBSCRIBE_RETRY_LIMIT) {
+					// Out of retries — surface the same connection-failed
+					// state the session-open path uses so the panel shows the
+					// banner instead of silently retrying forever.
+					this._connectionFailed = true;
+					this._host.requestUpdate();
+					return;
+				}
 				if (this._targetRetryTimer) {
 					clearTimeout(this._targetRetryTimer);
 				}
 				this._targetRetryTimer = setTimeout(() => {
 					this._targetRetryTimer = undefined;
 					if (this._hass?.connection !== conn) return;
-					this._subscribeGridTargets(conn, mac);
-				}, 2000);
+					this._subscribeGridTargets(conn, mac, attempt + 1);
+				}, SUBSCRIBE_RETRY_DELAY_MS);
 			});
 	}
 
@@ -511,9 +589,12 @@ export class DeviceController implements ReactiveController {
 	subscribeDisplay(mac: string): void {
 		this.unsubscribeDisplay();
 		if (!this._hass || !mac) return;
+		this._subscribeRawTargets(this._hass.connection, mac);
+	}
 
+	private _subscribeRawTargets(conn: any, mac: string, attempt = 1): void {
 		const token = ++this._displayGen;
-		this._hass.connection
+		conn
 			.subscribeMessage(
 				(event: any) => {
 					const rawTargets: RawTarget[] = (event.targets || []).map(
@@ -539,14 +620,33 @@ export class DeviceController implements ReactiveController {
 				this._unsubDisplay = unsub;
 			})
 			.catch(() => {
-				// Swallow — the WS lib auto-resubscribes on reconnect, so a
-				// transient failure here shouldn't bubble up as an unhandled
-				// rejection.
+				// The WS lib only auto-resubscribes *established* subscriptions
+				// on reconnect — a rejected initial subscribe is gone for good,
+				// which used to leave the raw-target stream silently dead.
+				// Retry like the grid stream, then surface connection-failed.
+				if (this._displayGen !== token) return;
+				if (attempt >= SUBSCRIBE_RETRY_LIMIT) {
+					this._connectionFailed = true;
+					this._host.requestUpdate();
+					return;
+				}
+				if (this._displayRetryTimer) {
+					clearTimeout(this._displayRetryTimer);
+				}
+				this._displayRetryTimer = setTimeout(() => {
+					this._displayRetryTimer = undefined;
+					if (this._hass?.connection !== conn) return;
+					this._subscribeRawTargets(conn, mac, attempt + 1);
+				}, SUBSCRIBE_RETRY_DELAY_MS);
 			});
 	}
 
 	unsubscribeDisplay(): void {
 		this._displayGen++;
+		if (this._displayRetryTimer) {
+			clearTimeout(this._displayRetryTimer);
+			this._displayRetryTimer = undefined;
+		}
 		safeUnsub(this._unsubDisplay);
 		this._unsubDisplay = undefined;
 	}

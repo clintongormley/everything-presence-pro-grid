@@ -966,6 +966,9 @@ describe("DeviceController", () => {
 				expect(unhandled).toEqual([]);
 			} finally {
 				process.off("unhandledRejection", handler);
+				// Cancel the retry the failed subscribe scheduled — this test
+				// runs on real timers and must not leave a 2s callback behind.
+				ctrl.unsubscribeDisplay();
 			}
 		});
 	});
@@ -1364,6 +1367,270 @@ describe("DeviceController", () => {
 
 			expect((ctrl as any)._unsubTargets).toBeUndefined();
 			expect(unsubFn).toHaveBeenCalledTimes(1);
+		});
+	});
+
+	describe("dirty-guarded auto-switch", () => {
+		// When the selected device disappears from a NON-empty push, the
+		// controller auto-switches to devices[0] and the panel then loads the
+		// new device's config straight over any unsaved editor edits with no
+		// prompt. With unsaved edits, defer the switch instead: the missing
+		// mac stays selected (the render path already treats
+		// missing-from-list as offline) until the host is clean again.
+
+		it("defers the auto-switch when the selected mac disappears while the host is dirty", () => {
+			localStorage.setItem("epp_selected_mac", "aa");
+			ctrl.isHostDirty = () => true;
+			(ctrl as any)._applyDeviceList([makeDevice("aa", true)]);
+			expect(ctrl.selectedMac).toBe("aa");
+
+			(ctrl as any)._applyDeviceList([makeDevice("bb", true)]);
+
+			expect(ctrl.selectedMac).toBe("aa");
+		});
+
+		it("auto-switches as before when the host is clean", () => {
+			localStorage.setItem("epp_selected_mac", "aa");
+			ctrl.isHostDirty = () => false;
+			(ctrl as any)._applyDeviceList([makeDevice("aa", true)]);
+
+			(ctrl as any)._applyDeviceList([makeDevice("bb", true)]);
+
+			expect(ctrl.selectedMac).toBe("bb");
+		});
+
+		it("reconnects to the deferred device when it returns (USB-reflash flow)", () => {
+			// Delete + re-add with the same mac: the deferred selection must
+			// observe offline (session closed) then online (host reopens via
+			// onSelectedAvailable), exactly like a regular availability blip.
+			localStorage.setItem("epp_selected_mac", "aa");
+			const onClosed = vi.fn();
+			const onSelectedAvailable = vi.fn();
+			ctrl.isHostDirty = () => true;
+			ctrl.onSessionClosed = onClosed;
+			ctrl.onSelectedAvailable = onSelectedAvailable;
+			(ctrl as any)._applyDeviceList([makeDevice("aa", true)]);
+
+			// Device deleted; another remains. Deferred — but the missing
+			// device counts as offline, so the session closes.
+			(ctrl as any)._applyDeviceList([makeDevice("bb", true)]);
+			expect(ctrl.selectedMac).toBe("aa");
+			expect(onClosed).toHaveBeenCalledTimes(1);
+
+			// Device re-added (same mac) — selection sticks and the host is
+			// told to reconnect.
+			(ctrl as any)._applyDeviceList([
+				makeDevice("aa", true),
+				makeDevice("bb", true),
+			]);
+			expect(ctrl.selectedMac).toBe("aa");
+			expect(onSelectedAvailable).toHaveBeenCalledWith("aa");
+		});
+	});
+
+	describe("loadDevices availability tracker", () => {
+		it("resets the availability tracker when loadDevices changes the selection", async () => {
+			// Same contract as _applyDeviceList/selectDevice: a selection
+			// change must treat the next push as an initial observation, not
+			// fire a stale false→true rising edge from the previous device.
+			localStorage.setItem("epp_selected_mac", "aa");
+			const onSelectedAvailable = vi.fn();
+			ctrl.onSelectedAvailable = onSelectedAvailable;
+			(ctrl as any)._applyDeviceList([makeDevice("aa", true)]);
+			(ctrl as any)._applyDeviceList([makeDevice("aa", false)]);
+			onSelectedAvailable.mockClear();
+
+			// One-shot reload returns a different device set; selection moves
+			// to "bb".
+			ctrl.hass = mockHass([makeDevice("bb", true)]);
+			await ctrl.loadDevices();
+			expect(ctrl.selectedMac).toBe("bb");
+
+			(ctrl as any)._applyDeviceList([makeDevice("bb", true)]);
+
+			expect(onSelectedAvailable).not.toHaveBeenCalled();
+		});
+	});
+
+	describe("device-list resubscribe after connection swap", () => {
+		it("connection swap auto-resubscribes the device-list on the new connection", async () => {
+			// Without resubscribe the panel stops getting device-list pushes
+			// after an HA reconnect — selection/availability silently go stale.
+			const staleUnsub = vi.fn();
+			hass.connection.subscribeMessage = vi.fn().mockResolvedValue(staleUnsub);
+			await ctrl.subscribeDeviceList();
+			expect((ctrl as any)._unsubDeviceList).toBe(staleUnsub);
+
+			const newUnsub = vi.fn();
+			const newSubscribe = vi.fn().mockResolvedValue(newUnsub);
+			ctrl.hass = {
+				callWS: vi.fn(),
+				connection: { subscribeMessage: newSubscribe },
+			};
+
+			// Microtask drain so the awaited resubscribe in `set hass` resolves.
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(newSubscribe).toHaveBeenCalledWith(expect.any(Function), {
+				type: "eppgrid/subscribe_device_list",
+			});
+			expect((ctrl as any)._unsubDeviceList).toBe(newUnsub);
+			// Stale unsub belongs to the dead socket — must not be invoked.
+			expect(staleUnsub).not.toHaveBeenCalled();
+		});
+
+		it("connection swap auto-resubscribes even when the prior subscribe was still in flight", async () => {
+			// `_unsubDeviceList` only exists after subscribeMessage resolves;
+			// gating the resubscribe on it would silently miss a swap landing
+			// mid-subscribe. Track intent separately (see flasher-controller).
+			let resolveOld: (unsub: () => void) => void = () => {};
+			const oldUnsub = vi.fn();
+			const oldSubPromise = new Promise<() => void>((r) => {
+				resolveOld = r;
+			});
+			hass.connection.subscribeMessage = vi.fn().mockReturnValue(oldSubPromise);
+
+			void ctrl.subscribeDeviceList();
+			expect((ctrl as any)._unsubDeviceList).toBeUndefined();
+
+			const newUnsub = vi.fn();
+			const newSubscribe = vi.fn().mockResolvedValue(newUnsub);
+			ctrl.hass = {
+				callWS: vi.fn(),
+				connection: { subscribeMessage: newSubscribe },
+			};
+
+			// Old subscribe finally resolves; generation token discards it.
+			resolveOld(oldUnsub);
+			for (let i = 0; i < 5; i++) await Promise.resolve();
+
+			expect(newSubscribe).toHaveBeenCalledWith(expect.any(Function), {
+				type: "eppgrid/subscribe_device_list",
+			});
+			expect((ctrl as any)._unsubDeviceList).toBe(newUnsub);
+		});
+
+		it("connection swap does NOT auto-resubscribe when there was no prior subscription", async () => {
+			const newSubscribe = vi.fn().mockResolvedValue(vi.fn());
+			ctrl.hass = {
+				callWS: vi.fn(),
+				connection: { subscribeMessage: newSubscribe },
+			};
+			await Promise.resolve();
+			await Promise.resolve();
+
+			expect(newSubscribe).not.toHaveBeenCalled();
+			expect((ctrl as any)._unsubDeviceList).toBeUndefined();
+		});
+	});
+
+	describe("capped subscription retries", () => {
+		it("stops retrying grid-targets after 5 attempts and surfaces connectionFailed", async () => {
+			vi.useFakeTimers();
+			try {
+				const subscribeMock = vi
+					.fn()
+					.mockImplementation((_cb: any, msg: any) => {
+						if (msg.type === "eppgrid/subscribe_grid_targets") {
+							return Promise.reject(new Error("unknown command"));
+						}
+						return Promise.resolve(vi.fn());
+					});
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: subscribeMock },
+				};
+
+				ctrl.subscribeTargets("aa");
+				await vi.advanceTimersByTimeAsync(0);
+				// Drive well past 5 retry windows.
+				for (let i = 0; i < 8; i++) {
+					await vi.advanceTimersByTimeAsync(2000);
+				}
+
+				const gridSubs = subscribeMock.mock.calls.filter(
+					(c: any[]) => c[1]?.type === "eppgrid/subscribe_grid_targets",
+				);
+				expect(gridSubs).toHaveLength(5);
+				expect(ctrl.connectionFailed).toBe(true);
+				expect((ctrl as any)._targetRetryTimer).toBeUndefined();
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("retries the raw-targets subscription after a transient failure", async () => {
+			vi.useFakeTimers();
+			try {
+				const unsub = vi.fn();
+				const subscribeMock = vi
+					.fn()
+					.mockRejectedValueOnce(new Error("unknown command"))
+					.mockResolvedValueOnce(unsub);
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: subscribeMock },
+				};
+
+				ctrl.subscribeDisplay("aa");
+				await vi.advanceTimersByTimeAsync(0);
+				await vi.advanceTimersByTimeAsync(2000);
+
+				expect(subscribeMock).toHaveBeenCalledTimes(2);
+				expect((ctrl as any)._unsubDisplay).toBe(unsub);
+				expect(ctrl.connectionFailed).toBe(false);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("stops retrying raw-targets after 5 attempts and surfaces connectionFailed", async () => {
+			vi.useFakeTimers();
+			try {
+				const subscribeMock = vi
+					.fn()
+					.mockRejectedValue(new Error("unknown command"));
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: subscribeMock },
+				};
+
+				ctrl.subscribeDisplay("aa");
+				await vi.advanceTimersByTimeAsync(0);
+				for (let i = 0; i < 8; i++) {
+					await vi.advanceTimersByTimeAsync(2000);
+				}
+
+				expect(subscribeMock).toHaveBeenCalledTimes(5);
+				expect(ctrl.connectionFailed).toBe(true);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("does not retry raw-targets after unsubscribeDisplay", async () => {
+			vi.useFakeTimers();
+			try {
+				const subscribeMock = vi
+					.fn()
+					.mockRejectedValue(new Error("unknown command"));
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: subscribeMock },
+				};
+
+				ctrl.subscribeDisplay("aa");
+				await vi.advanceTimersByTimeAsync(0);
+				ctrl.unsubscribeDisplay();
+				for (let i = 0; i < 3; i++) {
+					await vi.advanceTimersByTimeAsync(2000);
+				}
+
+				expect(subscribeMock).toHaveBeenCalledTimes(1);
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 	});
 

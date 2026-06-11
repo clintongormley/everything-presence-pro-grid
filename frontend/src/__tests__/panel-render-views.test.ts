@@ -379,6 +379,45 @@ describe("render() preserves settings view across transient device states", () =
 		expect(str).toContain("epp-settings-view");
 	});
 
+	it("keeps epp-settings-view mounted while the HA websocket is down", () => {
+		// The HA-reconnecting branch used to swap the whole template out,
+		// unmounting <epp-settings-view> and wiping its private `_overrides`
+		// mid-edit — exactly what the inline-banner design exists to prevent.
+		const a = createPanel() as any;
+		a._view = "settings";
+		a._haConnected = false;
+
+		const result = a.render();
+		const str = JSON.stringify(result);
+
+		expect(str).toContain("epp-settings-view");
+		// Status is still surfaced inline so the user knows HA is away.
+		expect(str).toContain("connection.ha_reconnecting");
+	});
+
+	it("keeps epp-settings-view mounted while the panel is (re)loading", () => {
+		const a = createPanel() as any;
+		a._view = "settings";
+		a._loading = true;
+
+		const result = a.render();
+		const str = JSON.stringify(result);
+
+		expect(str).toContain("epp-settings-view");
+	});
+
+	it("falls back to the full-page HA-reconnecting banner when not in settings view", () => {
+		const a = createPanel() as any;
+		a._view = "live";
+		a._haConnected = false;
+
+		const result = a.render();
+		const str = JSON.stringify(result);
+
+		expect(str).not.toContain("epp-settings-view");
+		expect(str).toContain("connection.ha_reconnecting");
+	});
+
 	it("falls back to full-page banner when not in settings view", () => {
 		const a = createPanel() as any;
 		a._view = "live";

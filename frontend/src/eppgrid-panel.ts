@@ -848,7 +848,12 @@ export class EPPGridPanel extends LitElement {
 			clearTimeout(this._initRetryTimer);
 			this._initRetryTimer = undefined;
 		}
-		if (!isRetry) {
+		if (!isRetry && this._devices.length === 0) {
+			// Only show the loading screen on a genuinely empty panel. On a
+			// reconnect re-init (_onHaReady) the device list is still in
+			// memory; flipping `_loading` would swap the whole UI for the
+			// loading screen — a flash on every reconnect, and an unmount of
+			// the settings view mid-edit.
 			this._loading = true;
 		}
 		this._deviceCtrl.hass = this.hass;
@@ -881,6 +886,9 @@ export class EPPGridPanel extends LitElement {
 
 	private async _subscribeDevices(): Promise<void> {
 		this._deviceCtrl.hass = this.hass;
+		// Lets the controller defer the auto-switch to another device while
+		// the user has unsaved edits (see _applyDeviceList's dirty-guard).
+		this._deviceCtrl.isHostDirty = () => this._dirty;
 		this._deviceCtrl.onDeviceListChanged = () => {
 			const prevMac = this._selectedMac;
 			this._devices = this._deviceCtrl.devices;
@@ -1835,7 +1843,19 @@ export class EPPGridPanel extends LitElement {
 			</div>`;
 		}
 
-		if (this.hass?.connection?.connected === false || !this._haConnected) {
+		// While the user is editing settings, swapping the whole template out
+		// for a connection/loading screen unmounts <epp-settings-view>, which
+		// wipes its private `_overrides` (every unsaved toggle / slider edit).
+		// HA debounces ESPHome reloads 30s after a disabled_by change, so a
+		// settings save reliably triggers a brief offline window 30s later —
+		// long enough to lose any in-flight edits the user made after
+		// clicking Save. Every full-page status branch below must honour
+		// this and inline a banner above the settings view instead.
+		const inSettingsEdit = this._view === "settings" && this._selectedMac;
+		const haDisconnected =
+			this.hass?.connection?.connected === false || !this._haConnected;
+
+		if (haDisconnected && !inSettingsEdit) {
 			return html`<div class="tab-layout">
 				${this._renderTabBar()}
 				<div class="panel">
@@ -1847,7 +1867,7 @@ export class EPPGridPanel extends LitElement {
 			</div>`;
 		}
 
-		if (this._loading) {
+		if (this._loading && !inSettingsEdit) {
 			return html`<div class="tab-layout">
 				${this._renderTabBar()}
 				<div class="loading-container">${this._localize("common.loading")}</div>
@@ -1930,17 +1950,19 @@ export class EPPGridPanel extends LitElement {
 			!!this._selectedMac && (!dev || dev.firmware_status === "unavailable");
 		const protocolOk = !dev || dev.firmware_status === "compatible";
 
-		// Compute the inline status banner for settings-view editing.
-		// While the user is editing settings, swapping the whole template out
-		// for a connection banner unmounts <epp-settings-view>, which wipes
-		// its private `_overrides` (every unsaved toggle / slider edit). HA
-		// debounces ESPHome reloads 30s after a disabled_by change, so a
-		// settings save reliably triggers a brief offline window 30s later
-		// — long enough to lose any in-flight edits the user made after
-		// clicking Save. Inline the banner above the settings view instead.
+		// Compute the inline status banner for settings-view editing (see the
+		// `inSettingsEdit` comment above for why the full-page branches must
+		// not unmount the settings view).
 		let settingsStatusBanner: any = nothing;
-		if (this._view === "settings" && this._selectedMac) {
-			if (this._deviceCtrl.reconnecting) {
+		if (inSettingsEdit) {
+			if (haDisconnected) {
+				settingsStatusBanner = html`
+					<div class="protocol-fullpage protocol-fullpage-info">
+						<ha-icon icon="mdi:connection"></ha-icon>
+						<p>${this._localize("connection.ha_reconnecting")}</p>
+					</div>
+				`;
+			} else if (this._deviceCtrl.reconnecting) {
 				settingsStatusBanner = html`
 					<div class="protocol-fullpage protocol-fullpage-info">
 						<ha-icon icon="mdi:connection"></ha-icon>
@@ -1953,8 +1975,6 @@ export class EPPGridPanel extends LitElement {
 				settingsStatusBanner = this._renderProtocolBanner();
 			}
 		}
-
-		const inSettingsEdit = this._view === "settings" && this._selectedMac;
 
 		if (this._deviceCtrl.reconnecting && !inSettingsEdit) {
 			return html`<div class="tab-layout">

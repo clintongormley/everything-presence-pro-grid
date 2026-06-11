@@ -137,6 +137,49 @@ describe("panel device list transitions", () => {
 		}
 	});
 
+	it("does not auto-switch away from a dirty editor when the selected device is removed", async () => {
+		// Auto-switching loads the replacement device's config straight over
+		// the user's unsaved edits with no prompt. With a dirty host the
+		// switch is deferred: the missing mac stays selected (rendering as
+		// offline) until the user saves/discards or the device returns.
+		const dev1 = mockDeviceInfo("aa", "Alpha");
+		const dev2 = mockDeviceInfo("bb", "Bravo");
+		const { el, a, pushDeviceList } = await mountPanel([dev1, dev2]);
+		a._dirty = true;
+		const loadSpy = vi.spyOn(a, "_loadDeviceConfig");
+		loadSpy.mockClear();
+
+		pushDeviceList([dev2]);
+		await el.updateComplete;
+		await new Promise((r) => setTimeout(r, 0));
+
+		expect(a._selectedMac).toBe("aa");
+		expect(loadSpy).not.toHaveBeenCalled();
+		expect(localStorage.getItem("epp_selected_mac")).toBe("aa");
+	});
+
+	it("auto-switches on the next push once the dirty edits are resolved", async () => {
+		const dev1 = mockDeviceInfo("aa", "Alpha");
+		const dev2 = mockDeviceInfo("bb", "Bravo");
+		const { el, a, pushDeviceList } = await mountPanel([dev1, dev2]);
+		a._dirty = true;
+		const loadSpy = vi.spyOn(a, "_loadDeviceConfig");
+		loadSpy.mockClear();
+
+		pushDeviceList([dev2]);
+		await el.updateComplete;
+		expect(a._selectedMac).toBe("aa");
+
+		// User saves or discards, then the next device-list push lands.
+		a._dirty = false;
+		pushDeviceList([dev2]);
+		await el.updateComplete;
+		await new Promise((r) => setTimeout(r, 0));
+
+		expect(a._selectedMac).toBe("bb");
+		expect(loadSpy).toHaveBeenCalledWith("bb");
+	});
+
 	it("does not auto-load when the replacement device is offline", async () => {
 		const dev1 = mockDeviceInfo("aa", "Alpha");
 		const dev2 = mockDeviceInfo("bb", "Bravo", false);

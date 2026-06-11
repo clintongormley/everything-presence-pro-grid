@@ -300,6 +300,53 @@ describe("panel state survives device offline→online", () => {
 		expect(a._perspective).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 	});
 
+	it("keeps the same epp-settings-view element mounted through a WS disconnect/reconnect cycle", async () => {
+		// Unmounting the settings view wipes its private `_overrides` (every
+		// unsaved toggle/slider edit). The inline-banner design keeps it
+		// mounted through device blips; the HA-disconnected and loading render
+		// branches must honour it too. Element identity proves no
+		// unmount/remount happened.
+		const { el, a, hass } = await mountPanel([makeDevice("aa", true)]);
+		a._view = "settings";
+		a._dirty = true;
+		await el.updateComplete;
+		const viewBefore = el.shadowRoot?.querySelector("epp-settings-view");
+		expect(viewBefore).not.toBeNull();
+
+		// HA drops the socket…
+		a._haConnected = false;
+		await el.updateComplete;
+		expect(el.shadowRoot?.querySelector("epp-settings-view")).toBe(viewBefore);
+
+		// …and comes back.
+		(hass.connection as any).connected = true;
+		a._onHaReady();
+		await el.updateComplete;
+		await new Promise((r) => setTimeout(r, 0));
+		await el.updateComplete;
+
+		expect(el.shadowRoot?.querySelector("epp-settings-view")).toBe(viewBefore);
+	});
+
+	it("does not flash the loading screen on reconnect when devices are already loaded", async () => {
+		// _onHaReady → _initialize used to set `_loading = true`
+		// unconditionally, swapping the whole UI for the loading screen on
+		// every reconnect even though the device list was still in memory.
+		const { el, a, hass } = await mountPanel([makeDevice("aa", true)]);
+		expect(a._loading).toBe(false);
+
+		a._haConnected = false;
+		(hass.connection as any).connected = true;
+		a._onHaReady();
+
+		// Synchronously after the ready event — _initialize runs up to its
+		// first await before returning, so a loading flash would show here.
+		expect(a._loading).toBe(false);
+		await new Promise((r) => setTimeout(r, 0));
+		await el.updateComplete;
+		expect(a._loading).toBe(false);
+	});
+
 	it("mirrors _view to the URL fragment so a panel recreation returns to the same tab", async () => {
 		// A full HA container restart can trigger the HA frontend to
 		// recreate panel elements from scratch — losing any @state().
