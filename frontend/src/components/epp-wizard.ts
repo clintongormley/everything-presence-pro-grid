@@ -10,6 +10,7 @@ import {
 	TARGET_COLORS,
 } from "../constants.js";
 import { rawToFovPct } from "../lib/coordinates.js";
+import { DocumentListenerGroup } from "../lib/document-listeners.js";
 import { MAX_RANGE } from "../lib/grid.js";
 import { solvePerspective } from "../lib/perspective.js";
 import {
@@ -82,13 +83,12 @@ export class EppWizard extends LitElement {
 		if (this.initialStep !== null) this._setupStep = this.initialStep;
 	}
 
-	private _captureOverlayListenersAttached = false;
-
-	private _onCaptureOverlayKeydown = (e: KeyboardEvent): void => {
-		if (e.key === "Escape") {
+	private _onCaptureOverlayKeydown = (e: Event): void => {
+		const key = (e as KeyboardEvent).key;
+		if (key === "Escape") {
 			e.preventDefault();
 			this._wizardCancelCapture();
-		} else if (e.key === "Tab") {
+		} else if (key === "Tab") {
 			// Trap focus on the single Cancel button inside the overlay.
 			e.preventDefault();
 			const cancelBtn = this.shadowRoot?.querySelector(
@@ -98,35 +98,32 @@ export class EppWizard extends LitElement {
 		}
 	};
 
-	private _attachCaptureOverlayListeners(): void {
-		if (this._captureOverlayListenersAttached) return;
-		document.addEventListener("keydown", this._onCaptureOverlayKeydown);
-		this._captureOverlayListenersAttached = true;
-	}
-
-	private _detachCaptureOverlayListeners(): void {
-		if (!this._captureOverlayListenersAttached) return;
-		document.removeEventListener("keydown", this._onCaptureOverlayKeydown);
-		this._captureOverlayListenersAttached = false;
-	}
+	// Attached only while the capture overlay is open (see updated()).
+	private _captureOverlayListeners = new DocumentListenerGroup([
+		{
+			target: document,
+			type: "keydown",
+			listener: this._onCaptureOverlayKeydown,
+		},
+	]);
 
 	updated(changed: Map<string, unknown>): void {
 		if (changed.has("_wizardCapturing")) {
 			if (this._wizardCapturing) {
-				this._attachCaptureOverlayListeners();
+				this._captureOverlayListeners.attach();
 				const cancelBtn = this.shadowRoot?.querySelector(
 					".capture-overlay .wizard-btn-back",
 				) as HTMLElement | null;
 				cancelBtn?.focus();
 			} else {
-				this._detachCaptureOverlayListeners();
+				this._captureOverlayListeners.detach();
 			}
 		}
 	}
 
 	disconnectedCallback(): void {
 		super.disconnectedCallback();
-		this._detachCaptureOverlayListeners();
+		this._captureOverlayListeners.detach();
 		this._wizardCaptureCancelled = true;
 		// Stop the capture outright: the RAF loop is dead after detach, so a
 		// surviving _wizardCapturing would re-render a frozen overlay on

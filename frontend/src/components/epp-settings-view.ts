@@ -1,12 +1,57 @@
 import { css, html, LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import { STATIC_ON_DELAY_MAX } from "../lib/config-serialization.js";
+import { DocumentListenerGroup } from "../lib/document-listeners.js";
 import {
 	autoDetectionRange,
 	getGridRoomMetrics,
 } from "../lib/room-geometry.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 import { buttonStyles, settingStyles, toggleStyles } from "../styles.js";
+import { renderSaveCancelBar } from "./save-cancel-bar.js";
+
+/** Option shape consumed by ha-select's `.options` property. */
+interface SelectOption {
+	value: string;
+	label: string;
+}
+
+// Wire values are English (firmware protocol); labels are localized at
+// render time via the memoised option arrays.
+const LOG_LEVELS = ["None", "Error", "Warning", "Info", "Debug"];
+
+/** One slider row in the sensitivities section. */
+interface SliderRowDescriptor {
+	/** Translation key for the row label. */
+	label: string;
+	/** Override/_fireChange key, e.g. "motionTimeout". */
+	key: string;
+	/** Current value (from the panel prop). */
+	value: number;
+	min: number;
+	max: number;
+	step?: number;
+	/** Unit suffix shown after the value ("s" or ""). */
+	unit: string;
+	/** Value the reset button restores. */
+	defaultValue: number;
+	/** Translation key for the info tooltip. */
+	tip: string;
+}
+
+/** One entity-reporting toggle row. */
+interface ToggleRowDescriptor {
+	/** Translation key for the row label. */
+	label: string;
+	/** Entity key in entitiesConfig, e.g. "room_occupancy". */
+	key: string;
+	/** Default state when neither overrides nor saved config have the key. */
+	def: boolean;
+	/** Translation key for the info tooltip. */
+	tip: string;
+	/** Disable the toggle (e.g. zone entities need a calibration). */
+	disabled?: boolean;
+}
 
 export interface SensorState {
 	occupancy: boolean;
@@ -189,6 +234,129 @@ export class EppSettingsView extends LitElement {
 		e.stopPropagation();
 	};
 
+	// ---------------------------------------------------------------------
+	// Memoised derived data. The view re-renders at 5Hz from the live sensor
+	// stream; rebuilding option arrays every render hands ha-select a new
+	// `.options` reference each time (forcing it to re-initialise), and the
+	// geometry helpers scan the full grid. Both are lazy caches keyed on the
+	// inputs they derive from (the epp-grid `_getScan` pattern — willUpdate
+	// isn't suitable because unit tests invoke the render helpers directly,
+	// outside the reactive-update lifecycle).
+	// ---------------------------------------------------------------------
+
+	private _optionCache: {
+		localize: LocalizeFn;
+		co2Enabled: boolean;
+		rateOptions: SelectOption[];
+		logLevelOptions: SelectOption[];
+		ledModes: SelectOption[];
+		relayTriggerModes: SelectOption[];
+		relayContactModes: SelectOption[];
+	} | null = null;
+
+	private _getOptions(): NonNullable<EppSettingsView["_optionCache"]> {
+		const c = this._optionCache;
+		if (c && c.localize === this.localize && c.co2Enabled === this.co2Enabled) {
+			return c;
+		}
+		const l = this.localize;
+		const ledModes = [
+			{ value: "Manual Control", label: l("settings.manual_control") },
+			{ value: "Presence", label: l("settings.presence") },
+		];
+		if (this.co2Enabled) {
+			ledModes.push(
+				{ value: "Environmental", label: l("settings.environmental") },
+				{
+					value: "Environmental + Presence",
+					label: l("settings.environmental_presence"),
+				},
+			);
+		}
+		this._optionCache = {
+			localize: l,
+			co2Enabled: this.co2Enabled,
+			rateOptions: [
+				{ value: "200", label: l("settings.frequency.5hz") },
+				{ value: "500", label: l("settings.frequency.2hz") },
+				{ value: "1000", label: l("settings.frequency.1hz") },
+				{ value: "2000", label: l("settings.frequency.0_5hz") },
+			],
+			logLevelOptions: LOG_LEVELS.map((level) => ({
+				value: level,
+				label: l(`settings.log_level.${level.toLowerCase()}`),
+			})),
+			ledModes,
+			relayTriggerModes: [
+				{ value: "disabled", label: l("settings.relay_disabled") },
+				{ value: "motion", label: l("settings.relay_motion") },
+				{ value: "presence", label: l("settings.relay_presence") },
+				{ value: "occupancy", label: l("settings.relay_occupancy") },
+			],
+			relayContactModes: [
+				{ value: "no", label: l("settings.relay_normally_open") },
+				{ value: "nc", label: l("settings.relay_normally_closed") },
+			],
+		};
+		return this._optionCache;
+	}
+
+	private _geomCache: {
+		grid: Uint8Array;
+		perspective: number[] | null;
+		roomWidth: number;
+		roomDepth: number;
+		autoRange: number;
+		metrics: ReturnType<typeof getGridRoomMetrics>;
+	} | null = null;
+
+	private _getGeometry(): NonNullable<EppSettingsView["_geomCache"]> {
+		const c = this._geomCache;
+		if (
+			c &&
+			c.grid === this.grid &&
+			c.perspective === this.perspective &&
+			c.roomWidth === this.roomWidth &&
+			c.roomDepth === this.roomDepth
+		) {
+			return c;
+		}
+		this._geomCache = {
+			grid: this.grid,
+			perspective: this.perspective,
+			roomWidth: this.roomWidth,
+			roomDepth: this.roomDepth,
+			autoRange: autoDetectionRange(
+				this.roomWidth,
+				this.roomDepth,
+				this.perspective,
+				this.grid,
+			),
+			metrics: getGridRoomMetrics(this.grid, this.roomWidth, this.perspective),
+		};
+		return this._geomCache;
+	}
+
+	/**
+	 * Themed toggle switch. Renders `ha-switch` when it's registered in this
+	 * HA frontend (Web Awesome, 2026.x); falls back to the hand-rolled
+	 * checkbox toggle so the view stays usable on HA versions where
+	 * ha-switch isn't registered in the panel's scope.
+	 */
+	private renderToggle(opts: {
+		checked: boolean;
+		disabled?: boolean;
+		/** Set as data-entity-key so the shared @change handler can route. */
+		entityKey?: string;
+		onChange: (e: Event) => void;
+	}) {
+		const { checked, disabled = false, entityKey, onChange } = opts;
+		if (customElements.get("ha-switch")) {
+			return html`<ha-switch data-entity-key=${entityKey ?? nothing} .checked=${checked} .disabled=${disabled} @change=${onChange}></ha-switch>`;
+		}
+		return html`<label class="toggle-switch"><input type="checkbox" data-entity-key=${entityKey ?? nothing} .checked=${checked} .disabled=${disabled} @change=${onChange} /><span class="toggle-slider"></span></label>`;
+	}
+
 	// Tooltip lifecycle (open/close + outside-click/Escape/scroll/resize) is
 	// owned by infoTip() and tied to disconnectedCallback() lower in the file —
 	// the previous window-level _dismissTooltips listener has been removed in
@@ -344,10 +512,15 @@ export class EppSettingsView extends LitElement {
 				? (readingOrGetter as () => number | null)
 				: () => readingOrGetter;
 		const reading = getReading();
-		const offset = (this as any)[propName] ?? 0;
-		// reading already has the saved offset applied by the coordinator,
-		// so subtract it to get the raw value
-		const raw = reading != null ? reading - offset : null;
+		const savedOffset = (this as any)[propName] ?? 0;
+		// Display with the user's in-flight edit (override) when present —
+		// the 5Hz live stream re-renders mid-drag, and recomputing from the
+		// saved prop alone made the text snap back while the slider kept the
+		// dragged position.
+		const offset = this._overrides[`${offsetKey}Offset`] ?? savedOffset;
+		// reading already has the SAVED offset applied by the coordinator,
+		// so subtract that (not the override) to get the raw value
+		const raw = reading != null ? reading - savedOffset : null;
 		const clamp = (v: number) => Math.max(displayMin, Math.min(displayMax, v));
 		const adjusted =
 			raw != null
@@ -408,30 +581,33 @@ export class EppSettingsView extends LitElement {
 			".setting-range",
 		) as HTMLInputElement;
 		if (!slider) return;
-		const oldSliderVal = parseFloat(slider.value);
 		slider.value = String(value);
 		const display = slider.parentElement?.querySelector(
 			".setting-value",
 		) as HTMLElement | null;
 		if (display) {
-			const oldDisplay = parseFloat(display.textContent || "");
 			if (slider.dataset.offsetKey) {
-				// Env offset slider. The display either shows the adjusted reading
-				// (raw + offset) as a number, or the em dash "—" when there is no
-				// live reading. Preserve that em dash on reset so the user still
-				// knows there's no live data; otherwise recompute the adjusted
-				// value from the previous display + slider deltas.
-				if (Number.isNaN(oldDisplay)) {
-					// No live reading — keep the em dash, just record the new offset.
+				// Env offset slider. Recompute from the LIVE reading exactly like
+				// the @input handler does — re-parsing the rendered display text
+				// is locale-hostile (Intl output like "1434,5" or "1,234.5" turns
+				// parseFloat into silent data loss). offsetKey names the
+				// SensorState field the reading comes from.
+				const key = slider.dataset.offsetKey;
+				const reading = (this.sensorState as any)[key] as
+					| number
+					| null
+					| undefined;
+				if (reading == null) {
+					// No live reading — keep the em dash so the user still knows
+					// there's no live data; just record the new offset below.
 					this._setText(display, "—");
 				} else {
+					const savedOffset = ((this as any)[`${key}Offset`] as number) ?? 0;
+					const raw = reading - savedOffset;
 					const precision = parseInt(slider.dataset.precision ?? "0", 10);
 					const dMin = parseFloat(slider.dataset.displayMin ?? "-Infinity");
 					const dMax = parseFloat(slider.dataset.displayMax ?? "Infinity");
-					const adjusted = Math.max(
-						dMin,
-						Math.min(dMax, oldDisplay - oldSliderVal + value),
-					);
+					const adjusted = Math.max(dMin, Math.min(dMax, raw + value));
 					this._setText(
 						display,
 						this.localize.formatNumber(adjusted, precision),
@@ -480,29 +656,6 @@ export class EppSettingsView extends LitElement {
 	private _tipIdCounter = 0;
 	private _openTooltip: HTMLElement | null = null;
 	private _openTooltipBtn: HTMLElement | null = null;
-	private _tipListenersAttached = false;
-
-	private _attachTooltipListeners(): void {
-		if (this._tipListenersAttached) return;
-		document.addEventListener("keydown", this._onTooltipKeydown);
-		document.addEventListener("pointerdown", this._onTooltipPointerDown, true);
-		window.addEventListener("scroll", this._onTooltipViewportChange, true);
-		window.addEventListener("resize", this._onTooltipViewportChange);
-		this._tipListenersAttached = true;
-	}
-
-	private _detachTooltipListeners(): void {
-		if (!this._tipListenersAttached) return;
-		document.removeEventListener("keydown", this._onTooltipKeydown);
-		document.removeEventListener(
-			"pointerdown",
-			this._onTooltipPointerDown,
-			true,
-		);
-		window.removeEventListener("scroll", this._onTooltipViewportChange, true);
-		window.removeEventListener("resize", this._onTooltipViewportChange);
-		this._tipListenersAttached = false;
-	}
 
 	private _closeOpenTooltip(): void {
 		if (this._openTooltip) {
@@ -510,11 +663,11 @@ export class EppSettingsView extends LitElement {
 			this._openTooltip = null;
 			this._openTooltipBtn = null;
 		}
-		this._detachTooltipListeners();
+		this._tooltipListeners.detach();
 	}
 
-	private _onTooltipKeydown = (e: KeyboardEvent): void => {
-		if (e.key === "Escape") this._closeOpenTooltip();
+	private _onTooltipKeydown = (e: Event): void => {
+		if ((e as KeyboardEvent).key === "Escape") this._closeOpenTooltip();
 	};
 
 	private _onTooltipViewportChange = (): void => {
@@ -526,6 +679,25 @@ export class EppSettingsView extends LitElement {
 		if (this._openTooltipBtn && path.includes(this._openTooltipBtn)) return;
 		this._closeOpenTooltip();
 	};
+
+	// Dismissal listeners live only while a tooltip is open. Declared after
+	// the handlers above — class fields initialise in order.
+	private _tooltipListeners = new DocumentListenerGroup([
+		{ target: document, type: "keydown", listener: this._onTooltipKeydown },
+		{
+			target: document,
+			type: "pointerdown",
+			listener: this._onTooltipPointerDown,
+			options: true,
+		},
+		{
+			target: window,
+			type: "scroll",
+			listener: this._onTooltipViewportChange,
+			options: true,
+		},
+		{ target: window, type: "resize", listener: this._onTooltipViewportChange },
+	]);
 
 	disconnectedCallback(): void {
 		super.disconnectedCallback();
@@ -555,7 +727,7 @@ export class EppSettingsView extends LitElement {
 				if (wasOpen) {
 					this._openTooltip = null;
 					this._openTooltipBtn = null;
-					this._detachTooltipListeners();
+					this._tooltipListeners.detach();
 					return;
 				}
 				const rect = icon.getBoundingClientRect();
@@ -564,23 +736,13 @@ export class EppSettingsView extends LitElement {
 				tip.style.top = `${rect.bottom + 6}px`;
 				this._openTooltip = tip;
 				this._openTooltipBtn = icon;
-				this._attachTooltipListeners();
+				this._tooltipListeners.attach();
 			}}
 		><ha-icon icon="mdi:help-circle-outline"></ha-icon><span id=${tipId} class="setting-info-tooltip" role="tooltip">${text}</span></button>`;
 	}
 
 	renderDetectionRanges() {
-		const autoRange = autoDetectionRange(
-			this.roomWidth,
-			this.roomDepth,
-			this.perspective,
-			this.grid,
-		);
-		const metrics = getGridRoomMetrics(
-			this.grid,
-			this.roomWidth,
-			this.perspective,
-		);
+		const { autoRange, metrics } = this._getGeometry();
 		const targetAutoVal = autoRange > 0 ? Math.min(autoRange, 6) : 6;
 		const staticMaxAutoVal = autoRange > 0 ? Math.min(autoRange, 16) : 16;
 		const targetVal = this.targetAutoDistance
@@ -597,19 +759,18 @@ export class EppSettingsView extends LitElement {
           <h4>${this.localize("settings.target_sensor")}</h4>
           <div class="setting-row">
             <label>${this.localize("settings.auto")}</label>
-            <label class="toggle-switch">
-              <input type="checkbox" .checked=${this.targetAutoDistance}
-                @change=${(e: Event) => {
-									const checked = (e.target as HTMLInputElement).checked;
-									if (!checked) {
-										this._overrides.targetMaxDistance = targetVal;
-										this._fireChange("targetMaxDistance", targetVal);
-									}
-									this._overrides.targetAutoDistance = checked;
-									this._fireChange("targetAutoDistance", checked);
-								}} />
-              <span class="toggle-slider"></span>
-            </label>
+            ${this.renderToggle({
+							checked: this.targetAutoDistance,
+							onChange: (e: Event) => {
+								const checked = (e.target as HTMLInputElement).checked;
+								if (!checked) {
+									this._overrides.targetMaxDistance = targetVal;
+									this._fireChange("targetMaxDistance", targetVal);
+								}
+								this._overrides.targetAutoDistance = checked;
+								this._fireChange("targetAutoDistance", checked);
+							},
+						})}
             ${this.infoTip(this.localize("info.target_auto_range"))}
           </div>
           <div class="setting-row" style="${this.targetAutoDistance ? autoStyle : ""}">
@@ -629,21 +790,20 @@ export class EppSettingsView extends LitElement {
           <h4>${this.localize("settings.static_sensor")}</h4>
           <div class="setting-row">
             <label>${this.localize("settings.auto")}</label>
-            <label class="toggle-switch">
-              <input type="checkbox" .checked=${this.staticAutoDistance}
-                @change=${(e: Event) => {
-									const checked = (e.target as HTMLInputElement).checked;
-									if (!checked) {
-										this._overrides.staticMinDistance = 0.3;
-										this._fireChange("staticMinDistance", 0.3);
-										this._overrides.staticMaxDistance = staticMaxVal;
-										this._fireChange("staticMaxDistance", staticMaxVal);
-									}
-									this._overrides.staticAutoDistance = checked;
-									this._fireChange("staticAutoDistance", checked);
-								}} />
-              <span class="toggle-slider"></span>
-            </label>
+            ${this.renderToggle({
+							checked: this.staticAutoDistance,
+							onChange: (e: Event) => {
+								const checked = (e.target as HTMLInputElement).checked;
+								if (!checked) {
+									this._overrides.staticMinDistance = 0.3;
+									this._fireChange("staticMinDistance", 0.3);
+									this._overrides.staticMaxDistance = staticMaxVal;
+									this._fireChange("staticMaxDistance", staticMaxVal);
+								}
+								this._overrides.staticAutoDistance = checked;
+								this._fireChange("staticAutoDistance", checked);
+							},
+						})}
             ${this.infoTip(this.localize("info.target_auto_range"))}
           </div>
           <div class="setting-row" style="${this.staticAutoDistance ? autoStyle : ""}">
@@ -687,102 +847,141 @@ export class EppSettingsView extends LitElement {
     `;
 	}
 
+	/** Render one sensitivity slider row from a descriptor. */
+	renderSliderRow(d: SliderRowDescriptor) {
+		return html`
+      <div class="setting-row">
+        <label>${this.localize(d.label)}</label>
+        <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(d.value)} min=${d.min} max=${d.max} step=${d.step ?? 1} @input=${(
+					e: Event,
+				) => {
+					const el = e.target as HTMLInputElement;
+					const v = Number(el.value);
+					this._overrides[d.key] = v;
+					this._setSettingValue(el, el.value);
+					this._fireChange(d.key, v);
+				}} /><span class="setting-value">${d.value}</span><span class="setting-unit">${d.unit}</span></span>
+        ${this.resetBtn(d.defaultValue, d.key)}${this.infoTip(this.localize(d.tip))}
+      </div>
+    `;
+	}
+
 	renderSensitivities() {
+		const groups: { title: string; rows: SliderRowDescriptor[] }[] = [
+			{
+				title: "settings.motion_sensor",
+				rows: [
+					{
+						label: "settings.presence_timeout",
+						key: "motionTimeout",
+						value: this.motionTimeout,
+						min: 0,
+						max: 120,
+						unit: "s",
+						defaultValue: 5,
+						tip: "info.motion_timeout",
+					},
+				],
+			},
+			{
+				title: "settings.static_sensor",
+				rows: [
+					{
+						label: "settings.presence_delay",
+						key: "staticOnDelay",
+						value: this.staticOnDelay,
+						min: 0,
+						max: STATIC_ON_DELAY_MAX,
+						step: 0.1,
+						unit: "s",
+						defaultValue: 0,
+						tip: "info.presence_delay",
+					},
+					{
+						label: "settings.presence_timeout",
+						key: "staticTimeout",
+						value: this.staticTimeout,
+						min: 0,
+						max: 120,
+						unit: "s",
+						defaultValue: 30,
+						tip: "info.static_timeout",
+					},
+					{
+						label: "settings.trigger_threshold",
+						key: "staticTriggerThreshold",
+						value: this.staticTriggerThreshold,
+						min: 1,
+						max: 9,
+						unit: "",
+						defaultValue: 3,
+						tip: "info.trigger_threshold",
+					},
+					{
+						label: "settings.renew_threshold",
+						key: "staticRenewThreshold",
+						value: this.staticRenewThreshold,
+						min: 1,
+						max: 9,
+						unit: "",
+						defaultValue: 3,
+						tip: "info.renew_threshold",
+					},
+				],
+			},
+			{
+				title: "settings.target_sensor",
+				rows: [
+					{
+						label: "settings.stuck_target_timeout",
+						key: "stuckTargetTimeout",
+						value: this.stuckTargetTimeout,
+						min: 0,
+						max: 600,
+						unit: "s",
+						defaultValue: 300,
+						tip: "info.stuck_target_timeout",
+					},
+				],
+			},
+		];
+
 		return html`
       <div class="settings-section">
+        ${groups.map(
+					(g) => html`
         <div class="setting-group">
-          <h4>${this.localize("settings.motion_sensor")}</h4>
-          <div class="setting-row">
-            <label>${this.localize("settings.presence_timeout")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(this.motionTimeout)} min="0" max="120" step="1" @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							const v = Number(el.value);
-							this._overrides.motionTimeout = v;
-							this._setSettingValue(el, el.value);
-							this._fireChange("motionTimeout", v);
-						}} /><span class="setting-value">${this.motionTimeout}</span><span class="setting-unit">s</span></span>
-            ${this.resetBtn(5, "motionTimeout")}${this.infoTip(this.localize("info.motion_timeout"))}
-          </div>
+          <h4>${this.localize(g.title)}</h4>
+          ${g.rows.map((row) => this.renderSliderRow(row))}
         </div>
-        <div class="setting-group">
-          <h4>${this.localize("settings.static_sensor")}</h4>
-          <div class="setting-row">
-            <label>${this.localize("settings.presence_delay")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(this.staticOnDelay)} min="0" max=${String(STATIC_ON_DELAY_MAX)} step="0.1" @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							const v = Number(el.value);
-							this._overrides.staticOnDelay = v;
-							this._setSettingValue(el, el.value);
-							this._fireChange("staticOnDelay", v);
-						}} /><span class="setting-value">${this.staticOnDelay}</span><span class="setting-unit">s</span></span>
-            ${this.resetBtn(0, "staticOnDelay")}${this.infoTip(this.localize("info.presence_delay"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("settings.presence_timeout")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(this.staticTimeout)} min="0" max="120" step="1" @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							const v = Number(el.value);
-							this._overrides.staticTimeout = v;
-							this._setSettingValue(el, el.value);
-							this._fireChange("staticTimeout", v);
-						}} /><span class="setting-value">${this.staticTimeout}</span><span class="setting-unit">s</span></span>
-            ${this.resetBtn(30, "staticTimeout")}${this.infoTip(this.localize("info.static_timeout"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("settings.trigger_threshold")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" min="1" max="9" .value=${String(this.staticTriggerThreshold)} @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							const v = Number(el.value);
-							this._overrides.staticTriggerThreshold = v;
-							this._setSettingValue(el, el.value);
-							this._fireChange("staticTriggerThreshold", v);
-						}} /><span class="setting-value">${this.staticTriggerThreshold}</span><span class="setting-unit"></span></span>
-            ${this.resetBtn(3, "staticTriggerThreshold")}${this.infoTip(this.localize("info.trigger_threshold"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("settings.renew_threshold")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" min="1" max="9" .value=${String(this.staticRenewThreshold)} @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							const v = Number(el.value);
-							this._overrides.staticRenewThreshold = v;
-							this._setSettingValue(el, el.value);
-							this._fireChange("staticRenewThreshold", v);
-						}} /><span class="setting-value">${this.staticRenewThreshold}</span><span class="setting-unit"></span></span>
-            ${this.resetBtn(3, "staticRenewThreshold")}${this.infoTip(this.localize("info.renew_threshold"))}
-          </div>
-        </div>
-        <div class="setting-group">
-          <h4>${this.localize("settings.target_sensor")}</h4>
-          <div class="setting-row">
-            <label>${this.localize("settings.stuck_target_timeout")}</label>
-            <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(this.stuckTargetTimeout)} min="0" max="600" step="1" @input=${(
-							e: Event,
-						) => {
-							const el = e.target as HTMLInputElement;
-							const v = Number(el.value);
-							this._overrides.stuckTargetTimeout = v;
-							this._setSettingValue(el, el.value);
-							this._fireChange("stuckTargetTimeout", v);
-						}} /><span class="setting-value">${this.stuckTargetTimeout}</span><span class="setting-unit">s</span></span>
-            ${this.resetBtn(300, "stuckTargetTimeout")}${this.infoTip(this.localize("info.stuck_target_timeout"))}
-          </div>
-        </div>
+        `,
+				)}
         <div class="setting-group">
           <h4>${this.localize("settings.environmental")}</h4>
           ${this.renderEnvOffset(this.localize("settings.illuminance_offset"), () => this.sensorState.illuminance, "illuminance", -500, 500, 1, "lux", 1, this.localize("info.illuminance_offset"), 0)}
           ${this.renderEnvOffset(this.localize("settings.humidity_offset"), () => this.sensorState.humidity, "humidity", -50, 50, 0.1, "%", 1, this.localize("info.humidity_offset"), 0, 100)}
           ${this.renderEnvOffset(this.localize("settings.temperature_offset"), () => this.sensorState.temperature, "temperature", -20, 20, 0.1, "\u00b0C", 1, this.localize("info.temperature_offset"))}
         </div>
+      </div>
+    `;
+	}
+
+	/** Render one entity-reporting toggle row from a descriptor. */
+	private renderEntityToggleRow(
+		d: ToggleRowDescriptor,
+		isOn: (key: string, fallback: boolean) => boolean,
+		onChange: (e: Event) => void,
+	) {
+		return html`
+      <div class="setting-row">
+        <label>${this.localize(d.label)}</label>
+        ${this.renderToggle({
+					checked: isOn(d.key, d.def),
+					disabled: d.disabled,
+					entityKey: d.key,
+					onChange,
+				})}
+        ${this.infoTip(this.localize(d.tip))}
       </div>
     `;
 	}
@@ -815,65 +1014,131 @@ export class EppSettingsView extends LitElement {
 			isOn("target_zone", false) ||
 			isOn("target_count", false);
 
-		const RATE_OPTIONS = [
-			{ value: "200", label: this.localize("settings.frequency.5hz") },
-			{ value: "500", label: this.localize("settings.frequency.2hz") },
-			{ value: "1000", label: this.localize("settings.frequency.1hz") },
-			{ value: "2000", label: this.localize("settings.frequency.0_5hz") },
+		// Zone/XY entities need a calibration to produce meaningful data.
+		const needsCal = !this.perspective;
+		const ROOM_TOGGLES: ToggleRowDescriptor[] = [
+			{
+				label: "entities.occupancy",
+				key: "room_occupancy",
+				def: true,
+				tip: "info.room_occupancy",
+			},
+			{
+				label: "entities.static_presence",
+				key: "room_static_presence",
+				def: false,
+				tip: "info.room_static",
+			},
+			{
+				label: "entities.motion_presence",
+				key: "room_motion_presence",
+				def: false,
+				tip: "info.room_motion",
+			},
+			{
+				label: "entities.target_presence",
+				key: "room_target_presence",
+				def: false,
+				tip: "info.room_target_presence",
+			},
+			{
+				label: "entities.mmwave",
+				key: "room_mmwave",
+				def: false,
+				tip: "info.room_mmwave",
+			},
+			{
+				label: "entities.target_count",
+				key: "target_count",
+				def: false,
+				tip: "info.room_target_count",
+			},
 		];
+		const ZONE_TOGGLES: ToggleRowDescriptor[] = [
+			{
+				label: "entities.zone_presence",
+				key: "zone_presence",
+				def: true,
+				tip: "info.zone_presence",
+				disabled: needsCal,
+			},
+			{
+				label: "entities.zone_target_count",
+				key: "zone_target_count",
+				def: false,
+				tip: "info.zone_target_count",
+				disabled: needsCal,
+			},
+		];
+		const TARGET_TOGGLES: ToggleRowDescriptor[] = [
+			{
+				label: "entities.xy",
+				key: "target_xy",
+				def: false,
+				tip: "info.xy",
+				disabled: needsCal,
+			},
+			{
+				label: "entities.active",
+				key: "target_active",
+				def: false,
+				tip: "info.active",
+			},
+			{
+				label: "entities.target_signal",
+				key: "target_signal",
+				def: false,
+				tip: "info.target_signal",
+			},
+			{
+				label: "entities.target_zone",
+				key: "target_zone",
+				def: false,
+				tip: "info.target_zone",
+			},
+		];
+		const ENV_TOGGLES: ToggleRowDescriptor[] = [
+			{
+				label: "entities.illuminance",
+				key: "env_illuminance",
+				def: false,
+				tip: "info.illuminance",
+			},
+			{
+				label: "entities.humidity",
+				key: "env_humidity",
+				def: false,
+				tip: "info.humidity",
+			},
+			{
+				label: "entities.temperature",
+				key: "env_temperature",
+				def: false,
+				tip: "info.temperature",
+			},
+			{ label: "entities.co2", key: "env_co2", def: false, tip: "info.co2" },
+		];
+		const rows = (descriptors: ToggleRowDescriptor[]) =>
+			descriptors.map((d) =>
+				this.renderEntityToggleRow(d, isOn, entityToggleHandler),
+			);
+
+		const rateOptions = this._getOptions().rateOptions;
 
 		return html`
       <div class="settings-section">
         <div class="setting-group">
           <h4>${this.localize("entities.room_level")}</h4>
-          <div class="setting-row">
-            <label>${this.localize("entities.occupancy")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="room_occupancy" .checked=${isOn("room_occupancy", true)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.room_occupancy"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.static_presence")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="room_static_presence" .checked=${isOn("room_static_presence", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.room_static"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.motion_presence")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="room_motion_presence" .checked=${isOn("room_motion_presence", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.room_motion"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.target_presence")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="room_target_presence" .checked=${isOn("room_target_presence", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.room_target_presence"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.mmwave")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="room_mmwave" .checked=${isOn("room_mmwave", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.room_mmwave"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.target_count")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="target_count" .checked=${isOn("target_count", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.room_target_count"))}
-          </div>
+          ${rows(ROOM_TOGGLES)}
         </div>
         <div class="setting-group">
           <h4>${this.localize("entities.zone_level")}</h4>
-          <div class="setting-row">
-            <label>${this.localize("entities.zone_presence")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="zone_presence" .checked=${isOn("zone_presence", true)} .disabled=${!this.perspective} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.zone_presence"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.zone_target_count")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="zone_target_count" .checked=${isOn("zone_target_count", false)} .disabled=${!this.perspective} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.zone_target_count"))}
-          </div>
+          ${rows(ZONE_TOGGLES)}
           <div class="setting-row">
             <label>${this.localize("settings.update_rate")}</label>
             <ha-select
               .value=${String(o.zoneUpdateRateMs ?? this.zoneUpdateRateMs)}
-              .options=${RATE_OPTIONS}
+              .options=${rateOptions}
               .disabled=${!anyZoneOn}
               @selected=${(e: CustomEvent<{ value: string }>) => {
 								const val = e.detail.value;
@@ -894,31 +1159,12 @@ export class EppSettingsView extends LitElement {
         </div>
         <div class="setting-group">
           <h4>${this.localize("entities.target_level")}</h4>
-          <div class="setting-row">
-            <label>${this.localize("entities.xy")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="target_xy" .checked=${isOn("target_xy", false)} .disabled=${!this.perspective} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.xy"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.active")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="target_active" .checked=${isOn("target_active", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.active"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.target_signal")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="target_signal" .checked=${isOn("target_signal", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.target_signal"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.target_zone")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="target_zone" .checked=${isOn("target_zone", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.target_zone"))}
-          </div>
+          ${rows(TARGET_TOGGLES)}
           <div class="setting-row">
             <label>${this.localize("settings.update_rate")}</label>
             <ha-select
               .value=${String(o.targetUpdateRateMs ?? this.targetUpdateRateMs)}
-              .options=${RATE_OPTIONS}
+              .options=${rateOptions}
               .disabled=${!anyTargetOn}
               @selected=${(e: CustomEvent<{ value: string }>) => {
 								const val = e.detail.value;
@@ -936,33 +1182,14 @@ export class EppSettingsView extends LitElement {
         </div>
         <div class="setting-group">
           <h4>${this.localize("settings.environmental")}</h4>
-          <div class="setting-row">
-            <label>${this.localize("entities.illuminance")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="env_illuminance" .checked=${isOn("env_illuminance", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.illuminance"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.humidity")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="env_humidity" .checked=${isOn("env_humidity", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.humidity"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.temperature")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="env_temperature" .checked=${isOn("env_temperature", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.temperature"))}
-          </div>
-          <div class="setting-row">
-            <label>${this.localize("entities.co2")}</label>
-            <label class="toggle-switch"><input type="checkbox" @change=${entityToggleHandler} data-entity-key="env_co2" .checked=${isOn("env_co2", false)} /><span class="toggle-slider"></span></label>
-            ${this.infoTip(this.localize("info.co2"))}
-          </div>
+          ${rows(ENV_TOGGLES)}
         </div>
       </div>
     `;
 	}
 
 	renderLogging() {
-		const LOG_LEVELS = ["None", "Error", "Warning", "Info", "Debug"];
+		const logLevelOptions = this._getOptions().logLevelOptions;
 		const categories: {
 			key: string;
 			label: string;
@@ -1021,12 +1248,7 @@ export class EppSettingsView extends LitElement {
                 <label>${this.localize(c.label)}</label>
                 <ha-select
                   .value=${current}
-                  .options=${LOG_LEVELS.map((l) => ({
-										value: l,
-										label: this.localize(
-											`settings.log_level.${l.toLowerCase()}`,
-										),
-									}))}
+                  .options=${logLevelOptions}
                   @selected=${(e: CustomEvent<{ value: string }>) => {
 										const val = e.detail.value;
 										if (!val || val === current) return;
@@ -1077,25 +1299,7 @@ export class EppSettingsView extends LitElement {
 		const showBrightness = mode !== "Manual Control";
 		const showPresenceColor =
 			mode === "Presence" || mode === "Environmental + Presence";
-		const modes = [
-			{
-				value: "Manual Control",
-				label: this.localize("settings.manual_control"),
-			},
-			{ value: "Presence", label: this.localize("settings.presence") },
-		];
-		if (this.co2Enabled) {
-			modes.push(
-				{
-					value: "Environmental",
-					label: this.localize("settings.environmental"),
-				},
-				{
-					value: "Environmental + Presence",
-					label: this.localize("settings.environmental_presence"),
-				},
-			);
-		}
+		const modes = this._getOptions().ledModes;
 		const brightness = this._overrides.ledBrightness ?? this.ledBrightness;
 		const color = this._overrides.ledPresenceColor ?? this.ledPresenceColor;
 
@@ -1158,16 +1362,10 @@ export class EppSettingsView extends LitElement {
 	}
 
 	renderRelay() {
-		const TRIGGER_MODES = [
-			{ value: "disabled", label: this.localize("settings.relay_disabled") },
-			{ value: "motion", label: this.localize("settings.relay_motion") },
-			{ value: "presence", label: this.localize("settings.relay_presence") },
-			{ value: "occupancy", label: this.localize("settings.relay_occupancy") },
-		];
-		const CONTACT_MODES = [
-			{ value: "no", label: this.localize("settings.relay_normally_open") },
-			{ value: "nc", label: this.localize("settings.relay_normally_closed") },
-		];
+		const {
+			relayTriggerModes: TRIGGER_MODES,
+			relayContactModes: CONTACT_MODES,
+		} = this._getOptions();
 
 		const currentTrigger =
 			this._overrides.relayTriggerMode ?? this.relayTriggerMode;
@@ -1237,26 +1435,20 @@ export class EppSettingsView extends LitElement {
 			this._localDirty = false;
 		}
 		const isDirty = this.dirty || this._localDirty;
-		return html`
-      <div class="save-cancel-bar">
-        <button class="wizard-btn wizard-btn-back"
-          @click=${() => {
-						this.dispatchEvent(
-							new CustomEvent("cancel", {
-								bubbles: true,
-								composed: true,
-							}),
-						);
-					}}
-        >${this.localize("common.cancel")}</button>
-        <button class="wizard-btn wizard-btn-primary save-btn"
-          ?disabled=${this.saving || !isDirty}
-          @click=${() => {
-						this._emitSave();
-					}}
-        >${this.saving ? this.localize("common.saving") : this.localize("common.save")}</button>
-      </div>
-    `;
+		return renderSaveCancelBar(
+			this.saving,
+			isDirty,
+			this.localize,
+			() => this._emitSave(),
+			() => {
+				this.dispatchEvent(
+					new CustomEvent("cancel", {
+						bubbles: true,
+						composed: true,
+					}),
+				);
+			},
+		);
 	}
 
 	/**
@@ -1281,12 +1473,7 @@ export class EppSettingsView extends LitElement {
 		let staticMaxDist = o.staticMaxDistance ?? this.staticMaxDistance;
 
 		if (targetAuto || staticAuto) {
-			const autoRange = autoDetectionRange(
-				this.roomWidth,
-				this.roomDepth,
-				this.perspective,
-				this.grid,
-			);
+			const { autoRange } = this._getGeometry();
 			if (targetAuto) {
 				targetMaxDist = autoRange > 0 ? Math.min(autoRange, 6) : 6;
 			}

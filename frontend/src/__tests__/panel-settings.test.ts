@@ -76,35 +76,9 @@ function createPanel(): EPPGridPanel {
 	return el;
 }
 
-describe("_toggleAccordion", () => {
-	it("adds an accordion id when not present", () => {
-		const a = createPanel() as any;
-		a._openAccordions = new Set();
-
-		a._toggleAccordion("detection");
-
-		expect(a._openAccordions.has("detection")).toBe(true);
-	});
-
-	it("removes an accordion id when already present", () => {
-		const a = createPanel() as any;
-		a._openAccordions = new Set(["detection"]);
-
-		a._toggleAccordion("detection");
-
-		expect(a._openAccordions.has("detection")).toBe(false);
-	});
-
-	it("opening one accordion closes the other", () => {
-		const a = createPanel() as any;
-		a._openAccordions = new Set(["detection"]);
-
-		a._toggleAccordion("sensitivity");
-
-		expect(a._openAccordions.has("detection")).toBe(false);
-		expect(a._openAccordions.has("sensitivity")).toBe(true);
-	});
-});
+// The panel's accordion toggling lives in <epp-settings-view> (its
+// toggleAccordion + the panel's @accordion-toggle listener); the panel's
+// duplicate _toggleAccordion was dead code and has been removed.
 
 describe("_getRoomBounds", () => {
 	it("returns bounds for empty grid", () => {

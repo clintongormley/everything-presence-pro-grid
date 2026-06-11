@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-settings-view.js";
 import type { EppSettingsView } from "../../components/epp-settings-view.js";
 import { GRID_CELL_COUNT, initGridFromRoom } from "../../lib/grid.js";
+import { setupLocalize } from "../../localize.js";
 
 function renderTo(tpl: any): HTMLDivElement {
 	const container = document.createElement("div");
@@ -638,6 +639,88 @@ describe("renderEnvOffset", () => {
 		const valueSpan = c.querySelector(".setting-value");
 		// Should show raw value ~36, not 325 (which you get if slider was clamped to 100)
 		expect(valueSpan?.textContent).toBe("36.0");
+		document.body.removeChild(c);
+	});
+
+	it("display and slider follow the dragged override when a live reading re-renders mid-drag", () => {
+		// renderEnvOffset computed the displayed offset from the PROP, so a
+		// 5Hz sensorState re-render mid-drag snapped the ${adjusted} text back
+		// to the saved offset while the slider kept the dragged position —
+		// display and slider disagreed until save.
+		const sv = createView({ illuminanceOffset: 5 });
+		sv.sensorState = {
+			occupancy: false,
+			static_presence: false,
+			motion_presence: false,
+			target_presence: false,
+			illuminance: 105, // raw = 100 (saved offset 5 applied by coordinator)
+			temperature: null,
+			humidity: null,
+			co2: null,
+		};
+		// User dragged the slider to 50 — recorded as an override.
+		(sv as any)._overrides.illuminanceOffset = 50;
+		const tpl = (sv as any).renderEnvOffset(
+			"Illuminance",
+			() => sv.sensorState.illuminance,
+			"illuminance",
+			-500,
+			500,
+			1,
+			"lux",
+			1,
+			"Tip",
+			0,
+		);
+		const c = renderTo(tpl);
+		// Display must show raw + dragged offset (100 + 50), not raw + saved (105).
+		expect(c.querySelector(".setting-value")!.textContent).toBe("150.0");
+		// And the slider must sit at the dragged position too.
+		expect((c.querySelector(".setting-range") as HTMLInputElement).value).toBe(
+			"50",
+		);
+		document.body.removeChild(c);
+	});
+
+	it("reset recomputes from the live reading under a comma-decimal locale (es)", () => {
+		// _resetSlider previously re-parsed the rendered display text with
+		// parseFloat; Spanish "1434,5" parses as 1434, silently dropping the
+		// decimals (and grouped "1.434,5" would parse as 1.434).
+		const es = setupLocalize({ language: "es" });
+		const sv = createView({ illuminanceOffset: 200 });
+		sv.localize = es;
+		sv.sensorState = {
+			occupancy: false,
+			static_presence: false,
+			motion_presence: false,
+			target_presence: false,
+			illuminance: 1434.5, // raw = 1234.5 (saved offset 200 applied)
+			temperature: null,
+			humidity: null,
+			co2: null,
+		};
+		const tpl = (sv as any).renderEnvOffset(
+			"Iluminancia",
+			() => sv.sensorState.illuminance,
+			"illuminance",
+			-500,
+			500,
+			1,
+			"lux",
+			1,
+			"Tip",
+			0,
+		);
+		const c = renderTo(tpl);
+		const valueSpan = c.querySelector(".setting-value")!;
+		expect(valueSpan.textContent).toBe("1434,5");
+
+		const row = c.querySelector(".setting-row") as HTMLElement;
+		(sv as any)._resetSlider(row, 0);
+
+		// raw (1234.5) + reset offset (0), formatted for es.
+		expect(valueSpan.textContent).toBe("1234,5");
+		expect((sv as any)._overrides.illuminanceOffset).toBe(0);
 		document.body.removeChild(c);
 	});
 
@@ -2810,5 +2893,76 @@ describe("epp-settings-view localization (tasks 13-15)", () => {
 		expect(src).toMatch(
 			/\["None",\s*"Error",\s*"Warning",\s*"Info",\s*"Debug"\]/,
 		);
+	});
+});
+
+describe("memoised select options (5Hz live stream perf)", () => {
+	it("keeps rate-dropdown .options reference stable across live re-renders", async () => {
+		const sv = createView({ openAccordions: new Set(["reporting"]) });
+		document.body.appendChild(sv);
+		await sv.updateComplete;
+
+		const select = sv.shadowRoot!.querySelector("ha-select") as any;
+		const before = select.options;
+		expect(Array.isArray(before)).toBe(true);
+
+		// Simulate a 5Hz sensor tick: new sensorState object, same values.
+		sv.sensorState = { ...sv.sensorState };
+		await sv.updateComplete;
+
+		expect((sv.shadowRoot!.querySelector("ha-select") as any).options).toBe(
+			before,
+		);
+		document.body.removeChild(sv);
+	});
+
+	it("keeps log-level .options reference stable across live re-renders", async () => {
+		const sv = createView({ openAccordions: new Set(["logging"]) });
+		document.body.appendChild(sv);
+		await sv.updateComplete;
+
+		const select = sv.shadowRoot!.querySelector("ha-select") as any;
+		const before = select.options;
+		expect(Array.isArray(before)).toBe(true);
+
+		sv.sensorState = { ...sv.sensorState };
+		await sv.updateComplete;
+
+		expect((sv.shadowRoot!.querySelector("ha-select") as any).options).toBe(
+			before,
+		);
+		document.body.removeChild(sv);
+	});
+
+	it("rebuilds option arrays when localize changes", async () => {
+		const sv = createView({ openAccordions: new Set(["reporting"]) });
+		document.body.appendChild(sv);
+		await sv.updateComplete;
+		const before = (sv.shadowRoot!.querySelector("ha-select") as any).options;
+
+		sv.localize = setupLocalize({ language: "es" });
+		await sv.updateComplete;
+
+		expect((sv.shadowRoot!.querySelector("ha-select") as any).options).not.toBe(
+			before,
+		);
+		document.body.removeChild(sv);
+	});
+});
+
+describe("cached room geometry (5Hz live stream perf)", () => {
+	it("returns the same geometry object until grid/perspective/dims change", () => {
+		const sv = createView() as any;
+		const g1 = sv._getGeometry();
+		expect(sv._getGeometry()).toBe(g1);
+		expect(g1.autoRange).toBeGreaterThan(0);
+		expect(g1.metrics).not.toBeNull();
+
+		// New grid reference invalidates the cache.
+		sv.grid = initGridFromRoom(4000, 5000);
+		const g2 = sv._getGeometry();
+		expect(g2).not.toBe(g1);
+		// And the result is recomputed for the new room footprint.
+		expect(sv._getGeometry()).toBe(g2);
 	});
 });

@@ -10,6 +10,7 @@ import type { ZoneStateSummary } from "./components/epp-live-sidebar.js";
 import "./components/epp-settings-view.js";
 import "./components/epp-wizard.js";
 import type { EppWizard } from "./components/epp-wizard.js";
+import { renderSaveCancelBar } from "./components/save-cancel-bar.js";
 import "./components/epp-overlay-sidebar.js";
 import "./components/epp-zone-sidebar.js";
 import { DeviceController } from "./controllers/device-controller.js";
@@ -2503,25 +2504,25 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _renderSaveCancelButtons() {
-		const saveHandler =
-			this._view === "settings" ? this._saveSettings : this._applyLayout;
-		return html`
-      <div class="save-cancel-bar">
-        <button class="wizard-btn wizard-btn-back"
-          @click=${() => {
-						if (this._view === "editor") {
-							this._cancelEditor();
-						} else {
-							this._cancelSettings();
-						}
-					}}
-        >${this._localize("common.cancel")}</button>
-        <button class="wizard-btn wizard-btn-primary"
-          ?disabled=${this._saving || !this._dirty}
-          @click=${saveHandler}
-        >${this._saving ? this._localize("common.saving") : this._localize("common.save")}</button>
-      </div>
-    `;
+		return renderSaveCancelBar(
+			this._saving,
+			this._dirty,
+			this._localize,
+			() => {
+				if (this._view === "settings") {
+					this._saveSettings();
+				} else {
+					this._applyLayout();
+				}
+			},
+			() => {
+				if (this._view === "editor") {
+					this._cancelEditor();
+				} else {
+					this._cancelSettings();
+				}
+			},
+		);
 	}
 
 	private _renderLiveOverview() {
@@ -2654,12 +2655,6 @@ export class EPPGridPanel extends LitElement {
         </div>
       </div>
     `;
-	}
-
-	private _toggleAccordion(id: string) {
-		this._openAccordions = this._openAccordions.has(id)
-			? new Set()
-			: new Set([id]);
 	}
 
 	/** Get the sensor position in room-space mm by transforming sensor origin (0,0). */
