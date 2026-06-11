@@ -81,7 +81,7 @@ def websocket_subscribe_device_list(
                 msg["id"],
                 {
                     "devices": devices,
-                    "show_room_calibration_tutorial": manager._store.show_room_calibration_tutorial,
+                    "show_room_calibration_tutorial": manager.store.show_room_calibration_tutorial,
                 },
             )
         )
@@ -112,7 +112,7 @@ def websocket_list_devices(
         msg["id"],
         {
             "devices": manager.list_devices(),
-            "show_room_calibration_tutorial": manager._store.show_room_calibration_tutorial,
+            "show_room_calibration_tutorial": manager.store.show_room_calibration_tutorial,
         },
     )
 
@@ -137,12 +137,12 @@ async def websocket_set_show_room_calibration_tutorial(
 ) -> None:
     """Persist the global show_room_calibration_tutorial flag."""
     new_value = msg["value"]
-    if manager._store.show_room_calibration_tutorial == new_value:
+    if manager.store.show_room_calibration_tutorial == new_value:
         connection.send_result(msg["id"])
         return
-    manager._store.show_room_calibration_tutorial = new_value
-    await manager._store.async_save()
-    manager._fire_device_list_changed()
+    manager.store.show_room_calibration_tutorial = new_value
+    await manager.store.async_save()
+    manager.fire_device_list_changed()
     connection.send_result(msg["id"])
 
 
@@ -165,7 +165,7 @@ def websocket_get_config(
     manager: Any,
 ) -> None:
     """Get stored config for a device."""
-    config = manager._store.devices.get(msg["mac"])
+    config = manager.store.devices.get(msg["mac"])
     # Return a shallow copy to avoid mutating the stored config
     response = dict(config) if config else {}
     response["entities"] = _get_entity_states(hass, msg["mac"])
@@ -203,7 +203,7 @@ async def websocket_set_setup(
     if not _require_known_device(connection, manager, msg):
         return
     mac = msg["mac"]
-    device_config = manager._store.devices.setdefault(mac, {})
+    device_config = manager.store.devices.setdefault(mac, {})
     device_config["calibration"] = {
         "perspective": msg["perspective"],
         "room_width": msg["room_width"],
@@ -219,13 +219,13 @@ async def websocket_set_setup(
     if deleting:
         settings["target_xy"] = False
     device_config["settings"] = settings
-    await manager._store.async_save()
-    manager._request_push(mac)
+    await manager.store.async_save()
+    manager.request_push(mac)
 
     # Arm the guard before _apply_entity_states triggers an ESPHome reload,
     # so the reconnect doesn't fire a redundant push.
     if deleting:
-        manager._schedule_entity_update_clear(mac)
+        manager.schedule_entity_update_clear(mac)
         _apply_entity_states(hass, mac, {"target_xy": False})
 
     # `room_layout` was popped above when calibration changed, so the zone
@@ -266,16 +266,16 @@ async def websocket_set_room_layout(
     if not _require_known_device(connection, manager, msg):
         return
     mac = msg["mac"]
-    device_config = manager._store.devices.setdefault(mac, {})
+    device_config = manager.store.devices.setdefault(mac, {})
     device_config["room_layout"] = {
         "grid_bytes": msg["grid_bytes"],
         "zone_slots": msg["zone_slots"],
         "furniture": msg.get("furniture", []),
     }
-    await manager._store.async_save()
+    await manager.store.async_save()
     dev = manager.devices.get(mac)
     if dev and dev.host:
-        manager._request_push(mac)
+        manager.request_push(mac)
 
     # Update ESPHome entity enable/disable/rename
     await manager.async_update_zone_entities(mac, msg["zone_slots"])
@@ -297,7 +297,7 @@ def websocket_list_configurations(
     manager: Any,
 ) -> None:
     """List saved configurations."""
-    connection.send_result(msg["id"], {"configurations": manager._store.configurations})
+    connection.send_result(msg["id"], {"configurations": manager.store.configurations})
 
 
 # Cap on the number of stored named configurations. Each blob can be up to
@@ -323,7 +323,7 @@ async def websocket_save_configuration(
     manager: Any,
 ) -> None:
     """Save a named configuration."""
-    configurations = manager._store.configurations
+    configurations = manager.store.configurations
     # Overwriting an existing name is always allowed — only NEW names count
     # against the cap.
     if msg["name"] not in configurations and len(configurations) >= _MAX_CONFIGURATIONS:
@@ -337,7 +337,7 @@ async def websocket_save_configuration(
         )
         return
     configurations[msg["name"]] = msg["configuration"]
-    await manager._store.async_save()
+    await manager.store.async_save()
     connection.send_result(msg["id"])
 
 
@@ -357,8 +357,8 @@ async def websocket_delete_configuration(
     manager: Any,
 ) -> None:
     """Delete a saved configuration."""
-    manager._store.configurations.pop(msg["name"], None)
-    await manager._store.async_save()
+    manager.store.configurations.pop(msg["name"], None)
+    await manager.store.async_save()
     connection.send_result(msg["id"])
 
 
@@ -526,12 +526,10 @@ async def websocket_subscribe_device(
         device_conn = await manager.async_open_session(mac)
     except Exception as err:
         _LOGGER.warning("Failed to open session for %s: %s", mac, err)
-        # Only broadcast on the OK→failing transition. Repeated failures
-        # against an already-failing mac don't represent a state change for
-        # device-list subscribers and would spam every consumer on every retry.
-        if mac not in manager._connection_failed:
-            manager._connection_failed.add(mac)
-            manager._fire_device_list_changed()
+        # The manager broadcasts only on the OK→failing transition — repeated
+        # failures against an already-failing mac don't represent a state
+        # change for device-list subscribers.
+        manager.set_connection_failed(mac, True)
         connection.send_error(
             msg["id"],
             "connection_failed",
@@ -551,7 +549,7 @@ async def websocket_subscribe_device(
         return
     # Successful open clears the failure flag so the next failure (if any)
     # is a transition and re-fires the broadcast.
-    manager._connection_failed.discard(mac)
+    manager.set_connection_failed(mac, False)
     connection.send_result(msg["id"])
 
     released = False
@@ -603,7 +601,7 @@ async def websocket_subscribe_raw_targets(
         )
         return
 
-    key_map = _build_entity_key_map(device_conn._entities)
+    key_map = _build_entity_key_map(device_conn.entities)
 
     # Map raw target sensor keys to indices (display names are 1-based)
     raw_keys = {}
@@ -636,7 +634,7 @@ async def websocket_subscribe_raw_targets(
 
     device_conn.raw_target_subs += 1
     if manager:
-        hass.async_create_task(manager._push_pipeline_to_device(mac))
+        hass.async_create_task(manager.async_push_pipeline_to_device(mac))
 
     @callback
     def _unsub() -> None:
@@ -644,7 +642,7 @@ async def websocket_subscribe_raw_targets(
         device_conn.raw_target_subs -= 1
         mgr = _get_manager(hass)
         if mgr:
-            hass.async_create_task(mgr._push_pipeline_to_device(mac))
+            hass.async_create_task(mgr.async_push_pipeline_to_device(mac))
 
     connection.subscriptions[msg["id"]] = _unsub
 
@@ -680,7 +678,7 @@ async def websocket_subscribe_grid_targets(
         )
         return
 
-    key_map = _build_entity_key_map(device_conn._entities)
+    key_map = _build_entity_key_map(device_conn.entities)
 
     # Map target position sensor keys to indices (display names are 1-based)
     target_keys = {}
@@ -853,7 +851,7 @@ async def websocket_subscribe_grid_targets(
 
     device_conn.grid_target_subs += 1
     if manager:
-        hass.async_create_task(manager._push_pipeline_to_device(mac))
+        hass.async_create_task(manager.async_push_pipeline_to_device(mac))
 
     @callback
     def _unsub() -> None:
@@ -861,7 +859,7 @@ async def websocket_subscribe_grid_targets(
         device_conn.grid_target_subs -= 1
         mgr = _get_manager(hass)
         if mgr:
-            hass.async_create_task(mgr._push_pipeline_to_device(mac))
+            hass.async_create_task(mgr.async_push_pipeline_to_device(mac))
 
     connection.subscriptions[msg["id"]] = _unsub
 
@@ -1007,7 +1005,7 @@ async def websocket_set_settings(
     if not _require_known_device(connection, manager, msg):
         return
     mac = msg["mac"]
-    device_config = manager._store.devices.setdefault(mac, {})
+    device_config = manager.store.devices.setdefault(mac, {})
     new_settings = {k: msg[k] for k in _SETTINGS_KEYS}
     # Preserve entity toggle and rate flags — they're managed by entity toggles,
     # not by the settings form payload.
@@ -1048,16 +1046,16 @@ async def websocket_set_settings(
     log_levels = msg.get("log_levels")
     if log_levels is not None:
         device_config["log_levels"] = log_levels
-    await manager._store.async_save()
-    manager._request_push(mac)
+    await manager.store.async_save()
+    manager.request_push(mac)
     # Auto-enable/disable relay switch entity based on trigger mode
     relay_enabled = msg["relay_trigger_mode"] != "disabled"
-    manager._schedule_entity_update_clear(mac)
+    manager.schedule_entity_update_clear(mac)
     _apply_entity_states(hass, mac, {"relay_output": relay_enabled})
     # Manage device log subscription on the active session (if any)
     session_conn = manager.get_session(mac)
     if session_conn is not None:
-        manager._manage_log_subscription(session_conn, device_config)
+        manager.manage_log_subscription(session_conn, device_config)
     if entities:
         _apply_entity_states(hass, mac, entities)
         # Zone entities need layout-aware handling: enable zone_0 + named zones only
@@ -1070,7 +1068,7 @@ async def websocket_set_settings(
             if zone_slots is None:
                 zone_slots = empty_zone_slots()
             await manager.async_update_zone_entities(mac, zone_slots)
-        await manager._push_pipeline_to_device(mac)
+        await manager.async_push_pipeline_to_device(mac)
     connection.send_result(msg["id"])
 
 
@@ -1110,7 +1108,7 @@ async def websocket_set_distance_override(
             translation_key="no_active_session",
         )
         return
-    device_config = manager._store.devices.get(mac, {})
+    device_config = manager.store.devices.get(mac, {})
     stored_settings = device_config.get("settings", {})
     override = {
         "target_max_distance": msg["target_max_distance"],

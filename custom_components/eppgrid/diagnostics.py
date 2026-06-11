@@ -68,8 +68,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         "integration_version": integration_version,
         "firmware_version": FIRMWARE_VERSION,
         "devices": manager.list_devices(),
-        "stored_configs": _reindex_by_mac(dict(manager._store.devices), mac_to_index),
-        "configurations": dict(manager._store.configurations),
+        "stored_configs": _reindex_by_mac(dict(manager.store.devices), mac_to_index),
+        "configurations": dict(manager.store.configurations),
         "entity_states": _reindex_by_mac(entity_states, mac_to_index),
     }
     return async_redact_data(payload, _REDACT_FIELDS)

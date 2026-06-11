@@ -77,6 +77,16 @@ class DeviceConnection:
         self.ota_started_log_sub: bool = False
         self.ota_bumped_log_level: bool = False
 
+    @property
+    def entities(self) -> list:
+        """Entities advertised by the device at connect time (read-only)."""
+        return self._entities
+
+    @property
+    def is_log_subscribed(self) -> bool:
+        """True when a device-log subscription is active on this connection."""
+        return self._unsub_logs is not None
+
     async def async_connect(self) -> None:
         """Connect to the device and cache available services."""
         if self.connected:

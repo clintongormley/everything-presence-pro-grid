@@ -17,7 +17,7 @@ from homeassistant.loader import async_get_loaded_integration
 
 from ..const import DOMAIN
 from ..const import NUM_ZONE_SLOTS
-from ..device_manager._helpers import _compare_firmware_version
+from ..device_manager import _compare_firmware_version
 
 _LOGGER = logging.getLogger(__name__)
 

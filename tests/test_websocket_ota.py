@@ -31,14 +31,14 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
         mock_dm = mock_dm_cls.return_value
         mock_dm.async_start = AsyncMock()
         mock_dm.async_stop = AsyncMock()
-        mock_dm._store = MagicMock()
-        mock_dm._store.devices = {}
-        mock_dm._store.configurations = {}
-        mock_dm._store.async_save = AsyncMock()
+        mock_dm.store = MagicMock()
+        mock_dm.store.devices = {}
+        mock_dm.store.configurations = {}
+        mock_dm.store.async_save = AsyncMock()
         mock_dm.devices = {}
         mock_dm.list_devices.return_value = []
         mock_dm._push_config_to_device = AsyncMock()
-        mock_dm._push_pipeline_to_device = AsyncMock()
+        mock_dm.async_push_pipeline_to_device = AsyncMock()
         mock_dm._entity_update_macs = set()
         mock_dm.async_update_zone_entities = AsyncMock()
         mock_dm.async_open_session = AsyncMock(return_value=None)
@@ -579,15 +579,15 @@ class TestSubscribeOtaProgress:
 
         connection.send_message.assert_not_called()
 
-    async def test_subscribes_logs_when_unsub_logs_is_none(
+    async def test_subscribes_logs_when_not_already_subscribed(
         self,
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
-        """When device_conn._unsub_logs is None, subscribe_logs is called."""
+        """When no log subscription is active, subscribe_logs is called."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        device_conn._unsub_logs = None
+        device_conn.is_log_subscribed = False
         device_conn.subscribe_logs = MagicMock()
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
@@ -781,12 +781,12 @@ class TestSubscribeOtaProgress:
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
-        """If we called subscribe_logs (because _unsub_logs was None on entry),
+        """If we called subscribe_logs (because no log subscription was active),
         we must call unsubscribe_logs on _unsub. Otherwise the firmware keeps
         streaming ERROR-level logs until the connection dies."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        device_conn._unsub_logs = None
+        device_conn.is_log_subscribed = False
         device_conn.subscribe_logs = MagicMock()
         device_conn.unsubscribe_logs = MagicMock()
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
@@ -814,8 +814,8 @@ class TestSubscribeOtaProgress:
         leave the subscription alone on _unsub — another consumer owns it."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        # Pre-existing log subscription: _unsub_logs is a callable set by someone else
-        device_conn._unsub_logs = MagicMock()
+        # Pre-existing log subscription owned by someone else
+        device_conn.is_log_subscribed = True
         device_conn.subscribe_logs = MagicMock()
         device_conn.unsubscribe_logs = MagicMock()
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
@@ -879,7 +879,7 @@ class TestSubscribeOtaProgress:
         their configured logging."""
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.devices = {"AA:BB:CC:DD:EE:FF": {"log_levels": {"system": "Warning"}}}
+        mock_dm.store.devices = {"AA:BB:CC:DD:EE:FF": {"log_levels": {"system": "Warning"}}}
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
 
@@ -926,7 +926,7 @@ class TestSubscribeOtaProgress:
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
-        """If `device_conn._client` is None (connection raced to close after
+        """If the connection is no longer alive (raced to close after
         the open returned), don't try to subscribe / bump — release the
         session reference the open just took, then send an error and bail.
         Without the release, the raced-out reference would keep the dead
@@ -934,7 +934,7 @@ class TestSubscribeOtaProgress:
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
-        device_conn._client = None  # connection vanished
+        device_conn.connected = False  # connection vanished
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -963,7 +963,7 @@ class TestSubscribeOtaProgress:
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
-        device_conn._unsub_logs = None
+        device_conn.is_log_subscribed = False
         device_conn.subscribe_logs = MagicMock()
         device_conn.unsubscribe_logs = MagicMock()
         device_conn.subscribe_states = AsyncMock(side_effect=RuntimeError("connection is closed"))
@@ -1007,7 +1007,7 @@ class TestSubscribeOtaProgress:
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
-        device_conn._unsub_logs = None
+        device_conn.is_log_subscribed = False
         device_conn.subscribe_logs = MagicMock()
         device_conn.unsubscribe_logs = MagicMock()
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
@@ -1205,7 +1205,7 @@ class TestSubscribeOtaProgress:
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
-        device_conn._unsub_logs = None
+        device_conn.is_log_subscribed = False
         device_conn.subscribe_logs = MagicMock()
         device_conn.unsubscribe_logs = MagicMock()
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)

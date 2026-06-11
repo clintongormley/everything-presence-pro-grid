@@ -210,7 +210,7 @@ Returns discovered EPP devices.
 
 `firmware_status` is `"compatible"`, `"firmware_behind"`, or `"firmware_ahead"` — comparing the device's `Firmware Version` text sensor to the integration's `FIRMWARE_VERSION` using semver.
 
-The build flag fields (`bluetooth_enabled`, `co2_enabled`, `ethernet_enabled`, `board_revision`, `sensor_variant`, `firmware_channel`, `model`) are optional — they are only present after the device has connected and build flags have been fetched via the `get_build_flags` API action.
+The build flag fields (`bluetooth_enabled`, `co2_enabled`, `ethernet_enabled`, `board_revision`, `sensor_variant`, `firmware_channel`, `model`) are optional — they are only present after the device has connected and build flags have been fetched via the `get_build_flags` API action. Build flags are merged without overriding the base fields above (`mac`, `name`, `host`, `available`, `configured`, `area`, `firmware_status`, `current_connection_count`) — flag data comes from the device and must not rewrite identity fields.
 
 ### `get_config`
 

@@ -59,7 +59,7 @@ class EPPGridOptionsFlow(OptionsFlow):
                 store.sidebar_panel = new_sidebar_panel
                 store.show_room_calibration_tutorial = new_show_tutorial
                 await store.async_save()
-                manager._fire_device_list_changed()
+                manager.fire_device_list_changed()
                 # Apply the sidebar toggle directly — no config-entry reload,
                 # so ESPHome connections stay up. Idempotent.
                 await async_apply_panel_visibility(self.hass, new_sidebar_panel)

@@ -210,7 +210,7 @@ class TestOptionsFlow:
         assert result["type"] == "create_entry"
         assert mock_manager.store.show_room_calibration_tutorial is False
         mock_manager.store.async_save.assert_awaited_once()
-        mock_manager._fire_device_list_changed.assert_called_once()
+        mock_manager.fire_device_list_changed.assert_called_once()
         mock_panel.assert_not_awaited()  # already registered — left alone
         mock_remove.assert_not_called()
         mock_reload.assert_not_awaited()
@@ -226,4 +226,4 @@ class TestOptionsFlow:
         result = await flow.async_step_init(user_input={"sidebar_panel": True, "show_room_calibration_tutorial": False})
         assert result["type"] == "create_entry"
         mock_manager.store.async_save.assert_not_awaited()
-        mock_manager._fire_device_list_changed.assert_not_called()
+        mock_manager.fire_device_list_changed.assert_not_called()

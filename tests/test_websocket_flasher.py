@@ -37,15 +37,15 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
         mock_dm = mock_dm_cls.return_value
         mock_dm.async_start = AsyncMock()
         mock_dm.async_stop = AsyncMock()
-        mock_dm._store = MagicMock()
-        mock_dm._store.devices = {}
-        mock_dm._store.configurations = {}
-        mock_dm._store.async_save = AsyncMock()
+        mock_dm.store = MagicMock()
+        mock_dm.store.devices = {}
+        mock_dm.store.configurations = {}
+        mock_dm.store.async_save = AsyncMock()
         mock_dm.devices = {}
         mock_dm.list_devices.return_value = []
         mock_dm.list_flashable_devices = AsyncMock(return_value=[])
         mock_dm._push_config_to_device = AsyncMock()
-        mock_dm._push_pipeline_to_device = AsyncMock()
+        mock_dm.async_push_pipeline_to_device = AsyncMock()
         mock_dm._entity_update_macs = set()
         mock_dm.async_update_zone_entities = AsyncMock()
         mock_dm.async_open_session = AsyncMock(return_value=None)

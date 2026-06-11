@@ -91,7 +91,7 @@ async def websocket_subscribe_ota_progress(
             translation_key="device_not_available",
         )
         return
-    if device_conn._client is None:
+    if not device_conn.connected:
         # The connection raced to close between the open and here; treat it
         # the same as "no session" rather than letting subsequent
         # execute_service calls AttributeError — but release the reference
@@ -124,7 +124,7 @@ async def websocket_subscribe_ota_progress(
     # ONE log-level bump, reverted only when the last watcher releases.
     device_conn.ota_watchers += 1
     if device_conn.ota_watchers == 1:
-        if device_conn._unsub_logs is None:
+        if not device_conn.is_log_subscribed:
             device_conn.subscribe_logs(ESPLogLevel.LOG_LEVEL_ERROR)
             device_conn.ota_started_log_sub = True
 
@@ -293,7 +293,7 @@ async def websocket_subscribe_ota_progress(
         # Restore the firmware's `system` category to whatever the user has
         # configured (or "None" if unconfigured). Without this, the device
         # keeps emitting ERROR logs after the OTA panel closes.
-        stored_level = manager._store.devices.get(mac, {}).get("log_levels", {}).get(_OTA_LOG_CATEGORY, "None")
+        stored_level = manager.store.devices.get(mac, {}).get("log_levels", {}).get(_OTA_LOG_CATEGORY, "None")
         try:
             await device_conn.async_execute_service(
                 "epp_set_log_level",

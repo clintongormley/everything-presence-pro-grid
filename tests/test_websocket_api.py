@@ -48,26 +48,29 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
         mock_dm = mock_dm_cls.return_value
         mock_dm.async_start = AsyncMock()
         mock_dm.async_stop = AsyncMock()
-        mock_dm._store = MagicMock()
-        mock_dm._store.devices = {}
-        mock_dm._store.configurations = {}
-        mock_dm._store.async_save = AsyncMock()
+        mock_dm.store = MagicMock()
+        mock_dm.store.devices = {}
+        mock_dm.store.configurations = {}
+        mock_dm.store.async_save = AsyncMock()
+        # Some tests (test_pipeline_push.py) invoke REAL DeviceManager methods
+        # with this mock as `self`; those bodies read the private `_store`,
+        # so alias it to the public mock so both views share state.
+        mock_dm._store = mock_dm.store
         mock_dm.devices = {}
         mock_dm.list_devices.return_value = []
         mock_dm._push_config_to_device = AsyncMock()
-        mock_dm._push_pipeline_to_device = AsyncMock()
-        # _request_push is the debounced fire-and-forget wrapper that WS
+        mock_dm.async_push_pipeline_to_device = AsyncMock()
+        # request_push is the debounced fire-and-forget wrapper that WS
         # handlers call instead of `await _push_config_to_device(mac)` —
         # mocked here as a sync MagicMock so handler tests can assert it
         # was scheduled. The trailing-debounce semantics are tested
         # directly in TestRequestPush.
-        mock_dm._request_push = MagicMock()
+        mock_dm.request_push = MagicMock()
         mock_dm._entity_update_macs = set()
-        mock_dm._connection_failed = set()
         # Mirror the real method's behavioral effect (add mac to the guard set)
         # so tests that assert on _entity_update_macs still hold. The cancel /
         # stop semantics are covered directly by test_device_manager.py.
-        mock_dm._schedule_entity_update_clear = MagicMock(
+        mock_dm.schedule_entity_update_clear = MagicMock(
             side_effect=lambda mac, *args, **kwargs: mock_dm._entity_update_macs.add(mac)
         )
         mock_dm.async_update_zone_entities = AsyncMock()
@@ -149,7 +152,7 @@ class TestWebSocketListDevices:
     ) -> None:
         """list_devices exposes the global show_room_calibration_tutorial flag."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.show_room_calibration_tutorial = False
+        mock_dm.store.show_room_calibration_tutorial = False
 
         from custom_components.eppgrid.websocket_api import websocket_list_devices
 
@@ -167,7 +170,7 @@ class TestWebSocketSetShowCalibrationTutorial:
     async def test_set_persists_and_returns(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """Handler updates the store flag and persists."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.show_room_calibration_tutorial = True
+        mock_dm.store.show_room_calibration_tutorial = True
 
         from custom_components.eppgrid.websocket_api import websocket_set_show_room_calibration_tutorial
 
@@ -179,9 +182,9 @@ class TestWebSocketSetShowCalibrationTutorial:
         }
         await call_async_handler(hass, websocket_set_show_room_calibration_tutorial, connection, msg)
 
-        assert mock_dm._store.show_room_calibration_tutorial is False
-        mock_dm._store.async_save.assert_awaited()
-        mock_dm._fire_device_list_changed.assert_called_once()
+        assert mock_dm.store.show_room_calibration_tutorial is False
+        mock_dm.store.async_save.assert_awaited()
+        mock_dm.fire_device_list_changed.assert_called_once()
         connection.send_result.assert_called_once_with(7)
 
     async def test_set_not_ready(self, hass: HomeAssistant) -> None:
@@ -198,7 +201,7 @@ class TestWebSocketSetShowCalibrationTutorial:
     ) -> None:
         """Setting the same value must not write to disk or re-broadcast."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.show_room_calibration_tutorial = False
+        mock_dm.store.show_room_calibration_tutorial = False
 
         from custom_components.eppgrid.websocket_api import websocket_set_show_room_calibration_tutorial
 
@@ -210,8 +213,8 @@ class TestWebSocketSetShowCalibrationTutorial:
         }
         await call_async_handler(hass, websocket_set_show_room_calibration_tutorial, connection, msg)
 
-        mock_dm._store.async_save.assert_not_awaited()
-        mock_dm._fire_device_list_changed.assert_not_called()
+        mock_dm.store.async_save.assert_not_awaited()
+        mock_dm.fire_device_list_changed.assert_not_called()
         connection.send_result.assert_called_once_with(9)
 
     async def test_set_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
@@ -242,7 +245,7 @@ class TestWebSocketGetConfig:
     async def test_get_config(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """get_config returns stored config for a device."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.devices = {"AA:BB:CC:DD:EE:FF": {"calibration": {"perspective": [1.0] * 8}}}
+        mock_dm.store.devices = {"AA:BB:CC:DD:EE:FF": {"calibration": {"perspective": [1.0] * 8}}}
 
         from custom_components.eppgrid.websocket_api import websocket_get_config
 
@@ -258,7 +261,7 @@ class TestWebSocketGetConfig:
     async def test_get_config_includes_entity_states(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """get_config includes entity enabled/disabled states from HA registry."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.devices = {"AA:BB:CC:DD:EE:FF": {"settings": {}}}
+        mock_dm.store.devices = {"AA:BB:CC:DD:EE:FF": {"settings": {}}}
 
         from custom_components.eppgrid.websocket_api import websocket_get_config
 
@@ -310,13 +313,13 @@ class TestWebSocketSetSetup:
 
         await call_async_handler(hass, websocket_set_setup, connection, msg)
 
-        assert "AA:BB:CC:DD:EE:FF" in mock_dm._store.devices
-        cal = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["calibration"]
+        assert "AA:BB:CC:DD:EE:FF" in mock_dm.store.devices
+        cal = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["calibration"]
         assert cal["room_width"] == 3000.0
         assert cal["room_depth"] == 4000.0
 
-        mock_dm._store.async_save.assert_awaited()
-        mock_dm._request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
+        mock_dm.store.async_save.assert_awaited()
+        mock_dm.request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
         connection.send_result.assert_called_once_with(3)
 
     async def test_set_setup_updates_zone_entities_with_valid_empty_shape(
@@ -354,7 +357,7 @@ class TestWebSocketSetSetup:
         """set_setup clears existing room layout when calibration changes."""
         mock_dm = await setup_integration(hass, config_entry)
         register_managed_device(mock_dm)
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {
+        mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {
             "room_layout": {"grid_bytes": [1] * 400},
         }
 
@@ -372,7 +375,7 @@ class TestWebSocketSetSetup:
 
         await call_async_handler(hass, websocket_set_setup, connection, msg)
 
-        assert "room_layout" not in mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]
+        assert "room_layout" not in mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]
 
     async def test_set_setup_not_ready(self, hass: HomeAssistant) -> None:
         """set_setup returns error when integration not loaded."""
@@ -398,7 +401,7 @@ class TestWebSocketSetSetup:
         mock_dm = await setup_integration(hass, config_entry)
         register_managed_device(mock_dm)
         # Simulate target_xy was previously enabled
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"target_xy": True}}
+        mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"target_xy": True}}
 
         from custom_components.eppgrid.websocket_api import websocket_set_setup
 
@@ -415,7 +418,7 @@ class TestWebSocketSetSetup:
 
             await call_async_handler(hass, websocket_set_setup, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert settings["target_xy"] is False
         mock_apply.assert_called_once_with(hass, "AA:BB:CC:DD:EE:FF", {"target_xy": False})
 
@@ -425,7 +428,7 @@ class TestWebSocketSetSetup:
         """Deleting calibration sets entity_update_macs guard to suppress reconnect push."""
         mock_dm = await setup_integration(hass, config_entry)
         register_managed_device(mock_dm)
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"target_xy": True}}
+        mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"target_xy": True}}
 
         from custom_components.eppgrid.websocket_api import websocket_set_setup
 
@@ -465,7 +468,7 @@ class TestWebSocketSetSetup:
 
         await call_async_handler(hass, websocket_set_setup, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert "target_xy" not in settings
 
     async def test_set_setup_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
@@ -533,11 +536,11 @@ class TestWebSocketSetRoomLayout:
 
         await call_async_handler(hass, websocket_set_room_layout, connection, msg)
 
-        layout = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["room_layout"]
+        layout = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["room_layout"]
         assert layout["zone_slots"] == zone_slots
         assert layout["zone_slots"][0]["type"] == "default"
-        mock_dm._store.async_save.assert_awaited()
-        mock_dm._request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
+        mock_dm.store.async_save.assert_awaited()
+        mock_dm.request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
         mock_dm.async_update_zone_entities.assert_awaited_with("AA:BB:CC:DD:EE:FF", zone_slots)
         connection.send_result.assert_called_once_with(5)
 
@@ -607,7 +610,7 @@ class TestWebSocketSetRoomLayout:
 
         await call_async_handler(hass, websocket_set_room_layout, connection, msg)
 
-        layout = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["room_layout"]
+        layout = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["room_layout"]
         assert layout["zone_slots"] == zone_slots
         assert "room_type" not in layout
         assert "room_trigger" not in layout
@@ -1185,7 +1188,7 @@ class TestSchemaInputBounds:
         assert args[0] == 1
         assert args[1] == "device_not_found"
         # Storage must not have been mutated
-        assert "AA:BB:CC:DD:EE:FF" not in mock_dm._store.devices
+        assert "AA:BB:CC:DD:EE:FF" not in mock_dm.store.devices
 
     async def test_set_room_layout_rejects_unknown_mac(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
@@ -1208,7 +1211,7 @@ class TestSchemaInputBounds:
 
         connection.send_error.assert_called_once()
         assert connection.send_error.call_args[0][1] == "device_not_found"
-        assert "AA:BB:CC:DD:EE:FF" not in mock_dm._store.devices
+        assert "AA:BB:CC:DD:EE:FF" not in mock_dm.store.devices
 
     async def test_set_settings_rejects_unknown_mac(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """set_settings rejects unknown MAC."""
@@ -1245,7 +1248,7 @@ class TestSchemaInputBounds:
 
         connection.send_error.assert_called_once()
         assert connection.send_error.call_args[0][1] == "device_not_found"
-        assert "AA:BB:CC:DD:EE:FF" not in mock_dm._store.devices
+        assert "AA:BB:CC:DD:EE:FF" not in mock_dm.store.devices
 
     # ---- Item 4: All voluptuous string schemas unbounded ----
 
@@ -1706,7 +1709,7 @@ class TestWebSocketConfigurations:
     async def test_list_configurations(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """list_configurations returns stored configurations."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.configurations = {"bedroom": {"grid_bytes": [1] * 400}}
+        mock_dm.store.configurations = {"bedroom": {"grid_bytes": [1] * 400}}
 
         from custom_components.eppgrid.websocket_api import websocket_list_configurations
 
@@ -1734,8 +1737,8 @@ class TestWebSocketConfigurations:
 
         await call_async_handler(hass, websocket_save_configuration, connection, msg)
 
-        assert "office" in mock_dm._store.configurations
-        mock_dm._store.async_save.assert_awaited()
+        assert "office" in mock_dm.store.configurations
+        mock_dm.store.async_save.assert_awaited()
         connection.send_result.assert_called_once_with(7)
 
     async def test_save_configuration_rejects_new_name_at_cap(
@@ -1743,7 +1746,7 @@ class TestWebSocketConfigurations:
     ) -> None:
         """Saving a NEW name when 50 configurations exist is rejected."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.configurations = {f"cfg-{i}": {} for i in range(50)}
+        mock_dm.store.configurations = {f"cfg-{i}": {} for i in range(50)}
 
         from custom_components.eppgrid.websocket_api import websocket_save_configuration
 
@@ -1763,15 +1766,15 @@ class TestWebSocketConfigurations:
         assert args[0][0] == 70
         assert args[0][1] == "too_many_configurations"
         assert "50" in args[0][2]
-        assert "one-too-many" not in mock_dm._store.configurations
-        mock_dm._store.async_save.assert_not_awaited()
+        assert "one-too-many" not in mock_dm.store.configurations
+        mock_dm.store.async_save.assert_not_awaited()
 
     async def test_save_configuration_overwrite_allowed_at_cap(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
         """Overwriting an EXISTING name is always allowed, even at the cap."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.configurations = {f"cfg-{i}": {} for i in range(50)}
+        mock_dm.store.configurations = {f"cfg-{i}": {} for i in range(50)}
 
         from custom_components.eppgrid.websocket_api import websocket_save_configuration
 
@@ -1787,8 +1790,8 @@ class TestWebSocketConfigurations:
 
         connection.send_error.assert_not_called()
         connection.send_result.assert_called_once_with(71)
-        assert mock_dm._store.configurations["cfg-7"] == {"grid_bytes": [1] * 400}
-        mock_dm._store.async_save.assert_awaited()
+        assert mock_dm.store.configurations["cfg-7"] == {"grid_bytes": [1] * 400}
+        mock_dm.store.async_save.assert_awaited()
 
     async def test_save_configuration_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """Non-admin users cannot save a configuration."""
@@ -1815,7 +1818,7 @@ class TestWebSocketConfigurations:
     async def test_delete_configuration(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """delete_configuration removes a configuration."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.configurations["old"] = {"data": True}
+        mock_dm.store.configurations["old"] = {"data": True}
 
         from custom_components.eppgrid.websocket_api import websocket_delete_configuration
 
@@ -1824,8 +1827,8 @@ class TestWebSocketConfigurations:
 
         await call_async_handler(hass, websocket_delete_configuration, connection, msg)
 
-        assert "old" not in mock_dm._store.configurations
-        mock_dm._store.async_save.assert_awaited()
+        assert "old" not in mock_dm.store.configurations
+        mock_dm.store.async_save.assert_awaited()
 
     async def test_delete_configuration_requires_admin(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
@@ -1834,7 +1837,7 @@ class TestWebSocketConfigurations:
         from homeassistant.exceptions import Unauthorized
 
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm._store.configurations["old"] = {"data": True}
+        mock_dm.store.configurations["old"] = {"data": True}
 
         from custom_components.eppgrid.websocket_api import websocket_delete_configuration
 
@@ -1847,7 +1850,7 @@ class TestWebSocketConfigurations:
 
         connection.send_result.assert_not_called()
         # Configuration should NOT have been removed
-        assert "old" in mock_dm._store.configurations
+        assert "old" in mock_dm.store.configurations
 
     async def test_apply_template_command_removed(self) -> None:
         """eppgrid/apply_template is no longer a valid command."""
@@ -1992,7 +1995,7 @@ class TestWebSocketSettings:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert settings["temperature_offset"] == -1.5
         assert settings["humidity_offset"] == 2.0
         assert settings["illuminance_offset"] == -10.0
@@ -2010,8 +2013,8 @@ class TestWebSocketSettings:
         assert settings["led_mode"] == "Manual Control"
         assert settings["led_brightness"] == 1.0
         assert settings["led_presence_color"] == "#CC33FF"
-        mock_dm._store.async_save.assert_awaited()
-        mock_dm._request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
+        mock_dm.store.async_save.assert_awaited()
+        mock_dm.request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
         connection.send_result.assert_called_once_with(11)
 
     async def test_set_settings_stores_led_values(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
@@ -2049,7 +2052,7 @@ class TestWebSocketSettings:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert settings["led_mode"] == "Presence"
         assert settings["led_brightness"] == 0.8
         assert settings["led_presence_color"] == "#00FF00"
@@ -2158,7 +2161,7 @@ class TestWebSocketSettings:
         mock_dm = await setup_integration(hass, config_entry)
         register_managed_device(mock_dm)
         # Device has no stored room_layout (fresh setup or post-calibration).
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {}
+        mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {}
 
         from custom_components.eppgrid.websocket_api import websocket_set_settings
 
@@ -2277,7 +2280,7 @@ class TestWebSocketSettings:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert "entities" not in settings
 
     async def test_set_settings_persists_log_levels(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
@@ -2316,11 +2319,11 @@ class TestWebSocketSettings:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        device_config = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]
+        device_config = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]
         assert device_config["log_levels"] == {"epp": "Debug", "system": "Info"}
         # log_levels should NOT be in settings
         assert "log_levels" not in device_config["settings"]
-        mock_dm._store.async_save.assert_awaited()
+        mock_dm.store.async_save.assert_awaited()
         connection.send_result.assert_called_once_with(11)
 
     async def test_set_settings_without_log_levels_does_not_overwrite(
@@ -2329,7 +2332,7 @@ class TestWebSocketSettings:
         """set_settings without log_levels does not clear existing log_levels."""
         mock_dm = await setup_integration(hass, config_entry)
         # Pre-populate log_levels
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {
+        mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {
             "log_levels": {"epp": "Debug"},
         }
 
@@ -2363,7 +2366,7 @@ class TestWebSocketSettings:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        device_config = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]
+        device_config = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]
         # Existing log_levels should remain untouched
         assert device_config["log_levels"] == {"epp": "Debug"}
 
@@ -2481,7 +2484,7 @@ class TestWebSocketSettings:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert settings["relay_trigger_mode"] == "motion"
         assert settings["relay_contact_mode"] == "nc"
         connection.send_result.assert_called_once_with(11)
@@ -2576,7 +2579,7 @@ class TestZonePresencePreservation:
         """set_settings must not overwrite stored settings.zone_presence."""
         mock_dm = await setup_integration(hass, config_entry)
         # Simulate calibration having set zone_presence=true
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"zone_presence": True}}
+        mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"zone_presence": True}}
 
         from custom_components.eppgrid.websocket_api import websocket_set_settings
 
@@ -2606,14 +2609,14 @@ class TestZonePresencePreservation:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert settings["zone_presence"] is True
 
     async def test_set_settings_preserves_target_xy(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """set_settings must not overwrite stored settings.target_xy."""
         mock_dm = await setup_integration(hass, config_entry)
         # Simulate target_xy having been enabled by user
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"target_xy": True}}
+        mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"target_xy": True}}
 
         from custom_components.eppgrid.websocket_api import websocket_set_settings
 
@@ -2643,7 +2646,7 @@ class TestZonePresencePreservation:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert settings["target_xy"] is True
 
     async def test_set_settings_persists_target_xy_from_entities(
@@ -2652,7 +2655,7 @@ class TestZonePresencePreservation:
         """set_settings with entities.target_xy persists the value to stored settings."""
         mock_dm = await setup_integration(hass, config_entry)
         register_managed_device(mock_dm)
-        mock_dm._store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {}}
+        mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {}}
 
         from custom_components.eppgrid.websocket_api import websocket_set_settings
 
@@ -2686,9 +2689,9 @@ class TestZonePresencePreservation:
 
             await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        settings = mock_dm._store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
         assert settings.get("target_xy") is True
-        mock_dm._store.async_save.assert_awaited()
+        mock_dm.store.async_save.assert_awaited()
 
     async def test_set_settings_persists_new_entity_keys(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
@@ -2697,7 +2700,7 @@ class TestZonePresencePreservation:
         mock_dm = await setup_integration(hass, config_entry)
         register_managed_device(mock_dm)
         mac = "AA:BB:CC:DD:EE:FF"
-        mock_dm._store.devices[mac] = {"settings": {}}
+        mock_dm.store.devices[mac] = {"settings": {}}
 
         from custom_components.eppgrid.websocket_api import websocket_set_settings
 
@@ -2731,10 +2734,10 @@ class TestZonePresencePreservation:
 
             await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        stored = mock_dm._store.devices[mac]["settings"]
+        stored = mock_dm.store.devices[mac]["settings"]
         assert stored["target_active"] is True
         assert stored["zone_target_count"] is True
-        mock_dm._store.async_save.assert_awaited()
+        mock_dm.store.async_save.assert_awaited()
 
     async def test_set_settings_preserves_new_entity_keys(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
@@ -2742,7 +2745,7 @@ class TestZonePresencePreservation:
         """New entity keys survive a set_settings call that doesn't include entities."""
         mock_dm = await setup_integration(hass, config_entry)
         mac = "AA:BB:CC:DD:EE:FF"
-        mock_dm._store.devices[mac] = {
+        mock_dm.store.devices[mac] = {
             "settings": {
                 "target_active": True,
                 "zone_target_count": True,
@@ -2781,7 +2784,7 @@ class TestZonePresencePreservation:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        stored = mock_dm._store.devices[mac]["settings"]
+        stored = mock_dm.store.devices[mac]["settings"]
         assert stored["target_active"] is True
         assert stored["zone_target_count"] is True
         assert stored["target_update_rate_ms"] == 500
@@ -3403,13 +3406,13 @@ class TestWebSocketSubscriptions:
             translation_key="connection_failed",
         )
 
-    async def test_subscribe_device_connection_error_fires_only_on_transition(
+    async def test_subscribe_device_failure_records_connection_failed(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
-        """A flurry of subscribe_device failures for the same mac must only
-        fire `_fire_device_list_changed` once — repeated fires spam every
-        device-list subscriber on every retry, and the device list itself
-        hasn't actually changed between attempts."""
+        """A session-open failure is recorded via the manager's
+        `set_connection_failed(mac, True)` — the manager owns the
+        only-fire-on-transition broadcast semantics (covered in
+        test_device_manager.py::TestSetConnectionFailed)."""
         from aioesphomeapi.core import SocketClosedAPIError
 
         mock_dm = await setup_integration(hass, config_entry)
@@ -3419,49 +3422,28 @@ class TestWebSocketSubscriptions:
 
         msg = {"id": 26, "type": "eppgrid/subscribe_device", "mac": "AA:BB:CC:DD:EE:FF"}
         await call_async_handler(hass, websocket_subscribe_device, MagicMock(), msg)
-        msg2 = {"id": 27, "type": "eppgrid/subscribe_device", "mac": "AA:BB:CC:DD:EE:FF"}
-        await call_async_handler(hass, websocket_subscribe_device, MagicMock(), msg2)
 
-        # Two failures, one transition — fired once.
-        assert mock_dm._fire_device_list_changed.call_count == 1
+        mock_dm.set_connection_failed.assert_called_once_with("AA:BB:CC:DD:EE:FF", True)
 
-    async def test_subscribe_device_recovery_re_arms_failure_fire(
+    async def test_subscribe_device_success_clears_connection_failed(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
-        """After a successful connect clears the 'failing' flag, the next
-        failure is again a transition and fires the broadcast."""
-        from aioesphomeapi.core import SocketClosedAPIError
-
+        """A successful open clears the failure flag via
+        `set_connection_failed(mac, False)`, re-arming the manager's
+        transition broadcast for the next failure."""
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm.async_open_session = AsyncMock(side_effect=SocketClosedAPIError("boom"))
+        mock_dm.async_open_session = AsyncMock(return_value=MagicMock())
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_device
 
-        # First failure → fires
-        await call_async_handler(
-            hass,
-            websocket_subscribe_device,
-            MagicMock(),
-            {"id": 28, "type": "eppgrid/subscribe_device", "mac": "AA:BB:CC:DD:EE:FF"},
-        )
-        # Now a successful connect
-        mock_dm.async_open_session = AsyncMock(return_value=MagicMock())
         await call_async_handler(
             hass,
             websocket_subscribe_device,
             MagicMock(subscriptions={}),
             {"id": 29, "type": "eppgrid/subscribe_device", "mac": "AA:BB:CC:DD:EE:FF"},
         )
-        # Failures resume — should fire again.
-        mock_dm.async_open_session = AsyncMock(side_effect=SocketClosedAPIError("boom"))
-        prev_count = mock_dm._fire_device_list_changed.call_count
-        await call_async_handler(
-            hass,
-            websocket_subscribe_device,
-            MagicMock(),
-            {"id": 30, "type": "eppgrid/subscribe_device", "mac": "AA:BB:CC:DD:EE:FF"},
-        )
-        assert mock_dm._fire_device_list_changed.call_count == prev_count + 1
+
+        mock_dm.set_connection_failed.assert_called_once_with("AA:BB:CC:DD:EE:FF", False)
 
     async def test_subscribe_device_not_found(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """subscribe_device returns error when device not available."""
@@ -3507,7 +3489,7 @@ class TestWebSocketSubscriptions:
         mock_dm = await setup_integration(hass, config_entry)
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = []
+        mock_device_conn.entities = []
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -3544,7 +3526,7 @@ class TestWebSocketSubscriptions:
         mock_dm = await setup_integration(hass, config_entry)
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = []
+        mock_device_conn.entities = []
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -3572,7 +3554,7 @@ class TestWebSocketSubscriptions:
 
         mock_dm = await setup_integration(hass, config_entry)
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [
+        mock_device_conn.entities = [
             TextSensorInfo(object_id="raw_target_1", key=1, name="Raw Target 1"),
         ]
         mock_device_conn.subscribe_states = AsyncMock()
@@ -3611,7 +3593,7 @@ class TestWebSocketSubscriptions:
 
         mock_dm = await setup_integration(hass, config_entry)
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [
+        mock_device_conn.entities = [
             SensorInfo(object_id="temperature", key=10, name="Temperature"),
         ]
         mock_device_conn.subscribe_states = AsyncMock()
@@ -3648,7 +3630,7 @@ class TestWebSocketSubscriptions:
 
         mock_dm = await setup_integration(hass, config_entry)
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [
+        mock_device_conn.entities = [
             BinarySensorInfo(object_id="occupancy", key=20, name="Occupancy"),
         ]
         mock_device_conn.subscribe_states = AsyncMock()
@@ -3681,7 +3663,7 @@ class TestWebSocketSubscriptions:
 
         mock_dm = await setup_integration(hass, config_entry)
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [
+        mock_device_conn.entities = [
             TextSensorInfo(object_id="target_1_position", key=1, name="Target 1 Position"),
         ]
         mock_device_conn.subscribe_states = AsyncMock()
@@ -3710,7 +3692,7 @@ class TestSubscribeDeviceList:
         """subscribe_device_list sends the current device list immediately."""
         mock_dm = await setup_integration(hass, config_entry)
         mock_dm.list_devices.return_value = [{"mac": "AA:BB:CC:DD:EE:FF", "name": "EPP"}]
-        mock_dm._store.show_room_calibration_tutorial = False
+        mock_dm.store.show_room_calibration_tutorial = False
         mock_dm.on_device_list_changed = MagicMock(return_value=lambda: None)
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_device_list
@@ -3968,7 +3950,7 @@ class TestSubscriptionCallbacks:
         raw1.name = "Raw Target 2"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [raw0, raw1]
+        mock_device_conn.entities = [raw0, raw1]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4004,7 +3986,7 @@ class TestSubscriptionCallbacks:
         raw0.name = "Raw Target 1"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [raw0]
+        mock_device_conn.entities = [raw0]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4037,7 +4019,7 @@ class TestSubscriptionCallbacks:
         raw0.name = "Raw Target 1"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [raw0]
+        mock_device_conn.entities = [raw0]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4064,7 +4046,7 @@ class TestSubscriptionCallbacks:
         mock_dm = await setup_integration(hass, config_entry)
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = []
+        mock_device_conn.entities = []
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4092,7 +4074,7 @@ class TestSubscriptionCallbacks:
         target0.name = "Target 1 Position"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [target0]
+        mock_device_conn.entities = [target0]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4131,7 +4113,7 @@ class TestSubscriptionCallbacks:
         target0.name = "Target 1 Position"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [target0]
+        mock_device_conn.entities = [target0]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4166,7 +4148,7 @@ class TestSubscriptionCallbacks:
         zone_state_entity.name = "Zone State"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [zone_state_entity]
+        mock_device_conn.entities = [zone_state_entity]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4225,7 +4207,7 @@ class TestSubscriptionCallbacks:
         zone_state_entity.name = "Zone State"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [zone_state_entity]
+        mock_device_conn.entities = [zone_state_entity]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4279,7 +4261,7 @@ class TestSubscriptionCallbacks:
         occupancy.name = "Occupancy"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [occupancy]
+        mock_device_conn.entities = [occupancy]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4317,7 +4299,7 @@ class TestSubscriptionCallbacks:
         temp.name = "Temperature"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [temp]
+        mock_device_conn.entities = [temp]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4365,7 +4347,7 @@ class TestSubscriptionCallbacks:
         target0.name = "Target 1 Position"
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = [co2_entity, target0]
+        mock_device_conn.entities = [co2_entity, target0]
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4399,7 +4381,7 @@ class TestSubscriptionCallbacks:
         mock_dm = await setup_integration(hass, config_entry)
 
         mock_device_conn = MagicMock()
-        mock_device_conn._entities = []
+        mock_device_conn.entities = []
         mock_device_conn.subscribe_states = AsyncMock()
         mock_device_conn.unsubscribe_states = MagicMock()
         mock_dm.get_session = MagicMock(return_value=mock_device_conn)
@@ -4475,7 +4457,7 @@ class TestWebSocketDistanceOverride:
         mock_dm = await setup_integration(hass, config_entry)
 
         # Set up stored settings with threshold/timeout values
-        mock_dm._store.devices = {
+        mock_dm.store.devices = {
             "AA:BB:CC:DD:EE:FF": {
                 "settings": {
                     "static_trigger_threshold": 5,
@@ -4519,7 +4501,7 @@ class TestWebSocketDistanceOverride:
         )
 
         # Assert NOT persisted
-        mock_dm._store.async_save.assert_not_awaited()
+        mock_dm.store.async_save.assert_not_awaited()
 
         connection.send_result.assert_called_once_with(99)
 
@@ -4553,7 +4535,7 @@ class TestWebSocketDistanceOverride:
             translation_domain=DOMAIN,
             translation_key="no_active_session",
         )
-        mock_dm._store.async_save.assert_not_awaited()
+        mock_dm.store.async_save.assert_not_awaited()
 
     async def test_set_distance_override_requires_admin(
         self, hass: HomeAssistant, config_entry: MockConfigEntry

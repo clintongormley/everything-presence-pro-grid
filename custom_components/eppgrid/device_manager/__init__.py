@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+from collections.abc import AsyncIterator
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from typing import Any
@@ -117,6 +118,10 @@ class DeviceManager:
     # Trailing-edge debounce window for `_request_discover`. Class-level so
     # tests can shorten it via instance attribute without subclassing.
     _discover_debounce: float = 1.0
+    # Connect timeout for short-lived `_temp_connection` connections (OTA
+    # fallback, build-flags fetch, on-boot config push). Class-level so tests
+    # can shorten it via instance attribute without subclassing.
+    _temp_connection_timeout: float = 30.0
 
     def __init__(self, hass: HomeAssistant, store: EPPGridStore) -> None:
         self._hass = hass
@@ -205,6 +210,54 @@ class DeviceManager:
         """The persistent store backing this manager (read-only accessor)."""
         return self._store
 
+    # -- public wrappers ----------------------------------------------------
+    # Thin pass-throughs over private implementation methods, so external
+    # callers (websocket_api, config_flow, diagnostics) never reach into
+    # `_`-prefixed members of the manager.
+
+    @callback
+    def request_push(self, mac: str, delay: float = 0.1) -> None:
+        """Request a debounced config push for `mac` — see `_request_push`."""
+        self._request_push(mac, delay)
+
+    @callback
+    def fire_device_list_changed(self) -> None:
+        """Notify device-list subscribers — see `_fire_device_list_changed`."""
+        self._fire_device_list_changed()
+
+    @callback
+    def schedule_entity_update_clear(self, mac: str, delay: float = 60.0) -> None:
+        """Arm the entity-registry-update reload guard for `mac` — see
+        `_schedule_entity_update_clear`."""
+        self._schedule_entity_update_clear(mac, delay)
+
+    @callback
+    def set_connection_failed(self, mac: str, failed: bool) -> None:
+        """Record the outcome of a session-open attempt for `mac`.
+
+        Only the OK→failing *transition* fires the device-list broadcast:
+        consecutive failures against an already-failing device are silent so
+        every poll/retry doesn't spam every device-list subscriber. Clearing
+        (``failed=False``) never broadcasts — a successful open's own flow
+        handles any notification it needs.
+        """
+        if failed:
+            if mac not in self._connection_failed:
+                self._connection_failed.add(mac)
+                self._fire_device_list_changed()
+        else:
+            self._connection_failed.discard(mac)
+
+    async def async_push_pipeline_to_device(self, mac: str) -> None:
+        """Recompute and push pipeline intervals — see `_push_pipeline_to_device`."""
+        await self._push_pipeline_to_device(mac)
+
+    @staticmethod
+    def manage_log_subscription(conn: DeviceConnection, config: dict[str, Any]) -> None:
+        """Sync a connection's device-log subscription with stored log levels
+        — see `_manage_log_subscription`."""
+        DeviceManager._manage_log_subscription(conn, config)
+
     @callback
     def on_device_list_changed(self, cb: Any) -> Any:
         """Register a callback for device list changes. Returns an unsub callable.
@@ -271,15 +324,17 @@ class DeviceManager:
         for mac in list(self.devices):
             if mac not in self._pushing:
                 dev = self.devices[mac]
-                # Only push to devices that are actually online — check if at
-                # least one entity has a non-unavailable state.
-                if dev.device_id:
-                    entries = er.async_entries_for_device(ent_reg, dev.device_id, include_disabled_entities=True)
-                    if entries and all(
-                        (s := self._hass.states.get(e.entity_id)) is None or s.state == STATE_UNAVAILABLE
-                        for e in entries
-                    ):
-                        continue
+                # Only push to devices that are actually online, per the
+                # shared `_is_device_available` definition: `unknown` counts
+                # as offline just like `unavailable` (devices with no
+                # entities yet count as "unknown = try to connect").
+                entries = (
+                    er.async_entries_for_device(ent_reg, dev.device_id, include_disabled_entities=True)
+                    if dev.device_id
+                    else None
+                )
+                if not self._is_device_available(mac, entries=entries):
+                    continue
                 self._pushing.add(mac)
                 self._spawn(self._on_device_available(mac))
 
@@ -548,13 +603,9 @@ class DeviceManager:
                     ) from err
 
             # No session — fall back to a fresh, short-lived connection.
-            conn = DeviceConnection(
-                dev.host,
-                noise_psk=_extract_noise_psk(dev.esphome_config_entry_id, self._hass),
-            )
             try:
-                await conn.async_connect()
-                await conn.async_execute_service("set_update_manifest", {"url": manifest_url})
+                async with self._temp_connection(mac) as conn:
+                    await conn.async_execute_service("set_update_manifest", {"url": manifest_url})
                 _LOGGER.info("Triggered OTA via temp conn for %s (manifest=%s)", mac, manifest_url)
             except HomeAssistantError:
                 raise
@@ -566,28 +617,23 @@ class DeviceManager:
                     translation_key="ota_trigger_failed",
                     translation_placeholders={"mac": mac, "error": str(err)},
                 ) from err
-            finally:
-                # Best-effort cleanup. A failure here would otherwise mask
-                # the real OTA error (or surface a non-HA exception that the
-                # websocket handler doesn't catch) — log and swallow.
-                try:
-                    await conn.async_disconnect()
-                except Exception:
-                    _LOGGER.warning("OTA cleanup disconnect for %s failed", mac, exc_info=True)
 
-    def read_firmware_version(
-        self, device_id: str | None, *, entries: list[er.RegistryEntry] | None = None
+    def _read_sensor_state(
+        self, device_id: str | None, suffix: str, *, entries: list[er.RegistryEntry] | None = None
     ) -> str | None:
-        """Read the Firmware Version text sensor value for a device.
+        """Read the live state of the ESPHome sensor whose unique_id ends in
+        ``-<suffix>`` on a device.
 
-        Returns the version string, or ``None`` when:
+        Shared matcher for `read_firmware_version` and
+        `read_current_connection_count`. The ``-`` separator is part of the
+        match — ESPHome unique_ids are ``{MAC}-{platform}-{object_id}``, and
+        an unanchored suffix would let an unrelated object_id that merely
+        *contains* the suffix (e.g. ``max_current_connections``) false-match.
+
+        Returns the state string, or ``None`` when:
           * ``device_id`` is unknown (caller has no device to look up)
           * the entity is unavailable / unknown / empty
-          * the entity does not exist at all (older or non-EPP firmware)
-
-        Callers must treat ``None`` as 'unknown' — never compare against a
-        synthetic ``"0.0.0"``, which would collide with a real (very old)
-        firmware version and trigger a fake ``firmware_behind`` Repairs issue.
+          * the entity does not exist at all
 
         ``entries`` lets the caller pass pre-fetched device entries so callers
         looping over many devices don't re-scan the entity registry per
@@ -599,16 +645,26 @@ class DeviceManager:
             ent_reg = er.async_get(self._hass)
             entries = er.async_entries_for_device(ent_reg, device_id, include_disabled_entities=True)
         for entry in entries:
-            if (
-                entry.platform == "esphome"
-                and entry.domain == "sensor"
-                and entry.unique_id.endswith("-firmware_version")
-            ):
+            if entry.platform == "esphome" and entry.domain == "sensor" and entry.unique_id.endswith(f"-{suffix}"):
                 state = self._hass.states.get(entry.entity_id)
                 if state is not None and state.state not in (None, "unknown", "unavailable", ""):
                     return state.state
                 return None
         return None
+
+    def read_firmware_version(
+        self, device_id: str | None, *, entries: list[er.RegistryEntry] | None = None
+    ) -> str | None:
+        """Read the Firmware Version text sensor value for a device.
+
+        Returns the version string, or ``None`` when the entity is missing
+        or has no live state (see `_read_sensor_state`).
+
+        Callers must treat ``None`` as 'unknown' — never compare against a
+        synthetic ``"0.0.0"``, which would collide with a real (very old)
+        firmware version and trigger a fake ``firmware_behind`` Repairs issue.
+        """
+        return self._read_sensor_state(device_id, "firmware_version", entries=entries)
 
     def read_current_connection_count(
         self, device_id: str | None, *, entries: list[er.RegistryEntry] | None = None
@@ -617,21 +673,13 @@ class DeviceManager:
 
         Returns the count (int), or None if the entity is missing or unavailable.
         """
-        if device_id is None:
+        raw = self._read_sensor_state(device_id, "current_connections", entries=entries)
+        if raw is None:
             return None
-        if entries is None:
-            ent_reg = er.async_get(self._hass)
-            entries = er.async_entries_for_device(ent_reg, device_id, include_disabled_entities=True)
-        for entry in entries:
-            if entry.platform == "esphome" and entry.unique_id.endswith("current_connections"):
-                state = self._hass.states.get(entry.entity_id)
-                if state is not None and state.state not in (None, "unknown", "unavailable", ""):
-                    try:
-                        return int(float(state.state))
-                    except (ValueError, TypeError):
-                        pass
-                return None
-        return None
+        try:
+            return int(float(raw))
+        except (ValueError, TypeError):
+            return None
 
     async def async_discover(self) -> None:
         """Scan entity registry for ESPHome devices with firmware_version."""
@@ -912,7 +960,7 @@ class DeviceManager:
         # of truth for "is this a real firmware version".
         if (
             entry.domain == "sensor"
-            and "firmware_version" in entry.unique_id
+            and entry.unique_id.endswith("-firmware_version")
             and old_state_value in fw_offline_states
             and new_state.state not in fw_offline_states
         ):
@@ -1056,10 +1104,20 @@ class DeviceManager:
         self._build_flags.pop(mac, None)
         self._session_locks.pop(mac, None)
         self._ota_locks.pop(mac, None)
+        self._push_locks.pop(mac, None)
         self._connection_failed.discard(mac)
         self._entity_update_macs.discard(mac)
+        self._failed_pushes.discard(mac)
         self._pushing.discard(mac)
         self._last_repair_sync.pop(mac, None)
+        # Cancel the pending debounced push (it would push to a device that
+        # no longer exists) and the entity-update-clear timer (its mac entry
+        # in `_entity_update_macs` is already gone; the timer would leak past
+        # the device's lifetime otherwise).
+        if (pending_push := self._pending_pushes.pop(mac, None)) is not None:
+            pending_push.cancel()
+        if (cancel_clear := self._entity_update_clear_cancels.pop(mac, None)) is not None:
+            cancel_clear()
         # Clear any Repairs issues we raised for this device — they'd
         # otherwise hang in HA Settings → Repairs forever for a device
         # that no longer exists.
@@ -1224,12 +1282,57 @@ class DeviceManager:
                 # Service not available on older firmware — silently skip.
                 _LOGGER.debug("Device %s does not expose epp_set_pipeline", mac)
 
-    async def _fetch_build_flags(self, mac: str) -> None:
-        """Fetch and cache build flags from a device.
+    @contextlib.asynccontextmanager
+    async def _temp_connection(self, mac: str, timeout: float | None = None) -> AsyncIterator[DeviceConnection]:
+        """Open a short-lived connection to `mac`'s device for one operation.
+
+        Shared by every temporary-connection site (OTA fallback, build-flags
+        fetch, on-boot config push): connect is bounded by ``timeout``
+        (default ``_temp_connection_timeout``) and the connection is always
+        torn down on exit. Disconnect failures are logged and swallowed so
+        cleanup can't mask the body's real error. Error handling around the
+        *body* stays at each call site — the semantics differ (wrap as
+        ``ota_trigger_failed``, drop transient errors, return push failure).
+        """
+        from ..const import DOMAIN as _DOMAIN
+
+        dev = self.devices.get(mac)
+        if dev is None or dev.host is None:
+            # Callers pre-check device/host; this guard keeps a future caller
+            # from dereferencing None and surfaces a curated error instead.
+            raise HomeAssistantError(
+                f"Device {mac} not found",
+                translation_domain=_DOMAIN,
+                translation_key="device_not_found",
+            )
+        conn = DeviceConnection(
+            dev.host,
+            noise_psk=_extract_noise_psk(dev.esphome_config_entry_id, self._hass),
+        )
+        try:
+            await asyncio.wait_for(
+                conn.async_connect(),
+                timeout=self._temp_connection_timeout if timeout is None else timeout,
+            )
+            yield conn
+        finally:
+            try:
+                await conn.async_disconnect()
+            except Exception:
+                _LOGGER.warning("Temp-connection cleanup disconnect for %s failed", mac, exc_info=True)
+
+    async def _fetch_build_flags(self, mac: str, conn: DeviceConnection | None = None) -> None:
+        """Fetch and cache build flags from a device, broadcasting on arrival.
 
         Only caches successful results (including the legitimate "{}" =
         firmware doesn't expose get_build_flags). Transient failures are
         logged and left uncached so the next call retries.
+
+        ``conn`` lets a caller that already holds an open connection (the
+        temporary-connection push path) reuse it — opening a second
+        connection would race the ESP32's hard concurrent-connection limit.
+        Without ``conn``, an active session is preferred for the same reason,
+        falling back to a fresh temporary connection.
         """
         if mac in self._build_flags:
             return
@@ -1237,37 +1340,30 @@ class DeviceManager:
         if dev is None or dev.host is None:
             return
 
-        # Prefer existing session to avoid hitting ESP32 concurrent connection limit
-        session = self.get_session(mac)
-        if session is not None:
+        existing = conn or self.get_session(mac)
+        if existing is not None:
             try:
-                flags = await session.async_fetch_build_flags()
+                flags = await existing.async_fetch_build_flags()
             except _BUILD_FLAGS_TRANSIENT as err:
-                _LOGGER.debug("build_flags fetch via session failed for %s: %s", mac, err)
+                _LOGGER.debug("build_flags fetch via existing conn failed for %s: %s", mac, err)
                 return
             self._build_flags[mac] = flags
             if flags:
                 self._fire_device_list_changed()
             return
 
-        conn = DeviceConnection(
-            dev.host,
-            noise_psk=_extract_noise_psk(dev.esphome_config_entry_id, self._hass),
-        )
         try:
-            await asyncio.wait_for(conn.async_connect(), timeout=30)
-            try:
-                flags = await conn.async_fetch_build_flags()
-            except _BUILD_FLAGS_TRANSIENT as err:
-                _LOGGER.debug("build_flags fetch via fresh conn failed for %s: %s", mac, err)
-                return
-            self._build_flags[mac] = flags
-            if flags:
-                self._fire_device_list_changed()
+            async with self._temp_connection(mac) as temp_conn:
+                try:
+                    flags = await temp_conn.async_fetch_build_flags()
+                except _BUILD_FLAGS_TRANSIENT as err:
+                    _LOGGER.debug("build_flags fetch via fresh conn failed for %s: %s", mac, err)
+                    return
+                self._build_flags[mac] = flags
+                if flags:
+                    self._fire_device_list_changed()
         except _BUILD_FLAGS_CONNECT_TRANSIENT as err:
             _LOGGER.debug("Failed to connect for build_flags fetch from %s: %s", mac, err)
-        finally:
-            await conn.async_disconnect()
 
     async def _push_config_to_device(self, mac: str) -> bool:
         """Push config to device, preferring an existing session connection.
@@ -1351,9 +1447,10 @@ class DeviceManager:
             try:
                 await session_conn.async_push_config(config)
                 await self._push_pipeline_to_device(mac)
-                if mac not in self._build_flags:
-                    with contextlib.suppress(Exception):
-                        self._build_flags[mac] = await session_conn.async_fetch_build_flags()
+                # `_fetch_build_flags` no-ops when already cached, reuses
+                # this session, drops only transient errors, and fires the
+                # device-list broadcast on first arrival.
+                await self._fetch_build_flags(mac)
                 self._manage_log_subscription(session_conn, config)
                 return True
             except Exception:
@@ -1362,26 +1459,20 @@ class DeviceManager:
                 return False
 
         # No active session — use temporary connection (e.g., on-boot push)
-        conn = DeviceConnection(
-            dev.host,
-            noise_psk=_extract_noise_psk(dev.esphome_config_entry_id, self._hass),
-        )
         try:
-            await asyncio.wait_for(conn.async_connect(), timeout=30)
-            await conn.async_push_config(config)
-            # Push pipeline directly (no subscribers on temp connections)
-            pipeline = _compute_pipeline(config, 0, 0)
-            with contextlib.suppress(HomeAssistantError):
-                await conn.async_execute_service("epp_set_pipeline", pipeline)
-            if mac not in self._build_flags:
-                with contextlib.suppress(Exception):
-                    self._build_flags[mac] = await conn.async_fetch_build_flags()
+            async with self._temp_connection(mac) as conn:
+                await conn.async_push_config(config)
+                # Push pipeline directly (no subscribers on temp connections)
+                pipeline = _compute_pipeline(config, 0, 0)
+                with contextlib.suppress(HomeAssistantError):
+                    await conn.async_execute_service("epp_set_pipeline", pipeline)
+                # Reuse the open temp connection for the flags fetch — see
+                # the session-path comment for the helper's semantics.
+                await self._fetch_build_flags(mac, conn=conn)
             return True
         except Exception:
             _LOGGER.warning("Failed to push config to %s (%s)", dev.name, mac)
             return False
-        finally:
-            await conn.async_disconnect()
 
     def _is_device_available(self, mac: str, *, entries: list[er.RegistryEntry] | None = None) -> bool:
         """Check HA entity states to determine if a device is reachable.
@@ -1578,21 +1669,25 @@ class DeviceManager:
                 area = area_reg.async_get_area(registry_entry.area_id)
                 if area is not None:
                     area_name = area.name
-            result.append(
-                {
-                    "mac": mac,
-                    "name": config.get("name", fresh_name) if config else fresh_name,
-                    "host": dev.host,
-                    "available": self._is_device_available(mac, entries=entries),
-                    "configured": config is not None,
-                    "area": area_name,
-                    "firmware_status": (
-                        (_compare_firmware_version(fw_ver) if fw_ver is not None else None) or "unavailable"
-                    ),
-                    "current_connection_count": self.read_current_connection_count(dev.device_id, entries=entries),
-                    **self._build_flags.get(mac, {}),
-                }
-            )
+            device_entry = {
+                "mac": mac,
+                "name": config.get("name", fresh_name) if config else fresh_name,
+                "host": dev.host,
+                "available": self._is_device_available(mac, entries=entries),
+                "configured": config is not None,
+                "area": area_name,
+                "firmware_status": (
+                    (_compare_firmware_version(fw_ver) if fw_ver is not None else None) or "unavailable"
+                ),
+                "current_connection_count": self.read_current_connection_count(dev.device_id, entries=entries),
+            }
+            # Merge cached build flags WITHOUT letting them clobber the base
+            # fields above — get_build_flags data comes from the device, and
+            # a buggy/malicious firmware must not rewrite identity fields
+            # like `mac` / `host` / `available` in the frontend payload.
+            for key, value in self._build_flags.get(mac, {}).items():
+                device_entry.setdefault(key, value)
+            result.append(device_entry)
         return result
 
     async def list_flashable_devices(self) -> list[dict[str, Any]]:
