@@ -110,8 +110,23 @@ export function serializeFurniture(f: FurnitureItem): Record<string, unknown> {
 	};
 }
 
+/** Operations that can fail and surface through {@link GridStateController.onError}. */
+export type GridOp =
+	| "apply_layout"
+	| "save_settings"
+	| "save_configuration"
+	| "load_configuration";
+
 export class GridStateController implements ReactiveController {
 	private host: PanelHost;
+
+	/**
+	 * Optional host hook for surfacing controller errors to the UI. The op
+	 * name doubles as the `errors.*` translation-key suffix for the panel's
+	 * dismissible error banner. The panel wires this at construction so
+	 * failures surface even for ops that run before/without attachment.
+	 */
+	onError?: (op: GridOp, error: unknown) => void;
 
 	constructor(host: PanelHost) {
 		this.host = host;
@@ -669,6 +684,11 @@ export class GridStateController implements ReactiveController {
 					// object-valued defaults (log_levels) land in host state
 					// as fresh copies — the canonical objects are frozen and
 					// must never be aliased into mutable panel state.
+					// Host cast: prop is a UNION of property names whose value
+					// types differ, so a union-keyed write demands the (never)
+					// intersection type — the cast is about the heterogeneous
+					// host index, not the RHS (cloneSettingsDefault is now
+					// generically typed to the key's real value type).
 					(this.host as any)[prop] =
 						key in s
 							? (s as Record<string, any>)[key]
@@ -839,10 +859,13 @@ export class GridStateController implements ReactiveController {
 				this.host._zoneConfigs = prunedSlots as unknown as ZoneSlots;
 				this.host._furniture = filteredFurniture;
 				this.host._dirty = false;
+				// Navigation is scoped by editedDuringSave too: when edits
+				// survived the save, silently switching to the live view would
+				// hide the user's dirty work mid-edit — stay in the editor.
+				this.host._selectedFurnitureId = null;
+				this.host._overlayMode = null;
+				this.host._view = "live";
 			}
-			this.host._selectedFurnitureId = null;
-			this.host._overlayMode = null;
-			this.host._view = "live";
 		} catch (err) {
 			this.onError?.("apply_layout", err);
 			throw err;
@@ -887,7 +910,4 @@ export class GridStateController implements ReactiveController {
 			this.host._saving = false;
 		}
 	}
-
-	/** Optional host hook for surfacing controller errors to the UI. */
-	onError?: (op: string, error: unknown) => void;
 }

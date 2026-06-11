@@ -8,7 +8,7 @@ import {
 	mdiWifiStrength4Lock,
 	mdiWifiStrength4LockOpen,
 } from "@mdi/js";
-import { css, html, LitElement, nothing } from "lit";
+import { css, html, LitElement, nothing, type TemplateResult } from "lit";
 import { property, state } from "lit/decorators.js";
 import { literal, html as staticHtml } from "lit/static-html.js";
 import { DocumentListenerGroup } from "../lib/document-listeners.js";
@@ -915,15 +915,18 @@ export class EppFlasherView extends LitElement {
 	 * several can apply at once (e.g. an offline original-firmware device).
 	 */
 	private _deviceRowDescriptor(device: FlashableDevice): {
-		badges: { cls: string; label: string }[];
-		action: unknown;
+		badges: { cls: string; labelKey: string }[];
+		action: TemplateResult | typeof nothing;
 	} {
-		const badges: { cls: string; label: string }[] = [];
+		const badges: { cls: string; labelKey: string }[] = [];
 		const ota = this.otaStates[device.mac];
 		const isEppgrid = device.firmware_type === "eppgrid";
 
 		if (!device.available) {
-			badges.push({ cls: "firmware-badge-offline", label: "flasher.offline" });
+			badges.push({
+				cls: "firmware-badge-offline",
+				labelKey: "flasher.offline",
+			});
 		}
 		if (
 			isEppgrid &&
@@ -933,18 +936,21 @@ export class EppFlasherView extends LitElement {
 			(device.firmware_status === "compatible" ||
 				device.firmware_status === "firmware_ahead")
 		) {
-			badges.push({ cls: "firmware-badge-online", label: "flasher.online" });
+			badges.push({
+				cls: "firmware-badge-online",
+				labelKey: "flasher.online",
+			});
 		}
 		if (device.firmware_type === "original") {
 			badges.push({
 				cls: "firmware-badge-original",
-				label: "flasher.flash_usb",
+				labelKey: "flasher.flash_usb",
 			});
 		}
 		if (isEppgrid && device.firmware_status === "firmware_ahead") {
 			badges.push({
 				cls: "firmware-badge-ahead",
-				label: "flasher.integration_update",
+				labelKey: "flasher.integration_update",
 			});
 		}
 
@@ -1018,7 +1024,7 @@ export class EppFlasherView extends LitElement {
                         </div>
                         ${badges.map(
 													(b) =>
-														html`<span class="firmware-badge ${b.cls}">${this.localize(b.label)}</span>`,
+														html`<span class="firmware-badge ${b.cls}">${this.localize(b.labelKey)}</span>`,
 												)}
                         ${action}
                       </div>

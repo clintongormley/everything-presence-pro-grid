@@ -120,7 +120,13 @@ describe("renderSaveCancelBar renders ha-button when registered", () => {
 		const onSave = vi.fn();
 		const onCancel = vi.fn();
 		const c = renderTo(
-			renderSaveCancelBar(false, true, defaultLocalize, onSave, onCancel),
+			renderSaveCancelBar({
+				saving: false,
+				dirty: true,
+				localize: defaultLocalize,
+				onSave,
+				onCancel,
+			}),
 		);
 
 		expect(c.querySelector("button")).toBeNull();
@@ -139,7 +145,13 @@ describe("renderSaveCancelBar renders ha-button when registered", () => {
 
 	it("disables the save ha-button while saving or when not dirty", () => {
 		const c1 = renderTo(
-			renderSaveCancelBar(true, true, defaultLocalize, vi.fn(), vi.fn()),
+			renderSaveCancelBar({
+				saving: true,
+				dirty: true,
+				localize: defaultLocalize,
+				onSave: vi.fn(),
+				onCancel: vi.fn(),
+			}),
 		);
 		expect(
 			(c1.querySelector("ha-button.save-btn") as HaButtonStub).disabled,
@@ -148,7 +160,13 @@ describe("renderSaveCancelBar renders ha-button when registered", () => {
 		document.body.removeChild(c1);
 
 		const c2 = renderTo(
-			renderSaveCancelBar(false, false, defaultLocalize, vi.fn(), vi.fn()),
+			renderSaveCancelBar({
+				saving: false,
+				dirty: false,
+				localize: defaultLocalize,
+				onSave: vi.fn(),
+				onCancel: vi.fn(),
+			}),
 		);
 		expect(
 			(c2.querySelector("ha-button.save-btn") as HaButtonStub).disabled,

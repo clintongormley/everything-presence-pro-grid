@@ -1,5 +1,10 @@
 /**
  * A named document/window-level listener registration.
+ *
+ * Handlers are typically declared as `(e: Event)` and narrow inside (e.g.
+ * `(e as KeyboardEvent).key`) — addEventListener's listener type is the
+ * widened `Event` signature, so per-event-type handler types would need
+ * casts at every spec site instead.
  */
 export interface ListenerSpec {
 	target: EventTarget;
@@ -20,11 +25,27 @@ export interface ListenerSpec {
  * every component drifted (each view tracked its own flag); this helper
  * centralises it. Both attach() and detach() are idempotent so lifecycle
  * callbacks can call them unconditionally.
+ *
+ * Declaration-order constraint: class fields initialise in declaration
+ * order, so a group field must be declared AFTER the handler fields it
+ * references — otherwise the spec captures `undefined`. The constructor
+ * fails loudly on that mistake (addEventListener with an undefined
+ * listener would otherwise be a silent no-op and the popover would never
+ * dismiss).
  */
 export class DocumentListenerGroup {
 	private _attached = false;
 
-	constructor(private readonly _specs: ListenerSpec[]) {}
+	constructor(private readonly _specs: ListenerSpec[]) {
+		for (const s of _specs) {
+			if (!s.listener) {
+				throw new Error(
+					`DocumentListenerGroup: listener for "${s.type}" is undefined — ` +
+						"declare handler fields before the group that references them",
+				);
+			}
+		}
+	}
 
 	get attached(): boolean {
 		return this._attached;

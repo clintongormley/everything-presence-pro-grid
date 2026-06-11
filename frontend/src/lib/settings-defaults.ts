@@ -95,11 +95,16 @@ export type SettingsKey = keyof typeof SETTINGS_DEFAULTS;
 /**
  * Default value for a settings key, safe to assign into mutable state:
  * object-valued defaults (entities, log_levels) are returned as shallow
- * copies so callers can never alias the frozen canonical object.
+ * copies so callers can never alias the frozen canonical object. Generic
+ * so callers get the key's real value type instead of `unknown`.
  */
-export function cloneSettingsDefault(key: SettingsKey): unknown {
+export function cloneSettingsDefault<K extends SettingsKey>(
+	key: K,
+): (typeof SETTINGS_DEFAULTS)[K] {
 	const value = SETTINGS_DEFAULTS[key];
-	return typeof value === "object" && value !== null ? { ...value } : value;
+	return (
+		typeof value === "object" && value !== null ? { ...value } : value
+	) as (typeof SETTINGS_DEFAULTS)[K];
 }
 
 /**

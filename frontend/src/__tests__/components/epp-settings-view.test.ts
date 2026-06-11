@@ -684,8 +684,9 @@ describe("renderEnvOffset", () => {
 
 	it("reset recomputes from the live reading under a comma-decimal locale (es)", () => {
 		// _resetSlider previously re-parsed the rendered display text with
-		// parseFloat; Spanish "1434,5" parses as 1434, silently dropping the
-		// decimals (and grouped "1.434,5" would parse as 1.434).
+		// parseFloat; Spanish "634,5" parses as 634, silently dropping the
+		// decimals. (Sub-1000 values keep the assertion independent of
+		// Spanish CLDR grouping rules.)
 		const es = setupLocalize({ language: "es" });
 		const sv = createView({ illuminanceOffset: 200 });
 		sv.localize = es;
@@ -694,7 +695,7 @@ describe("renderEnvOffset", () => {
 			static_presence: false,
 			motion_presence: false,
 			target_presence: false,
-			illuminance: 1434.5, // raw = 1234.5 (saved offset 200 applied)
+			illuminance: 634.5, // raw = 434.5 (saved offset 200 applied)
 			temperature: null,
 			humidity: null,
 			co2: null,
@@ -713,13 +714,13 @@ describe("renderEnvOffset", () => {
 		);
 		const c = renderTo(tpl);
 		const valueSpan = c.querySelector(".setting-value")!;
-		expect(valueSpan.textContent).toBe("1434,5");
+		expect(valueSpan.textContent).toBe("634,5");
 
 		const row = c.querySelector(".setting-row") as HTMLElement;
 		(sv as any)._resetSlider(row, 0);
 
-		// raw (1234.5) + reset offset (0), formatted for es.
-		expect(valueSpan.textContent).toBe("1234,5");
+		// raw (434.5) + reset offset (0), formatted for es.
+		expect(valueSpan.textContent).toBe("434,5");
 		expect((sv as any)._overrides.illuminanceOffset).toBe(0);
 		document.body.removeChild(c);
 	});

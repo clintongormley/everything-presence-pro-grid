@@ -6,6 +6,10 @@ import {
 	autoDetectionRange,
 	getGridRoomMetrics,
 } from "../lib/room-geometry.js";
+import {
+	SETTINGS_DEFAULTS,
+	SETTINGS_FIELD_MAP,
+} from "../lib/settings-defaults.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 import { buttonStyles, settingStyles, toggleStyles } from "../styles.js";
 import { renderSaveCancelBar } from "./save-cancel-bar.js";
@@ -19,6 +23,17 @@ interface SelectOption {
 // Wire values are English (firmware protocol); labels are localized at
 // render time via the memoised option arrays.
 const LOG_LEVELS = ["None", "Error", "Warning", "Info", "Debug"];
+
+// Numeric reset-button defaults keyed by the override/_fireChange key
+// (camelCase prop name), derived from the canonical SETTINGS_DEFAULTS via
+// SETTINGS_FIELD_MAP — hard-coded duplicates here drifted from the values
+// the restore-defaults flow applies.
+const SLIDER_DEFAULTS: Record<string, number> = Object.fromEntries(
+	SETTINGS_FIELD_MAP.flatMap(([key, prop]) => {
+		const value = SETTINGS_DEFAULTS[key];
+		return typeof value === "number" ? [[prop.slice(1), value]] : [];
+	}),
+);
 
 /** One slider row in the sensitivities section. */
 interface SliderRowDescriptor {
@@ -46,7 +61,7 @@ interface ToggleRowDescriptor {
 	/** Entity key in entitiesConfig, e.g. "room_occupancy". */
 	key: string;
 	/** Default state when neither overrides nor saved config have the key. */
-	def: boolean;
+	defaultValue: boolean;
 	/** Translation key for the info tooltip. */
 	tip: string;
 	/** Disable the toggle (e.g. zone entities need a calibration). */
@@ -680,8 +695,9 @@ export class EppSettingsView extends LitElement {
 		this._closeOpenTooltip();
 	};
 
-	// Dismissal listeners live only while a tooltip is open. Declared after
-	// the handlers above — class fields initialise in order.
+	// Dismissal listeners live only while a tooltip is open. (Field ordering
+	// relative to the handlers is enforced by DocumentListenerGroup itself —
+	// see its class doc.)
 	private _tooltipListeners = new DocumentListenerGroup([
 		{ target: document, type: "keydown", listener: this._onTooltipKeydown },
 		{
@@ -878,7 +894,7 @@ export class EppSettingsView extends LitElement {
 						min: 0,
 						max: 120,
 						unit: "s",
-						defaultValue: 5,
+						defaultValue: SLIDER_DEFAULTS.motionTimeout,
 						tip: "info.motion_timeout",
 					},
 				],
@@ -894,7 +910,7 @@ export class EppSettingsView extends LitElement {
 						max: STATIC_ON_DELAY_MAX,
 						step: 0.1,
 						unit: "s",
-						defaultValue: 0,
+						defaultValue: SLIDER_DEFAULTS.staticOnDelay,
 						tip: "info.presence_delay",
 					},
 					{
@@ -904,7 +920,7 @@ export class EppSettingsView extends LitElement {
 						min: 0,
 						max: 120,
 						unit: "s",
-						defaultValue: 30,
+						defaultValue: SLIDER_DEFAULTS.staticTimeout,
 						tip: "info.static_timeout",
 					},
 					{
@@ -914,7 +930,7 @@ export class EppSettingsView extends LitElement {
 						min: 1,
 						max: 9,
 						unit: "",
-						defaultValue: 3,
+						defaultValue: SLIDER_DEFAULTS.staticTriggerThreshold,
 						tip: "info.trigger_threshold",
 					},
 					{
@@ -924,7 +940,7 @@ export class EppSettingsView extends LitElement {
 						min: 1,
 						max: 9,
 						unit: "",
-						defaultValue: 3,
+						defaultValue: SLIDER_DEFAULTS.staticRenewThreshold,
 						tip: "info.renew_threshold",
 					},
 				],
@@ -939,7 +955,7 @@ export class EppSettingsView extends LitElement {
 						min: 0,
 						max: 600,
 						unit: "s",
-						defaultValue: 300,
+						defaultValue: SLIDER_DEFAULTS.stuckTargetTimeout,
 						tip: "info.stuck_target_timeout",
 					},
 				],
@@ -976,7 +992,7 @@ export class EppSettingsView extends LitElement {
       <div class="setting-row">
         <label>${this.localize(d.label)}</label>
         ${this.renderToggle({
-					checked: isOn(d.key, d.def),
+					checked: isOn(d.key, d.defaultValue),
 					disabled: d.disabled,
 					entityKey: d.key,
 					onChange,
@@ -1020,37 +1036,37 @@ export class EppSettingsView extends LitElement {
 			{
 				label: "entities.occupancy",
 				key: "room_occupancy",
-				def: true,
+				defaultValue: true,
 				tip: "info.room_occupancy",
 			},
 			{
 				label: "entities.static_presence",
 				key: "room_static_presence",
-				def: false,
+				defaultValue: false,
 				tip: "info.room_static",
 			},
 			{
 				label: "entities.motion_presence",
 				key: "room_motion_presence",
-				def: false,
+				defaultValue: false,
 				tip: "info.room_motion",
 			},
 			{
 				label: "entities.target_presence",
 				key: "room_target_presence",
-				def: false,
+				defaultValue: false,
 				tip: "info.room_target_presence",
 			},
 			{
 				label: "entities.mmwave",
 				key: "room_mmwave",
-				def: false,
+				defaultValue: false,
 				tip: "info.room_mmwave",
 			},
 			{
 				label: "entities.target_count",
 				key: "target_count",
-				def: false,
+				defaultValue: false,
 				tip: "info.room_target_count",
 			},
 		];
@@ -1058,14 +1074,14 @@ export class EppSettingsView extends LitElement {
 			{
 				label: "entities.zone_presence",
 				key: "zone_presence",
-				def: true,
+				defaultValue: true,
 				tip: "info.zone_presence",
 				disabled: needsCal,
 			},
 			{
 				label: "entities.zone_target_count",
 				key: "zone_target_count",
-				def: false,
+				defaultValue: false,
 				tip: "info.zone_target_count",
 				disabled: needsCal,
 			},
@@ -1074,26 +1090,26 @@ export class EppSettingsView extends LitElement {
 			{
 				label: "entities.xy",
 				key: "target_xy",
-				def: false,
+				defaultValue: false,
 				tip: "info.xy",
 				disabled: needsCal,
 			},
 			{
 				label: "entities.active",
 				key: "target_active",
-				def: false,
+				defaultValue: false,
 				tip: "info.active",
 			},
 			{
 				label: "entities.target_signal",
 				key: "target_signal",
-				def: false,
+				defaultValue: false,
 				tip: "info.target_signal",
 			},
 			{
 				label: "entities.target_zone",
 				key: "target_zone",
-				def: false,
+				defaultValue: false,
 				tip: "info.target_zone",
 			},
 		];
@@ -1101,22 +1117,27 @@ export class EppSettingsView extends LitElement {
 			{
 				label: "entities.illuminance",
 				key: "env_illuminance",
-				def: false,
+				defaultValue: false,
 				tip: "info.illuminance",
 			},
 			{
 				label: "entities.humidity",
 				key: "env_humidity",
-				def: false,
+				defaultValue: false,
 				tip: "info.humidity",
 			},
 			{
 				label: "entities.temperature",
 				key: "env_temperature",
-				def: false,
+				defaultValue: false,
 				tip: "info.temperature",
 			},
-			{ label: "entities.co2", key: "env_co2", def: false, tip: "info.co2" },
+			{
+				label: "entities.co2",
+				key: "env_co2",
+				defaultValue: false,
+				tip: "info.co2",
+			},
 		];
 		const rows = (descriptors: ToggleRowDescriptor[]) =>
 			descriptors.map((d) =>
@@ -1338,7 +1359,7 @@ export class EppSettingsView extends LitElement {
 							this._setSettingValue(el, `${Math.round(v * 100)}%`);
 							this._fireChange("ledBrightness", v);
 						}} /><span class="setting-value">${Math.round(brightness * 100)}%</span></span>
-            ${this.resetBtn(1.0, "ledBrightness")}${this.infoTip(this.localize("info.led_brightness"))}
+            ${this.resetBtn(SLIDER_DEFAULTS.ledBrightness, "ledBrightness")}${this.infoTip(this.localize("info.led_brightness"))}
           </div>`
 							: nothing
 					}
@@ -1435,12 +1456,12 @@ export class EppSettingsView extends LitElement {
 			this._localDirty = false;
 		}
 		const isDirty = this.dirty || this._localDirty;
-		return renderSaveCancelBar(
-			this.saving,
-			isDirty,
-			this.localize,
-			() => this._emitSave(),
-			() => {
+		return renderSaveCancelBar({
+			saving: this.saving,
+			dirty: isDirty,
+			localize: this.localize,
+			onSave: () => this._emitSave(),
+			onCancel: () => {
 				this.dispatchEvent(
 					new CustomEvent("cancel", {
 						bubbles: true,
@@ -1448,7 +1469,7 @@ export class EppSettingsView extends LitElement {
 					}),
 				);
 			},
-		);
+		});
 	}
 
 	/**

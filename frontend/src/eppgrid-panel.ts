@@ -2324,20 +2324,20 @@ export class EPPGridPanel extends LitElement {
 	// handlers call the editor flows directly — the old per-view ternaries
 	// were dead branches.
 	private _renderSaveCancelButtons() {
-		return renderSaveCancelBar(
-			this._saving,
-			this._dirty,
-			this._localize,
-			() => {
+		return renderSaveCancelBar({
+			saving: this._saving,
+			dirty: this._dirty,
+			localize: this._localize,
+			onSave: () => {
 				// applyLayout traps its own failures (controller onError
 				// banner); .catch guards a late rejection surfacing as
 				// "Uncaught (in promise)".
 				this._applyLayout().catch(() => {});
 			},
-			() => {
+			onCancel: () => {
 				this._cancelEditor();
 			},
-		);
+		});
 	}
 
 	private _renderLiveOverview() {

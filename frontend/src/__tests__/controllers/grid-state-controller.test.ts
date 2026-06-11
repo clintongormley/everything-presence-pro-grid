@@ -1604,6 +1604,46 @@ describe("GridStateController", () => {
 			expect(host._dirty).toBe(true);
 		});
 
+		it("stays in the editor when edits were made during the save", async () => {
+			// Pre-fix: applyLayout preserved dirty edits made during an
+			// in-flight save but STILL navigated to the live view — silently
+			// hiding the surviving edits from the user.
+			host._dirty = true;
+			host._view = "editor";
+			host._selectedFurnitureId = "f1";
+			host._overlayMode = "interference";
+			const resolve = deferredRoomLayoutWS();
+
+			const inFlight = ctrl.applyLayout();
+			const painted = new Uint8Array(host._grid);
+			painted[7] = CELL_ROOM_BIT;
+			host._grid = painted;
+			resolve();
+			await inFlight;
+
+			expect(host._dirty).toBe(true);
+			expect(host._view).toBe("editor");
+			expect(host._selectedFurnitureId).toBe("f1");
+			expect(host._overlayMode).toBe("interference");
+		});
+
+		it("navigates to live and resets selection when nothing changed during the save", async () => {
+			host._dirty = true;
+			host._view = "editor";
+			host._selectedFurnitureId = "f1";
+			host._overlayMode = "interference";
+			const resolve = deferredRoomLayoutWS();
+
+			const inFlight = ctrl.applyLayout();
+			resolve();
+			await inFlight;
+
+			expect(host._dirty).toBe(false);
+			expect(host._view).toBe("live");
+			expect(host._selectedFurnitureId).toBeNull();
+			expect(host._overlayMode).toBeNull();
+		});
+
 		it("clears _dirty when nothing changed during the save", async () => {
 			host._dirty = true;
 			const resolve = deferredRoomLayoutWS();

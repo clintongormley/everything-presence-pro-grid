@@ -92,3 +92,22 @@ describe("DocumentListenerGroup", () => {
 		expect(pointerdown).not.toHaveBeenCalled();
 	});
 });
+
+describe("DocumentListenerGroup constructor validation", () => {
+	it("throws when a spec's listener is undefined", () => {
+		// Class fields initialise in declaration order, so a group declared
+		// BEFORE its handler fields silently captures `undefined` listeners —
+		// addEventListener(type, undefined) is a no-op and the popover never
+		// dismisses. Fail loudly at construction instead.
+		expect(
+			() =>
+				new DocumentListenerGroup([
+					{
+						target: document,
+						type: "keydown",
+						listener: undefined as unknown as EventListener,
+					},
+				]),
+		).toThrow(/listener.*keydown|keydown.*listener/i);
+	});
+});
