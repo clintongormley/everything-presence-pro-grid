@@ -1837,13 +1837,13 @@ export class EPPGridPanel extends LitElement {
 			<div class="tab-bar">
 				<button class="tab ${this._panelTab === "config" ? "active" : ""}"
 					@click=${() => {
-						this._flasherCtrl.resetUsbState();
+						void this._flasherCtrl.resetUsbState();
 						this._panelTab = "config";
 						this._loadDevices();
 					}}>${this._localize("tabs.device_configuration")}</button>
 				<button class="tab ${this._panelTab === "flasher" ? "active" : ""}"
 					@click=${() => {
-						this._flasherCtrl.resetUsbState();
+						void this._flasherCtrl.resetUsbState();
 						this._panelTab = "flasher";
 						if (this._flasherCtrl.loading) {
 							this._flasherCtrl.hass = this.hass;
@@ -1882,7 +1882,7 @@ export class EPPGridPanel extends LitElement {
 					.otaStates=${this._flasherCtrl.otaStates}
 					.cancelledDeviceIpHint=${this._flasherCtrl.cancelledDeviceIpHint}
 					@flash-complete=${() => {
-						this._flasherCtrl.resetUsbState();
+						void this._flasherCtrl.resetUsbState();
 						this._loadDevices();
 						this._panelTab = "config";
 					}}
@@ -1912,7 +1912,7 @@ export class EPPGridPanel extends LitElement {
 						this._flasherCtrl.startOta(e.detail.mac);
 					}}
 					@wifi-complete=${() => {
-						this._flasherCtrl.resetUsbState();
+						void this._flasherCtrl.resetUsbState();
 						this._loadDevices();
 						this._panelTab = "config";
 					}}
@@ -3281,7 +3281,7 @@ export class EPPGridPanel extends LitElement {
 			ctrl.opRunning = false;
 			if (ctrl.opId !== myOp) return;
 			if (err?.name === "NotFoundError") {
-				ctrl.resetUsbState();
+				void ctrl.resetUsbState();
 				return;
 			}
 			const lastStep = ctrl.usbFlashState?.step;
@@ -3459,7 +3459,7 @@ export class EPPGridPanel extends LitElement {
 			}
 			if (err?.name === "NotFoundError") {
 				// User cancelled port picker
-				ctrl.resetUsbState();
+				void ctrl.resetUsbState();
 				return;
 			}
 			const e = err as {
@@ -3481,7 +3481,7 @@ export class EPPGridPanel extends LitElement {
 					ctrl.serialPort = null;
 				}
 				ctrl.opRunning = false;
-				ctrl.resetUsbState();
+				void ctrl.resetUsbState();
 				return;
 			}
 			const lastStep = ctrl.usbFlashState?.step;
@@ -3715,7 +3715,9 @@ export class EPPGridPanel extends LitElement {
 		// settle so its serial locks are released, and only then closes the
 		// port — close() while a lock is still held rejects with "the port
 		// has a readable or writable stream" and leaves the port open +
-		// unusable for the next flash attempt.
+		// unusable for the next flash attempt. It clears usbFlashState only
+		// after that teardown, so the view's "Cancelling…" feedback stays up
+		// for the duration of the unwind.
 		await ctrl.resetUsbState();
 	}
 

@@ -457,9 +457,9 @@ describe("FlasherController", () => {
 	});
 
 	describe("resetUsbState", () => {
-		it("clears USB flash state", () => {
+		it("clears USB flash state", async () => {
 			ctrl.updateUsbState({ step: "flashing" });
-			ctrl.resetUsbState();
+			await ctrl.resetUsbState();
 			expect(ctrl.usbFlashState).toBeNull();
 			expect(ctrl.wifiNetworks).toEqual([]);
 		});
@@ -509,7 +509,7 @@ describe("FlasherController", () => {
 			ctrl.serialPort = port as any;
 
 			let settled = false;
-			const p = Promise.resolve(ctrl.resetUsbState()).then(() => {
+			const p = ctrl.resetUsbState().then(() => {
 				settled = true;
 			});
 			await new Promise((r) => setTimeout(r, 0));
@@ -535,7 +535,7 @@ describe("FlasherController", () => {
 			const port = { close: vi.fn().mockResolvedValue(undefined) };
 			ctrl.serialPort = port as any;
 
-			const p = Promise.resolve(ctrl.resetUsbState());
+			const p = ctrl.resetUsbState();
 			expect(abort.abort).toHaveBeenCalledTimes(1);
 			expect(port.close).not.toHaveBeenCalled();
 
@@ -545,6 +545,51 @@ describe("FlasherController", () => {
 			expect(port.close).toHaveBeenCalledTimes(1);
 			expect((ctrl as any)._wifiCheckAbort).toBeNull();
 			expect((ctrl as any)._wifiCheckPromise).toBeNull();
+		});
+
+		it("defers the usbFlashState clear until the port teardown resolves (cancelling feedback)", async () => {
+			// epp-flasher-view keeps its "Cancelling…" button up only while
+			// usbFlashState is non-null. Clearing it before close() resolves
+			// re-renders the variant picker while the port is still unwinding
+			// (~1-2s), making the cancel click look like it skipped a step.
+			ctrl.updateUsbState({ step: "wifi_check" });
+			let resolveClose!: () => void;
+			const port = {
+				close: vi.fn().mockReturnValue(
+					new Promise<void>((r) => {
+						resolveClose = r;
+					}),
+				),
+			};
+			ctrl.serialPort = port as any;
+
+			const p = ctrl.resetUsbState();
+			await new Promise((r) => setTimeout(r, 0));
+			expect(ctrl.usbFlashState).toEqual({ step: "wifi_check" });
+
+			resolveClose();
+			await p;
+			expect(ctrl.usbFlashState).toBeNull();
+		});
+
+		it("keeps usbFlashState non-null while an aborted in-flight wifi check settles", async () => {
+			ctrl.updateUsbState({ step: "wifi_check" });
+			let settleWifi!: () => void;
+			(ctrl as any)._wifiCheckAbort = { abort: vi.fn() };
+			(ctrl as any)._wifiCheckPromise = new Promise<void>((r) => {
+				settleWifi = r;
+			});
+			ctrl.serialPort = {
+				close: vi.fn().mockResolvedValue(undefined),
+			} as any;
+
+			const p = ctrl.resetUsbState();
+			await new Promise((r) => setTimeout(r, 0));
+			expect(ctrl.usbFlashState).toEqual({ step: "wifi_check" });
+
+			settleWifi();
+			await p;
+			expect(ctrl.usbFlashState).toBeNull();
 		});
 
 		it("tolerates a rejecting in-flight wifi check", async () => {
@@ -695,7 +740,6 @@ describe("FlasherController", () => {
 				state: "error",
 				progress: null,
 				errorKey: "flasher.errors.ota_failed_version_unchanged",
-				errorParams: { message: "" },
 			});
 		});
 
@@ -709,7 +753,6 @@ describe("FlasherController", () => {
 				state: "error",
 				progress: null,
 				errorKey: "flasher.errors.update_failed_generic",
-				errorParams: { message: "" },
 			});
 		});
 
@@ -761,7 +804,6 @@ describe("FlasherController", () => {
 				state: "error",
 				progress: null,
 				errorKey: "flasher.errors.update_failed_generic",
-				errorParams: { message: "" },
 			});
 		});
 

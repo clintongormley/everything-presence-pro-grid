@@ -185,6 +185,9 @@ describe("_handleUsbFlash", () => {
 		await (panel as any)._handleUsbFlash("eppgrid-wifi");
 
 		expect(resetSpy).toHaveBeenCalled();
+		// resetUsbState defers the state clear until its (here: instant —
+		// no port was ever opened) teardown resolves.
+		await new Promise((r) => setTimeout(r, 0));
 		expect(ctrl.usbFlashState).toBeNull();
 	});
 
@@ -371,6 +374,9 @@ describe("_handleUsbFlash", () => {
 		await (panel as any)._handleUsbFlash("ethernet-ble-co2");
 
 		expect(window.confirm).toHaveBeenCalled();
+		// resetUsbState defers the state clear until its (here: instant —
+		// the handler already closed and nulled the port) teardown resolves.
+		await new Promise((r) => setTimeout(r, 0));
 		expect(ctrl.usbFlashState).toBeNull();
 	});
 
@@ -1464,6 +1470,30 @@ describe("flasher-cancel handler", () => {
 		expect(ctrl.cancelledDeviceIpHint).toBeNull();
 	});
 
+	it("keeps usbFlashState up until the serial teardown resolves (Cancelling… feedback)", async () => {
+		// While the port is still unwinding (~1-2s) the flash screen — with
+		// epp-flasher-view's disabled "Cancelling…" button — must stay up.
+		// Clearing usbFlashState first re-renders the variant picker while
+		// the port is still closing.
+		const ctrl = (panel as any)._flasherCtrl;
+		let resolveClose!: () => void;
+		mockPort.close = vi.fn().mockReturnValue(
+			new Promise<void>((r) => {
+				resolveClose = r;
+			}),
+		);
+		ctrl.serialPort = mockPort;
+		ctrl.updateUsbState({ step: "wifi_check" });
+
+		const p = (panel as any)._handleFlasherCancel();
+		await new Promise((r) => setTimeout(r, 0));
+		expect(ctrl.usbFlashState).toEqual({ step: "wifi_check" });
+
+		resolveClose();
+		await p;
+		expect(ctrl.usbFlashState).toBeNull();
+	});
+
 	it("closes the port after the in-flight op settles, so the next flash can re-open it", async () => {
 		const ctrl = (panel as any)._flasherCtrl;
 		ctrl.serialPort = mockPort;
@@ -1739,7 +1769,7 @@ describe("epp-flasher-view inline event handlers", () => {
 		});
 	});
 
-	it("switching to flasher tab resets stale usbFlashState", () => {
+	it("switching to flasher tab resets stale usbFlashState", async () => {
 		const ctrl = (panel as any)._flasherCtrl;
 		ctrl.usbFlashState = { step: "complete", variant: "ethernet-ble-co2" };
 		const resetSpy = vi.spyOn(ctrl, "resetUsbState");
@@ -1753,6 +1783,9 @@ describe("epp-flasher-view inline event handlers", () => {
 		flasherTab.click();
 
 		expect(resetSpy).toHaveBeenCalled();
+		// resetUsbState defers the state clear until its (here: instant —
+		// no port open) teardown resolves.
+		await new Promise((r) => setTimeout(r, 0));
 		expect(ctrl.usbFlashState).toBeNull();
 	});
 });

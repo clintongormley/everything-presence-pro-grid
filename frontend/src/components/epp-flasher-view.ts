@@ -675,9 +675,10 @@ export class EppFlasherView extends LitElement {
 		// Cancel from the variant picker (no in-flight op) exits the USB
 		// flash view to the device list. Cancel mid-flow keeps the user on
 		// the flash screen with a "Cancelling…" button so it's obvious the
-		// click registered while the panel awaits the in-flight op (~1-2s
-		// for serial-port unwind); the panel resets usbFlashState when
-		// done, which renders the variant picker.
+		// click registered: the controller's resetUsbState clears
+		// usbFlashState only AFTER the aborted op settles and the serial
+		// port closes (~1-2s), and that clear is what re-renders the
+		// variant picker.
 		if (this.usbFlashState == null) {
 			this._showUsbFlash = false;
 		} else {
@@ -690,16 +691,19 @@ export class EppFlasherView extends LitElement {
 	}
 
 	updated(changed: Map<string, unknown>): void {
-		// Reset _cancelling once the panel has cleared usbFlashState (i.e.
-		// the cancel handler awaited the in-flight op + closed the port).
+		// Reset _cancelling once the controller has cleared usbFlashState —
+		// resetUsbState defers that clear until the aborted op has settled
+		// and the serial port is closed, so this fires only after the
+		// teardown actually finished.
 		if (changed.has("usbFlashState") && this.usbFlashState == null) {
 			this._cancelling = false;
 		}
 	}
 
-	/** Render a Cancel button that flips to "Cancelling…" while the panel
-	 *  awaits the in-flight op (~1-2s). Without this feedback the button
-	 *  appears unresponsive even though the click registered. */
+	/** Render a Cancel button that flips to "Cancelling…" while the
+	 *  controller unwinds the in-flight op + serial port (~1-2s). Without
+	 *  this feedback the button appears unresponsive even though the click
+	 *  registered. */
 	private _renderCancelButton(extraClass?: string) {
 		const label = this._cancelling
 			? this.localize("flasher.cancelling")

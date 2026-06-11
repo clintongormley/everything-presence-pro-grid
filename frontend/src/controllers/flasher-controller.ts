@@ -225,8 +225,11 @@ export class FlasherController implements ReactiveController {
 					progress: null,
 					errorKey,
 					// Log-derived OTA failures carry the device's message; the
-					// ota_device_error translation interpolates {message}.
-					errorParams: { message: event.message ?? "" },
+					// ota_device_error translation interpolates {message}. Only
+					// attach errorParams when a message actually arrived.
+					...(event.message != null
+						? { errorParams: { message: event.message } }
+						: {}),
 				});
 				this._resetOtaTimeout(mac);
 				this._unsubOta(mac);
@@ -471,8 +474,6 @@ export class FlasherController implements ReactiveController {
 	}
 
 	async resetUsbState(): Promise<void> {
-		this.usbFlashState = null;
-		this.wifiNetworks = [];
 		this._opId++;
 		// Abort any in-flight wifi_check (queryImprovState poll) and wait
 		// for it to settle so its serial locks are released before we close
@@ -484,7 +485,6 @@ export class FlasherController implements ReactiveController {
 		this._wifiCheckAbort = null;
 		this._wifiCheckPromise = null;
 		abort?.abort();
-		this._host.requestUpdate();
 		if (inFlight) {
 			try {
 				await inFlight;
@@ -493,6 +493,16 @@ export class FlasherController implements ReactiveController {
 			}
 		}
 		await this._tearDownSerialPort();
+		// Clear the visible flash state only AFTER the teardown resolves:
+		// epp-flasher-view keeps its disabled "Cancelling…" button up while
+		// usbFlashState is non-null, so the user sees the cancel click took
+		// effect during the ~1-2s serial unwind. Clearing first re-renders
+		// the variant picker while the port is still closing. The opId bump
+		// and abort/handle-nulling above stay synchronous, so fire-and-forget
+		// callers still invalidate in-flight ops immediately.
+		this.usbFlashState = null;
+		this.wifiNetworks = [];
+		this._host.requestUpdate();
 	}
 
 	setCancelledDeviceIpHint(ip: string | null): void {

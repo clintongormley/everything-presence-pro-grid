@@ -2023,6 +2023,46 @@ describe("cancel button on in-flight states", () => {
 	});
 });
 
+describe("cancelling feedback", () => {
+	it("mid-flow cancel shows a disabled Cancelling… button until usbFlashState clears", async () => {
+		const el = createView({
+			_showUsbFlash: true,
+			usbFlashState: { step: "wifi_check" },
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		(el as any)._dispatchCancel();
+		await el.updateComplete;
+
+		expect((el as any)._cancelling).toBe(true);
+		const btn = [...el.shadowRoot!.querySelectorAll("ha-button")].find((b) =>
+			b.textContent?.includes("flasher.cancelling"),
+		);
+		expect(btn).toBeDefined();
+		expect(btn!.hasAttribute("disabled")).toBe(true);
+
+		// The panel clears usbFlashState only after the serial teardown
+		// resolves (resetUsbState defers the clear); the view then drops
+		// _cancelling so the next flash starts with a live Cancel button.
+		el.usbFlashState = null;
+		await el.updateComplete;
+		expect((el as any)._cancelling).toBe(false);
+	});
+
+	it("cancel from the idle variant picker exits without Cancelling… feedback", async () => {
+		const el = createView({ _showUsbFlash: true, usbFlashState: null });
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		(el as any)._dispatchCancel();
+		await el.updateComplete;
+
+		expect((el as any)._cancelling).toBe(false);
+		expect((el as any)._showUsbFlash).toBe(false);
+	});
+});
+
 describe("cancel on wifi_provision", () => {
 	it("Cancel button fires flasher-cancel (not usb-retry)", () => {
 		const el = createView({
