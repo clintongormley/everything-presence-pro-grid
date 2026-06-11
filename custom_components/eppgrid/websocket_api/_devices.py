@@ -70,12 +70,17 @@ def websocket_subscribe_device_list(
     """Subscribe to device list changes. Sends initial list immediately."""
 
     @callback
-    def _send_update() -> None:
+    def _send_update(devices: list[dict[str, Any]] | None = None) -> None:
+        # Change events hand us the payload the manager computed ONCE for
+        # all subscribers; only the on-subscribe initial send (no payload)
+        # fetches its own snapshot.
+        if devices is None:
+            devices = manager.list_devices()
         connection.send_message(
             websocket_api.event_message(
                 msg["id"],
                 {
-                    "devices": manager.list_devices(),
+                    "devices": devices,
                     "show_room_calibration_tutorial": manager._store.show_room_calibration_tutorial,
                 },
             )

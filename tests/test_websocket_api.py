@@ -3751,14 +3751,17 @@ class TestSubscribeDeviceList:
 
         websocket_subscribe_device_list(hass, connection, msg)
 
-        # Simulate device list change
-        mock_dm.list_devices.return_value = [{"mac": "AA:BB:CC:DD:EE:FF", "name": "EPP"}]
+        # Simulate a device list change. The manager computes the payload
+        # once per change event and passes it to every subscriber — the
+        # subscriber must use it as-is, not re-fetch via list_devices().
+        mock_dm.list_devices.reset_mock()
         assert captured_cb is not None
-        captured_cb()
+        captured_cb([{"mac": "AA:BB:CC:DD:EE:FF", "name": "EPP"}])
 
         assert connection.send_message.call_count == 2
         last_msg = connection.send_message.call_args[0][0]
         assert last_msg["event"]["devices"][0]["mac"] == "AA:BB:CC:DD:EE:FF"
+        mock_dm.list_devices.assert_not_called()
 
     async def test_unsubscribe_removes_callback(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """Unsubscribing cleans up the device list callback."""

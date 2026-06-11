@@ -212,11 +212,32 @@ class DeviceConnection:
         _LOGGER.debug("Subscribed to device logs from %s (level=%s)", self._host, log_level)
 
     def unsubscribe_logs(self) -> None:
-        """Stop receiving device log messages."""
-        if self._unsub_logs is not None:
-            self._unsub_logs()
-            self._unsub_logs = None
-            _LOGGER.debug("Unsubscribed from device logs from %s", self._host)
+        """Stop receiving device log messages AND stop the device sending them.
+
+        Dropping the local callback alone is not enough: per aioesphomeapi
+        semantics the DEVICE keeps streaming log frames for the rest of the
+        connection's lifetime — wasted radio/CPU on the device and wasted
+        frame parsing here. A fresh subscribe at ``LOG_LEVEL_NONE`` tells
+        the device to stop; its local callback is released immediately
+        (it exists only to carry the level change to the device).
+        """
+        if self._unsub_logs is None:
+            return
+        self._unsub_logs()
+        self._unsub_logs = None
+        if self._client is not None:
+            try:
+                unsub_none = self._client.subscribe_logs(lambda _msg: None, log_level=LogLevel.LOG_LEVEL_NONE)
+                unsub_none()
+            except Exception:
+                # Connection already dead or dying (async_disconnect calls us
+                # right before disconnect) — the stream stops with it anyway.
+                _LOGGER.debug(
+                    "Could not send LOG_LEVEL_NONE to %s; connection is going away",
+                    self._host,
+                    exc_info=True,
+                )
+        _LOGGER.debug("Unsubscribed from device logs from %s", self._host)
 
     async def async_execute_service(
         self,

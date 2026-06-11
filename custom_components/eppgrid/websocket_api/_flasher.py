@@ -74,7 +74,11 @@ async def websocket_subscribe_flashable_devices(
             _LOGGER.debug("send_message failed for flashable_devices subscriber", exc_info=True)
 
     @callback
-    def _on_changed() -> None:
+    def _on_changed(_devices: list[dict[str, Any]] | None = None) -> None:
+        # `_devices` is the shared `list_devices()` payload the manager
+        # fans out to all device-list subscribers; the flashable view needs
+        # the richer async `list_flashable_devices()` payload instead, so
+        # the argument is accepted (per the callback contract) but unused.
         if closed:
             return
         task = hass.async_create_task(_send_update())

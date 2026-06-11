@@ -87,6 +87,9 @@ class DeviceManager:
     # would otherwise block unload indefinitely; on timeout the surviving
     # tasks are cancelled and we move on.
     _stop_timeout: float = 5.0
+    # Trailing-edge debounce window for `_request_discover`. Class-level so
+    # tests can shorten it via instance attribute without subclassing.
+    _discover_debounce: float = 1.0
 
     def __init__(self, hass: HomeAssistant, store: EPPGridStore) -> None:
         self._hass = hass
@@ -138,6 +141,11 @@ class DeviceManager:
         # `_pending_tasks` (via _spawn) so async_stop's drain catches any
         # that escape the Phase 1 cancel loop.
         self._pending_pushes: dict[str, asyncio.Task] = {}
+        # Pending debounce timer for `_request_discover` — same lifecycle
+        # discipline as `_pending_pushes` (cancel-prev-on-new-request,
+        # tracked via _spawn, cancelled in async_stop Phase 1). One slot,
+        # not per-mac: discovery is a single full-registry scan.
+        self._pending_discover: asyncio.Task | None = None
         # Macs whose last debounced push returned False (no host, exception,
         # offline mid-reload). The entity-update guard normally suppresses
         # _on_device_available's reconnect push as redundant — but when a
@@ -172,7 +180,12 @@ class DeviceManager:
 
     @callback
     def on_device_list_changed(self, cb: Any) -> Any:
-        """Register a callback for device list changes. Returns an unsub callable."""
+        """Register a callback for device list changes. Returns an unsub callable.
+
+        The callback receives the fresh ``list_devices()`` payload as its
+        single argument — computed ONCE per change event and shared across
+        all subscribers, so N subscribers don't trigger N registry scans.
+        """
         self._device_list_callbacks.append(cb)
 
         @callback
@@ -184,10 +197,18 @@ class DeviceManager:
 
     @callback
     def _fire_device_list_changed(self) -> None:
-        """Notify all subscribers that the device list has changed."""
+        """Notify all subscribers that the device list has changed.
+
+        Computes the ``list_devices()`` payload once and fans it out — each
+        subscriber independently re-scanning the registries would make every
+        change event O(subscribers x devices x entities).
+        """
+        if not self._device_list_callbacks:
+            return
+        devices = self.list_devices()
         for cb in list(self._device_list_callbacks):
             try:
-                cb()
+                cb(devices)
             except Exception:
                 _LOGGER.exception("Device list change callback failed")
 
@@ -345,6 +366,12 @@ class DeviceManager:
             for task in push_tasks:
                 task.cancel()
             await asyncio.gather(*push_tasks, return_exceptions=True)
+        # Same treatment for a pending debounced discovery — it must not
+        # fire a full-registry scan against a manager that's shutting down.
+        if (pending_discover := self._pending_discover) is not None:
+            self._pending_discover = None
+            pending_discover.cancel()
+            await asyncio.gather(pending_discover, return_exceptions=True)
 
         # Phase 2: drain tracked tasks with a bounded timeout. _pending_tasks
         # is awaited before _pending_closes because state-change callbacks
@@ -728,9 +755,24 @@ class DeviceManager:
         entry = ent_reg.async_get(entity_id)
         if entry is None or entry.platform != "esphome":
             return
-        # New ESPHome entity — refresh the targeted state-change tracker so
-        # the new entity_id gets included, whether it's on a brand-new
-        # device (about to be discovered below) or an existing managed one.
+        # Cheap pre-filter: every ESPHome entity create used to trigger a
+        # state-listener rebuild PLUS a full-registry discovery scan — an
+        # O(N²) burst when a 50-entity non-EPP ESPHome device is added.
+        # Discovery only ever manages devices carrying the EPP
+        # manufacturer/model signature, so resolve the device once and bail
+        # when it can't possibly be ours. A not-yet-resolvable device (no
+        # device_id, or the registry entry hasn't landed) is treated as
+        # potentially-EPP and falls through.
+        device = None
+        if entry.device_id:
+            dev_reg = dr.async_get(self._hass)
+            device = dev_reg.async_get(entry.device_id)
+            if device is not None and (device.manufacturer != EPP_MANUFACTURER or device.model != EPP_MODEL):
+                return
+        # New EPP-candidate entity — refresh the targeted state-change
+        # tracker so the new entity_id gets included, whether it's on a
+        # brand-new device (about to be discovered below) or an existing
+        # managed one.
         self._refresh_state_listener()
         # Skip only if the entity's device is already discovered AND the
         # underlying HA device.id matches what we have. If device.id changed
@@ -739,14 +781,52 @@ class DeviceManager:
         # need to re-run discovery so the rediscovery branch in
         # async_discover gets a chance to swap listeners and close the stale
         # session. Skipping here would freeze us on the old entry forever.
-        if entry.device_id:
-            dev_reg = dr.async_get(self._hass)
-            device = dev_reg.async_get(entry.device_id)
-            if device:
-                mac = _extract_mac(device)
-                if mac and mac in self.devices and self.devices[mac].device_id == entry.device_id:
-                    return
-        self._spawn(self.async_discover())
+        if device is not None:
+            mac = _extract_mac(device)
+            if mac and mac in self.devices and self.devices[mac].device_id == entry.device_id:
+                return
+        self._request_discover()
+
+    @callback
+    def _request_discover(self) -> None:
+        """Request a debounced ``async_discover`` run (trailing-edge).
+
+        The burst of entity-registry create events for a single new device
+        (one event per entity) collapses into ONE full-registry discovery
+        scan that runs ``_discover_debounce`` seconds after the LAST event.
+        Mirrors ``_request_push``: only the debounce-sleep phase is
+        cancellable; once the scan starts it runs to completion, and
+        ``_spawn`` tracks the task so async_stop's drain catches it.
+        """
+        if self._stopping:
+            return
+        if (existing := self._pending_discover) is not None and not existing.done():
+            existing.cancel()
+
+        task: asyncio.Task
+
+        async def _delayed_discover() -> None:
+            try:
+                await asyncio.sleep(self._discover_debounce)
+            except asyncio.CancelledError:
+                return
+            # Sync section between sleep-end and the next await: atomic vs.
+            # concurrent _request_discover calls (no event-loop yields here).
+            if self._pending_discover is task:
+                self._pending_discover = None
+            await self.async_discover()
+
+        task = self._spawn(_delayed_discover())
+        self._pending_discover = task
+
+        def _drop(_: asyncio.Task) -> None:
+            # Cancellation path: task didn't reach the in-flight removal,
+            # so the slot still points at us. Identity check protects
+            # against a newer task taking our slot before we settle.
+            if self._pending_discover is task:
+                self._pending_discover = None
+
+        task.add_done_callback(_drop)
 
     @callback
     def _on_state_changed(self, event: Any) -> None:
@@ -760,6 +840,27 @@ class DeviceManager:
         # None → value transition that's indistinguishable from
         # STATE_UNAVAILABLE → value from our point of view.
         old_state_value = old_state.state if old_state is not None else STATE_UNAVAILABLE
+
+        # Treat 'unknown' like 'unavailable' — newly-added ESPHome entities
+        # can go unknown → value without passing through unavailable, and
+        # that transition still means the device just came online.
+        offline_states = (STATE_UNAVAILABLE, STATE_UNKNOWN)
+        # `read_firmware_version` treats unavailable, unknown, AND empty
+        # string as 'no data'. Mirror that for the firmware-arrival guard
+        # below; otherwise `unavailable → "" → real_version` would slip past
+        # because the second transition has `old_state=""` which the
+        # narrower `offline_states` set wouldn't match, and the push
+        # retrigger would never fire.
+        fw_offline_states = (STATE_UNAVAILABLE, STATE_UNKNOWN, "")
+
+        # Hot-path guard: every state change of every tracked entity lands
+        # here, and everything below acts only on availability transitions.
+        # A plain value→value sensor update (the overwhelmingly common case)
+        # must bail before paying the ent_reg/dev_reg lookups and MAC
+        # extraction. The old side uses the wider `fw_offline_states` set so
+        # the firmware-version `"" → value` arrival still gets through.
+        if old_state_value not in fw_offline_states and new_state.state not in offline_states:
+            return
 
         # Check if this entity belongs to a managed ESPHome device
         ent_reg = er.async_get(self._hass)
@@ -776,11 +877,6 @@ class DeviceManager:
         if not mac or mac not in self.devices:
             return
 
-        # Treat 'unknown' like 'unavailable' — newly-added ESPHome entities
-        # can go unknown → value without passing through unavailable, and
-        # that transition still means the device just came online.
-        offline_states = (STATE_UNAVAILABLE, STATE_UNKNOWN)
-
         # Re-sync Repairs whenever the firmware_version sensor specifically
         # transitions from offline to a real value. Handles the post-OTA
         # reconnect race: _on_device_available fires for the first entity
@@ -791,13 +887,6 @@ class DeviceManager:
         # new_state.state directly, so we treat empty string the same as
         # unavailable/unknown — read_firmware_version is the single source
         # of truth for "is this a real firmware version".
-        # `read_firmware_version` treats unavailable, unknown, AND empty
-        # string as 'no data'. Mirror that here for the transition guard;
-        # otherwise `unavailable → "" → real_version` would slip past
-        # because the second transition has `old_state=""` which the
-        # narrower `offline_states` set wouldn't match, and the push
-        # retrigger would never fire.
-        fw_offline_states = (STATE_UNAVAILABLE, STATE_UNKNOWN, "")
         if (
             entry.domain == "sensor"
             and "firmware_version" in entry.unique_id

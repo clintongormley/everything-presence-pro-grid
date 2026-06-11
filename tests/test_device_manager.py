@@ -287,6 +287,58 @@ class TestDeviceConnection:
         assert bad.call_count == 1
         assert good.call_count == 2
 
+    async def test_unsubscribe_logs_stops_device_stream(self) -> None:
+        """Dropping the local log callback alone leaves the DEVICE streaming
+        log frames for the rest of the connection's lifetime (aioesphomeapi
+        semantics) — unsubscribing must send a fresh subscribe at
+        LOG_LEVEL_NONE so the device actually stops sending."""
+        conn = DeviceConnection("192.168.1.100")
+        conn._client = MagicMock()
+        conn.connected = True
+        local_unsub = MagicMock()
+        none_unsub = MagicMock()
+        conn._client.subscribe_logs = MagicMock(side_effect=[local_unsub, none_unsub])
+
+        conn.subscribe_logs(LogLevel.LOG_LEVEL_DEBUG)
+        conn.unsubscribe_logs()
+
+        # The original local subscription is dropped...
+        local_unsub.assert_called_once()
+        # ...and a second subscribe at LOG_LEVEL_NONE told the device to stop.
+        assert conn._client.subscribe_logs.call_count == 2
+        none_call = conn._client.subscribe_logs.call_args_list[1]
+        assert none_call.kwargs.get("log_level") == LogLevel.LOG_LEVEL_NONE
+        # The NONE subscription's local callback is released immediately —
+        # it exists only to carry the level change to the device.
+        none_unsub.assert_called_once()
+        assert conn._unsub_logs is None
+
+    async def test_unsubscribe_logs_noop_when_not_subscribed(self) -> None:
+        """unsubscribe without a prior subscribe must not message the device —
+        _manage_log_subscription calls it on every push when logs are off."""
+        conn = DeviceConnection("192.168.1.100")
+        conn._client = MagicMock()
+        conn.connected = True
+        conn.unsubscribe_logs()
+        conn._client.subscribe_logs.assert_not_called()
+
+    async def test_unsubscribe_logs_tolerates_dead_connection(self) -> None:
+        """Sending LOG_LEVEL_NONE over a half-dead connection must not raise —
+        async_disconnect calls unsubscribe_logs right before disconnect."""
+        from aioesphomeapi import APIConnectionError
+
+        conn = DeviceConnection("192.168.1.100")
+        conn._client = MagicMock()
+        conn.connected = True
+        local_unsub = MagicMock()
+        conn._client.subscribe_logs = MagicMock(side_effect=[local_unsub, APIConnectionError("dead")])
+
+        conn.subscribe_logs(LogLevel.LOG_LEVEL_DEBUG)
+        conn.unsubscribe_logs()  # must not raise
+
+        local_unsub.assert_called_once()
+        assert conn._unsub_logs is None
+
     async def test_subscribe_states_raises_when_disconnected(self) -> None:
         """Subscribing on a closed connection must raise rather than silently
         appending — otherwise the caller gets back success but never receives
@@ -933,7 +985,7 @@ class TestDeviceManager:
 
         # The next real offline transition must still fire the broadcast.
         fire_calls: list[None] = []
-        manager.on_device_list_changed(lambda: fire_calls.append(None))
+        manager.on_device_list_changed(lambda _devices: fire_calls.append(None))
         old = MagicMock()
         old.state = "1.2.3"
         new = MagicMock()
@@ -3351,7 +3403,13 @@ class TestEventCallbacks:
     async def test_on_entity_registry_updated_triggers_discover(
         self, hass: HomeAssistant, manager: DeviceManager
     ) -> None:
-        """New ESPHome entity creation triggers re-discovery."""
+        """New ESPHome entity creation triggers re-discovery.
+
+        The device carries the EPP manufacturer/model signature — the
+        handler pre-filters on it, so an unsigned device would be skipped
+        (see test_entity_create_non_epp_device_skips_discover_and_listener).
+        """
+        manager._discover_debounce = 0.01
         dev_reg = dr.async_get(hass)
         ent_reg = er.async_get(hass)
 
@@ -3366,6 +3424,8 @@ class TestEventCallbacks:
             config_entry_id=esphome_entry.entry_id,
             connections={("mac", "ff:ee:dd:cc:bb:aa")},
             name="EPP New",
+            manufacturer=EPP_MANUFACTURER,
+            model=EPP_MODEL,
         )
 
         entity = ent_reg.async_get_or_create(
@@ -3415,6 +3475,8 @@ class TestEventCallbacks:
             config_entry_id=esphome_entry.entry_id,
             connections={("mac", "aa:bb:cc:dd:ee:ff")},
             name="EPP Known",
+            manufacturer=EPP_MANUFACTURER,
+            model=EPP_MODEL,
         )
 
         entity = ent_reg.async_get_or_create(
@@ -3464,6 +3526,145 @@ class TestEventCallbacks:
             await hass.async_block_till_done()
 
         mock_discover.assert_not_awaited()
+
+    async def test_entity_create_burst_debounces_discover(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A burst of entity-create events for one new EPP device collapses
+        into exactly ONE discovery run after the debounce window — discovery
+        is a full entity-registry scan, so N entities must not cost N scans."""
+        manager._discover_debounce = 0.05
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.50"}, title="EPP New")
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "ff:ee:dd:cc:bb:aa")},
+            name="EPP New",
+            manufacturer=EPP_MANUFACTURER,
+            model=EPP_MODEL,
+        )
+        entities = [
+            ent_reg.async_get_or_create(
+                "sensor",
+                "esphome",
+                unique_id=f"FF:EE:DD:CC:BB:AA-sensor-{i}",
+                config_entry=esphome_entry,
+                device_id=device.id,
+            )
+            for i in range(5)
+        ]
+
+        with patch.object(manager, "async_discover", new_callable=AsyncMock) as mock_discover:
+            for entity in entities:
+                event = MagicMock()
+                event.data = {"action": "create", "entity_id": entity.entity_id}
+                manager._on_entity_registry_updated(event)
+            await hass.async_block_till_done()
+
+        mock_discover.assert_awaited_once()
+
+    async def test_entity_create_non_epp_device_skips_discover_and_listener(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """An entity created on a clearly non-EPP ESPHome device must trigger
+        neither a discovery spawn nor a state-listener rebuild — adding a
+        50-entity non-EPP device used to cause an O(N²) burst."""
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.60"}, title="Acme")
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "11:22:33:44:55:66")},
+            name="Acme Widget",
+            manufacturer="Acme Corp",
+            model="Widget 3000",
+        )
+        entity = ent_reg.async_get_or_create(
+            "sensor",
+            "esphome",
+            unique_id="11:22:33:44:55:66-sensor-temperature",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+
+        with (
+            patch.object(manager, "async_discover", new_callable=AsyncMock) as mock_discover,
+            patch.object(manager, "_refresh_state_listener") as mock_refresh,
+        ):
+            event = MagicMock()
+            event.data = {"action": "create", "entity_id": entity.entity_id}
+            manager._on_entity_registry_updated(event)
+            await hass.async_block_till_done()
+
+        mock_discover.assert_not_awaited()
+        mock_refresh.assert_not_called()
+
+    async def test_async_stop_cancels_pending_discover(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A pending debounced discovery must be cancelled by async_stop, not
+        left to fire against a torn-down manager."""
+        manager._discover_debounce = 30.0
+        with patch.object(manager, "async_discover", new_callable=AsyncMock) as mock_discover:
+            manager._request_discover()
+            assert manager._pending_discover is not None
+            await manager.async_stop()
+        mock_discover.assert_not_awaited()
+        assert manager._pending_discover is None
+
+    async def test_request_discover_noop_after_stop(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """_request_discover must not schedule once the manager is stopping."""
+        manager._stopping = True
+        manager._request_discover()
+        assert manager._pending_discover is None
+        await hass.async_block_till_done()
+
+    async def test_on_state_changed_value_to_value_skips_registry_lookups(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """The hot path: a plain value→value sensor update on a tracked entity
+        must bail before paying any registry lookups — every state change of
+        every tracked entity lands here."""
+        old = MagicMock()
+        old.state = "21.0"
+        new = MagicMock()
+        new.state = "21.5"
+        event = MagicMock()
+        event.data = {"entity_id": "sensor.epp_temperature", "old_state": old, "new_state": new}
+
+        with (
+            patch("custom_components.eppgrid.device_manager.er.async_get") as mock_er,
+            patch("custom_components.eppgrid.device_manager.dr.async_get") as mock_dr,
+        ):
+            manager._on_state_changed(event)
+
+        mock_er.assert_not_called()
+        mock_dr.assert_not_called()
+
+    async def test_fire_device_list_changed_computes_payload_once(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """One change event with N subscribers computes list_devices() exactly
+        once and hands every subscriber the same payload object."""
+        received: list = []
+        manager.on_device_list_changed(received.append)
+        manager.on_device_list_changed(received.append)
+
+        with patch.object(manager, "list_devices", wraps=manager.list_devices) as mock_list:
+            manager._fire_device_list_changed()
+
+        assert mock_list.call_count == 1
+        assert len(received) == 2
+        assert received[0] is received[1]
+
+    async def test_fire_device_list_changed_skips_payload_without_subscribers(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """No subscribers → no payload computation at all."""
+        with patch.object(manager, "list_devices") as mock_list:
+            manager._fire_device_list_changed()
+        mock_list.assert_not_called()
 
     async def test_on_state_changed_pushes_config(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """Device coming online triggers config push."""
@@ -3558,7 +3759,7 @@ class TestEventCallbacks:
         manager._pushing.add(mac)
 
         fire_calls: list[None] = []
-        manager.on_device_list_changed(lambda: fire_calls.append(None))
+        manager.on_device_list_changed(lambda _devices: fire_calls.append(None))
 
         with patch.object(manager, "_on_device_available", new_callable=AsyncMock) as mock_avail:
             old_state = MagicMock()
@@ -3699,7 +3900,7 @@ class TestEventCallbacks:
         manager._pushing.add("AA:BB:CC:DD:EE:03")
 
         fire_calls: list[None] = []
-        manager.on_device_list_changed(lambda: fire_calls.append(None))
+        manager.on_device_list_changed(lambda _devices: fire_calls.append(None))
 
         old_state = MagicMock()
         old_state.state = "25.5"
@@ -3751,7 +3952,7 @@ class TestEventCallbacks:
         )
 
         fire_calls: list[None] = []
-        manager.on_device_list_changed(lambda: fire_calls.append(None))
+        manager.on_device_list_changed(lambda _devices: fire_calls.append(None))
 
         # Synthesize an unavailable → unknown event (still offline either way).
         old = MagicMock()
@@ -3801,7 +4002,7 @@ class TestEventCallbacks:
         )
 
         fire_calls: list[None] = []
-        manager.on_device_list_changed(lambda: fire_calls.append(None))
+        manager.on_device_list_changed(lambda _devices: fire_calls.append(None))
 
         old = MagicMock()
         old.state = "25.5"
@@ -5091,6 +5292,7 @@ class TestEventCallbacks:
         the new firmware_version entity arrives via this handler, which
         previously returned early on `mac in self.devices` regardless of
         whether the device.id had changed."""
+        manager._discover_debounce = 0.01
         mac = "AA:BB:CC:DD:EE:FF"
         manager.devices[mac] = ManagedDevice(
             mac=mac,
