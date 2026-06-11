@@ -1303,13 +1303,13 @@ const _t=Symbol.for(""),pt=t=>{if(t?.r===_t)return t?._$litStatic$},ft=(t,...e)=
     transform: translateX(18px);
   }
 `,Ri=n`
-  .zone-item-row {
+  .sidebar-item-row {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .zone-remove-btn {
+  .sidebar-remove-btn {
     background: none;
     border: none;
     color: var(--secondary-text-color, #757575);
@@ -1318,7 +1318,7 @@ const _t=Symbol.for(""),pt=t=>{if(t?.r===_t)return t?._$litStatic$},ft=(t,...e)=
     border-radius: 4px;
   }
 
-  .zone-remove-btn:hover {
+  .sidebar-remove-btn:hover {
     color: var(--error-color, #f44336);
   }
 `,ki=n`
@@ -1350,10 +1350,10 @@ const _t=Symbol.for(""),pt=t=>{if(t?.r===_t)return t?._$litStatic$},ft=(t,...e)=
 
 			${t?Y`
 						<div class="furn-selected-info">
-							<div class="zone-item-row">
+							<div class="sidebar-item-row">
 								<ha-icon icon="${t.icon}" style="--mdc-icon-size: 20px;"></ha-icon>
 								<strong>${this.localize(t.label)}</strong>
-								<button class="zone-remove-btn" @click=${()=>this._fireRemove(t.id)}>
+								<button class="sidebar-remove-btn" @click=${()=>this._fireRemove(t.id)}>
 									<ha-icon icon="mdi:close"></ha-icon>
 								</button>
 							</div>
@@ -2820,7 +2820,7 @@ const _t=Symbol.for(""),pt=t=>{if(t?.r===_t)return t?._$litStatic$},ft=(t,...e)=
 				<div class="zone-item ${0===this.activeZone?"active":""}">
 					<button
 						type="button"
-						class="zone-item-row"
+						class="sidebar-item-row"
 						@click=${()=>{this.dispatchEvent(new CustomEvent("zone-select",{detail:{zone:0},bubbles:!0,composed:!0}))}}
 					>
 						<div
@@ -2841,7 +2841,7 @@ const _t=Symbol.for(""),pt=t=>{if(t?.r===_t)return t?._$litStatic$},ft=(t,...e)=
 							class="zone-item ${this.activeZone===i?"active":""}"
 							@click=${()=>{this.dispatchEvent(new CustomEvent("zone-select",{detail:{zone:i},bubbles:!0,composed:!0}))}}
 						>
-							<div class="zone-item-row">
+							<div class="sidebar-item-row">
 								${this.activeZone===i?Y`
 											<input
 												type="color"
@@ -2867,7 +2867,7 @@ const _t=Symbol.for(""),pt=t=>{if(t?.r===_t)return t?._$litStatic$},ft=(t,...e)=
 									@focus=${()=>{this.dispatchEvent(new CustomEvent("zone-select",{detail:{zone:i},bubbles:!0,composed:!0}))}}
 								/>
 								<button
-									class="zone-remove-btn"
+									class="sidebar-remove-btn"
 									type="button"
 									aria-label=${this.localize("zones.remove_zone")}
 									@click=${t=>{t.stopPropagation(),this.dispatchEvent(new CustomEvent("zone-remove",{detail:{slot:i},bubbles:!0,composed:!0}))}}
@@ -2894,7 +2894,7 @@ const _t=Symbol.for(""),pt=t=>{if(t?.r===_t)return t?._$litStatic$},ft=(t,...e)=
 			</div>
 		`}_emitZone0Change(t){this.dispatchEvent(new CustomEvent("zone0-change",{detail:t,bubbles:!0,composed:!0}))}_renderBoundaryTypeControls(){return this._renderTypeControls(this.zone0,hs(this.zone0),t=>this._emitZone0Change(t))}_renderZoneTypeControls(t,e){return this._renderTypeControls(t,hs(t),t=>{this.dispatchEvent(new CustomEvent("zone-config-change",{detail:{index:e,updates:t},bubbles:!0,composed:!0}))})}_renderTypeControls(t,e,i){const s="custom"===t.type,r=`width: 100%; display: flex; align-items: center; gap: 4px; font-size: 12px; opacity: ${s?1:.5};`,o=(t,e,s)=>{const r=Number(e);r>0&&i({[t]:Math.min(Math.max(r,1),s)})};return Y`
 			<div
-				class="zone-item-row zone-settings-row"
+				class="sidebar-item-row zone-settings-row"
 				style="flex-wrap: wrap; gap: 3px; padding: 4px 8px;"
 			>
 				<div
@@ -3065,7 +3065,7 @@ const _t=Symbol.for(""),pt=t=>{if(t?.r===_t)return t?._$litStatic$},ft=(t,...e)=
 
 			/* Reset for the zone-0 row, which is a real <button> for keyboard
 			   access (it has no interactive children, unlike named-zone rows). */
-			button.zone-item-row {
+			button.sidebar-item-row {
 				width: 100%;
 				background: none;
 				border: none;

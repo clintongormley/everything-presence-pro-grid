@@ -1,5 +1,5 @@
 import {
-	cellCentreMm,
+	cellCenterMm,
 	cellIsInside,
 	GRID_CELL_COUNT,
 	GRID_CELL_MM,
@@ -80,7 +80,7 @@ export function classifyCellInSensor(
 	if (!fov) return "in_range"; // no calibration — allow all
 
 	// Cell centre in room-space mm
-	const { x: rx, y: ry } = cellCentreMm(col, row, roomWidth);
+	const { x: rx, y: ry } = cellCenterMm(col, row, roomWidth);
 
 	// Vector from sensor to cell in room-space
 	const dx = rx - fov.sensorPos.x;
@@ -260,7 +260,7 @@ export function autoDetectionRange(
 			for (let c = raw.minCol; c <= raw.maxCol; c++) {
 				const idx = r * GRID_COLS + c;
 				if (!cellIsInside(grid[idx])) continue;
-				const { x: rx, y: ry } = cellCentreMm(c, r, roomWidth);
+				const { x: rx, y: ry } = cellCenterMm(c, r, roomWidth);
 				const dx = rx - sensorPos.x;
 				const dy = ry - sensorPos.y;
 				const dist = Math.sqrt(dx * dx + dy * dy);
@@ -410,7 +410,7 @@ export function getGridRoomMetrics(
 	let maxDistSq = 0;
 	const foldFurthest =
 		(sensorMmX: number, sensorMmY: number) => (col: number, row: number) => {
-			const { x: cellMmX, y: cellMmY } = cellCentreMm(col, row, roomWidth);
+			const { x: cellMmX, y: cellMmY } = cellCenterMm(col, row, roomWidth);
 			const dx = cellMmX - sensorMmX;
 			const dy = cellMmY - sensorMmY;
 			const distSq = dx * dx + dy * dy;

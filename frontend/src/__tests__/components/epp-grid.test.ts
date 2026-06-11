@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-grid.js";
 import type { EppGrid } from "../../components/epp-grid.js";
 import type { FurnitureItem } from "../../lib/furniture.js";
@@ -308,6 +308,34 @@ describe("epp-grid cell events", () => {
 		expect(cssText).toMatch(
 			/:host\(\[editable\]\)\s+\.grid\s*{[^}]*touch-action:\s*none/,
 		);
+	});
+
+	it("releases pointer capture when the cell already holds it (touch-drag fix)", async () => {
+		const el = createGrid({ editable: true });
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const cell = el.shadowRoot!.querySelector(".cell") as HTMLElement;
+		expect(cell).not.toBeNull();
+
+		// happy-dom lacks implicit pointer capture, so monkey-patch the cell to
+		// simulate a touch-pointer that the browser has already captured.
+		const POINTER_ID = 42;
+		cell.hasPointerCapture = (_id: number) => true;
+		const releaseSpy = vi.fn();
+		cell.releasePointerCapture = releaseSpy;
+
+		cell.dispatchEvent(
+			new PointerEvent("pointerdown", {
+				bubbles: true,
+				pointerId: POINTER_ID,
+			}),
+		);
+
+		expect(releaseSpy).toHaveBeenCalledOnce();
+		expect(releaseSpy).toHaveBeenCalledWith(POINTER_ID);
+
+		document.body.removeChild(el);
 	});
 });
 

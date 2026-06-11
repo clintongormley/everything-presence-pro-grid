@@ -261,6 +261,8 @@ export class EppGrid extends LitElement {
 	// per-cell FOV classification, the visible room bounds and the room
 	// metrics; without it every render — each live tick, every painted
 	// cell — re-ran ~4 full-grid scans (≈1600 classifyCellInSensor calls).
+	// Deliberately keys on the full grid ref: per-cell classification doesn't
+	// depend on which cells are painted, but simplicity wins over granularity.
 	private _scanCache: {
 		grid: Uint8Array;
 		fov: SensorFov | null;

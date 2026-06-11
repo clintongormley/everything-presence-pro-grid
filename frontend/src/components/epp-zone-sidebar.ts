@@ -133,7 +133,7 @@ export class EppZoneSidebar extends LitElement {
 
 			/* Reset for the zone-0 row, which is a real <button> for keyboard
 			   access (it has no interactive children, unlike named-zone rows). */
-			button.zone-item-row {
+			button.sidebar-item-row {
 				width: 100%;
 				background: none;
 				border: none;
@@ -220,7 +220,7 @@ export class EppZoneSidebar extends LitElement {
 				<div class="zone-item ${this.activeZone === 0 ? "active" : ""}">
 					<button
 						type="button"
-						class="zone-item-row"
+						class="sidebar-item-row"
 						@click=${() => {
 							this.dispatchEvent(
 								new CustomEvent("zone-select", {
@@ -264,7 +264,7 @@ export class EppZoneSidebar extends LitElement {
 								);
 							}}
 						>
-							<div class="zone-item-row">
+							<div class="sidebar-item-row">
 								${
 									this.activeZone === slot
 										? html`
@@ -335,7 +335,7 @@ export class EppZoneSidebar extends LitElement {
 									}}
 								/>
 								<button
-									class="zone-remove-btn"
+									class="sidebar-remove-btn"
 									type="button"
 									aria-label=${this.localize("zones.remove_zone")}
 									@click=${(e: Event) => {
@@ -451,7 +451,7 @@ export class EppZoneSidebar extends LitElement {
 		};
 		return html`
 			<div
-				class="zone-item-row zone-settings-row"
+				class="sidebar-item-row zone-settings-row"
 				style="flex-wrap: wrap; gap: 3px; padding: 4px 8px;"
 			>
 				<div

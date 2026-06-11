@@ -192,7 +192,7 @@ describe("epp-zone-sidebar events", () => {
 		const c = renderTo(tpl);
 
 		const rowBtn = c.querySelector(
-			".zone-item button.zone-item-row",
+			".zone-item button.sidebar-item-row",
 		) as HTMLElement;
 		expect(rowBtn).not.toBeNull();
 		rowBtn.click();
@@ -262,7 +262,7 @@ describe("epp-zone-sidebar events", () => {
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
-		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
+		const removeBtn = c.querySelector(".sidebar-remove-btn") as HTMLElement;
 		removeBtn.click();
 
 		expect(handler).toHaveBeenCalledTimes(1);

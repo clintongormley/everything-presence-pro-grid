@@ -1375,7 +1375,7 @@ describe("template delete button", () => {
 		const c = document.createElement("div");
 		render(tpl, c);
 
-		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
+		const removeBtn = c.querySelector(".sidebar-remove-btn") as HTMLElement;
 		if (removeBtn) {
 			removeBtn.click();
 			expect(a._deleteTemplate).toHaveBeenCalledWith("test-tmpl");

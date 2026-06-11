@@ -186,7 +186,7 @@ export function roomStartCol(roomWidthMm: number): number {
  * independent; x is relative to the room's left edge and can be negative
  * for columns left of the room.
  */
-export function cellCentreMm(
+export function cellCenterMm(
 	col: number,
 	row: number,
 	roomWidthMm: number,

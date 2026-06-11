@@ -129,4 +129,38 @@ describe("epp-grid full-grid scan caching", () => {
 
 		document.body.removeChild(el);
 	});
+
+	it("rescans when the perspective reference changes (degenerate-fov fallback path)", async () => {
+		// Use a degenerate perspective so computeSensorFov returns null.
+		// The cache key still tracks perspective directly because getGridRoomMetrics
+		// falls back to it when fov is null; a new reference must bust the cache.
+		const el = createGrid({ perspective: [0, 0, 0, 0, 0, 0, 0, 0] });
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		clearSpies();
+
+		// Replace with a different (but equally degenerate) array reference.
+		el.perspective = [0, 0, 0, 0, 0, 0, 0, 0];
+		await el.updateComplete;
+
+		expect(classifyCellInSensor).toHaveBeenCalled();
+
+		document.body.removeChild(el);
+	});
+
+	it("rescans when roomWidth changes", async () => {
+		const el = createGrid();
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		clearSpies();
+
+		el.roomWidth = 4000;
+		await el.updateComplete;
+
+		expect(classifyCellInSensor).toHaveBeenCalled();
+
+		document.body.removeChild(el);
+	});
 });

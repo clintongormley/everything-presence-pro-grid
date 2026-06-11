@@ -287,13 +287,13 @@ export const toggleStyles = css`
 
 /** Item-row + remove-button styling shared by the zone and furniture sidebars. */
 export const sidebarRowStyles = css`
-  .zone-item-row {
+  .sidebar-item-row {
     display: flex;
     align-items: center;
     gap: 8px;
   }
 
-  .zone-remove-btn {
+  .sidebar-remove-btn {
     background: none;
     border: none;
     color: var(--secondary-text-color, #757575);
@@ -302,7 +302,7 @@ export const sidebarRowStyles = css`
     border-radius: 4px;
   }
 
-  .zone-remove-btn:hover {
+  .sidebar-remove-btn:hover {
     color: var(--error-color, #f44336);
   }
 `;

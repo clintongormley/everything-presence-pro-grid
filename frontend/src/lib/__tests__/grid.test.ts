@@ -10,7 +10,7 @@ import {
 	CELL_ROOM_BIT,
 	CELL_ZONE_AND_OVERLAY_MASK,
 	CELL_ZONE_MASK,
-	cellCentreMm,
+	cellCenterMm,
 	cellIsInside,
 	cellOverlay,
 	cellSetInside,
@@ -623,20 +623,20 @@ describe("roomStartCol", () => {
 	});
 });
 
-describe("cellCentreMm", () => {
+describe("cellCenterMm", () => {
 	it("maps the first room column's centre to x=150mm", () => {
 		// startCol = 5 for a 3000mm room; col 5 centre = (5-5+0.5)*300 = 150
-		const { x, y } = cellCentreMm(5, 0, 3000);
+		const { x, y } = cellCenterMm(5, 0, 3000);
 		expect(x).toBe(150);
 		expect(y).toBe(150);
 	});
 
 	it("maps row independent of room width (sensor at front wall)", () => {
-		expect(cellCentreMm(10, 3, 3000).y).toBe(3.5 * 300);
-		expect(cellCentreMm(10, 3, 5500).y).toBe(3.5 * 300);
+		expect(cellCenterMm(10, 3, 3000).y).toBe(3.5 * 300);
+		expect(cellCenterMm(10, 3, 5500).y).toBe(3.5 * 300);
 	});
 
 	it("yields negative x for columns left of the room", () => {
-		expect(cellCentreMm(4, 0, 3000).x).toBe(-150);
+		expect(cellCenterMm(4, 0, 3000).x).toBe(-150);
 	});
 });

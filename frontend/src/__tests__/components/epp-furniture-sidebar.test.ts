@@ -246,7 +246,7 @@ describe("epp-furniture-sidebar DOM events", () => {
 		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
-		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
+		const removeBtn = c.querySelector(".sidebar-remove-btn") as HTMLElement;
 		if (removeBtn) {
 			removeBtn.click();
 			expect(handler).toHaveBeenCalledTimes(1);

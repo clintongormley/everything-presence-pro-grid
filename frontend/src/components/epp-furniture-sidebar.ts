@@ -143,10 +143,10 @@ export class EppFurnitureSidebar extends LitElement {
 				selected
 					? html`
 						<div class="furn-selected-info">
-							<div class="zone-item-row">
+							<div class="sidebar-item-row">
 								<ha-icon icon="${selected.icon}" style="--mdc-icon-size: 20px;"></ha-icon>
 								<strong>${this.localize(selected.label)}</strong>
-								<button class="zone-remove-btn" @click=${() => this._fireRemove(selected.id)}>
+								<button class="sidebar-remove-btn" @click=${() => this._fireRemove(selected.id)}>
 									<ha-icon icon="mdi:close"></ha-icon>
 								</button>
 							</div>

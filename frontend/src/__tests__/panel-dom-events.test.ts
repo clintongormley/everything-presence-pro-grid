@@ -784,7 +784,7 @@ describe("_renderZoneSidebar DOM events", () => {
 		// The zone-0 row is a real <button> (keyboard a11y); the click
 		// handler lives there, not on the .zone-item container.
 		const rowBtn = c.querySelector(
-			".zone-item button.zone-item-row",
+			".zone-item button.sidebar-item-row",
 		) as HTMLElement;
 		expect(rowBtn).not.toBeNull();
 		rowBtn.click();
@@ -845,7 +845,7 @@ describe("_renderZoneSidebar DOM events", () => {
 			events.push(e as CustomEvent),
 		);
 
-		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
+		const removeBtn = c.querySelector(".sidebar-remove-btn") as HTMLElement;
 		if (removeBtn) {
 			removeBtn.click();
 			expect(events.some((e) => e.detail.slot === 1)).toBe(true);
@@ -1085,7 +1085,7 @@ describe("epp-furniture-sidebar DOM events", () => {
 		const tpl = (el as any)._renderFurnitureSidebar();
 		const c = renderTo(tpl);
 
-		const removeBtn = c.querySelector(".zone-remove-btn") as HTMLElement;
+		const removeBtn = c.querySelector(".sidebar-remove-btn") as HTMLElement;
 		if (removeBtn) {
 			removeBtn.click();
 			expect(handler).toHaveBeenCalledTimes(1);
