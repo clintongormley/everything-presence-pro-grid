@@ -5,6 +5,7 @@
 #include "epp_types.h"
 
 #include <algorithm>
+#include <cstddef>
 #include <cstdint>
 
 namespace epp {
@@ -48,6 +49,17 @@ struct ProcessingResult {
     LogEntry log[MAX_LOG_ENTRIES]{};
     int log_count = 0;
 };
+
+// Invariant: log/log_count must be last. ZoneEngine::tick()'s reset and the
+// component's publish cache both copy offsetof(ProcessingResult, log) bytes —
+// any field appended after log_count would be silently excluded. Pin the layout
+// at compile time so a future field addition fails loudly instead of silently.
+static_assert(offsetof(ProcessingResult, log_count) >=
+                  offsetof(ProcessingResult, log) + sizeof(ProcessingResult::log),
+              "log_count must follow log");
+static_assert(sizeof(ProcessingResult) - offsetof(ProcessingResult, log_count) -
+                  sizeof(ProcessingResult::log_count) < alignof(ProcessingResult),
+              "no fields may follow log_count — the partial-copy/reset idiom excludes them");
 
 // ---------------------------------------------------------------------------
 // Internal runtime state per zone

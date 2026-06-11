@@ -21,14 +21,13 @@
 
 namespace epp {
 
-// Number of LD2450 hardware targets. Distinct from the engine's MAX_TARGETS
-// (which is the post-processing slot count); kept at namespace scope so it can
-// be referenced in EPPComponent::feed_targets's parameter array bounds.
+// Number of LD2450 hardware targets — also the engine's post-processing slot
+// count (MAX_TARGETS). They are distinct concepts (hardware slots vs. engine
+// slots) that must currently agree: loop() copies frame.targets[NUM_TARGETS]
+// into WindowOutput / engine arrays sized MAX_TARGETS — if they diverge, the
+// per-target loops silently read or write out of bounds. The assert below
+// enforces the agreement at compile time.
 inline constexpr int NUM_TARGETS = 3;
-
-// loop() copies frame.targets[NUM_TARGETS] into WindowOutput / engine arrays
-// sized MAX_TARGETS — if the two ever diverge, the per-target loops silently
-// read or write out of bounds. Pin the equality at compile time.
 static_assert(NUM_TARGETS == MAX_TARGETS,
               "LD2450 hardware target count must match the zone engine's MAX_TARGETS");
 

@@ -3,6 +3,7 @@
 #include "epp_nvs_layout.h"
 #include "epp_change_detector.h"
 #include "epp_target_validity.h"
+#include "epp_target_zone.h"
 #include "epp_json_writer.h"
 #include "epp_perspective_parser.h"
 #include "esphome/core/log.h"
@@ -29,17 +30,6 @@ static const char *status_str(TargetStatus status) {
     case TargetStatus::PENDING: return "pending";
     default: return "inactive";
   }
-}
-
-// Zone id at the target's grid cell, or -1 when the target has no queryable
-// position (per is_target_valid) or its position maps outside the grid.
-// Shared by the zone-state debug log and the per-target zone entity publish
-// so the lookup-with-bounds-check sequence can't drift apart.
-static int target_zone_or_invalid(const Grid &grid, TargetStatus status, float x, float y) {
-  if (!is_target_valid(status, x, y)) return -1;
-  int cell = grid.xy_to_cell(x, y);
-  if (cell < 0 || cell >= GRID_CELL_COUNT) return -1;
-  return grid.cell_zone(cell);
 }
 
 void EPPComponent::setup() {
@@ -699,15 +689,17 @@ void EPPComponent::set_zones(const std::string &zones_json) {
   // same helper guards the NVS boot-restore path so the two can't drift.
   ZoneConfig configs[MAX_ZONE_SLOTS];
   int count = 0;
+  const char *parse_error = nullptr;
   ZonesJsonStatus status =
-      parse_zones_json(zones_json.c_str(), zones_json.size(), configs, count);
+      parse_zones_json(zones_json.c_str(), zones_json.size(), configs, count, &parse_error);
   if (status == ZonesJsonStatus::TOO_LARGE) {
     ESP_LOGW(TAG, "Zones JSON too large (%u bytes, max %u), rejecting",
              (unsigned)zones_json.size(), (unsigned)ZONES_JSON_MAX);
     return;
   }
   if (status != ZonesJsonStatus::OK) {
-    ESP_LOGE(TAG, "Failed to parse zones JSON");
+    ESP_LOGW(TAG, "Failed to parse zones JSON: %s",
+             parse_error != nullptr ? parse_error : "unknown");
     return;
   }
 

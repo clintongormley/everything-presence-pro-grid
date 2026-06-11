@@ -98,10 +98,14 @@ inline void parse_zone_configs(const JsonDocument &doc, ZoneConfig out[], int &c
 ///
 /// On PARSE_ERROR, `error` (when non-null) receives a pointer to a static
 /// ArduinoJson description string (safe to use after return).
-/// Same contract as parse_zone_configs: pass a fresh `out` and `count == 0`.
+///
+/// Unlike parse_zone_configs, this function zeroes `count` on entry, so
+/// callers are not required to initialise it to 0 — on TOO_LARGE or
+/// PARSE_ERROR the count is guaranteed to be 0 on return.
 inline ZonesJsonStatus parse_zones_json(const char *json, size_t len,
                                         ZoneConfig out[], int &count,
                                         const char **error = nullptr) {
+  count = 0;
   if (len > ZONES_JSON_MAX) return ZonesJsonStatus::TOO_LARGE;
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, json, len);

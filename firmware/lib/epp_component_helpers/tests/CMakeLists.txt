@@ -43,6 +43,20 @@ add_executable(epp_helpers_indexed_setter_tests
 )
 target_link_libraries(epp_helpers_indexed_setter_tests PRIVATE epp_component_helpers doctest::doctest)
 
+# target_zone_or_invalid calls Grid (a compiled class from epp_zone_engine).
+# Compile the needed epp_zone_engine sources directly into this test executable
+# rather than adding the sibling lib as a subdirectory (which would pull in its
+# own FetchContent declarations for ArduinoJson/doctest).
+set(EPP_ZONE_ENGINE_SRC ${CMAKE_CURRENT_LIST_DIR}/../../epp_zone_engine/src)
+add_executable(epp_helpers_target_zone_tests
+    test_target_zone.cpp
+    ${EPP_ZONE_ENGINE_SRC}/epp_grid.cpp
+    ${EPP_ZONE_ENGINE_SRC}/epp_calibration.cpp
+    ${EPP_ZONE_ENGINE_SRC}/epp_rolling_window.cpp
+    ${EPP_ZONE_ENGINE_SRC}/epp_zone_engine.cpp
+)
+target_link_libraries(epp_helpers_target_zone_tests PRIVATE epp_component_helpers doctest::doctest)
+
 include(${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake)
 doctest_discover_tests(epp_helpers_nvs_layout_tests)
 doctest_discover_tests(epp_helpers_change_detector_tests)
@@ -53,3 +67,4 @@ doctest_discover_tests(epp_helpers_perspective_parser_tests)
 doctest_discover_tests(epp_helpers_relay_publish_tests)
 doctest_discover_tests(epp_helpers_frame_staleness_tests)
 doctest_discover_tests(epp_helpers_indexed_setter_tests)
+doctest_discover_tests(epp_helpers_target_zone_tests)

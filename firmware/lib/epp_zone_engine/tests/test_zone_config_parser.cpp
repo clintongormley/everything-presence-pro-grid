@@ -400,3 +400,27 @@ TEST_CASE("ZONES_JSON_MAX accepts the absolute worst validator-passing payload (
         ZonesJsonStatus::OK);
   CHECK(count == MAX_ZONE_SLOTS);
 }
+
+TEST_CASE("parse_zones_json zeroes count on TOO_LARGE even when caller passes dirty count") {
+  std::string big = "{\"zone_slots\":[]}";
+  big.append(ZONES_JSON_MAX + 1 - big.size(), ' ');
+  REQUIRE(big.size() == ZONES_JSON_MAX + 1);
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = 99;  // dirty — must be zeroed by parse_zones_json
+  CHECK(parse_zones_json(big.c_str(), big.size(), configs, count) ==
+        ZonesJsonStatus::TOO_LARGE);
+  CHECK(count == 0);
+}
+
+TEST_CASE("parse_zones_json zeroes count on PARSE_ERROR even when caller passes dirty count") {
+  const char *bad = "{\"zone_slots\":[";
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = 42;  // dirty — must be zeroed by parse_zones_json
+  const char *error = nullptr;
+  CHECK(parse_zones_json(bad, std::strlen(bad), configs, count, &error) ==
+        ZonesJsonStatus::PARSE_ERROR);
+  CHECK(count == 0);
+  REQUIRE(error != nullptr);
+}
