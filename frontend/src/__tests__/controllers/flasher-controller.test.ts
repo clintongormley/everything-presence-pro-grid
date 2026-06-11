@@ -408,7 +408,7 @@ describe("FlasherController", () => {
 		it("initializes serialPort to null", () => {
 			const freshHost = mockHost();
 			const freshCtrl = new FlasherController(freshHost);
-			expect((freshCtrl as any)._serialPort).toBeNull();
+			expect(freshCtrl.serialPort).toBeNull();
 		});
 	});
 
@@ -483,8 +483,8 @@ describe("FlasherController", () => {
 			const reader = { releaseLock: vi.fn() };
 			const writer = { releaseLock: vi.fn() };
 			const port = { close: vi.fn().mockResolvedValue(undefined) };
-			(ctrl as any)._serialReader = reader;
-			(ctrl as any)._serialWriter = writer;
+			(ctrl as any)._flow._serialReader = reader;
+			(ctrl as any)._flow._serialWriter = writer;
 			ctrl.serialPort = port as any;
 
 			await ctrl.resetUsbState();
@@ -493,8 +493,8 @@ describe("FlasherController", () => {
 			expect(writer.releaseLock).toHaveBeenCalled();
 			expect(port.close).toHaveBeenCalledTimes(1);
 			expect(ctrl.serialPort).toBeNull();
-			expect((ctrl as any)._serialReader).toBeNull();
-			expect((ctrl as any)._serialWriter).toBeNull();
+			expect((ctrl as any)._flow._serialReader).toBeNull();
+			expect((ctrl as any)._flow._serialWriter).toBeNull();
 		});
 
 		it("awaits port.close before resolving", async () => {
@@ -530,8 +530,8 @@ describe("FlasherController", () => {
 			const wifiPromise = new Promise<void>((r) => {
 				settleWifi = r;
 			});
-			(ctrl as any)._wifiCheckAbort = abort;
-			(ctrl as any)._wifiCheckPromise = wifiPromise;
+			(ctrl as any)._flow._wifiCheckAbort = abort;
+			(ctrl as any)._flow._wifiCheckPromise = wifiPromise;
 			const port = { close: vi.fn().mockResolvedValue(undefined) };
 			ctrl.serialPort = port as any;
 
@@ -543,8 +543,8 @@ describe("FlasherController", () => {
 			await p;
 
 			expect(port.close).toHaveBeenCalledTimes(1);
-			expect((ctrl as any)._wifiCheckAbort).toBeNull();
-			expect((ctrl as any)._wifiCheckPromise).toBeNull();
+			expect((ctrl as any)._flow._wifiCheckAbort).toBeNull();
+			expect((ctrl as any)._flow._wifiCheckPromise).toBeNull();
 		});
 
 		it("defers the usbFlashState clear until the port teardown resolves (cancelling feedback)", async () => {
@@ -575,8 +575,8 @@ describe("FlasherController", () => {
 		it("keeps usbFlashState non-null while an aborted in-flight wifi check settles", async () => {
 			ctrl.updateUsbState({ step: "wifi_check" });
 			let settleWifi!: () => void;
-			(ctrl as any)._wifiCheckAbort = { abort: vi.fn() };
-			(ctrl as any)._wifiCheckPromise = new Promise<void>((r) => {
+			(ctrl as any)._flow._wifiCheckAbort = { abort: vi.fn() };
+			(ctrl as any)._flow._wifiCheckPromise = new Promise<void>((r) => {
 				settleWifi = r;
 			});
 			ctrl.serialPort = {
@@ -593,8 +593,10 @@ describe("FlasherController", () => {
 		});
 
 		it("tolerates a rejecting in-flight wifi check", async () => {
-			(ctrl as any)._wifiCheckAbort = { abort: vi.fn() };
-			(ctrl as any)._wifiCheckPromise = Promise.reject(new Error("aborted"));
+			(ctrl as any)._flow._wifiCheckAbort = { abort: vi.fn() };
+			(ctrl as any)._flow._wifiCheckPromise = Promise.reject(
+				new Error("aborted"),
+			);
 			const port = { close: vi.fn().mockResolvedValue(undefined) };
 			ctrl.serialPort = port as any;
 
@@ -607,7 +609,7 @@ describe("FlasherController", () => {
 	describe("hostDisconnected with USB", () => {
 		it("closes serial port if open", () => {
 			const mockPort = { close: vi.fn().mockResolvedValue(undefined) };
-			(ctrl as any)._serialPort = mockPort;
+			(ctrl as any)._flow._serialPort = mockPort;
 			ctrl.hostDisconnected();
 			expect(mockPort.close).toHaveBeenCalled();
 		});
@@ -620,9 +622,9 @@ describe("FlasherController", () => {
 			const reader = { releaseLock: vi.fn() };
 			const writer = { releaseLock: vi.fn() };
 			const port = { close: vi.fn().mockResolvedValue(undefined) };
-			(ctrl as any)._serialReader = reader;
-			(ctrl as any)._serialWriter = writer;
-			(ctrl as any)._serialPort = port;
+			(ctrl as any)._flow._serialReader = reader;
+			(ctrl as any)._flow._serialWriter = writer;
+			(ctrl as any)._flow._serialPort = port;
 
 			ctrl.hostDisconnected();
 

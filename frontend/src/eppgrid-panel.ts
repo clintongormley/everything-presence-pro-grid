@@ -69,13 +69,6 @@ import {
 } from "./lib/settings-defaults.js";
 import { persistSelectedMac } from "./lib/storage.js";
 import {
-	detectIpAddress,
-	flashFirmware,
-	queryImprovState,
-	runWifiProvision,
-	runWifiScan,
-} from "./lib/usb-flash-service.js";
-import {
 	DEFAULT_SIDEBAR_TAB,
 	parseViewHash,
 	type SidebarTab,
@@ -98,7 +91,7 @@ import {
 	installPanelMountGuard,
 } from "./panel-mount-guard.js";
 import { buttonStyles, dialogStyles, headerStyles } from "./styles.js";
-import type { DeviceInfo, HaAddResult, RawTarget, Target } from "./types.js";
+import type { DeviceInfo, RawTarget, Target } from "./types.js";
 
 // ZoneSlots / INITIAL_ZONE_SLOTS moved to lib/zone-defaults.ts so the
 // controllers can import them without a circular type dep on this module.
@@ -451,8 +444,16 @@ export class EPPGridPanel extends LitElement {
 	})();
 	// Target controller — owns target/sensor/zone state processing, zone engine, debug logging
 	private _targetCtrl = new TargetController(this);
-	// Flasher controller — owns OTA flash state and flashable device list
-	private _flasherCtrl = new FlasherController(this);
+	// Flasher controller — owns OTA flash state, flashable device list, and
+	// the USB flash / WiFi-provisioning flow. The IIFE wires the
+	// delete-confirm hook at construction (same rationale as _gridCtrl's
+	// error hook): the flow must never run without a confirmation path.
+	private _flasherCtrl = (() => {
+		const ctrl = new FlasherController(this);
+		ctrl.confirmDeleteOriginalFirmware = () =>
+			this._requestFlasherDeleteConfirm();
+		return ctrl;
+	})();
 	_localize: import("./localize.js").LocalizeFn = Object.assign(
 		((k: string) => k) as import("./localize.js").LocalizeFn,
 		{ formatNumber: (v: number, d = 1) => v.toFixed(d), lang: "en" },
@@ -495,6 +496,10 @@ export class EPPGridPanel extends LitElement {
 	).sidebarTab;
 	@state() private _panelTab: PanelTab = "config";
 	@state() private _showDeleteCalibrationDialog = false;
+	// Themed replacement for the old window.confirm() in the USB flash flow:
+	// the flow's beforeFlash hook awaits the promise while the dialog is up.
+	@state() private _showFlasherDeleteConfirm = false;
+	private _flasherDeleteConfirmResolve: ((ok: boolean) => void) | null = null;
 	@state() private _showLiveMenu = false;
 	@state() private _showCustomIconPicker = false;
 	@state() private _customIconValue = "";
@@ -1874,6 +1879,44 @@ export class EPPGridPanel extends LitElement {
     `;
 	}
 
+	// Host hook for FlasherController.confirmDeleteOriginalFirmware — shows
+	// the themed delete-confirm dialog and resolves with the user's choice.
+	private _requestFlasherDeleteConfirm(): Promise<boolean> {
+		// Only one confirm can be pending; treat a stale one as cancelled so
+		// its awaiting flow unwinds instead of hanging forever.
+		this._flasherDeleteConfirmResolve?.(false);
+		this._showFlasherDeleteConfirm = true;
+		return new Promise<boolean>((resolve) => {
+			this._flasherDeleteConfirmResolve = resolve;
+		});
+	}
+
+	private _resolveFlasherDeleteConfirm(ok: boolean): void {
+		this._showFlasherDeleteConfirm = false;
+		this._flasherDeleteConfirmResolve?.(ok);
+		this._flasherDeleteConfirmResolve = null;
+	}
+
+	private _renderFlasherDeleteConfirmDialog() {
+		if (!this._showFlasherDeleteConfirm) return nothing;
+		return html`
+			<div class="template-dialog">
+				<div class="template-dialog-card">
+					<h3>${this._localize("flasher.confirm_delete_title")}</h3>
+					<p class="overlay-help">${this._localize("flasher.confirm_delete_message")}</p>
+					<div class="template-dialog-actions">
+						<button class="wizard-btn wizard-btn-back"
+							@click=${() => this._resolveFlasherDeleteConfirm(false)}
+						>${this._localize("common.cancel")}</button>
+						<button class="wizard-btn wizard-btn-primary" style="background: var(--error-color, #f44336);"
+							@click=${() => this._resolveFlasherDeleteConfirm(true)}
+						>${this._localize("common.delete")}</button>
+					</div>
+				</div>
+			</div>
+		`;
+	}
+
 	private _renderTabBar() {
 		return html`
 			<div class="tab-bar">
@@ -1928,19 +1971,28 @@ export class EPPGridPanel extends LitElement {
 						this._panelTab = "config";
 					}}
 					@usb-flash=${(e: CustomEvent) => {
-						this._handleUsbFlash(e.detail.variant);
+						void this._flasherCtrl.handleUsbFlash(e.detail.variant);
 					}}
 					@usb-wifi-config=${() => {
-						this._handleUsbWifiConfig();
+						void this._flasherCtrl.handleUsbWifiConfig();
 					}}
-					@usb-retry=${this._handleUsbRetry}
-					@retry-ha-add=${this._handleRetryHaAdd}
-					@flasher-cancel=${this._handleFlasherCancel}
+					@usb-retry=${() => {
+						this._flasherCtrl.handleUsbRetry();
+					}}
+					@retry-ha-add=${() => {
+						void this._flasherCtrl.handleRetryHaAdd();
+					}}
+					@flasher-cancel=${() => {
+						void this._flasherCtrl.handleFlasherCancel();
+					}}
 					@wifi-scan=${() => {
-						this._handleWifiScan();
+						void this._flasherCtrl.handleWifiScan();
 					}}
 					@wifi-provision=${(e: CustomEvent) => {
-						this._handleWifiProvision(e.detail.ssid, e.detail.password);
+						void this._flasherCtrl.handleWifiProvision(
+							e.detail.ssid,
+							e.detail.password,
+						);
 					}}
 					@update-firmware=${(e: CustomEvent) => {
 						this._flasherCtrl.startOta(e.detail.mac);
@@ -1953,6 +2005,7 @@ export class EPPGridPanel extends LitElement {
 						this._flasherCtrl.startOta(e.detail.mac);
 					}}
 				></epp-flasher-view>
+				${this._renderFlasherDeleteConfirmDialog()}
 			</div>`;
 		}
 
@@ -3300,540 +3353,6 @@ export class EPPGridPanel extends LitElement {
 				}}
 			></epp-furniture-overlay>
 		`;
-	}
-
-	private async _handleUsbWifiConfig(): Promise<void> {
-		const ctrl = this._flasherCtrl;
-		if (ctrl.opRunning) {
-			ctrl.updateUsbState({
-				step: "error",
-				errorKey: "usb.errors.serial_port_busy",
-				fatal: true,
-			});
-			return;
-		}
-		const myOp = ctrl.opId;
-		ctrl.opRunning = true;
-		try {
-			if (!ctrl.serialPort) {
-				ctrl.updateUsbState({ step: "connecting" });
-				ctrl.serialPort = await navigator.serial.requestPort();
-			}
-			if (ctrl.opId !== myOp) {
-				ctrl.opRunning = false;
-				return;
-			}
-
-			ctrl.updateUsbState({ step: "wifi_scan" });
-			const { writer, reader, networks } = await runWifiScan(ctrl.serialPort);
-			if (ctrl.opId !== myOp) {
-				ctrl.opRunning = false;
-				return;
-			}
-
-			ctrl.wifiNetworks = networks;
-			ctrl.updateUsbState({ step: "wifi_provision" });
-
-			(ctrl as any)._serialWriter = writer;
-			(ctrl as any)._serialReader = reader;
-			ctrl.opRunning = false;
-		} catch (err: any) {
-			ctrl.opRunning = false;
-			if (ctrl.opId !== myOp) return;
-			if (err?.name === "NotFoundError") {
-				void ctrl.resetUsbState();
-				return;
-			}
-			const lastStep = ctrl.usbFlashState?.step;
-			const e = err as {
-				errorKey?: string;
-				errorParams?: Record<string, unknown>;
-				message?: string;
-			};
-			ctrl.updateUsbState({
-				step: "error",
-				lastStep,
-				errorKey: e.errorKey ?? "wifi.errors.scan_failed",
-				errorParams: e.errorParams as
-					| Record<string, string | number>
-					| undefined,
-			});
-		}
-	}
-
-	private async _handleUsbFlash(variant: string): Promise<void> {
-		const ctrl = this._flasherCtrl;
-		if (ctrl.opRunning) {
-			ctrl.updateUsbState({
-				step: "error",
-				errorKey: "usb.errors.serial_port_busy",
-				fatal: true,
-			});
-			return;
-		}
-		const myOp = ctrl.opId;
-		ctrl.opRunning = true;
-		try {
-			// Step 1: Request serial port
-			ctrl.updateUsbState({ step: "connecting" });
-			const port = await navigator.serial.requestPort();
-			if (ctrl.opId !== myOp) {
-				ctrl.opRunning = false;
-				return;
-			}
-			ctrl.serialPort = port;
-
-			// Step 2: Flash firmware
-			ctrl.updateUsbState({ step: "flashing", progress: 0 });
-			await flashFirmware(
-				port,
-				variant,
-				(pct) => {
-					ctrl.updateUsbState({ step: "flashing", progress: pct });
-				},
-				{
-					baseUrl: ctrl.firmwareBaseUrl,
-					accessToken: this.hass?.auth?.accessToken,
-					beforeFlash: async (mac: string | undefined) => {
-						if (!mac) return;
-						const matched = ctrl.flashableDevices.find(
-							(d) => d.mac.toUpperCase() === mac,
-						);
-						if (
-							matched?.firmware_type === "original" &&
-							matched?.esphome_config_entry_id
-						) {
-							const ok = window.confirm(
-								this._localize("flasher.confirm_delete_message"),
-							);
-							if (!ok)
-								throw Object.assign(new Error("Flash cancelled"), {
-									errorKey: "flasher.errors.flash_cancelled",
-								});
-							await ctrl.deleteEsphomeDevice(matched.esphome_config_entry_id);
-						}
-					},
-				},
-			);
-			if (ctrl.opId !== myOp) {
-				ctrl.opRunning = false;
-				return;
-			}
-
-			if (variant.startsWith("ethernet")) {
-				// Ethernet variants have no WiFi — skip provisioning
-				await port.close().catch(() => {});
-				ctrl.serialPort = null;
-				ctrl.opRunning = false;
-				ctrl.updateUsbState({ step: "complete", variant });
-				return;
-			}
-
-			// Step 3: Check if device is already provisioned (firmware-upgrade path)
-			ctrl.updateUsbState({ step: "wifi_check" });
-			let skipIp: string | null = null;
-			let skipWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
-			let skipReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-			try {
-				// After a fresh flash the device cold-boots, loads creds from NVS, then
-				// re-associates with WiFi + gets DHCP. The Improv URL (which carries the
-				// IP we need) only shows up after that full sequence — often 7-10s, up
-				// to 20s on a slow AP. Use a generous readDelay so we don't fall through
-				// to wifi_scan on a device that actually has valid creds.
-				// AbortController + in-flight promise tracking so
-				// _handleFlasherCancel can both signal abort AND await the
-				// op's settlement before closing the port (otherwise the
-				// reader lock is still held when close() runs and close
-				// rejects, leaving the port open and unusable for retries).
-				const abortCtrl = new AbortController();
-				(ctrl as any)._wifiCheckAbort = abortCtrl;
-				const queryPromise = queryImprovState(
-					port,
-					{ readDelay: 30000 },
-					{ signal: abortCtrl.signal },
-				);
-				(ctrl as any)._wifiCheckPromise = queryPromise;
-				const info = await queryPromise;
-				(ctrl as any)._wifiCheckAbort = null;
-				(ctrl as any)._wifiCheckPromise = null;
-				// queryImprovState returns ip only for a real detected address
-				// (undefined otherwise — no 0.0.0.0 sentinel).
-				if (info.state === "PROVISIONED" && info.ip) {
-					skipIp = info.ip;
-					skipWriter = info.writer;
-					skipReader = info.reader;
-				} else {
-					try {
-						info.writer.releaseLock();
-					} catch {}
-					try {
-						info.reader.releaseLock();
-					} catch {}
-				}
-			} catch {
-				// Fall through to scan flow — runWifiScan has its own handshake-with-retry.
-			}
-
-			if (ctrl.opId !== myOp) {
-				ctrl.opRunning = false;
-				return;
-			}
-
-			if (skipIp && skipWriter && skipReader) {
-				// Device is already on the network — release the query's serial locks
-				// so `runWifiScan` can re-acquire them if the user clicks the
-				// "Configure WiFi" override. Keep the port itself open and attached
-				// to ctrl.serialPort for that override path.
-				try {
-					skipReader.releaseLock();
-				} catch {}
-				try {
-					skipWriter.releaseLock();
-				} catch {}
-				ctrl.updateUsbState({
-					step: "wifi_configured",
-					ip: skipIp,
-					autoSkipped: true,
-				});
-				ctrl.opRunning = false;
-				await this._addToHa(skipIp);
-				return;
-			}
-
-			// Step 4: WiFi scan
-			ctrl.updateUsbState({ step: "wifi_scan" });
-			const { writer, reader, networks } = await runWifiScan(port);
-			if (ctrl.opId !== myOp) {
-				ctrl.opRunning = false;
-				return;
-			}
-
-			ctrl.wifiNetworks = networks;
-			ctrl.updateUsbState({ step: "wifi_provision" });
-
-			(ctrl as any)._serialWriter = writer;
-			(ctrl as any)._serialReader = reader;
-			ctrl.opRunning = false;
-		} catch (err: any) {
-			if (ctrl.opId !== myOp) {
-				ctrl.opRunning = false;
-				return;
-			}
-			if (err?.name === "NotFoundError") {
-				// User cancelled port picker
-				void ctrl.resetUsbState();
-				return;
-			}
-			const e = err as {
-				errorKey?: string;
-				errorParams?: Record<string, unknown>;
-				message?: string;
-				name?: string;
-			};
-			// User-cancel from the original-firmware confirm dialog throws
-			// flasher.errors.flash_cancelled. The pre-fix path landed in the
-			// generic "error" UI because lastStep was already "flashing";
-			// surface this as a clean reset so the user can pick a different
-			// device or retry without a confusing failure banner.
-			if (e.errorKey === "flasher.errors.flash_cancelled") {
-				if (ctrl.serialPort) {
-					try {
-						await ctrl.serialPort.close().catch(() => {});
-					} catch {}
-					ctrl.serialPort = null;
-				}
-				ctrl.opRunning = false;
-				void ctrl.resetUsbState();
-				return;
-			}
-			const lastStep = ctrl.usbFlashState?.step;
-			// Clean up port on error — don't leave it dangling. Await the
-			// close so the "error" UI renders only after the port is fully
-			// released (unawaited close left the port lock pending and the
-			// next retry surfaced as "serial port busy").
-			if (ctrl.serialPort) {
-				try {
-					await ctrl.serialPort.close().catch(() => {});
-				} catch {}
-				ctrl.serialPort = null;
-			}
-			const msg = e.message ?? "Unknown error";
-			const isPortBusy = /already open|already closed/i.test(msg);
-			const isDisconnect =
-				/stream stopped|NetworkError|disconnected|break|lost|No response from device/i.test(
-					msg,
-				);
-			const fallbackKey = isPortBusy
-				? "usb.errors.serial_port_busy"
-				: isDisconnect
-					? "usb.errors.device_disconnected"
-					: "usb.errors.flash_failed";
-			ctrl.opRunning = false;
-			ctrl.updateUsbState({
-				step: "error",
-				lastStep,
-				variant,
-				errorKey: e.errorKey ?? fallbackKey,
-				errorParams: e.errorParams as
-					| Record<string, string | number>
-					| undefined,
-				fatal: isPortBusy || e.errorKey === "usb.errors.serial_port_busy",
-			});
-		}
-	}
-
-	private async _handleWifiProvision(
-		ssid: string,
-		password: string,
-	): Promise<void> {
-		const ctrl = this._flasherCtrl;
-		const myOp = ctrl.opId;
-		const port = ctrl.serialPort;
-		if (!port?.writable || !port?.readable) {
-			ctrl.updateUsbState({
-				step: "error",
-				errorKey: "usb.errors.serial_port_unavailable",
-			});
-			return;
-		}
-
-		// Release any old reader/writer locks before getting fresh ones
-		try {
-			(ctrl as any)._serialReader?.releaseLock();
-		} catch {}
-		try {
-			(ctrl as any)._serialWriter?.releaseLock();
-		} catch {}
-
-		const writer = port.writable.getWriter();
-		const reader = port.readable.getReader();
-		(ctrl as any)._serialWriter = writer;
-		(ctrl as any)._serialReader = reader;
-
-		try {
-			ctrl.updateUsbState({ step: "wifi_connecting" });
-			console.debug(`[wifi-provision] sending WIFI_SETTINGS ssid="${ssid}"`);
-			await runWifiProvision(writer, ssid, password);
-			if (ctrl.opId !== myOp) return;
-
-			// Wait for PROVISIONED state (creds saved to NVS)
-			ctrl.updateUsbState({ step: "reading_ip" });
-			const ip = await detectIpAddress(reader, writer, 60000);
-			if (ctrl.opId !== myOp) return;
-
-			reader.releaseLock();
-			writer.releaseLock();
-
-			(ctrl as any)._serialReader = null;
-			(ctrl as any)._serialWriter = null;
-			await port.close().catch(() => {});
-			ctrl.serialPort = null;
-
-			// WiFi side succeeded. Intermediate state while HA-add runs.
-			ctrl.updateUsbState({ step: "wifi_configured", ip });
-
-			await this._addToHa(ip);
-		} catch (err: any) {
-			try {
-				(ctrl as any)._serialReader?.releaseLock();
-			} catch {}
-			try {
-				(ctrl as any)._serialWriter?.releaseLock();
-			} catch {}
-			(ctrl as any)._serialReader = null;
-			(ctrl as any)._serialWriter = null;
-			if (ctrl.opId !== myOp) return;
-			const lastStep = ctrl.usbFlashState?.step;
-			const e = err as {
-				errorKey?: string;
-				errorParams?: Record<string, unknown>;
-				message?: string;
-			};
-			ctrl.updateUsbState({
-				step: "error",
-				lastStep,
-				errorKey: e.errorKey ?? "wifi.errors.provisioning_failed",
-				errorParams: e.errorParams as
-					| Record<string, string | number>
-					| undefined,
-			});
-		}
-	}
-
-	// After a fresh WiFi association the device's API socket / mDNS / DHCP can
-	// take up to ~50s to settle. Retry at a steady 10s cadence so the UI has
-	// predictable progress rather than front-loaded flurry + long silence.
-	private static readonly HA_ADD_RETRY_DELAY_MS = 10_000;
-	private static readonly HA_ADD_MAX_ATTEMPTS = 6;
-
-	private async _addToHaWithRetry(ip: string): Promise<HaAddResult> {
-		const ctrl = this._flasherCtrl;
-		const myOp = ctrl.opId;
-		const maxAttempts = EPPGridPanel.HA_ADD_MAX_ATTEMPTS;
-		const delay = EPPGridPanel.HA_ADD_RETRY_DELAY_MS;
-
-		for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-			if (attempt > 1) {
-				ctrl.updateUsbState({
-					step: "wifi_configured",
-					ip,
-					haAddAttempt: attempt,
-					haAddMaxAttempts: maxAttempts,
-				});
-				const cancelled = await this._sleepUntilOpChanges(delay, myOp);
-				if (cancelled) return { type: "cannot_connect" };
-			}
-
-			let haAdd: HaAddResult;
-			try {
-				haAdd = await ctrl.addEsphomeDevice(ip);
-			} catch (err) {
-				const msg = (err as { message?: string })?.message;
-				return { type: "failed", reason: msg ?? "unknown" };
-			}
-			if (ctrl.opId !== myOp) return haAdd;
-			if (haAdd.type !== "cannot_connect") return haAdd;
-		}
-		return { type: "cannot_connect" };
-	}
-
-	// Sleep up to `ms`, waking early (returning true) if opId changes so cancel
-	// doesn't have to wait out the full backoff. Polls at 250ms granularity.
-	private async _sleepUntilOpChanges(
-		ms: number,
-		expectedOpId: number,
-	): Promise<boolean> {
-		const ctrl = this._flasherCtrl;
-		const step = 250;
-		let remaining = ms;
-		while (remaining > 0) {
-			if (ctrl.opId !== expectedOpId) return true;
-			const chunk = Math.min(remaining, step);
-			await new Promise((r) => setTimeout(r, chunk));
-			remaining -= chunk;
-		}
-		return ctrl.opId !== expectedOpId;
-	}
-
-	private async _addToHa(ip: string): Promise<void> {
-		const ctrl = this._flasherCtrl;
-		const myOp = ctrl.opId;
-
-		const haAdd = await this._addToHaWithRetry(ip);
-		if (ctrl.opId !== myOp) return;
-
-		ctrl.updateUsbState({ step: "complete", ip, haAdd });
-	}
-
-	private async _handleRetryHaAdd(): Promise<void> {
-		const ctrl = this._flasherCtrl;
-		const state = ctrl.usbFlashState;
-		if (state?.step !== "complete" || !state.ip) return;
-
-		const ip = state.ip;
-		const myOp = ctrl.opId;
-		ctrl.updateUsbState({ step: "wifi_configured", ip });
-		const haAdd = await this._addToHaWithRetry(ip);
-		if (ctrl.opId !== myOp) return;
-		ctrl.updateUsbState({ step: "complete", ip, haAdd });
-	}
-
-	private _handleUsbRetry = (): void => {
-		const ctrl = this._flasherCtrl;
-		const state = ctrl.usbFlashState;
-		const lastStep = state?.lastStep;
-		const variant = state?.variant;
-		try {
-			(ctrl as any)._serialReader?.releaseLock();
-		} catch {}
-		try {
-			(ctrl as any)._serialWriter?.releaseLock();
-		} catch {}
-		(ctrl as any)._serialReader = null;
-		(ctrl as any)._serialWriter = null;
-		// Route retry to the step that actually failed. Flash-phase failures
-		// (connecting, flashing, wifi_check) re-run the full flash; WiFi-phase
-		// failures retry the WiFi config flow (which prompts for a new port).
-		const isFlashPhase =
-			lastStep === "connecting" ||
-			lastStep === "flashing" ||
-			lastStep === "wifi_check";
-		if (isFlashPhase && variant) {
-			this._handleUsbFlash(variant);
-		} else {
-			this._handleUsbWifiConfig();
-		}
-	};
-
-	private async _handleFlasherCancel(): Promise<void> {
-		const ctrl = this._flasherCtrl;
-		const state = ctrl.usbFlashState;
-		if (state?.step === "wifi_configured" && state.ip) {
-			ctrl.setCancelledDeviceIpHint(state.ip);
-		}
-		ctrl.opRunning = false;
-		// resetUsbState bumps opId, aborts any in-flight polling
-		// (queryImprovState during wifi_check), waits for the aborted op to
-		// settle so its serial locks are released, and only then closes the
-		// port — close() while a lock is still held rejects with "the port
-		// has a readable or writable stream" and leaves the port open +
-		// unusable for the next flash attempt. It clears usbFlashState only
-		// after that teardown, so the view's "Cancelling…" feedback stays up
-		// for the duration of the unwind.
-		await ctrl.resetUsbState();
-	}
-
-	private async _handleWifiScan(): Promise<void> {
-		const ctrl = this._flasherCtrl;
-		if (!ctrl.serialPort) return;
-		ctrl.bumpOpId();
-		const myOp = ctrl.opId;
-		try {
-			ctrl.updateUsbState({ step: "wifi_scan" });
-			const writer = (ctrl as any)._serialWriter;
-			const reader = (ctrl as any)._serialReader;
-			// Release old locks before re-scanning
-			try {
-				reader?.releaseLock();
-			} catch {}
-			try {
-				writer?.releaseLock();
-			} catch {}
-
-			const result = await runWifiScan(ctrl.serialPort);
-			if (ctrl.opId !== myOp) {
-				// Cancelled or superseded while the scan was in flight — release
-				// the fresh locks and bail out so we don't resurrect the flow.
-				try {
-					result.reader.releaseLock();
-				} catch {}
-				try {
-					result.writer.releaseLock();
-				} catch {}
-				return;
-			}
-			(ctrl as any)._serialWriter = result.writer;
-			(ctrl as any)._serialReader = result.reader;
-			ctrl.wifiNetworks = result.networks;
-			ctrl.updateUsbState({ step: "wifi_provision" });
-		} catch (err: any) {
-			if (ctrl.opId !== myOp) return;
-			console.error("WiFi scan failed:", err);
-			const lastStep = ctrl.usbFlashState?.step;
-			const e = err as {
-				errorKey?: string;
-				errorParams?: Record<string, unknown>;
-				message?: string;
-			};
-			ctrl.updateUsbState({
-				step: "error",
-				lastStep,
-				errorKey: e.errorKey ?? "wifi.errors.scan_failed",
-				errorParams: e.errorParams as
-					| Record<string, string | number>
-					| undefined,
-			});
-		}
 	}
 }
 

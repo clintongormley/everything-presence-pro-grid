@@ -7,6 +7,7 @@ import type {
 	OtaDeviceState,
 	UsbFlashState,
 } from "../types.js";
+import { UsbFlashFlow } from "./usb-flash-flow.js";
 
 /**
  * Backend supplies the firmware base URL — validate before we splice it into
@@ -45,22 +46,22 @@ export class FlasherController implements ReactiveController {
 	private _cancelledIpTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	onDeviceListChanged?: () => void;
+	/**
+	 * Host hook — ask the user to confirm deleting an original-firmware
+	 * device's old ESPHome config entry before flashing over it. The panel
+	 * wires this to its themed template-dialog (see
+	 * `_requestFlasherDeleteConfirm`). Unwired, the flow aborts the flash
+	 * rather than deleting without confirmation.
+	 */
+	confirmDeleteOriginalFirmware?: () => Promise<boolean>;
 
 	private _host: ReactiveControllerHost;
 	private _hass: any = null;
 	private _unsubDeviceList?: () => void;
-	private _serialPort: SerialPort | null = null;
-	// Serial reader/writer locks held during the USB flash / WiFi
-	// provisioning flow. The panel's flash handlers currently assign these
-	// via the `(ctrl as any)` back-channel; a later task moves the whole
-	// flow into the controller.
-	private _serialReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
-	private _serialWriter: WritableStreamDefaultWriter<Uint8Array> | null = null;
-	// In-flight wifi_check (queryImprovState) abort + settle handles, set by
-	// the panel via the same back-channel so teardown paths can abort the
-	// poll and wait for it to release its serial locks before close().
-	private _wifiCheckAbort: AbortController | null = null;
-	private _wifiCheckPromise: Promise<unknown> | null = null;
+	// USB flash / WiFi-provisioning pipeline. Owns the serial port and its
+	// reader/writer locks; the controller structurally satisfies the flow's
+	// UsbFlashHost contract, so tsc verifies every capability it consumes.
+	private _flow = new UsbFlashFlow(this);
 	private _opId = 0;
 	private _opRunning = false;
 	private _otaUnsubs: Record<string, () => void> = {};
@@ -89,7 +90,7 @@ export class FlasherController implements ReactiveController {
 	hostDisconnected(): void {
 		this._wantDeviceListSub = false;
 		this.unsubscribeDeviceList();
-		this._tearDownSerialPort();
+		this._flow.tearDownSerialPort();
 		this._otaGen++;
 		for (const mac of Object.keys(this._otaUnsubs)) {
 			this._unsubOta(mac);
@@ -102,26 +103,6 @@ export class FlasherController implements ReactiveController {
 			clearTimeout(this._cancelledIpTimeout);
 			this._cancelledIpTimeout = null;
 		}
-	}
-
-	// Releases any held reader/writer locks before closing the port.
-	// close() rejects with "the port has a readable or writable stream"
-	// while a lock is still held, leaving the port half-open and unusable
-	// until the page reloads. Returns the close promise so callers that
-	// need the port fully released (resetUsbState) can await it.
-	private _tearDownSerialPort(): Promise<void> {
-		try {
-			this._serialReader?.releaseLock();
-		} catch {}
-		try {
-			this._serialWriter?.releaseLock();
-		} catch {}
-		this._serialReader = null;
-		this._serialWriter = null;
-		const closing =
-			this._serialPort?.close().catch(() => {}) ?? Promise.resolve();
-		this._serialPort = null;
-		return closing;
 	}
 
 	// otaStates is bound by the panel as `.otaStates=${ctrl.otaStates}` on
@@ -480,19 +461,7 @@ export class FlasherController implements ReactiveController {
 		// the port. The panel's tab-bar buttons call this directly when the
 		// user switches tabs mid-flash — without close() the OS keeps the
 		// port open and unreachable until the page reloads.
-		const abort = this._wifiCheckAbort;
-		const inFlight = this._wifiCheckPromise;
-		this._wifiCheckAbort = null;
-		this._wifiCheckPromise = null;
-		abort?.abort();
-		if (inFlight) {
-			try {
-				await inFlight;
-			} catch {
-				/* aborted op rejecting is expected */
-			}
-		}
-		await this._tearDownSerialPort();
+		await this._flow.cancelAndTearDown();
 		// Clear the visible flash state only AFTER the teardown resolves:
 		// epp-flasher-view keeps its disabled "Cancelling…" button up while
 		// usbFlashState is non-null, so the user sees the cancel click took
@@ -527,10 +496,42 @@ export class FlasherController implements ReactiveController {
 	}
 
 	set serialPort(port: SerialPort | null) {
-		this._serialPort = port;
+		this._flow.serialPort = port;
 	}
 
 	get serialPort(): SerialPort | null {
-		return this._serialPort;
+		return this._flow.serialPort;
+	}
+
+	// --- USB flash flow — view-event entry points -------------------------
+	// Thin delegates so the panel's render handlers stay one-liners and the
+	// pipeline (with all serial state) lives in usb-flash-flow.ts.
+
+	handleUsbFlash(variant: string): Promise<void> {
+		return this._flow.handleUsbFlash(variant);
+	}
+
+	handleUsbWifiConfig(): Promise<void> {
+		return this._flow.handleUsbWifiConfig();
+	}
+
+	handleWifiProvision(ssid: string, password: string): Promise<void> {
+		return this._flow.handleWifiProvision(ssid, password);
+	}
+
+	handleWifiScan(): Promise<void> {
+		return this._flow.handleWifiScan();
+	}
+
+	handleUsbRetry(): void {
+		this._flow.handleUsbRetry();
+	}
+
+	handleFlasherCancel(): Promise<void> {
+		return this._flow.handleFlasherCancel();
+	}
+
+	handleRetryHaAdd(): Promise<void> {
+		return this._flow.handleRetryHaAdd();
 	}
 }
