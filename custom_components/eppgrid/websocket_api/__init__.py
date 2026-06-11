@@ -213,6 +213,10 @@ _TIMING_SCHEMAS: dict[str, vol.All] = {
     "handoff_timeout": _HANDOFF_TIMEOUT_SCHEMA,
 }
 
+# Pin the two definitions together: every timing field has a schema, and no
+# schema exists for a field _validate_slot_timing wouldn't visit.
+assert set(_TIMING_SCHEMAS) == set(_TIMING_FIELDS)
+
 # Wire-level vocabulary for the firmware's `epp_set_log_level` action — must
 # match the string-comparison branches in firmware/common/everything-presence-pro-base.yaml.
 _OTA_LOG_CATEGORY = "system"

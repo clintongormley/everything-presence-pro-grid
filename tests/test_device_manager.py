@@ -3509,10 +3509,8 @@ class TestPushConfig:
 
         # Service must NOT have been called — payload is too large
         mock_client.execute_service.assert_not_awaited()
-        # A warning must have been emitted
-        assert any(
-            "zones_json" in rec.getMessage().lower() or "payload" in rec.getMessage().lower() for rec in caplog.records
-        )
+        # The specific oversized-payload warning must have been emitted
+        assert any("Skipping zone push" in rec.getMessage() for rec in caplog.records)
 
     async def test_push_config_already_connected_noop(self) -> None:
         """async_connect is a no-op when already connected."""

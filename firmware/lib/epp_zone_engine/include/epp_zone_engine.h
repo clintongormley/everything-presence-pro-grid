@@ -54,12 +54,17 @@ struct ProcessingResult {
 // component's publish cache both copy offsetof(ProcessingResult, log) bytes —
 // any field appended after log_count would be silently excluded. Pin the layout
 // at compile time so a future field addition fails loudly instead of silently.
-static_assert(offsetof(ProcessingResult, log_count) >=
+// Both asserts are exact (== rather than >= / < alignof): no padding exists
+// between log and log_count or after log_count today, so a field inserted
+// anywhere behind log — or padding appearing from a type change — forces
+// re-derivation of this invariant rather than slipping through a slack bound.
+static_assert(offsetof(ProcessingResult, log_count) ==
                   offsetof(ProcessingResult, log) + sizeof(ProcessingResult::log),
-              "log_count must follow log");
+              "log_count must immediately follow log — no fields or padding in between");
 static_assert(sizeof(ProcessingResult) - offsetof(ProcessingResult, log_count) -
-                  sizeof(ProcessingResult::log_count) < alignof(ProcessingResult),
-              "no fields may follow log_count — the partial-copy/reset idiom excludes them");
+                  sizeof(ProcessingResult::log_count) == 0,
+              "nothing may follow log_count (fields or tail padding) — the "
+              "partial-copy/reset idiom excludes them");
 
 // ---------------------------------------------------------------------------
 // Internal runtime state per zone

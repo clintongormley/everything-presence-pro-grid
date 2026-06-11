@@ -412,15 +412,18 @@ TEST_CASE("ZONES_JSON_MAX leaves ample headroom over a typical full payload") {
 }
 
 TEST_CASE("ZONES_JSON_MAX accepts the worst frontend-producible payload (BWC)") {
-  // The HA websocket boundary caps zone names at 64 chars and types at 32;
-  // json.dumps escapes each non-ASCII char as a 6-byte \uXXXX sequence. A
-  // payload of 7 named slots with fully-escaped maximal names/types plus
+  // The HA websocket boundary caps zone names at 64 chars and restricts
+  // `type` to a fixed vocabulary (longest value 12 chars) — but configs
+  // stored before the vocab restriction may carry types up to the old
+  // 32-char cap, and the backend still pushes those. json.dumps escapes
+  // each non-ASCII char as a 6-byte \uXXXX sequence. A payload of 7 named
+  // slots with fully-escaped maximal names and legacy 32-char types plus
   // full timing is the largest input a legitimate backend can produce — the
   // firmware cap must never reject it, or those users' zones silently stop
   // applying on push (BWC).
   std::string name;   // 64 chars x 6 bytes escaped
   for (int i = 0; i < 64; ++i) name += "\\u4e2d";
-  std::string type;   // 32 chars x 6 bytes escaped
+  std::string type;   // legacy 32-char cap x 6 bytes escaped
   for (int i = 0; i < 32; ++i) type += "\\u4e2d";
 
   std::string json = "{\"zone_slots\":[";

@@ -18,7 +18,7 @@ from aioesphomeapi import UserService
 from ..const import DEFAULT_PORT
 from ..const import GRID_CELL_SIZE_MM
 from ..const import GRID_COLS
-from ..const import ZONES_JSON_MAX as _ZONES_JSON_MAX
+from ..const import ZONES_JSON_MAX
 from ._helpers import _ESPHOME_TO_PYTHON_LOG
 from ._helpers import _expand_zone_slot
 from ._helpers import _raise_device_not_connected
@@ -428,7 +428,7 @@ class DeviceConnection:
                     zone_data = {"zone_slots": expanded_slots}
                     zones_json = json.dumps(zone_data)
                     zones_json_bytes = len(zones_json.encode("utf-8"))
-                    if zones_json_bytes > _ZONES_JSON_MAX:
+                    if zones_json_bytes > ZONES_JSON_MAX:
                         # Payload exceeds the firmware's hard cap (ZONES_JSON_MAX in
                         # epp_zone_config_parser.h). The firmware would reject it on
                         # device, so skip the push rather than store a silently-broken
@@ -439,7 +439,7 @@ class DeviceConnection:
                             "(cap %d). Payload after timing expansion is too large for firmware.",
                             self._host,
                             zones_json_bytes,
-                            _ZONES_JSON_MAX,
+                            ZONES_JSON_MAX,
                         )
                     else:
                         await self._client.execute_service(

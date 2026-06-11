@@ -18,14 +18,16 @@ namespace epp {
 /// payload would otherwise force a matching transient allocation on the
 /// 320 KB-heap ESP32). Mirrors GRID_BASE64_MAX for set_grid().
 ///
-/// Sizing: the HA websocket boundary caps zone names at 64 chars and types
-/// at 32 (custom_components/eppgrid/websocket_api/_validate_zone_slots);
-/// json.dumps escapes non-ASCII as 6-byte \uXXXX sequences, so the
-/// worst frontend-producible payload — 7 named slots with fully-escaped
-/// maximal names and types plus full timing — is ~5.7 KB. 8 KB therefore
-/// never rejects a legitimate payload (BWC) while a typical 8-zone payload
-/// stays under 1.5 KB. Both bounds are pinned by tests in
-/// tests/test_zone_config_parser.cpp.
+/// Sizing: the HA websocket boundary caps zone names at 64 chars and
+/// restricts `type` to a fixed vocabulary (longest value 12 chars), but
+/// configs stored before the vocab restriction may carry types up to the
+/// old 32-char cap (custom_components/eppgrid/websocket_api/
+/// _validate_zone_slots); json.dumps escapes non-ASCII as 6-byte \uXXXX
+/// sequences, so the worst backend-producible payload — 7 named slots with
+/// fully-escaped maximal names and legacy 32-char types plus full timing —
+/// is ~5.7 KB. 8 KB therefore never rejects a legitimate payload (BWC)
+/// while a typical 8-zone payload stays under 1.5 KB. Both bounds are
+/// pinned by tests in tests/test_zone_config_parser.cpp.
 constexpr size_t ZONES_JSON_MAX = 8192;
 
 /// Outcome of parse_zones_json.

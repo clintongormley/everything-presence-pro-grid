@@ -692,13 +692,17 @@ void EPPComponent::set_zones(const std::string &zones_json) {
   const char *parse_error = nullptr;
   ZonesJsonStatus status =
       parse_zones_json(zones_json.c_str(), zones_json.size(), configs, count, &parse_error);
+  // LAN-input rejections log at ERROR, matching set_grid: a malformed
+  // payload from the API is a buggy or hostile caller, not an expected
+  // condition. (The NVS boot-restore path keeps WARN — corrupt flash is
+  // an anticipated failure mode there.)
   if (status == ZonesJsonStatus::TOO_LARGE) {
-    ESP_LOGW(TAG, "Zones JSON too large (%u bytes, max %u), rejecting",
+    ESP_LOGE(TAG, "Zones JSON too large (%u bytes, max %u), rejecting",
              (unsigned)zones_json.size(), (unsigned)ZONES_JSON_MAX);
     return;
   }
   if (status != ZonesJsonStatus::OK) {
-    ESP_LOGW(TAG, "Failed to parse zones JSON: %s",
+    ESP_LOGE(TAG, "Failed to parse zones JSON: %s",
              parse_error != nullptr ? parse_error : "unknown");
     return;
   }
