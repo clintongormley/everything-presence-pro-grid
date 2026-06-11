@@ -62,12 +62,28 @@ static Grid build_grid(const json& grid_config) {
         }
     }
 
+    if (grid_config.contains("overlay_suppress_cells")) {
+        for (auto& cell : grid_config["overlay_suppress_cells"]) {
+            int col = cell[0].get<int>();
+            int row = cell[1].get<int>();
+            int idx = row * GRID_COLS + col;
+            grid.cell(idx) = (grid.cell(idx) & ~CELL_OVERLAY_MASK) |
+                             (CELL_OVERLAY_SUPPRESS << CELL_OVERLAY_SHIFT);
+        }
+    }
+
     return grid;
 }
 
 static std::vector<ZoneConfig> build_zones(const json& zone_configs) {
     std::vector<ZoneConfig> zones;
     for (auto& [zid_str, cfg] : zone_configs.items()) {
+        // Missing-key access on a const json is UB (assert in Debug, silent
+        // garbage in NDEBUG) — fail loudly instead.
+        REQUIRE(cfg.contains("trigger"));
+        REQUIRE(cfg.contains("renew"));
+        REQUIRE(cfg.contains("timeout"));
+        REQUIRE(cfg.contains("handoff_timeout"));
         ZoneConfig zc{};
         zc.id = std::stoi(zid_str);
         zc.trigger = cfg["trigger"].get<int>();
@@ -115,6 +131,15 @@ static const char* status_name(TargetStatus s) {
 
 static void run_scenario(const std::string& name, const json& scenario,
                          const json& fixtures) {
+    // Structural guards — a malformed scenario must fail loudly, not no-op.
+    // Out-of-range / missing-key access on a const nlohmann::json is UB
+    // (assert in Debug, silent garbage in NDEBUG); without the size check a
+    // short `expected` array silently skips the unmatched ticks and an
+    // over-long one silently never checks its tail.
+    INFO("Scenario: " << name);
+    REQUIRE(scenario.contains("ticks"));
+    REQUIRE(scenario.contains("expected"));
+
     Grid grid = build_grid(fixtures["grid"]);
     auto zone_cfgs = build_zones(fixtures["zones"]);
 
@@ -125,10 +150,17 @@ static void run_scenario(const std::string& name, const json& scenario,
     auto& ticks = scenario["ticks"];
     auto& expected_arr = scenario["expected"];
 
+    REQUIRE(ticks.is_array());
+    REQUIRE(!ticks.empty());
+    REQUIRE(expected_arr.is_array());
+    REQUIRE(ticks.size() == expected_arr.size());
+
     // Track per-target overlay flag (sticky), simulating component behaviour
     bool target_on_overlay[MAX_TARGETS]{};
 
     for (int i = 0; i < static_cast<int>(ticks.size()); ++i) {
+        REQUIRE(ticks[i].contains("t"));
+        REQUIRE(ticks[i].contains("targets"));
         float t = ticks[i]["t"].get<float>();
         WindowOutput wo = build_window(ticks[i]);
 
@@ -145,6 +177,10 @@ static void run_scenario(const std::string& name, const json& scenario,
         const ProcessingResult& result = engine.tick(wo, t);
 
         auto& expected = expected_arr[i];
+        {
+            INFO("Scenario: " << name << ", tick " << i);
+            REQUIRE(expected.contains("zone_occupancy"));
+        }
 
         // Check zone occupancy
         for (auto& [zid_str, exp_occ_val] : expected["zone_occupancy"].items()) {
@@ -161,6 +197,7 @@ static void run_scenario(const std::string& name, const json& scenario,
                 auto& exp_t = exp_targets[j];
                 INFO("Scenario: " << name << ", tick " << i << ", target " << j);
                 REQUIRE(j < result.target_count);
+                REQUIRE(exp_t.contains("status"));
 
                 TargetStatus exp_status =
                     parse_status(exp_t["status"].get<std::string>());
@@ -191,11 +228,30 @@ static void run_scenario(const std::string& name, const json& scenario,
 
 TEST_CASE("parity fixtures") {
     json fixtures = load_fixtures();
+    REQUIRE(fixtures.contains("grid"));
+    REQUIRE(fixtures.contains("zones"));
+    REQUIRE(fixtures.contains("scenarios"));
     auto& scenarios = fixtures["scenarios"];
+    // An empty/missing scenarios object would otherwise register zero
+    // subcases and report SUCCESS while testing nothing.
+    REQUIRE(!scenarios.empty());
 
     for (auto& [name, scenario] : scenarios.items()) {
         SUBCASE(name.c_str()) {
-            run_scenario(name, scenario, fixtures);
+            // KNOWN-DIVERGENCE(7.2): scenarios tagged in the fixture with
+            // known_divergence.cpp are expected to fail on THIS engine until
+            // Task 7.2 fixes the divergence. doctest has no subcase-level
+            // xfail, so they are skipped loudly here; the TS suite runs its
+            // tagged scenarios via `it.fails` (see
+            // frontend/src/__tests__/panel-zone-engine-parity.test.ts).
+            // Task 7.2 deletes the fixture tag as it fixes each divergence.
+            if (scenario.contains("known_divergence") &&
+                scenario["known_divergence"].contains("cpp")) {
+                MESSAGE("SKIPPED — KNOWN-DIVERGENCE(7.2) [cpp]: "
+                        << scenario["known_divergence"]["cpp"].get<std::string>());
+            } else {
+                run_scenario(name, scenario, fixtures);
+            }
         }
     }
 }

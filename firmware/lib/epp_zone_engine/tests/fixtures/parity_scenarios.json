@@ -9,7 +9,8 @@
     "zone_cells": {
       "1": [[9, 1]]
     },
-    "overlay_entry_cells": [[9, 1]]
+    "overlay_entry_cells": [[9, 1]],
+    "overlay_suppress_cells": [[8, 1]]
   },
   "zones": {
     "0": {"type": "normal", "trigger": 5, "renew": 3, "timeout": 10.0, "handoff_timeout": 3.0},
@@ -202,6 +203,9 @@
       ]
     },
     "test_pending_target_status": {
+      "known_divergence": {
+        "ts": "first-tick confirmedTargets — TS creates zone state lazily, so a target confirmed on its first tick is missing from confirmedTargets and reports inactive instead of pending"
+      },
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
         {"t": 101.0, "targets": [{"x": 2850, "y": 450, "frames": 0}]}
@@ -247,6 +251,9 @@
       ]
     },
     "test_tracked_target_outside_room_with_prior": {
+      "known_divergence": {
+        "ts": "first-tick confirmedTargets — TS creates zone state lazily, so a target confirmed on its first tick is missing from confirmedTargets and reports inactive instead of pending"
+      },
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
         {"t": 101.0, "targets": [{"x": 9000, "y": 9000, "frames": 9}]}
@@ -262,6 +269,9 @@
       ]
     },
     "test_reappears_during_pending_back_to_active": {
+      "known_divergence": {
+        "ts": "first-tick confirmedTargets — TS creates zone state lazily, so a target confirmed on its first tick is missing from confirmedTargets and reports inactive instead of pending"
+      },
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
         {"t": 101.0, "targets": [{"x": 2850, "y": 450, "frames": 0}]},
@@ -304,6 +314,9 @@
       ]
     },
     "test_outside_room_then_stops_tracking_pending": {
+      "known_divergence": {
+        "ts": "first-tick confirmedTargets — TS creates zone state lazily, so a target confirmed on its first tick is missing from confirmedTargets and reports inactive instead of pending"
+      },
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
         {"t": 101.0, "targets": [{"x": 9000, "y": 9000, "frames": 9}]},
@@ -377,6 +390,24 @@
         },
         {
           "zone_occupancy": {"1": false}
+        }
+      ]
+    },
+    "test_overlay_exit_handoff_suppress_cell": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
+        {"t": 101.0, "targets": [{"x": 2550, "y": 450, "frames": 5}]},
+        {"t": 102.5, "targets": [{"x": 2550, "y": 450, "frames": 5}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"0": false, "1": true}
+        },
+        {
+          "zone_occupancy": {"0": false, "1": true}
+        },
+        {
+          "zone_occupancy": {"0": false, "1": false}
         }
       ]
     }
