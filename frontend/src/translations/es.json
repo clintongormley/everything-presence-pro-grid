@@ -402,7 +402,8 @@
 			"ota_device_error": "Error en la actualización: {message}",
 			"flash_cancelled": "Instalación cancelada",
 			"timeout": "Tiempo de espera agotado",
-			"aborted": "Cancelado"
+			"aborted": "Cancelado",
+			"port_closed": "Conexión serie perdida — puede que el dispositivo se haya desconectado. Vuelve a conectarlo e inténtalo de nuevo."
 		}
 	},
 	"connection": {
@@ -435,7 +436,9 @@
 			"error_code": "Error de WiFi (código {code})",
 			"invalid_command": "Comando no válido — puede que el dispositivo necesite reiniciarse",
 			"unknown_command": "Comando desconocido",
-			"not_authorized": "No autorizado"
+			"not_authorized": "No autorizado",
+			"ssid_too_long": "El nombre de la red WiFi es demasiado largo (máximo 32 bytes)",
+			"password_too_long": "La contraseña WiFi es demasiado larga (máximo 64 bytes)"
 		}
 	}
 }

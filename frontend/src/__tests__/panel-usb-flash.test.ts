@@ -542,10 +542,12 @@ describe("_handleUsbFlash", () => {
 		expect(opts.readDelay).toBeGreaterThanOrEqual(20000);
 	});
 
-	it("falls through to wifi_scan when device reports PROVISIONED + 0.0.0.0", async () => {
+	it("falls through to wifi_scan when device reports PROVISIONED but no usable IP", async () => {
+		// queryImprovState's contract: ip is undefined when DHCP never
+		// produced a real address (no "0.0.0.0" sentinel string).
 		(queryImprovState as ReturnType<typeof vi.fn>).mockResolvedValue({
 			state: "PROVISIONED",
-			ip: "0.0.0.0",
+			ip: undefined,
 			writer: { releaseLock: vi.fn() },
 			reader: { releaseLock: vi.fn() },
 		});

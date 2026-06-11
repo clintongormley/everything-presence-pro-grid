@@ -6,6 +6,7 @@ import {
 	NUM_ZONE_SLOTS,
 } from "./grid.js";
 import {
+	ZONE_COLORS,
 	ZONE_TYPE_KEYS,
 	type Zone0Config,
 	type ZoneConfig,
@@ -17,13 +18,39 @@ import {
 // (which now rejects >2) would fail a save where the slider was left untouched.
 export const STATIC_ON_DELAY_MAX = 2;
 
-// Coerce an unknown stored `type` to a valid key. Pre-0.95 layouts used
-// "normal"/"thoroughfare"/"rest" — those (and anything else unrecognised)
-// fall through to "default" so the <select> has a matching option.
+// Pre-0.95 layouts stored "rest"/"thoroughfare" zone types. Map them to
+// their closest modern equivalents — rest→bed (600s timeout: someone
+// sleeping must not time out) and thoroughfare→transit (3s) — NOT the
+// generic "default" row (10s). MUST stay an exact mirror of the backend's
+// _LEGACY_ZONE_TYPE_MAP in
+// custom_components/eppgrid/device_manager/_helpers.py, or the editor would
+// display different timing than the device runs.
+const LEGACY_ZONE_TYPE_MAP: Record<string, Zone0Config["type"]> = {
+	rest: "bed",
+	thoroughfare: "transit",
+};
+
+// Coerce an unknown stored `type` to a valid key. Legacy types resolve via
+// LEGACY_ZONE_TYPE_MAP; anything else unrecognised falls through to
+// "default" so the <select> has a matching option.
 function normalizeType(raw: unknown): Zone0Config["type"] {
-	return ZONE_TYPE_KEYS.includes(raw as Zone0Config["type"])
-		? (raw as Zone0Config["type"])
-		: "default";
+	const mapped =
+		typeof raw === "string" && raw in LEGACY_ZONE_TYPE_MAP
+			? LEGACY_ZONE_TYPE_MAP[raw]
+			: (raw as Zone0Config["type"]);
+	return ZONE_TYPE_KEYS.includes(mapped) ? mapped : "default";
+}
+
+// Stored zone colors are interpolated into style attributes, so a crafted
+// configuration blob could otherwise inject arbitrary CSS. Only the exact
+// #rrggbb shape produced by the editor is accepted; anything else falls
+// back to the slot's palette default.
+const HEX_COLOR_PATTERN = /^#[0-9a-fA-F]{6}$/;
+
+function normalizeColor(raw: unknown, slotIndex: number): string {
+	return typeof raw === "string" && HEX_COLOR_PATTERN.test(raw)
+		? raw
+		: ZONE_COLORS[(slotIndex - 1) % ZONE_COLORS.length];
 }
 
 /**
@@ -160,7 +187,23 @@ export function parseGrid(
 	roomDepth: number,
 ): Uint8Array {
 	if (layout?.grid_bytes && Array.isArray(layout.grid_bytes)) {
-		return new Uint8Array(layout.grid_bytes);
+		// Normalize wrong-length blobs into a fresh full-size grid (copy +
+		// zero-pad / truncate, mirroring the firmware's load_from_bytes).
+		// Building the Uint8Array directly from a short array would yield a
+		// short grid that every grid[i] consumer downstream reads as
+		// undefined. Note the asymmetry with saved configurations:
+		// GridStateController.loadConfiguration fail-closes on a wrong-length
+		// grid (user-visible error, user re-saves), while this path is the
+		// device's own stored layout where there's no re-save recourse — so
+		// we repair instead of reject.
+		const grid = new Uint8Array(GRID_CELL_COUNT);
+		const src = layout.grid_bytes as unknown[];
+		const n = Math.min(src.length, GRID_CELL_COUNT);
+		for (let i = 0; i < n; i++) {
+			// Uint8Array assignment coerces non-numeric entries to 0.
+			grid[i] = src[i] as number;
+		}
+		return grid;
 	}
 	if (roomWidth > 0 && roomDepth > 0) {
 		return initGridFromRoom(roomWidth, roomDepth);
@@ -213,7 +256,11 @@ export function parseZoneConfigs(layout: any): ParsedZoneConfigs {
 	const zones = Array.from({ length: MAX_ZONES }, (_, i) => {
 		const s = slots[i + 1];
 		if (!s || typeof s !== "object") return null;
-		return { ...s, type: normalizeType(s.type) } as ZoneConfig;
+		return {
+			...s,
+			type: normalizeType(s.type),
+			color: normalizeColor(s.color, i + 1),
+		} as ZoneConfig;
 	});
 	return { zone0, zones };
 }

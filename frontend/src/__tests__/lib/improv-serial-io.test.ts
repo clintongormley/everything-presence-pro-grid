@@ -6,6 +6,7 @@ import {
 	readImprovResponse,
 	releaseReader,
 	sendImprovPacket,
+	setImprovDebugLogging,
 	TYPE_RPC_RESULT,
 } from "../../lib/improv-serial.js";
 
@@ -136,6 +137,119 @@ describe("readImprovResponse", () => {
 		const result2 = await readImprovResponse(reader, 1000, result1.buffer);
 		expect(result2.packets.length).toBe(1);
 		expect(result2.packets[0].data).toEqual(new Uint8Array([0x02]));
+	});
+
+	it("throws a distinct port-closed error (not timeout) when the stream ends", async () => {
+		// A `done` stream means the device was unplugged — reporting it as
+		// "timeout" sends the user down the wrong troubleshooting path.
+		const reader = {
+			read: vi.fn().mockResolvedValue({ value: undefined, done: true }),
+			cancel: vi.fn().mockResolvedValue(undefined),
+			closed: Promise.resolve(undefined),
+			releaseLock: vi.fn(),
+		} as unknown as ReadableStreamDefaultReader<Uint8Array>;
+
+		let err: unknown;
+		try {
+			await readImprovResponse(reader, 1000);
+		} catch (e) {
+			err = e;
+		}
+		expect((err as { errorKey?: string }).errorKey).toBe(
+			"flasher.errors.port_closed",
+		);
+	});
+
+	it("still returns packets delivered in the final chunk of a closing stream", async () => {
+		const pkt = buildPacket(TYPE_RPC_RESULT, [0x07]);
+		const reader = {
+			read: vi.fn().mockResolvedValue({ value: pkt, done: true }),
+			cancel: vi.fn().mockResolvedValue(undefined),
+			closed: Promise.resolve(undefined),
+			releaseLock: vi.fn(),
+		} as unknown as ReadableStreamDefaultReader<Uint8Array>;
+
+		const result = await readImprovResponse(reader, 1000);
+		expect(result.packets[0].data[0]).toBe(0x07);
+	});
+
+	it("keeps the parse buffer bounded while junk (log noise) streams in", async () => {
+		// 60s of verbose ESPHome logging used to accumulate the whole stream
+		// in the number[] buffer with full O(n²) rescans. After every parse
+		// that yields no packet, the buffer must be trimmed to at most one
+		// max-size packet (265 bytes).
+		const junk = new Uint8Array(1024).fill(0x41); // "A" — no IMPROV header
+		const chunks = Array.from({ length: 50 }, () => junk);
+		const reader = mockReader(chunks);
+		const buffer: number[] = [];
+
+		await expect(readImprovResponse(reader, 50, buffer)).rejects.toThrow(
+			"timeout",
+		);
+		expect(buffer.length).toBeLessThanOrEqual(265);
+	});
+
+	it("retains a partial IMPROV header prefix at the buffer tail when trimming", async () => {
+		// The first 3 bytes of a packet arrive at the end of a junk chunk;
+		// the rest comes later. The trim must keep the partial header so the
+		// packet still parses once complete.
+		const pkt = buildPacket(TYPE_RPC_RESULT, [0x55]);
+		const junk = new Uint8Array(2048).fill(0x42);
+		const chunk1 = new Uint8Array(junk.length + 3);
+		chunk1.set(junk, 0);
+		chunk1.set(pkt.slice(0, 3), junk.length);
+		const chunk2 = pkt.slice(3);
+
+		const reader = mockReader([chunk1, chunk2]);
+		const result = await readImprovResponse(reader, 1000);
+		expect(result.packets[0].data[0]).toBe(0x55);
+	});
+
+	describe("debug console mirroring", () => {
+		afterEach(() => {
+			setImprovDebugLogging(false);
+			vi.restoreAllMocks();
+		});
+
+		it("does not mirror raw serial text to console.debug by default", async () => {
+			// Device logs can carry SSIDs/URLs — keep them out of the console
+			// unless a developer explicitly opts in.
+			const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+			const text = new TextEncoder().encode("ssid=SecretNetwork\n");
+			const pkt = buildPacket(TYPE_RPC_RESULT, [0x01]);
+			const combined = new Uint8Array(text.length + pkt.length);
+			combined.set(text, 0);
+			combined.set(pkt, text.length);
+
+			await readImprovResponse(mockReader([combined]), 1000);
+
+			const rawCalls = debugSpy.mock.calls.filter((c) =>
+				String(c[0]).includes("SecretNetwork"),
+			);
+			expect(rawCalls).toHaveLength(0);
+		});
+
+		it("when enabled, reassembles multibyte chars split across chunks", async () => {
+			// Per-chunk fresh TextDecoders turned a split UTF-8 sequence into
+			// U+FFFD; a single streaming decoder must survive the split.
+			setImprovDebugLogging(true);
+			const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+
+			const line = new TextEncoder().encode("café boot\n"); // é = 0xC3 0xA9
+			const splitAt = line.indexOf(0xc3) + 1; // between the é's two bytes
+			const pkt = buildPacket(TYPE_RPC_RESULT, [0x02]);
+			const chunk2 = new Uint8Array(line.length - splitAt + pkt.length);
+			chunk2.set(line.slice(splitAt), 0);
+			chunk2.set(pkt, line.length - splitAt);
+
+			await readImprovResponse(
+				mockReader([line.slice(0, splitAt), chunk2]),
+				1000,
+			);
+
+			const flushed = debugSpy.mock.calls.map((c) => String(c[0]));
+			expect(flushed.some((l) => l.includes("café boot"))).toBe(true);
+		});
 	});
 
 	describe("timeout behaviour (fake timers)", () => {

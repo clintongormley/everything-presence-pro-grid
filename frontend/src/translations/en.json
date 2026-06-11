@@ -402,7 +402,8 @@
 			"ota_device_error": "Update failed: {message}",
 			"flash_cancelled": "Flash cancelled",
 			"timeout": "Timeout",
-			"aborted": "Cancelled"
+			"aborted": "Cancelled",
+			"port_closed": "Serial connection lost — the device may have been unplugged. Reconnect it and try again."
 		}
 	},
 	"connection": {
@@ -435,7 +436,9 @@
 			"error_code": "WiFi error (code {code})",
 			"invalid_command": "Invalid command — device may need to be power-cycled",
 			"unknown_command": "Unknown command",
-			"not_authorized": "Not authorized"
+			"not_authorized": "Not authorized",
+			"ssid_too_long": "WiFi network name is too long (max 32 bytes)",
+			"password_too_long": "WiFi password is too long (max 64 bytes)"
 		}
 	}
 }

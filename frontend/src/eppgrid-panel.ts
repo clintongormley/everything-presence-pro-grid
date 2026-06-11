@@ -3388,7 +3388,9 @@ export class EPPGridPanel extends LitElement {
 				const info = await queryPromise;
 				(ctrl as any)._wifiCheckAbort = null;
 				(ctrl as any)._wifiCheckPromise = null;
-				if (info.state === "PROVISIONED" && info.ip && info.ip !== "0.0.0.0") {
+				// queryImprovState returns ip only for a real detected address
+				// (undefined otherwise — no 0.0.0.0 sentinel).
+				if (info.state === "PROVISIONED" && info.ip) {
 					skipIp = info.ip;
 					skipWriter = info.writer;
 					skipReader = info.reader;

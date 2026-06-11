@@ -565,6 +565,71 @@ describe("computeFurnitureResize", () => {
 			expect(result.width).toBeGreaterThanOrEqual(100);
 			expect(result.height).toBeGreaterThanOrEqual(100);
 		});
+
+		describe("all 8 handles: outward drag grows, inward drag shrinks", () => {
+			// Geometry: orig 600x400 at (1000, 1000), aspect 1.5, cellPx=28 so
+			// 29px = 300mm. An outward dominant-axis drag of 300mm must give
+			// w=900, h=600 (dw=300, dh=200) with the OPPOSITE edge/corner
+			// anchored:
+			//   x' = origX - dw/2 + sx·dw/2,  y' = origY - dh/2 + sy·dh/2
+			// The sign must come from the DOMINANT axis's own edge sign — a
+			// blanket "any negative edge → -1" inverts ne (horizontal-dominant)
+			// and sw (vertical-dominant).
+			const cases: {
+				handle: string;
+				out: [number, number]; // outward drag (grows)
+				in_: [number, number]; // inward drag (shrinks)
+				x: number; // expected x after the outward drag
+				y: number; // expected y after the outward drag
+			}[] = [
+				{ handle: "e", out: [29, 0], in_: [-29, 0], x: 1000, y: 900 },
+				{ handle: "w", out: [-29, 0], in_: [29, 0], x: 700, y: 900 },
+				{ handle: "s", out: [0, 29], in_: [0, -29], x: 850, y: 1000 },
+				{ handle: "n", out: [0, -29], in_: [0, 29], x: 850, y: 800 },
+				{ handle: "se", out: [29, 10], in_: [-29, -10], x: 1000, y: 1000 },
+				{ handle: "ne", out: [29, -10], in_: [-29, 10], x: 1000, y: 800 },
+				{ handle: "sw", out: [-10, 29], in_: [10, -29], x: 700, y: 1000 },
+				{ handle: "nw", out: [-29, -10], in_: [29, 10], x: 700, y: 800 },
+			];
+
+			for (const c of cases) {
+				it(`${c.handle}: outward drag grows and anchors the opposite edge`, () => {
+					const r = computeFurnitureResize(
+						c.handle,
+						c.out[0],
+						c.out[1],
+						28,
+						1000,
+						1000,
+						600,
+						400,
+						true,
+						0,
+					);
+					expect(r.width).toBeCloseTo(900, 0);
+					expect(r.height).toBeCloseTo(600, 0);
+					expect(r.x).toBeCloseTo(c.x, 0);
+					expect(r.y).toBeCloseTo(c.y, 0);
+				});
+
+				it(`${c.handle}: inward drag shrinks`, () => {
+					const r = computeFurnitureResize(
+						c.handle,
+						c.in_[0],
+						c.in_[1],
+						28,
+						1000,
+						1000,
+						600,
+						400,
+						true,
+						0,
+					);
+					expect(r.width).toBeCloseTo(300, 0);
+					expect(r.height).toBeCloseTo(200, 0);
+				});
+			}
+		});
 	});
 
 	describe("rotation-aware drag", () => {

@@ -6,6 +6,7 @@ import {
 	buildWifiCommand,
 	CMD_GET_CURRENT_STATE,
 	CMD_WIFI_SETTINGS,
+	drainSerial,
 	parseScanResults,
 	readImprovResponse,
 	releaseReader,
@@ -124,7 +125,21 @@ export async function flashFirmware(
 		otaErase.fill(0xff);
 		fileArray.push({ data: otaErase, address: 0x9000 });
 
-		// Flash
+		// Flash. esptool's reportProgress is PER FILE (written/total restart
+		// for every part), so a naive written/total would jump backward at
+		// each part boundary — including the otadata blob appended above.
+		// Scale each file's fraction by its share of the total byte count
+		// for a monotonic overall percentage. (written/total may be measured
+		// in compressed bytes; the 0..1 fraction is what matters.)
+		const totalBytes = fileArray.reduce((sum, f) => sum + f.data.length, 0);
+		const bytesBeforeFile: number[] = [];
+		{
+			let acc = 0;
+			for (const f of fileArray) {
+				bytesBeforeFile.push(acc);
+				acc += f.data.length;
+			}
+		}
 		await loader.writeFlash({
 			fileArray,
 			flashSize: "keep",
@@ -132,8 +147,13 @@ export async function flashFirmware(
 			flashFreq: "keep",
 			eraseAll: false,
 			compress: true,
-			reportProgress: (_fileIndex: number, written: number, total: number) => {
-				onProgress(Math.round((written / total) * 100));
+			reportProgress: (fileIndex: number, written: number, total: number) => {
+				const fraction = total > 0 ? written / total : 1;
+				const overall =
+					(bytesBeforeFile[fileIndex] +
+						fraction * fileArray[fileIndex].data.length) /
+					totalBytes;
+				onProgress(Math.round(overall * 100));
 			},
 		});
 
@@ -193,15 +213,7 @@ async function _connectImprov(
 
 	const drainMs = timings?.drainDelay ?? 200;
 	const drainReader = port.readable!.getReader();
-	while (true) {
-		const r = await Promise.race([
-			drainReader.read(),
-			new Promise<{ value: undefined; done: true }>((resolve) =>
-				setTimeout(() => resolve({ value: undefined, done: true }), drainMs),
-			),
-		]);
-		if (r.done || !r.value) break;
-	}
+	await drainSerial(drainReader, drainMs);
 	releaseReader(drainReader);
 
 	const writer = port.writable!.getWriter();
@@ -351,11 +363,13 @@ export async function runWifiScan(
  * already provisioned with a working WiFi connection. If yes, the caller can
  * skip the WiFi scan + provision flow entirely.
  *
- * Returns the parsed state + IP (when PROVISIONED and a URL was reported) plus
- * a live writer/reader the caller can use for subsequent operations (e.g.
- * `detectIpAddress` for the skip path). On any failure — handshake timeout,
- * malformed packet, port error — throws so the caller can fall through to the
- * existing WiFi scan flow.
+ * Returns the parsed state + IP plus a live writer/reader the caller can use
+ * for subsequent operations (e.g. `detectIpAddress` for the skip path).
+ * `ip` is set only when the device is PROVISIONED and a real (non-0.0.0.0)
+ * address was detected within the budget; otherwise it is `undefined` —
+ * there is no sentinel string, callers just check truthiness. On any failure
+ * — handshake timeout, malformed packet, port error — throws so the caller
+ * can fall through to the existing WiFi scan flow.
  */
 export async function queryImprovState(
 	port: SerialPort,
@@ -454,10 +468,11 @@ export async function queryImprovState(
 						signal,
 					});
 				} catch (err) {
+					// No usable IP within budget — leave ip undefined per the
+					// contract above (callers fall through to the scan flow).
 					console.debug(
 						`[queryImprovState] detectIpAddress gave up: ${(err as Error).message}`,
 					);
-					ip = "0.0.0.0";
 				}
 			}
 		}

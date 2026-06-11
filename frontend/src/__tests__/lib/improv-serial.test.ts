@@ -165,6 +165,56 @@ describe("buildWifiCommand", () => {
 		// pass_len = 0
 		expect(packet[12 + ssidBytes.length]).toBe(0);
 	});
+
+	describe("length validation (single-byte length prefixes)", () => {
+		// The length prefixes are single bytes — oversized credentials would
+		// silently truncate mod 256 and provision garbage. 802.11 caps SSIDs
+		// at 32 octets and WPA passphrases at 64; reject anything longer
+		// BEFORE the packet is built.
+
+		it("accepts a 32-byte SSID and a 64-byte password", () => {
+			expect(() =>
+				buildWifiCommand("a".repeat(32), "p".repeat(64)),
+			).not.toThrow();
+		});
+
+		it("throws on a 33-byte SSID", () => {
+			expect(() => buildWifiCommand("a".repeat(33), "pw")).toThrow(/SSID/);
+		});
+
+		it("throws on a 65-byte password", () => {
+			expect(() => buildWifiCommand("net", "p".repeat(65))).toThrow(
+				/password/i,
+			);
+		});
+
+		it("measures UTF-8 bytes, not characters (11 × 3-byte chars = 33 bytes)", () => {
+			// "€" encodes to 3 UTF-8 bytes; 11 chars pass a char-count check
+			// but exceed the 32-byte wire limit.
+			expect(() => buildWifiCommand("€".repeat(11), "pw")).toThrow(/SSID/);
+		});
+
+		it("attaches errorKeys so the flasher UI can localize the failure", () => {
+			let ssidErr: unknown;
+			let passErr: unknown;
+			try {
+				buildWifiCommand("a".repeat(33), "pw");
+			} catch (e) {
+				ssidErr = e;
+			}
+			try {
+				buildWifiCommand("net", "p".repeat(65));
+			} catch (e) {
+				passErr = e;
+			}
+			expect((ssidErr as { errorKey?: string }).errorKey).toBe(
+				"wifi.errors.ssid_too_long",
+			);
+			expect((passErr as { errorKey?: string }).errorKey).toBe(
+				"wifi.errors.password_too_long",
+			);
+		});
+	});
 });
 
 describe("parseImprovPackets", () => {

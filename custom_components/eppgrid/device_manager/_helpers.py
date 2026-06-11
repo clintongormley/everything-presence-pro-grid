@@ -31,10 +31,9 @@ ZONE_TYPE_DEFAULTS: dict[str, dict[str, float]] = {
 # the timing of their closest modern equivalents — rest→bed (600 s timeout:
 # someone sleeping must not time out) and thoroughfare→transit (3 s) — NOT
 # the generic `default` row (10 s), which would break bedrooms saved on old
-# layouts. NOTE: the frontend's display-side mapping in
-# frontend/src/lib/config-serialization.ts still normalizes these to
-# "default"; it must be updated to match (tracked as a separate frontend
-# task).
+# layouts. The frontend's display-side mapping (LEGACY_ZONE_TYPE_MAP in
+# frontend/src/lib/config-serialization.ts) mirrors this table and must stay
+# in sync.
 _LEGACY_ZONE_TYPE_MAP: dict[str, str] = {
     "rest": "bed",
     "thoroughfare": "transit",

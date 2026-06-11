@@ -8,6 +8,7 @@ import {
 	parseZoneConfigs,
 } from "../config-serialization.js";
 import { cellIsInside, GRID_CELL_COUNT, MAX_ZONES } from "../grid.js";
+import { ZONE_COLORS } from "../zone-defaults.js";
 
 describe("parseCalibration", () => {
 	it("returns perspective and room dimensions when valid", () => {
@@ -283,6 +284,36 @@ describe("parseGrid", () => {
 		}
 		expect(count).toBeGreaterThan(0);
 	});
+
+	describe("wrong-length grid_bytes normalization (mirrors firmware load_from_bytes)", () => {
+		it("zero-pads a too-short grid_bytes array to GRID_CELL_COUNT", () => {
+			// A short array used to produce a short Uint8Array, read as
+			// undefined by every grid[i] consumer downstream.
+			const short = [1, 3, 5];
+			const grid = parseGrid({ grid_bytes: short }, 3000, 3000);
+			expect(grid.length).toBe(GRID_CELL_COUNT);
+			expect(grid[0]).toBe(1);
+			expect(grid[1]).toBe(3);
+			expect(grid[2]).toBe(5);
+			expect(grid[3]).toBe(0);
+			expect(grid[GRID_CELL_COUNT - 1]).toBe(0);
+		});
+
+		it("truncates a too-long grid_bytes array to GRID_CELL_COUNT", () => {
+			const long = new Array(GRID_CELL_COUNT + 50).fill(7);
+			const grid = parseGrid({ grid_bytes: long }, 3000, 3000);
+			expect(grid.length).toBe(GRID_CELL_COUNT);
+			expect(grid[0]).toBe(7);
+			expect(grid[GRID_CELL_COUNT - 1]).toBe(7);
+		});
+
+		it("coerces non-numeric entries to 0", () => {
+			const grid = parseGrid({ grid_bytes: ["x", null, 2] }, 3000, 3000);
+			expect(grid[0]).toBe(0);
+			expect(grid[1]).toBe(0);
+			expect(grid[2]).toBe(2);
+		});
+	});
 });
 
 describe("parseZoneConfigs", () => {
@@ -411,8 +442,18 @@ describe("parseZoneConfigs", () => {
 		expect(result.zone0.type).toBe("default");
 	});
 
-	it("normalizes legacy type strings on zone 0 to 'default'", () => {
-		for (const legacy of ["normal", "thoroughfare", "rest", "garbage"]) {
+	it("maps legacy zone-0 types to their modern equivalents (matches backend _LEGACY_ZONE_TYPE_MAP)", () => {
+		// Pre-0.95 types must map to the timing of their closest modern
+		// equivalent — rest→bed (600s timeout: someone sleeping must not time
+		// out) and thoroughfare→transit (3s) — NOT the generic "default" row.
+		// Mirrors custom_components/eppgrid/device_manager/_helpers.py.
+		const cases: [string, string][] = [
+			["rest", "bed"],
+			["thoroughfare", "transit"],
+			["normal", "default"],
+			["garbage", "default"],
+		];
+		for (const [legacy, expected] of cases) {
 			const layout = {
 				zone_slots: [
 					{ type: legacy },
@@ -425,17 +466,17 @@ describe("parseZoneConfigs", () => {
 					null,
 				],
 			};
-			expect(parseZoneConfigs(layout).zone0.type).toBe("default");
+			expect(parseZoneConfigs(layout).zone0.type).toBe(expected);
 		}
 	});
 
-	it("normalizes legacy type strings on named zones to 'default'", () => {
+	it("maps legacy named-zone types to their modern equivalents", () => {
 		const layout = {
 			zone_slots: [
 				{ type: "default" },
-				{ name: "Z1", color: "#fff", type: "rest" },
-				{ name: "Z2", color: "#000", type: "thoroughfare" },
-				null,
+				{ name: "Z1", color: "#ffffff", type: "rest" },
+				{ name: "Z2", color: "#000000", type: "thoroughfare" },
+				{ name: "Z3", color: "#123456", type: "normal" },
 				null,
 				null,
 				null,
@@ -443,8 +484,62 @@ describe("parseZoneConfigs", () => {
 			],
 		};
 		const result = parseZoneConfigs(layout);
-		expect(result.zones[0]?.type).toBe("default");
-		expect(result.zones[1]?.type).toBe("default");
+		expect(result.zones[0]?.type).toBe("bed");
+		expect(result.zones[1]?.type).toBe("transit");
+		expect(result.zones[2]?.type).toBe("default");
+	});
+
+	describe("zone color validation", () => {
+		const slots = (color: unknown) => ({
+			zone_slots: [
+				{ type: "default" },
+				{ name: "Z1", color, type: "default" },
+				{ name: "Z2", color: "#B8E7FF", type: "default" },
+				null,
+				null,
+				null,
+				null,
+				null,
+			],
+		});
+
+		it("keeps a valid #rrggbb color", () => {
+			expect(parseZoneConfigs(slots("#AbCdEf")).zones[0]?.color).toBe(
+				"#AbCdEf",
+			);
+		});
+
+		it("replaces a CSS-injection color with the slot's default palette color", () => {
+			// Stored configs are attacker-influenceable; color is interpolated
+			// into style attributes, so anything but #rrggbb must be rejected.
+			const result = parseZoneConfigs(slots('red;background:url("//evil")'));
+			expect(result.zones[0]?.color).toBe(ZONE_COLORS[0]);
+		});
+
+		it("replaces short-hex, missing, and non-string colors with palette defaults", () => {
+			for (const bad of ["#fff", undefined, 42, "rgb(1,2,3)"]) {
+				const result = parseZoneConfigs(slots(bad));
+				expect(result.zones[0]?.color).toBe(ZONE_COLORS[0]);
+			}
+		});
+
+		it("uses the per-slot palette default (slot N → ZONE_COLORS[N-1])", () => {
+			const layout = {
+				zone_slots: [
+					{ type: "default" },
+					null,
+					null,
+					{ name: "Z3", color: "nope", type: "default" },
+					null,
+					null,
+					null,
+					{ name: "Z7", color: "nope", type: "default" },
+				],
+			};
+			const result = parseZoneConfigs(layout);
+			expect(result.zones[2]?.color).toBe(ZONE_COLORS[2]);
+			expect(result.zones[6]?.color).toBe(ZONE_COLORS[6]);
+		});
 	});
 });
 

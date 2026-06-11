@@ -6,10 +6,33 @@
 // Header bytes: ASCII "IMPROV"
 export const IMPROV_HEADER = [0x49, 0x4d, 0x50, 0x52, 0x4f, 0x56];
 
+// Largest possible complete packet:
+// header(6) + version(1) + type(1) + length(1) + data(<=255) + checksum(1).
+const MAX_PACKET_LEN = IMPROV_HEADER.length + 3 + 255 + 1;
+
+// Raw serial console mirroring is opt-in: ESPHome device logs can carry
+// SSIDs and URLs, which must not land in the browser console by default.
+let _debugLogging = false;
+
+/**
+ * Enable/disable mirroring of raw serial log text to console.debug.
+ * Developer switch for diagnosing flasher issues — OFF by default.
+ * Disabling also drops any partially-buffered line.
+ */
+export function setImprovDebugLogging(enabled: boolean): void {
+	_debugLogging = enabled;
+	if (!enabled) _logBuffer = "";
+}
+
 // Module-level text buffer used by readImprovResponse's debug logging to
 // reassemble serial chunks into complete lines before flushing to console.
 // ESPHome's UART emits chunks sized to USB packet boundaries, not newlines.
 let _logBuffer = "";
+
+// Single stream-mode decoder shared across chunks: a fresh per-chunk
+// decoder would mangle multibyte UTF-8 sequences split across USB packets
+// into U+FFFD replacement chars.
+const _logDecoder = new TextDecoder("utf-8", { fatal: false });
 
 // Per-reader pending reader.read() promise. readImprovResponse's Promise.race
 // against a setTimeout abandons the in-flight read when the timeout wins —
@@ -139,6 +162,23 @@ export function buildWifiCommand(ssid: string, password: string): Uint8Array {
 	const encoder = new TextEncoder();
 	const ssidBytes = encoder.encode(ssid);
 	const passBytes = encoder.encode(password);
+
+	// The wire format's length prefixes are single bytes, so oversized
+	// values would silently truncate mod 256 and provision garbage. Enforce
+	// the protocol limits (802.11: 32-octet SSID; WPA: 64-char passphrase)
+	// in UTF-8 BYTES — a char-count check would let multibyte SSIDs through.
+	if (ssidBytes.length > 32) {
+		throw Object.assign(
+			new Error(`SSID is too long: ${ssidBytes.length} bytes (max 32)`),
+			{ errorKey: "wifi.errors.ssid_too_long" },
+		);
+	}
+	if (passBytes.length > 64) {
+		throw Object.assign(
+			new Error(`Password is too long: ${passBytes.length} bytes (max 64)`),
+			{ errorKey: "wifi.errors.password_too_long" },
+		);
+	}
 
 	const totalLen = 1 + ssidBytes.length + 1 + passBytes.length;
 	const data: number[] = [
@@ -353,20 +393,26 @@ export async function readImprovResponse(
 		const result = raced;
 
 		if (result.value) {
-			// Accumulate decoded text and flush on newline boundaries so
-			// ESPHome log lines aren't split across multiple console entries.
-			_logBuffer += new TextDecoder("utf-8", { fatal: false })
-				.decode(result.value)
-				.replace(_ANSI_PATTERN, "");
-			const nlIdx = _logBuffer.lastIndexOf("\n");
-			if (nlIdx >= 0) {
-				const complete = _logBuffer.slice(0, nlIdx);
-				_logBuffer = _logBuffer.slice(nlIdx + 1);
-				for (const line of complete.split("\n")) {
-					if (line.length > 0) console.debug(line);
+			if (_debugLogging) {
+				// Accumulate decoded text and flush on newline boundaries so
+				// ESPHome log lines aren't split across multiple console entries.
+				_logBuffer += _logDecoder.decode(result.value, { stream: true });
+				const nlIdx = _logBuffer.lastIndexOf("\n");
+				if (nlIdx >= 0) {
+					const complete = _logBuffer.slice(0, nlIdx);
+					_logBuffer = _logBuffer.slice(nlIdx + 1);
+					// Strip ANSI SGR sequences at flush time (per complete
+					// line) so a sequence split across chunks is still caught.
+					for (const line of complete.replace(_ANSI_PATTERN, "").split("\n")) {
+						if (line.length > 0) console.debug(line);
+					}
 				}
 			}
-			buffer.push(...result.value);
+			// Append byte-by-byte: spreading a large chunk into push() can
+			// exceed the engine's argument-count limit (RangeError).
+			for (let i = 0; i < result.value.length; i++) {
+				buffer.push(result.value[i]);
+			}
 			const { packets, consumed } = parseImprovPackets(new Uint8Array(buffer));
 			if (packets.length > 0) {
 				for (const p of packets) {
@@ -375,14 +421,56 @@ export async function readImprovResponse(
 				buffer.splice(0, consumed);
 				return { packets, buffer };
 			}
+			// Nothing parsed — bound the buffer so a minute of verbose device
+			// logging can't grow it (and the full rescan above) unboundedly.
+			trimParseBuffer(buffer);
 		}
 
-		if (result.done) break;
+		if (result.done) {
+			// The stream ended: the device was unplugged or the port closed.
+			// Reporting this as "timeout" sends the user down the wrong
+			// troubleshooting path (and callers would keep re-reading a dead
+			// stream until their budget runs out).
+			throw Object.assign(new Error("serial port closed"), {
+				errorKey: "flasher.errors.port_closed",
+			});
+		}
 	}
 
 	throw Object.assign(new Error("timeout"), {
 		errorKey: "flasher.errors.timeout",
 	});
+}
+
+/**
+ * Trim a parse buffer that yielded no packets down to at most one
+ * max-size packet (in place, preserving the caller's array reference).
+ *
+ * Sound because a complete packet is at most MAX_PACKET_LEN bytes: any
+ * still-incomplete packet must start within the last MAX_PACKET_LEN bytes
+ * (an earlier start would already have parsed or failed its checksum). We
+ * keep everything from the first potential header start in that window —
+ * including a partial "IMP…" prefix at the very tail — and drop the rest.
+ */
+function trimParseBuffer(buffer: number[]): void {
+	if (buffer.length <= MAX_PACKET_LEN) return;
+	const floor = buffer.length - MAX_PACKET_LEN;
+	let keepFrom = buffer.length;
+	for (let i = floor; i < buffer.length; i++) {
+		if (buffer[i] !== IMPROV_HEADER[0]) continue;
+		let prefixOk = true;
+		for (let h = 1; h < IMPROV_HEADER.length && i + h < buffer.length; h++) {
+			if (buffer[i + h] !== IMPROV_HEADER[h]) {
+				prefixOk = false;
+				break;
+			}
+		}
+		if (prefixOk) {
+			keepFrom = i;
+			break;
+		}
+	}
+	buffer.splice(0, keepFrom);
 }
 
 /**

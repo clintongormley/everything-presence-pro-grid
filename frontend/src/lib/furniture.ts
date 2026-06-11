@@ -104,6 +104,31 @@ export function pxToMm(px: number, cellPx: number): number {
 }
 
 /**
+ * Half-difference between an item's rotation-aware visual bounding box and
+ * its unrotated box, per axis. CSS rotation pivots about the item's center,
+ * so the rendered (visual) box is the unrotated box inflated by `dxBox` on
+ * each horizontal side and `dyBox` on each vertical side. Shared by
+ * `clampFurnitureMove` (drag clamping) and `isFurnitureOutsideGrid`
+ * (save-time filtering) so the two can't disagree about what "on the grid"
+ * means.
+ */
+function visualBoxOffsets(
+	itemWidth: number,
+	itemHeight: number,
+	rotationDeg: number,
+): { dxBox: number; dyBox: number } {
+	const rad = (rotationDeg * Math.PI) / 180;
+	const absCos = Math.abs(Math.cos(rad));
+	const absSin = Math.abs(Math.sin(rad));
+	const visualWidth = itemWidth * absCos + itemHeight * absSin;
+	const visualHeight = itemWidth * absSin + itemHeight * absCos;
+	return {
+		dxBox: (visualWidth - itemWidth) / 2,
+		dyBox: (visualHeight - itemHeight) / 2,
+	};
+}
+
+/**
  * Compute clamped move position for a furniture item being dragged.
  *
  * Clamps the position so the item's visual (rotation-aware) bounding box
@@ -142,15 +167,7 @@ export function clampFurnitureMove(
 ): { x: number; y: number } {
 	const dxMm = pxToMm(dxPx, cellPx);
 	const dyMm = pxToMm(dyPx, cellPx);
-	const rad = (rotationDeg * Math.PI) / 180;
-	const absCos = Math.abs(Math.cos(rad));
-	const absSin = Math.abs(Math.sin(rad));
-	const visualWidth = itemWidth * absCos + itemHeight * absSin;
-	const visualHeight = itemWidth * absSin + itemHeight * absCos;
-	// Rotation pivots about center, so (x, y) (unrotated top-left) is offset
-	// from the visual top-left by half the difference of the two bboxes.
-	const dxBox = (visualWidth - itemWidth) / 2;
-	const dyBox = (visualHeight - itemHeight) / 2;
+	const { dxBox, dyBox } = visualBoxOffsets(itemWidth, itemHeight, rotationDeg);
 	return {
 		x: Math.max(minX + dxBox, Math.min(maxX - itemWidth - dxBox, origX + dxMm)),
 		y: Math.max(
@@ -213,11 +230,18 @@ export function computeFurnitureResize(
 	let h = origH;
 
 	if (lockAspect) {
-		// Uniform scale from the dominant axis (in local frame).
-		const delta = Math.abs(dxMm) > Math.abs(dyMm) ? dxMm : dyMm;
+		// Uniform scale from the dominant axis (in local frame), signed by
+		// THAT axis's own edge sign so dragging outward always grows and
+		// inward always shrinks. A blanket "any negative edge → -1" would
+		// invert mixed-sign corners: ne (sx=1, sy=-1) on a horizontal-
+		// dominant eastward drag, and sw (sx=-1, sy=1) on a vertical-
+		// dominant southward drag. Edge handles (sx or sy = 0) only follow
+		// their own axis.
+		const horizontalDominant =
+			sx !== 0 && (sy === 0 || Math.abs(dxMm) > Math.abs(dyMm));
+		const delta = horizontalDominant ? sx * dxMm : sy * dyMm;
 		const aspect = origW / origH;
-		const sign = sx < 0 || sy < 0 ? -1 : 1;
-		w = Math.max(100, origW + sign * delta);
+		w = Math.max(100, origW + delta);
 		h = Math.max(100, w / aspect);
 		w = h * aspect;
 	} else {
@@ -248,21 +272,32 @@ export function computeFurnitureResize(
 /**
  * Check whether a furniture item is completely outside the visible grid bounds.
  *
- * Returns true when the item's bounding box has zero overlap with the
- * grid area defined by [minX, maxX) x [minY, maxY).
+ * Returns true when the item's rotation-aware VISUAL bounding box (what the
+ * user actually sees rendered) has zero overlap with the grid area defined
+ * by [minX, maxX) x [minY, maxY). Using the unrotated box would classify a
+ * 90°-rotated elongated item that visibly overlaps the grid as fully
+ * outside — and silently drop it on save. `rotation` is optional so plain
+ * x/y/w/h boxes (rotation 0) keep working.
  */
 export function isFurnitureOutsideGrid(
-	item: Pick<FurnitureItem, "x" | "y" | "width" | "height">,
+	item: Pick<FurnitureItem, "x" | "y" | "width" | "height"> & {
+		rotation?: number;
+	},
 	minX: number,
 	maxX: number,
 	minY: number,
 	maxY: number,
 ): boolean {
+	const { dxBox, dyBox } = visualBoxOffsets(
+		item.width,
+		item.height,
+		item.rotation ?? 0,
+	);
 	return (
-		item.x + item.width <= minX ||
-		item.x >= maxX ||
-		item.y + item.height <= minY ||
-		item.y >= maxY
+		item.x + item.width + dxBox <= minX ||
+		item.x - dxBox >= maxX ||
+		item.y + item.height + dyBox <= minY ||
+		item.y - dyBox >= maxY
 	);
 }
 
