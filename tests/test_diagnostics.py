@@ -208,6 +208,49 @@ class TestDiagnosticDump:
         assert mac not in result["stored_configs"]
         assert mac not in result["entity_states"]
 
+    async def test_entity_ids_do_not_leak_mac_fragment_for_renamed_device(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry, manager: DeviceManager, store: EPPGridStore
+    ) -> None:
+        """A device renamed to e.g. 'Office' still has entity_ids slugged from its
+        OLD default name (e.g. sensor.everything_presence_pro_ddeeff_firmware_version).
+        The device's `name` field can also carry the MAC hex fragment if the user
+        renamed it to something else but the stored name is still the default.
+        Diagnostics must redact the MAC hex fragments from all keys/strings
+        regardless of the current device name."""
+        import json
+
+        mac = "AA:BB:CC:DD:EE:FF"
+        # The user renamed the device to "Office" in HA
+        dev_reg = dr.async_get(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=config_entry.entry_id,
+            identifiers={("esphome", "test_device_renamed")},
+            name="Office",
+        )
+        manager.devices[mac] = ManagedDevice(mac=mac, name="Office", host="192.168.1.100", device_id=device.id)
+        store.devices[mac] = {"name": "Office"}
+
+        ent_reg = er.async_get(hass)
+        # entity_id is still slugged from the OLD default name that embedded the MAC fragment
+        ent_entry = ent_reg.async_get_or_create(
+            "sensor",
+            "esphome",
+            "AA:BB:CC:DD:EE:FF-sensor-firmware_version",
+            config_entry=config_entry,
+            device_id=device.id,
+            suggested_object_id="everything_presence_pro_ddeeff_firmware_version",
+        )
+        hass.states.async_set(ent_entry.entity_id, "0.99.0")
+
+        result = await async_get_config_entry_diagnostics(hass, config_entry)
+
+        serialized = json.dumps(result).lower()
+        # The MAC fragment must not appear anywhere — even though current device
+        # name is "Office" (doesn't match "ddeeff"), the entity_id still embeds it.
+        assert "ddeeff" not in serialized, (
+            f"MAC fragment 'ddeeff' leaked in diagnostics dump for renamed device:\n{serialized}"
+        )
+
     async def test_integration_version_uses_loader(
         self, hass: HomeAssistant, config_entry: MockConfigEntry, manager: DeviceManager
     ) -> None:
