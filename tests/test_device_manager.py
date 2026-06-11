@@ -1669,6 +1669,30 @@ class TestDeviceManager:
         # Clean up so the test's own teardown is leak-free.
         await manager.async_stop()
 
+    async def test_schedule_entity_update_clear_public_wrapper(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """The public schedule_entity_update_clear wrapper (the surface WS
+        handlers call) arms the entity-update guard set, schedules the clear
+        timer with the default delay when none is given, and forwards an
+        explicit delay. This is the contract the websocket-API tests rely on
+        when they assert only that the call was made."""
+        from custom_components.eppgrid.device_manager import _ENTITY_UPDATE_CLEAR_DEFAULT
+
+        mac = "AA:BB:CC:DD:EE:FF"
+
+        with patch("custom_components.eppgrid.device_manager.async_call_later") as mock_later:
+            manager.schedule_entity_update_clear(mac)
+
+            assert mac in manager._entity_update_macs
+            assert mac in manager._entity_update_clear_cancels
+            assert mock_later.call_args[0][1] == _ENTITY_UPDATE_CLEAR_DEFAULT
+
+            manager.schedule_entity_update_clear(mac, 5.0)
+
+            assert mac in manager._entity_update_macs
+            assert mock_later.call_args[0][1] == 5.0
+
     async def test_async_stop_awaits_pending_tasks(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """Tasks spawned by event handlers are tracked and awaited by async_stop
         so they don't leak past the config entry's lifetime."""

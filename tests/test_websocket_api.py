@@ -66,13 +66,12 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
         # was scheduled. The trailing-debounce semantics are tested
         # directly in TestRequestPush.
         mock_dm.request_push = MagicMock()
-        mock_dm._entity_update_macs = set()
-        # Mirror the real method's behavioral effect (add mac to the guard set)
-        # so tests that assert on _entity_update_macs still hold. The cancel /
-        # stop semantics are covered directly by test_device_manager.py.
-        mock_dm.schedule_entity_update_clear = MagicMock(
-            side_effect=lambda mac, *args, **kwargs: mock_dm._entity_update_macs.add(mac)
-        )
+        # Plain call-assertion mock — no side_effect mirroring the real
+        # method's guard-set behavior, which would silently go stale if the
+        # real contract changed. WS tests assert the CALL was made; the real
+        # semantics (mac added to _entity_update_macs, timer scheduling and
+        # cancel/stop) are covered by test_device_manager.py.
+        mock_dm.schedule_entity_update_clear = MagicMock()
         mock_dm.async_update_zone_entities = AsyncMock()
         mock_dm.async_open_session = AsyncMock(return_value=None)
         mock_dm.async_close_session = AsyncMock()
@@ -425,7 +424,7 @@ class TestWebSocketSetSetup:
     async def test_set_setup_delete_calibration_sets_entity_update_guard(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
-        """Deleting calibration sets entity_update_macs guard to suppress reconnect push."""
+        """Deleting calibration arms the entity-update guard to suppress reconnect push."""
         mock_dm = await setup_integration(hass, config_entry)
         register_managed_device(mock_dm)
         mock_dm.store.devices["AA:BB:CC:DD:EE:FF"] = {"settings": {"target_xy": True}}
@@ -445,7 +444,7 @@ class TestWebSocketSetSetup:
 
             await call_async_handler(hass, websocket_set_setup, connection, msg)
 
-        assert "AA:BB:CC:DD:EE:FF" in mock_dm._entity_update_macs
+        mock_dm.schedule_entity_update_clear.assert_called_once_with("AA:BB:CC:DD:EE:FF")
 
     async def test_set_setup_arms_guard_before_zone_entity_update(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
@@ -2510,7 +2509,7 @@ class TestWebSocketSettings:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        assert "AA:BB:CC:DD:EE:FF" in mock_dm._entity_update_macs
+        mock_dm.schedule_entity_update_clear.assert_called_once_with("AA:BB:CC:DD:EE:FF")
 
     async def test_set_settings_without_entities_sets_guard_for_relay(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
@@ -2549,7 +2548,7 @@ class TestWebSocketSettings:
 
         await call_async_handler(hass, websocket_set_settings, connection, msg)
 
-        assert "AA:BB:CC:DD:EE:FF" in mock_dm._entity_update_macs
+        mock_dm.schedule_entity_update_clear.assert_called_once_with("AA:BB:CC:DD:EE:FF")
 
     async def test_set_settings_stores_relay_values(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """set_settings stores relay_trigger_mode and relay_contact_mode under settings."""

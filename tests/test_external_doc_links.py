@@ -5,12 +5,17 @@ hardware overview). If those upstream pages move or are removed, our links break
 silently. This test discovers every link to that domain under docs/ and confirms
 each one responds successfully.
 
-Skips when the network is unavailable (DNS blocked, TCP refused, timeout) so
-offline development isn't blocked.
+The live HTTP checks are opt-in: set EXTERNAL_LINK_CHECKS=1 to run them.
+By default they skip so CI doesn't depend on docs.everythingsmart.io being
+up (a transient upstream 5xx would fail an unrelated build). The offline
+link-DISCOVERY and error-propagation unit tests always run. When live checks
+run, they still skip (not fail) when the network is unavailable (DNS blocked,
+TCP refused, timeout) so offline development isn't blocked.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import sys
 from collections.abc import Iterator
@@ -75,6 +80,11 @@ def _is_offline(exc: BaseException) -> bool:
 
 LINKS = _discover_links(DOCS_ROOT)
 
+#: Live checks are opt-in — see module docstring. Evaluated via skipif (not an
+#: in-test pytest.skip) so the network_unblocked fixture — which pokes
+#: pytest-socket's private _remove_restrictions() — never runs by default.
+LIVE_CHECKS_ENABLED = os.environ.get("EXTERNAL_LINK_CHECKS") == "1"
+
 
 @pytest.fixture
 def network_unblocked() -> Iterator[None]:
@@ -132,6 +142,10 @@ def test_check_propagates_404(monkeypatch: pytest.MonkeyPatch) -> None:
     assert excinfo.value.code == 404
 
 
+@pytest.mark.skipif(
+    not LIVE_CHECKS_ENABLED,
+    reason="set EXTERNAL_LINK_CHECKS=1 to run live link checks",
+)
 @pytest.mark.skipif(not LINKS, reason="No docs.everythingsmart.io links found in docs/")
 @pytest.mark.parametrize("url", LINKS)
 def test_external_doc_link_is_alive(url: str, network_unblocked: None) -> None:
