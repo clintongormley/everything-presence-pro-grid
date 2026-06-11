@@ -688,72 +688,6 @@ describe("stopPropagation handlers coverage", () => {
 });
 
 // =========================================================
-// Furniture overlay: all 7 resize handle pointerdown + rotate + delete
-// =========================================================
-describe("furniture overlay all handle events", () => {
-	it("triggers all 8 resize handles", () => {
-		const a = createPanel() as any;
-		a._furniture = [
-			{
-				id: "f1",
-				type: "svg",
-				icon: "armchair",
-				label: "Chair",
-				x: 100,
-				y: 200,
-				width: 800,
-				height: 800,
-				rotation: 0,
-				lockAspect: false,
-			},
-		];
-		a._sidebarTab = "furniture";
-		a._selectedFurnitureId = "f1";
-
-		const tpl = a._renderFurnitureOverlay(28, 0, 0, 20, 20);
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
-
-		const addSpy = vi
-			.spyOn(window, "addEventListener")
-			.mockImplementation(() => {});
-
-		const overlay = c.querySelector("epp-furniture-overlay") as any;
-		if (overlay?.shadowRoot) {
-			const handles = overlay.shadowRoot.querySelectorAll(".furn-handle");
-			handles.forEach((h: any) => {
-				h.dispatchEvent(
-					new PointerEvent("pointerdown", {
-						clientX: 500,
-						clientY: 300,
-						bubbles: true,
-						composed: true,
-					}),
-				);
-			});
-
-			const rotateHandle = overlay.shadowRoot.querySelector(
-				".furn-rotate-handle",
-			);
-			if (rotateHandle) {
-				rotateHandle.dispatchEvent(
-					new PointerEvent("pointerdown", {
-						clientX: 500,
-						clientY: 300,
-						bubbles: true,
-						composed: true,
-					}),
-				);
-			}
-		}
-
-		addSpy.mockRestore();
-		document.body.removeChild(c);
-	});
-});
-
-// =========================================================
 // _infoTip click handler
 // =========================================================
 describe("_infoTip DOM click handler", () => {
@@ -1407,7 +1341,9 @@ describe("_subscribeTargets backend debug log", () => {
 		a._backendDebugLogLines = [];
 		// Pre-set prev to the enriched form of "T0:Z0:A:5|Z0:O:5" with sensor prefix
 		// (sensorState is null → S:I M:I Occ:0 prepended by appendBackendDebugLog)
-		const enriched = a._enrichDebugLog("S:I M:I Occ:0|T0:Z0:A:5|Z0:O:5");
+		const enriched = a._targetCtrl.enrichDebugLog(
+			"S:I M:I Occ:0|T0:Z0:A:5|Z0:O:5",
+		);
 		a._backendDebugLogPrev = enriched;
 		let targetsHandler: (event: any) => void;
 		let callCount = 0;

@@ -376,6 +376,41 @@ describe("_renderWizardCorners DOM events (via EppWizard)", () => {
 });
 
 describe("_renderSaveCancelButtons DOM events", () => {
+	it("save button applies the layout (editor-only bar)", async () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._dirty = true;
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
+		const callWS = vi.fn().mockResolvedValue({});
+		a.hass = { callWS };
+		const tpl = a._renderSaveCancelButtons();
+		const c = renderTo(tpl);
+
+		(c.querySelector(".wizard-btn-primary") as HTMLElement).click();
+		await vi.waitFor(() => {
+			expect(callWS).toHaveBeenCalledWith(
+				expect.objectContaining({ type: "eppgrid/set_room_layout" }),
+			);
+		});
+	});
+
+	it("save button swallows applyLayout rejections (banner handles them)", async () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._dirty = true;
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
+		a.hass = { callWS: vi.fn().mockRejectedValue(new Error("boom")) };
+		const tpl = a._renderSaveCancelButtons();
+		const c = renderTo(tpl);
+
+		(c.querySelector(".wizard-btn-primary") as HTMLElement).click();
+		// The rejection is routed to the controller-error banner; the click
+		// handler's .catch keeps it from surfacing as an unhandled rejection.
+		await vi.waitFor(() => {
+			expect(a._controllerError).toBe("apply_layout");
+		});
+	});
+
 	it("cancel button resets view", async () => {
 		const a = createPanel() as any;
 		a._view = "editor";

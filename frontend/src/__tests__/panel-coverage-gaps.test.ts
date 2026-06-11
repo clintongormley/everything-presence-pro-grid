@@ -311,15 +311,15 @@ describe("disconnectedCallback restores history methods", () => {
 });
 
 // =========================================================
-// Branch: _applyPaintToCell when activeZone is null
+// Branch: applyPaintToCell when activeZone is null
 // =========================================================
-describe("_applyPaintToCell edge cases", () => {
+describe("applyPaintToCell edge cases", () => {
 	it("returns early when _activeZone is null", () => {
 		const a = createPanel() as any;
 		a._activeZone = null;
 		const gridBefore = new Uint8Array(a._grid);
 
-		a._applyPaintToCell(0);
+		a._gridCtrl.applyPaintToCell(0);
 
 		// Grid should be unchanged
 		expect(a._grid).toEqual(gridBefore);
@@ -332,7 +332,7 @@ describe("_applyPaintToCell edge cases", () => {
 		// Cell at index 0 is not inside room -> painting zone on outside cell returns null
 		a._grid[0] = 0; // outside
 
-		a._applyPaintToCell(0);
+		a._gridCtrl.applyPaintToCell(0);
 		expect(a._grid[0]).toBe(0); // unchanged
 	});
 });
@@ -718,185 +718,6 @@ describe("epp-live-sidebar zone info toggles", () => {
 		if (infoBtns.length > 6) {
 			(infoBtns[6] as HTMLElement).click();
 			expect(el._expandedSensorInfo).toBe("zone_1");
-		}
-		document.body.removeChild(c);
-	});
-});
-
-// =========================================================
-// _renderFurnitureOverlay pointerdown events (via epp-furniture-overlay component)
-// =========================================================
-describe("_renderFurnitureOverlay DOM events", () => {
-	it("pointerdown on furniture item triggers move via furniture-select event", () => {
-		const a = createPanel() as any;
-		a._furniture = [
-			{
-				id: "f1",
-				type: "svg",
-				icon: "armchair",
-				label: "Chair",
-				x: 100,
-				y: 200,
-				width: 800,
-				height: 800,
-				rotation: 0,
-				lockAspect: false,
-			},
-		];
-		a._sidebarTab = "furniture";
-		a._selectedFurnitureId = null;
-
-		const tpl = a._renderFurnitureOverlay(28, 0, 0, 20, 20);
-		const c = renderTo(tpl);
-
-		const overlay = c.querySelector("epp-furniture-overlay") as any;
-		if (overlay) {
-			const item = overlay.shadowRoot?.querySelector(
-				".furniture-item",
-			) as HTMLElement;
-			if (item) {
-				const addSpy = vi
-					.spyOn(window, "addEventListener")
-					.mockImplementation(() => {});
-				item.dispatchEvent(
-					new PointerEvent("pointerdown", {
-						clientX: 500,
-						clientY: 300,
-						bubbles: true,
-						composed: true,
-					}),
-				);
-				// The overlay fires furniture-select which the panel listens for
-				expect(a._selectedFurnitureId).toBe("f1");
-				addSpy.mockRestore();
-			}
-		}
-		document.body.removeChild(c);
-	});
-
-	it("resize handle pointerdown", () => {
-		const a = createPanel() as any;
-		a._furniture = [
-			{
-				id: "f1",
-				type: "svg",
-				icon: "armchair",
-				label: "Chair",
-				x: 100,
-				y: 200,
-				width: 800,
-				height: 800,
-				rotation: 0,
-				lockAspect: false,
-			},
-		];
-		a._sidebarTab = "furniture";
-		a._selectedFurnitureId = "f1";
-
-		const tpl = a._renderFurnitureOverlay(28, 0, 0, 20, 20);
-		const c = renderTo(tpl);
-
-		const overlay = c.querySelector("epp-furniture-overlay") as any;
-		if (overlay) {
-			const handles = overlay.shadowRoot?.querySelectorAll(".furn-handle");
-			if (handles && handles.length > 0) {
-				const addSpy = vi
-					.spyOn(window, "addEventListener")
-					.mockImplementation(() => {});
-				handles[0].dispatchEvent(
-					new PointerEvent("pointerdown", {
-						clientX: 500,
-						clientY: 300,
-						bubbles: true,
-						composed: true,
-					}),
-				);
-				expect(a._dragState).not.toBeNull();
-				addSpy.mockRestore();
-			}
-		}
-		document.body.removeChild(c);
-	});
-
-	it("rotate handle pointerdown", () => {
-		const a = createPanel() as any;
-		a._furniture = [
-			{
-				id: "f1",
-				type: "svg",
-				icon: "armchair",
-				label: "Chair",
-				x: 100,
-				y: 200,
-				width: 800,
-				height: 800,
-				rotation: 0,
-				lockAspect: false,
-			},
-		];
-		a._sidebarTab = "furniture";
-		a._selectedFurnitureId = "f1";
-
-		const tpl = a._renderFurnitureOverlay(28, 0, 0, 20, 20);
-		const c = renderTo(tpl);
-
-		const overlay = c.querySelector("epp-furniture-overlay") as any;
-		if (overlay) {
-			const rotateHandle = overlay.shadowRoot?.querySelector(
-				".furn-rotate-handle",
-			) as HTMLElement;
-			if (rotateHandle) {
-				const addSpy = vi
-					.spyOn(window, "addEventListener")
-					.mockImplementation(() => {});
-				rotateHandle.dispatchEvent(
-					new PointerEvent("pointerdown", {
-						clientX: 500,
-						clientY: 300,
-						bubbles: true,
-						composed: true,
-					}),
-				);
-				expect(a._dragState?.type).toBe("rotate");
-				addSpy.mockRestore();
-			}
-		}
-		document.body.removeChild(c);
-	});
-
-	it("delete button on furniture overlay", () => {
-		const a = createPanel() as any;
-		a._furniture = [
-			{
-				id: "f1",
-				type: "svg",
-				icon: "armchair",
-				label: "Chair",
-				x: 100,
-				y: 200,
-				width: 800,
-				height: 800,
-				rotation: 0,
-				lockAspect: false,
-			},
-		];
-		a._sidebarTab = "furniture";
-		a._selectedFurnitureId = "f1";
-
-		const tpl = a._renderFurnitureOverlay(28, 0, 0, 20, 20);
-		const c = renderTo(tpl);
-
-		const overlay = c.querySelector("epp-furniture-overlay") as any;
-		if (overlay) {
-			const deleteBtn = overlay.shadowRoot?.querySelector(
-				".furn-delete-btn",
-			) as HTMLElement;
-			if (deleteBtn) {
-				deleteBtn.dispatchEvent(
-					new PointerEvent("pointerdown", { bubbles: true, composed: true }),
-				);
-				expect(a._furniture.length).toBe(0);
-			}
 		}
 		document.body.removeChild(c);
 	});

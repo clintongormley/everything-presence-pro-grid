@@ -3,6 +3,7 @@
  *   _targetCellIndex, _setOverlay, _dismissTarget,
  *   _showTargetMenu, _closeTargetMenu
  */
+import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
@@ -396,5 +397,55 @@ describe("_setOverlay", () => {
 		expect(a._gridCtrl.applyLayout).not.toHaveBeenCalled();
 		expect(a._dirty).toBe(false);
 		expect(a._targetMenu).toBeNull();
+	});
+});
+
+describe("_renderTargetMenu inline handlers", () => {
+	function renderMenu(a: any): HTMLDivElement {
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(a._renderTargetMenu(), c);
+		return c;
+	}
+
+	it("backdrop click closes the menu", () => {
+		const a = createPanel() as any;
+		a._targetMenu = makeMenuDetail(1500, 2000, 0);
+		const c = renderMenu(a);
+		(c.querySelector(".target-menu-backdrop") as HTMLElement).click();
+		expect(a._targetMenu).toBeNull();
+		document.body.removeChild(c);
+	});
+
+	it("menu items dispatch dismiss / interference / suppress actions", async () => {
+		const a = createPanel() as any;
+		const { x, y, idx } = insideCellCoords(3000, 4000);
+		a._targetMenu = makeMenuDetail(x, y, 0);
+		const c = renderMenu(a);
+
+		const items = c.querySelectorAll(".target-menu-item");
+		expect(items.length).toBe(3);
+
+		// Dismiss
+		(items[0] as HTMLElement).click();
+		await vi.waitFor(() => {
+			expect(a._dismissedTargets.get(0)).toBe(idx);
+		});
+
+		// Mark interference
+		a._targetMenu = makeMenuDetail(x, y, 0);
+		(items[1] as HTMLElement).click();
+		await vi.waitFor(() => {
+			expect(cellOverlay(a._grid[idx])).toBe(CELL_OVERLAY_INTERFERENCE);
+		});
+
+		// Suppress detection
+		a._targetMenu = makeMenuDetail(x, y, 0);
+		(items[2] as HTMLElement).click();
+		await vi.waitFor(() => {
+			expect(cellOverlay(a._grid[idx])).toBe(CELL_OVERLAY_SUPPRESS);
+		});
+
+		document.body.removeChild(c);
 	});
 });

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import { mmToPx, pxToMm } from "../lib/furniture.js";
 import { GRID_CELL_COUNT } from "../lib/grid.js";
+import { getZoneThresholds, resolveZoneParams } from "../lib/zone-defaults.js";
 import { createZoneEngineState } from "../lib/zone-engine.js";
 
 function createPanel(): EPPGridPanel {
@@ -91,20 +93,18 @@ describe("_getRoomBounds", () => {
 	});
 });
 
-describe("_mmToPx and _pxToMm", () => {
+describe("mmToPx and pxToMm (lib/furniture)", () => {
 	it("converts mm to px", () => {
-		const a = createPanel() as any;
 		// mmToPx formula: (mm / 300) * (cellPx + 1)
 		// 300mm with cellPx=28 -> (300/300) * 29 = 29
-		const px = a._mmToPx(300, 28);
+		const px = mmToPx(300, 28);
 		expect(px).toBeCloseTo(29, 0);
 	});
 
 	it("converts px to mm", () => {
-		const a = createPanel() as any;
 		// pxToMm formula: (px / (cellPx + 1)) * 300
 		// 29px with cellPx=28 -> (29/29) * 300 = 300
-		const mm = a._pxToMm(29, 28);
+		const mm = pxToMm(29, 28);
 		expect(mm).toBeCloseTo(300, 0);
 	});
 });
@@ -143,14 +143,26 @@ describe("_onCellMouseUp", () => {
 	});
 });
 
-describe("_getZoneThresholds", () => {
+describe("getZoneThresholds (lib/zone-defaults)", () => {
+	function thresholdsFor(a: any, zid: number) {
+		const z0 = resolveZoneParams(a._zoneConfigs[0]);
+		return getZoneThresholds(
+			zid,
+			a._zoneConfigs.slice(1),
+			z0.type,
+			z0.trigger,
+			z0.renew,
+			z0.timeout,
+			z0.handoff_timeout,
+		);
+	}
+
 	it("returns thresholds for boundary zone", () => {
 		const a = createPanel() as any;
-		const result = a._getZoneThresholds(0);
+		const result = thresholdsFor(a, 0);
 		expect(result).toHaveProperty("trigger");
 		expect(result).toHaveProperty("renew");
 		expect(result).toHaveProperty("timeout");
-		expect(result).toHaveProperty("handoffTimeout");
 		expect(result).toHaveProperty("handoffTimeout");
 	});
 
@@ -176,7 +188,7 @@ describe("_getZoneThresholds", () => {
 			null,
 		];
 
-		const result = a._getZoneThresholds(1);
+		const result = thresholdsFor(a, 1);
 		expect(result.trigger).toBe(7);
 		expect(result.renew).toBe(5);
 		expect(result.timeout).toBe(15);

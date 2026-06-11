@@ -420,11 +420,13 @@ describe("_renderProtocolBanner update firmware button", () => {
 });
 
 // ---------------------------------------------------------
-// _renderFurnitureOverlay inline handlers (lines 1694, 1697, 1701)
+// _renderEditor furniture event handlers (epp-grid bindings)
 // ---------------------------------------------------------
-describe("_renderFurnitureOverlay inline event handlers", () => {
-	function overlayPanel() {
+describe("_renderEditor furniture event handlers", () => {
+	function editorPanel() {
 		const a = createPanel() as any;
+		a._view = "editor";
+		a._sidebarTab = "furniture";
 		a._furniture = [
 			{
 				id: "f1",
@@ -442,27 +444,32 @@ describe("_renderFurnitureOverlay inline event handlers", () => {
 		return a;
 	}
 
-	it("@furniture-select sets _selectedFurnitureId", () => {
-		const a = overlayPanel();
-		const tpl = a._renderFurnitureOverlay(20, 0, 0, 15, 20);
+	function editorGrid(a: any): { c: HTMLDivElement; grid: HTMLElement } {
+		const tpl = a._renderEditor();
 		const c = renderTo(tpl);
-		const overlay = c.querySelector("epp-furniture-overlay")!;
-		overlay.dispatchEvent(
+		const grid = c.querySelector("epp-grid") as HTMLElement;
+		expect(grid).not.toBeNull();
+		return { c, grid };
+	}
+
+	it("@furniture-select sets _selectedFurnitureId", () => {
+		const a = editorPanel();
+		const { c, grid } = editorGrid(a);
+		grid.dispatchEvent(
 			new CustomEvent("furniture-select", { detail: "f1", bubbles: true }),
 		);
 		expect(a._selectedFurnitureId).toBe("f1");
+		document.body.removeChild(c);
 	});
 
 	it("@furniture-pointer-down calls _onFurniturePointerDown", () => {
-		const a = overlayPanel();
+		const a = editorPanel();
 		const spy = vi
 			.spyOn(a, "_onFurniturePointerDown")
 			.mockImplementation(() => {});
-		const tpl = a._renderFurnitureOverlay(20, 0, 0, 15, 20);
-		const c = renderTo(tpl);
-		const overlay = c.querySelector("epp-furniture-overlay")!;
+		const { c, grid } = editorGrid(a);
 		const fakePtr = { clientX: 5, clientY: 5 };
-		overlay.dispatchEvent(
+		grid.dispatchEvent(
 			new CustomEvent("furniture-pointer-down", {
 				detail: {
 					e: fakePtr,
@@ -475,17 +482,17 @@ describe("_renderFurnitureOverlay inline event handlers", () => {
 			}),
 		);
 		expect(spy).toHaveBeenCalledWith(fakePtr, "f1", "move", null, 0);
+		document.body.removeChild(c);
 	});
 
 	it("@furniture-delete calls _removeFurniture", () => {
-		const a = overlayPanel();
+		const a = editorPanel();
 		const spy = vi.spyOn(a, "_removeFurniture").mockImplementation(() => {});
-		const tpl = a._renderFurnitureOverlay(20, 0, 0, 15, 20);
-		const c = renderTo(tpl);
-		const overlay = c.querySelector("epp-furniture-overlay")!;
-		overlay.dispatchEvent(
+		const { c, grid } = editorGrid(a);
+		grid.dispatchEvent(
 			new CustomEvent("furniture-delete", { detail: "f1", bubbles: true }),
 		);
 		expect(spy).toHaveBeenCalledWith("f1");
+		document.body.removeChild(c);
 	});
 });

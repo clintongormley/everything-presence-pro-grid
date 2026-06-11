@@ -110,7 +110,7 @@ describe("boundary clearing", () => {
 		el = createPanel();
 	});
 
-	it("direct _applyPaintToCell with clear action removes room bit", () => {
+	it("direct applyPaintToCell with clear action removes room bit", () => {
 		const a = el as any;
 		a._activeZone = 0;
 		a._paintAction = "clear";
@@ -119,13 +119,13 @@ describe("boundary clearing", () => {
 		a._grid = new Uint8Array(GRID_CELL_COUNT);
 		a._grid[cellIndex] = CELL_ROOM_BIT;
 
-		a._applyPaintToCell(cellIndex);
+		a._gridCtrl.applyPaintToCell(cellIndex);
 
 		expect(a._grid[cellIndex]).toBe(0);
 		expect(cellIsInside(a._grid[cellIndex])).toBe(false);
 	});
 
-	it("direct _applyPaintToCell with set action adds room bit", () => {
+	it("direct applyPaintToCell with set action adds room bit", () => {
 		const a = el as any;
 		a._activeZone = 0;
 		a._paintAction = "set";
@@ -133,7 +133,7 @@ describe("boundary clearing", () => {
 		const cellIndex = 5 * GRID_COLS + 5;
 		a._grid = new Uint8Array(GRID_CELL_COUNT);
 
-		a._applyPaintToCell(cellIndex);
+		a._gridCtrl.applyPaintToCell(cellIndex);
 
 		expect(a._grid[cellIndex]).toBe(CELL_ROOM_BIT);
 	});
@@ -183,9 +183,9 @@ describe("zone painting (activeZone=N on inside cell)", () => {
 		const cellIndex = 5 * GRID_COLS + 5;
 		// Cell is outside (0)
 
-		// Directly call _applyPaintToCell with "set" action
+		// Directly call the controller's applyPaintToCell with "set" action
 		a._paintAction = "set";
-		a._applyPaintToCell(cellIndex);
+		a._gridCtrl.applyPaintToCell(cellIndex);
 
 		expect(a._grid[cellIndex]).toBe(0);
 		expect(cellIsInside(a._grid[cellIndex])).toBe(false);
@@ -212,7 +212,7 @@ describe("zone clearing", () => {
 		el = createPanel();
 	});
 
-	it("direct _applyPaintToCell with clear action on zone cell sets zone to 0", () => {
+	it("direct applyPaintToCell with clear action on zone cell sets zone to 0", () => {
 		const a = el as any;
 		a._activeZone = 2;
 		a._paintAction = "clear";
@@ -221,7 +221,7 @@ describe("zone clearing", () => {
 		a._grid = new Uint8Array(GRID_CELL_COUNT);
 		a._grid[cellIndex] = cellSetZone(CELL_ROOM_BIT, 2);
 
-		a._applyPaintToCell(cellIndex);
+		a._gridCtrl.applyPaintToCell(cellIndex);
 
 		expect(cellZone(a._grid[cellIndex])).toBe(0);
 		expect(cellIsInside(a._grid[cellIndex])).toBe(true);
@@ -245,7 +245,7 @@ describe("room dimensions update after boundary change", () => {
 		for (let r = 0; r < 2; r++) {
 			for (let c = 5; c < 8; c++) {
 				a._paintAction = "set";
-				a._applyPaintToCell(r * GRID_COLS + c);
+				a._gridCtrl.applyPaintToCell(r * GRID_COLS + c);
 			}
 		}
 

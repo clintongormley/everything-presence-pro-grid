@@ -50,8 +50,19 @@ export class TargetController implements ReactiveController {
 		this._zoneEngineState = value;
 	}
 
+	// Latest editor engine tick, refreshed per target frame (see
+	// handleTargetData). Renders read this instead of ticking the engine —
+	// _renderEditor used to tick once per render, including pointermove-driven
+	// renders, advancing engine time faster than real target frames.
+	private _editorEngineResult: ZoneEngineResult | null = null;
+
+	get editorEngineResult(): ZoneEngineResult | null {
+		return this._editorEngineResult;
+	}
+
 	resetZoneEngineState(): void {
 		this._zoneEngineState = createZoneEngineState();
+		this._editorEngineResult = null;
 	}
 
 	// =====================================================================
@@ -102,6 +113,24 @@ export class TargetController implements ReactiveController {
 			if (this.host._showBackendDebugLog && data.zones.debug_log) {
 				this.appendBackendDebugLog(data.zones.debug_log);
 			}
+		}
+		if (this.host._view === "live") {
+			// Track last in-room position for the live overview's pending-target
+			// display. Live uses backend status — "active" means the target is
+			// inside the SAVED room grid. (Editor view skips this: there the
+			// local zone engine maintains targetPrevXY against the edited grid.)
+			// Done here, per data frame, so renders stay pure functions of state.
+			const prevXY = this._zoneEngineState.targetPrevXY;
+			for (let i = 0; i < data.targets.length && i < prevXY.length; i++) {
+				const t = data.targets[i];
+				if (t.x != null && t.y != null && t.status === "active") {
+					prevXY[i] = { x: t.x, y: t.y };
+				}
+			}
+		} else if (this.host._view === "editor") {
+			// Tick the local engine once per target frame and cache the result
+			// for _renderEditor — renders between frames reuse the cache.
+			this.runLocalZoneEngine();
 		}
 	}
 
@@ -160,6 +189,7 @@ export class TargetController implements ReactiveController {
 			this._buildFrontendDebugLog(result);
 		}
 
+		this._editorEngineResult = result;
 		return result;
 	}
 

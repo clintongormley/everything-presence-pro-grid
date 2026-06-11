@@ -35,6 +35,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import { mapTargetToGridCell } from "../lib/coordinates.js";
 import {
 	CELL_OVERLAY_ENTRY,
 	CELL_OVERLAY_SUPPRESS,
@@ -821,7 +822,10 @@ describe("Pending target position fallback (_renderTargetDots)", () => {
 		if (!t || t.status === "inactive") return null;
 
 		const prevXY = a._zoneEngineState.targetPrevXY[0];
-		let pos = t.x != null ? a._mapTargetToGridCell(t) : null;
+		let pos =
+			t.x != null
+				? mapTargetToGridCell(t.x, t.y, a._roomWidth, a._roomDepth)
+				: null;
 		const onGrid =
 			pos &&
 			pos.col >= minCol &&
@@ -829,7 +833,7 @@ describe("Pending target position fallback (_renderTargetDots)", () => {
 			pos.row >= minRow &&
 			pos.row <= minRow + visRows;
 		if (t.status === "pending" && !onGrid && prevXY) {
-			pos = a._mapTargetToGridCell({ ...t, x: prevXY.x, y: prevXY.y });
+			pos = mapTargetToGridCell(prevXY.x, prevXY.y, a._roomWidth, a._roomDepth);
 		}
 		if (!pos) return null;
 		return {

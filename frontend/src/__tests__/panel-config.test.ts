@@ -9,6 +9,10 @@ import {
 	initGridFromRoom,
 	NUM_ZONE_SLOTS,
 } from "../lib/grid.js";
+import {
+	SETTINGS_DEFAULTS,
+	SETTINGS_FIELD_MAP,
+} from "../lib/settings-defaults.js";
 
 function createPanel(): EPPGridPanel {
 	const el = document.createElement("eppgrid-panel") as EPPGridPanel;
@@ -1412,5 +1416,93 @@ describe("_zoneConfigs shape", () => {
 		expect(a._roomRenew).toBeUndefined();
 		expect(a._roomTimeout).toBeUndefined();
 		expect(a._roomHandoffTimeout).toBeUndefined();
+	});
+});
+
+// =============================================================================
+// Settings payload single-sourcing (Task 6.4) — every set_settings payload the
+// panel/controller builds must be derived from SETTINGS_FIELD_MAP, so a field
+// added to the map automatically flows through without hand-edits.
+// =============================================================================
+describe("settings payload single-sourcing", () => {
+	const mapKeys = SETTINGS_FIELD_MAP.map(([key]) => key)
+		.slice()
+		.sort();
+
+	it("applyLayout's set_settings payload keys equal SETTINGS_FIELD_MAP keys", async () => {
+		const el = createPanel();
+		const a = el as any;
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
+		a._dirty = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+		a._roomWidth = 3000;
+		a._roomDepth = 4000;
+		a._targetAutoDistance = true; // triggers the set_settings call
+		a._staticAutoDistance = true;
+		a._zoneConfigs = new Array(8).fill(null);
+
+		const callWS = vi.fn().mockResolvedValue({});
+		el.hass = { callWS };
+
+		await a._applyLayout();
+
+		const settingsCall = callWS.mock.calls.find(
+			(c: any[]) => c[0]?.type === "eppgrid/set_settings",
+		);
+		expect(settingsCall).toBeDefined();
+		const keys = Object.keys(settingsCall![0])
+			.filter((k) => k !== "type" && k !== "mac")
+			.sort();
+		expect(keys).toEqual(mapKeys);
+	});
+
+	it("_deleteCalibration's set_settings payload keys equal SETTINGS_FIELD_MAP keys", async () => {
+		const el = createPanel();
+		const a = el as any;
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
+		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
+		a._targetAutoDistance = true; // triggers the settings push
+		a._staticAutoDistance = true;
+
+		const callWS = vi.fn().mockResolvedValue({});
+		el.hass = { callWS };
+
+		await a._deleteCalibration();
+
+		const settingsCall = callWS.mock.calls.find(
+			(c: any[]) => c[0]?.type === "eppgrid/set_settings",
+		);
+		expect(settingsCall).toBeDefined();
+		const keys = Object.keys(settingsCall![0])
+			.filter((k) => k !== "type" && k !== "mac")
+			.sort();
+		expect(keys).toEqual(mapKeys);
+		// Auto-distance fields are reset to the canonical defaults before the push.
+		expect(settingsCall![0].target_max_distance).toBe(
+			SETTINGS_DEFAULTS.target_max_distance,
+		);
+		expect(settingsCall![0].static_min_distance).toBe(
+			SETTINGS_DEFAULTS.static_min_distance,
+		);
+		expect(settingsCall![0].static_max_distance).toBe(
+			SETTINGS_DEFAULTS.static_max_distance,
+		);
+	});
+
+	it("saveSettings drops payload keys not in SETTINGS_FIELD_MAP", async () => {
+		const el = createPanel();
+		const a = el as any;
+		a._selectedMac = "AA:BB:CC:DD:EE:01";
+		a._dirty = true;
+
+		const callWS = vi.fn().mockResolvedValue({});
+		el.hass = { callWS };
+
+		await a._saveSettings({ motion_timeout: 10, bogus_key: 1 });
+
+		const sent = callWS.mock.calls[0][0];
+		expect(sent.motion_timeout).toBe(10);
+		expect(sent).not.toHaveProperty("bogus_key");
 	});
 });

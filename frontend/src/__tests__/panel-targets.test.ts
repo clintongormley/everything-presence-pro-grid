@@ -1,7 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
-import { GRID_CELL_COUNT } from "../lib/grid.js";
+import { mapTargetToGridCell, mapTargetToPercent } from "../lib/coordinates.js";
+import { GRID_CELL_COUNT, getRawRoomBounds } from "../lib/grid.js";
+import { applyPerspective, getInversePerspective } from "../lib/perspective.js";
+import { getSensorRoomPosition } from "../lib/room-geometry.js";
 
 function createPanel(): EPPGridPanel {
 	const el = document.createElement("eppgrid-panel") as EPPGridPanel;
@@ -328,60 +331,40 @@ describe("_closeDeviceSession", () => {
 	});
 });
 
-describe("_mapTargetToPercent", () => {
+describe("mapTargetToPercent (lib/coordinates)", () => {
 	it("maps target position to percentage", () => {
-		const el = createPanel();
-		const a = el as any;
-		a._roomWidth = 4000;
-		a._roomDepth = 4000;
-
-		const result = a._mapTargetToPercent({ x: 2000, y: 2000 });
+		const result = mapTargetToPercent(2000, 2000, 4000, 4000);
 		expect(result.x).toBeCloseTo(50, 0);
 		expect(result.y).toBeCloseTo(50, 0);
 	});
 });
 
-describe("_mapTargetToGridCell", () => {
+describe("mapTargetToGridCell (lib/coordinates)", () => {
 	it("maps target position to grid cell", () => {
-		const el = createPanel();
-		const a = el as any;
-		a._roomWidth = 6000;
-		a._roomDepth = 6000;
-
-		const result = a._mapTargetToGridCell({ x: 3000, y: 3000 });
+		const result = mapTargetToGridCell(3000, 3000, 6000, 6000);
 		expect(result).not.toBeNull();
-		expect(result.col).toBeGreaterThan(0);
-		expect(result.row).toBeGreaterThan(0);
+		expect(result!.col).toBeGreaterThan(0);
+		expect(result!.row).toBeGreaterThan(0);
 	});
 });
 
-describe("_getInversePerspective", () => {
+describe("getInversePerspective (lib/perspective)", () => {
 	it("returns null when perspective is null", () => {
-		const el = createPanel();
-		const a = el as any;
-		a._perspective = null;
-
-		expect(a._getInversePerspective()).toBeNull();
+		expect(getInversePerspective(null)).toBeNull();
 	});
 
 	it("returns inverse when perspective is set", () => {
-		const el = createPanel();
-		const a = el as any;
-		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-
-		const result = a._getInversePerspective();
+		const result = getInversePerspective([1, 0, 0, 0, 1, 0, 0, 0]);
 		expect(result).not.toBeNull();
 		expect(result).toHaveLength(8);
 	});
 });
 
-describe("_applyPerspective", () => {
+describe("applyPerspective (lib/perspective)", () => {
 	it("applies perspective transform to a point", () => {
-		const el = createPanel();
-		const a = el as any;
 		const h = [1, 0, 0, 0, 1, 0, 0, 0];
 
-		const result = a._applyPerspective(h, 100, 200);
+		const result = applyPerspective(h, 100, 200);
 		expect(result.x).toBeCloseTo(100);
 		expect(result.y).toBeCloseTo(200);
 	});
@@ -586,24 +569,16 @@ describe("raw target display subscription", () => {
 	});
 });
 
-describe("_getSensorRoomPosition", () => {
+describe("getSensorRoomPosition (lib/room-geometry)", () => {
 	it("returns null when perspective is null", () => {
-		const el = createPanel();
-		const a = el as any;
-		a._perspective = null;
-
-		expect(a._getSensorRoomPosition()).toBeNull();
+		expect(getSensorRoomPosition(null)).toBeNull();
 	});
 
 	it("returns position when perspective is set", () => {
-		const el = createPanel();
-		const a = el as any;
-		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
-
-		const result = a._getSensorRoomPosition();
+		const result = getSensorRoomPosition([1, 0, 0, 0, 1, 0, 0, 0]);
 		expect(result).not.toBeNull();
-		expect(typeof result.x).toBe("number");
-		expect(typeof result.y).toBe("number");
+		expect(typeof result!.x).toBe("number");
+		expect(typeof result!.y).toBe("number");
 	});
 });
 
@@ -620,12 +595,9 @@ describe("_autoDetectionRange", () => {
 	});
 });
 
-describe("_getRawRoomBounds", () => {
+describe("getRawRoomBounds (lib/grid)", () => {
 	it("returns bounds object", () => {
-		const el = createPanel();
-		const a = el as any;
-
-		const result = a._getRawRoomBounds();
+		const result = getRawRoomBounds(new Uint8Array(GRID_CELL_COUNT));
 		expect(result).toHaveProperty("minCol");
 		expect(result).toHaveProperty("maxCol");
 		expect(result).toHaveProperty("minRow");

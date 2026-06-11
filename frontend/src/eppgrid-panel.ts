@@ -3,7 +3,6 @@ import { property, state } from "lit/decorators.js";
 
 import "./components/epp-configuration-dialogs.js";
 import "./components/epp-flasher-view.js";
-import "./components/epp-furniture-overlay.js";
 import "./components/epp-furniture-sidebar.js";
 import "./components/epp-grid.js";
 import "./components/epp-live-sidebar.js";
@@ -25,39 +24,25 @@ import { NavigationGuardController } from "./controllers/navigation-guard.js";
 import { TargetController } from "./controllers/target-controller.js";
 import type { PaintAction } from "./lib/cell-painting.js";
 import { parseConfig } from "./lib/config-serialization.js";
-import {
-	mapTargetToGridCell,
-	mapTargetToPercent,
-	targetCellIndex,
-} from "./lib/coordinates.js";
-import {
-	type FurnitureItem,
-	type FurnitureSticker,
-	mmToPx,
-	pxToMm,
-} from "./lib/furniture.js";
+import { mapTargetToGridCell, targetCellIndex } from "./lib/coordinates.js";
+import type { FurnitureItem, FurnitureSticker } from "./lib/furniture.js";
 import {
 	CELL_OVERLAY_INTERFERENCE,
 	CELL_OVERLAY_SUPPRESS,
 	cellIsInside,
 	cellSetOverlay,
 	GRID_CELL_COUNT,
-	GRID_COLS,
-	GRID_ROWS,
-	getRawRoomBounds,
 	getRoomBounds,
 	initGridFromRoom,
 	MAX_RANGE,
 	type OverlayMode,
 } from "./lib/grid.js";
 import { getHelpUrl, type PanelTab } from "./lib/help-url.js";
-import { applyPerspective, getInversePerspective } from "./lib/perspective.js";
 import {
 	autoDetectionRange,
 	boundsToRoomMm,
 	computeMaxRangeMm,
 	computeSensorFov,
-	getSensorRoomPosition,
 	getVisibleRoomBounds,
 	type SensorFov,
 } from "./lib/room-geometry.js";
@@ -76,9 +61,7 @@ import {
 	type ViewState,
 } from "./lib/view-hash.js";
 import {
-	getZoneThresholds,
 	INITIAL_ZONE_SLOTS,
-	resolveZoneParams,
 	type Zone0Config,
 	type ZoneConfig,
 	type ZoneSlots,
@@ -107,9 +90,9 @@ type SensorState = {
 	co2: number | null;
 };
 
-// Factory — returns a fresh object each call. Sensor state is mutated in-place
-// during render (see `_sensorState.occupancy = ...` in render paths), so
-// handing out the same reference would corrupt future resets.
+// Factory — returns a fresh object each call so resets and the
+// settings-view snapshot merge (`{ ...createInitialSensorState(), ... }` in
+// onSessionClosed) never alias a shared object.
 const createInitialSensorState = (): SensorState => ({
 	occupancy: false,
 	static_presence: false,
@@ -401,7 +384,7 @@ export class EPPGridPanel extends LitElement {
 	@state() _relayContactMode = "no";
 	@state() _targetUpdateRateMs = 1000;
 	@state() _zoneUpdateRateMs = 1000;
-	@state() _entitiesConfig: Record<string, any> = {};
+	@state() _entitiesConfig: Record<string, boolean> = {};
 	@state() _sidebarTab: SidebarTab = parseViewHash(
 		typeof location !== "undefined" ? location.hash : "",
 	).sidebarTab;
@@ -990,10 +973,6 @@ export class EPPGridPanel extends LitElement {
 		this._gridCtrl.onCellMouseUp();
 	}
 
-	private _applyPaintToCell(index: number): void {
-		this._gridCtrl.applyPaintToCell(index);
-	}
-
 	// -- Zone management --
 
 	private _addZone(): void {
@@ -1022,16 +1001,6 @@ export class EPPGridPanel extends LitElement {
 		this._gridCtrl.updateFurniture(id, updates);
 	}
 
-	/** Convert mm in room-space to px in the visible grid */
-	private _mmToPx(mm: number, cellPx: number): number {
-		return mmToPx(mm, cellPx);
-	}
-
-	/** Convert px delta back to mm */
-	private _pxToMm(px: number, cellPx: number): number {
-		return pxToMm(px, cellPx);
-	}
-
 	private _onFurniturePointerDown(
 		e: PointerEvent,
 		id: string,
@@ -1049,9 +1018,39 @@ export class EPPGridPanel extends LitElement {
 	// -- Grid cell display helpers --
 
 	/** Return named-zone slots (indices 1..7) as the length-7 array that
-	 * downstream components and helpers expect. */
+	 * downstream components and helpers expect. Memoised on the _zoneConfigs
+	 * reference (clone-then-mutate everywhere) so child components see a
+	 * stable array identity across re-renders and skip needless updates. */
+	private _namedZonesCache: (ZoneConfig | null)[] | null = null;
+	private _namedZonesCacheConfigs: ZoneSlots | null = null;
+
 	private _namedZones(): (ZoneConfig | null)[] {
-		return this._zoneConfigs.slice(1) as (ZoneConfig | null)[];
+		if (
+			this._namedZonesCache === null ||
+			this._namedZonesCacheConfigs !== this._zoneConfigs
+		) {
+			this._namedZonesCache = this._zoneConfigs.slice(
+				1,
+			) as (ZoneConfig | null)[];
+			this._namedZonesCacheConfigs = this._zoneConfigs;
+		}
+		return this._namedZonesCache;
+	}
+
+	/** Memoised `{ occupancy }` binding for the wizard views — rebuilt only
+	 * when occupancy flips so re-renders don't hand the wizard a fresh object
+	 * (defeating its dirty-check) on every panel render. */
+	private _wizardSensorStateCache: { occupancy: boolean } | null = null;
+
+	private _getWizardSensorState(): { occupancy: boolean } {
+		const occupancy = this._sensorState.occupancy;
+		if (
+			this._wizardSensorStateCache === null ||
+			this._wizardSensorStateCache.occupancy !== occupancy
+		) {
+			this._wizardSensorStateCache = { occupancy };
+		}
+		return this._wizardSensorStateCache;
 	}
 
 	/** Compute the bounding box of inside-room cells (for zoom) */
@@ -1187,19 +1186,21 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _pushWidenedDistanceOverride(): void {
+		// Auto-distance widens to the sensor maxima — the canonical defaults
+		// in SETTINGS_DEFAULTS, not panel-local magic numbers.
 		if (this._targetAutoDistance || this._staticAutoDistance) {
 			this.hass
 				?.callWS({
 					type: "eppgrid/set_distance_override",
 					mac: this._selectedMac,
 					target_max_distance: this._targetAutoDistance
-						? 6
+						? SETTINGS_DEFAULTS.target_max_distance
 						: this._targetMaxDistance,
 					static_min_distance: this._staticAutoDistance
-						? 0.3
+						? SETTINGS_DEFAULTS.static_min_distance
 						: this._staticMinDistance,
 					static_max_distance: this._staticAutoDistance
-						? 16
+						? SETTINGS_DEFAULTS.static_max_distance
 						: this._staticMaxDistance,
 				})
 				?.catch(() => {});
@@ -1252,33 +1253,6 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	// -- Coordinate mapping (perspective transform) --
-
-	/**
-	 * Map a target to percentage coordinates for the editor grid.
-	 * Uses the backend's already-transformed x/y (perspective applied server-side).
-	 */
-	private _mapTargetToPercent(target: Target): { x: number; y: number } {
-		return mapTargetToPercent(
-			target.x ?? 0,
-			target.y ?? 0,
-			this._roomWidth,
-			this._roomDepth,
-		);
-	}
-
-	/** Compute the inverse perspective (room→sensor) from the forward perspective. */
-	private _getInversePerspective(): number[] | null {
-		return getInversePerspective(this._perspective);
-	}
-
-	/** Apply a perspective transform (8 coefficients) to a point. */
-	private _applyPerspective(
-		h: number[],
-		x: number,
-		y: number,
-	): { x: number; y: number } {
-		return applyPerspective(h, x, y);
-	}
 
 	/** Check if a grid cell (col, row) is within the sensor's FOV and range.
 	 *  Works in sensor-space: transform cell's room-space position back to
@@ -1339,29 +1313,6 @@ export class EPPGridPanel extends LitElement {
 		return this._targetAutoDistance
 			? MAX_RANGE
 			: this._targetMaxDistance * 1000;
-	}
-
-	/** Get raw room bounds without padding (only actual inside cells) */
-	private _getRawRoomBounds(): {
-		minCol: number;
-		maxCol: number;
-		minRow: number;
-		maxRow: number;
-	} {
-		return getRawRoomBounds(this._grid);
-	}
-
-	/** Map a target to a fractional grid cell position (col, row) */
-	private _mapTargetToGridCell(
-		target: Target,
-	): { col: number; row: number } | null {
-		if (target.x == null || target.y == null) return null;
-		return mapTargetToGridCell(
-			target.x,
-			target.y,
-			this._roomWidth,
-			this._roomDepth,
-		);
 	}
 
 	// -- Device selector --
@@ -1846,7 +1797,7 @@ export class EPPGridPanel extends LitElement {
           ${this._renderHeader()}
           <epp-wizard
             .rawTargets=${this._rawTargets}
-            .sensorState=${{ occupancy: this._sensorState.occupancy }}
+            .sensorState=${this._getWizardSensorState()}
             .localize=${this._localize}
             .initialRoomWidth=${this._roomWidth}
             .initialRoomDepth=${this._roomDepth}
@@ -1995,7 +1946,7 @@ export class EPPGridPanel extends LitElement {
 		this._perspective = null;
 		this._roomWidth = 0;
 		this._roomDepth = 0;
-		this._grid = new Uint8Array(GRID_COLS * GRID_ROWS);
+		this._grid = new Uint8Array(GRID_CELL_COUNT);
 		this._zoneConfigs = INITIAL_ZONE_SLOTS;
 		this._furniture = [];
 		// set_setup will disable zone_presence and target_xy — update local state
@@ -2004,41 +1955,26 @@ export class EPPGridPanel extends LitElement {
 			zone_presence: false,
 			target_xy: false,
 		};
-		// Reset auto distances to maximums and persist before clearing
-		// calibration, so _push_config_to_device sends the correct values.
+		// Reset auto distances to the canonical default maximums and persist
+		// before clearing calibration, so _push_config_to_device sends the
+		// correct values.
 		if (this._targetAutoDistance) {
-			this._targetMaxDistance = 6;
+			this._targetMaxDistance = SETTINGS_DEFAULTS.target_max_distance;
 		}
 		if (this._staticAutoDistance) {
-			this._staticMinDistance = 0.3;
-			this._staticMaxDistance = 16;
+			this._staticMinDistance = SETTINGS_DEFAULTS.static_min_distance;
+			this._staticMaxDistance = SETTINGS_DEFAULTS.static_max_distance;
 		}
 		// Clear calibration and layout on the backend
 		try {
 			if (this._targetAutoDistance || this._staticAutoDistance) {
+				// Full payload from SETTINGS_FIELD_MAP via _buildSettingsPayload
+				// (the distance resets above flow in through panel state) — a
+				// hand-built field list here silently missed new settings.
 				await this.hass.callWS({
 					type: "eppgrid/set_settings",
 					mac: this._selectedMac,
-					temperature_offset: this._temperatureOffset,
-					humidity_offset: this._humidityOffset,
-					illuminance_offset: this._illuminanceOffset,
-					motion_timeout: this._motionTimeout,
-					target_auto_distance: this._targetAutoDistance,
-					target_max_distance: this._targetMaxDistance,
-					stuck_target_timeout: this._stuckTargetTimeout,
-					static_auto_distance: this._staticAutoDistance,
-					static_min_distance: this._staticMinDistance,
-					static_max_distance: this._staticMaxDistance,
-					static_trigger_threshold: this._staticTriggerThreshold,
-					static_renew_threshold: this._staticRenewThreshold,
-					static_timeout: this._staticTimeout,
-					static_on_delay: this._staticOnDelay,
-					led_mode: this._ledMode,
-					led_brightness: this._ledBrightness,
-					led_presence_color: this._ledPresenceColor,
-					relay_trigger_mode: this._relayTriggerMode,
-					relay_contact_mode: this._relayContactMode,
-					entities: this._entitiesConfig || {},
+					...this._buildSettingsPayload(),
 				});
 			}
 			await this.hass.callWS({
@@ -2230,21 +2166,10 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _renderLiveGrid() {
-		// Track last in-room position for pending display (live overview
-		// uses backend status — active means target is in saved room grid)
-		for (let i = 0; i < this._targets.length; i++) {
-			const t = this._targets[i];
-			if (t.x != null && t.y != null && t.status === "active") {
-				this._zoneEngineState.targetPrevXY[i] = { x: t.x, y: t.y };
-			}
-		}
-
-		// Build backend occupancy map
-		const occupancy: Record<number, boolean> = {};
-		for (const [k, v] of Object.entries(this._zoneState.occupancy)) {
-			occupancy[Number(k)] = v as boolean;
-		}
-
+		// Pure render: last-in-room-position tracking for the pending-target
+		// display lives in TargetController.handleTargetData (per data frame),
+		// and the backend occupancy map is passed through by reference so
+		// epp-grid's dirty-check only fires on real zone-state frames.
 		return html`
 			<epp-grid
 				.grid=${this._grid}
@@ -2256,7 +2181,7 @@ export class EPPGridPanel extends LitElement {
 				.furniture=${this._furniture}
 				.selectedFurnitureId=${this._selectedFurnitureId}
 				.sidebarTab=${this._sidebarTab}
-				.occupancy=${occupancy}
+				.occupancy=${this._zoneState.occupancy}
 				.targetPrevXY=${this._zoneEngineState.targetPrevXY}
 				.localize=${this._localize}
 				.maxGridPx=${480}
@@ -2394,27 +2319,23 @@ export class EPPGridPanel extends LitElement {
 		`;
 	}
 
+	// Editor-only save bar: rendered exclusively from _renderEditor (the
+	// settings view renders its own bar inside <epp-settings-view>), so the
+	// handlers call the editor flows directly — the old per-view ternaries
+	// were dead branches.
 	private _renderSaveCancelButtons() {
 		return renderSaveCancelBar(
 			this._saving,
 			this._dirty,
 			this._localize,
 			() => {
-				if (this._view === "settings") {
-					this._saveSettings();
-				} else {
-					// applyLayout traps its own failures (controller onError
-					// banner); .catch guards a late rejection surfacing as
-					// "Uncaught (in promise)".
-					this._applyLayout().catch(() => {});
-				}
+				// applyLayout traps its own failures (controller onError
+				// banner); .catch guards a late rejection surfacing as
+				// "Uncaught (in promise)".
+				this._applyLayout().catch(() => {});
 			},
 			() => {
-				if (this._view === "editor") {
-					this._cancelEditor();
-				} else {
-					this._cancelSettings();
-				}
+				this._cancelEditor();
 			},
 		);
 	}
@@ -2425,7 +2346,7 @@ export class EPPGridPanel extends LitElement {
 			: html`<epp-wizard
             mode="uncalibrated-fov"
             .rawTargets=${this._rawTargets}
-            .sensorState=${{ occupancy: this._sensorState.occupancy }}
+            .sensorState=${this._getWizardSensorState()}
             .localize=${this._localize}
             @start-calibration=${() => this._changePlacement()}
           ></epp-wizard>`;
@@ -2551,11 +2472,6 @@ export class EPPGridPanel extends LitElement {
     `;
 	}
 
-	/** Get the sensor position in room-space mm by transforming sensor origin (0,0). */
-	private _getSensorRoomPosition(): { x: number; y: number } | null {
-		return getSensorRoomPosition(this._perspective);
-	}
-
 	private _autoDetectionRange(): number {
 		return autoDetectionRange(
 			this._roomWidth,
@@ -2623,11 +2539,16 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _renderEditor() {
-		// Run local zone engine replica and compute occupancy for editor view.
+		// Editor occupancy preview comes from the local zone engine replica.
+		// The engine ticks once per target frame (TargetController.
+		// handleTargetData) and caches its result; renders read the cache so
+		// pointermove-driven re-renders don't advance engine time. The lazy
+		// fallback covers the first render before any frame has arrived.
 		// IMPORTANT: this method must be a pure function of state — do NOT
 		// mutate `_targets[i].status` or `_sensorState`. Build derived data
 		// in local variables and route the children off those.
-		const engineResult = this._runLocalZoneEngine();
+		const engineResult =
+			this._targetCtrl.editorEngineResult ?? this._runLocalZoneEngine();
 		const editorOccupancy = engineResult.occupancy;
 
 		// Build a NEW targets array overlaying engine-computed status onto
@@ -2820,202 +2741,105 @@ export class EPPGridPanel extends LitElement {
 		return this._targetCtrl.runLocalZoneEngine();
 	}
 
-	/** Enrich a raw debug log string — delegated to TargetController. */
-	private _enrichDebugLog(raw: string): string {
-		return this._targetCtrl.enrichDebugLog(raw);
-	}
-
-	/** Get trigger/renew/timeout for a zone from the current editor state. */
-	private _getZoneThresholds(zid: number): {
-		trigger: number;
-		renew: number;
-		timeout: number;
-		handoffTimeout: number;
-	} {
-		const z0 = resolveZoneParams(this._zoneConfigs[0]);
-		return getZoneThresholds(
-			zid,
-			this._namedZones(),
-			z0.type,
-			z0.trigger,
-			z0.renew,
-			z0.timeout,
-			z0.handoff_timeout,
-		);
+	/**
+	 * Shared renderer for the two collapsible debug-log sections (frontend
+	 * zone-engine log in the editor, backend log on the live overview) —
+	 * previously two ~70-line near-identical templates that only differed in
+	 * which state fields and scroll container they target. The log lines
+	 * themselves are appended imperatively by TargetController (see
+	 * _appendToLogContainer); this template only renders the chrome and the
+	 * waiting-for-events placeholder.
+	 */
+	private _renderDebugLogSection(
+		showField: "_showDebugLog" | "_showBackendDebugLog",
+		linesField: "_debugLogLines" | "_backendDebugLogLines",
+		prevField: "_debugLogPrev" | "_backendDebugLogPrev",
+		containerId: string,
+	) {
+		const show = this[showField];
+		return html`
+      <div style="margin-top: 8px; min-width: 0;">
+        <div style="display: flex; align-items: center; gap: 4px;">
+          <button
+            class="live-section-header live-section-link"
+            style="font-size: 12px; gap: 4px; min-width: 0; overflow: hidden;"
+            @click=${() => {
+							this[showField] = !this[showField];
+							if (!this[showField]) {
+								this[linesField] = [];
+								this[prevField] = null;
+							}
+						}}
+          >
+            <ha-icon icon=${show ? "mdi:chevron-down" : "mdi:chevron-right"} style="--mdc-icon-size: 14px;"></ha-icon>
+            ${this._localize("live.debug.detection_events")}
+          </button>
+          ${
+						show
+							? html`
+            <div style="margin-left: auto; display: flex; gap: 4px;">
+              <button
+                class="debug-log-btn"
+                @click=${() => {
+									navigator.clipboard
+										.writeText(this[linesField].join("\n"))
+										.catch((err) =>
+											console.warn("Clipboard write failed", err),
+										);
+								}}
+              >${this._localize("live.debug.copy_all")}</button>
+              <button
+                class="debug-log-btn"
+                @click=${() => {
+									this[linesField] = [];
+									this[prevField] = null;
+									const el = this.shadowRoot?.getElementById(containerId);
+									if (el) {
+										el.innerHTML = "";
+										const placeholder = document.createElement("div");
+										placeholder.style.cssText =
+											"color: var(--secondary-text-color, #999); font-style: italic;";
+										placeholder.textContent = this._localize(
+											"live.debug.waiting_for_events",
+										);
+										el.appendChild(placeholder);
+									}
+								}}
+              >${this._localize("live.debug.clear")}</button>
+            </div>
+          `
+							: nothing
+					}
+        </div>
+        ${
+					show
+						? html`
+          <div class="debug-log-container" id=${containerId}>
+            <div style="color: var(--secondary-text-color, #999); font-style: italic;">${this._localize("live.debug.waiting_for_events")}</div>
+          </div>
+        `
+						: nothing
+				}
+      </div>
+    `;
 	}
 
 	private _renderBackendDebugLog() {
-		return html`
-      <div style="margin-top: 8px; min-width: 0;">
-        <div style="display: flex; align-items: center; gap: 4px;">
-          <button
-            class="live-section-header live-section-link"
-            style="font-size: 12px; gap: 4px; min-width: 0; overflow: hidden;"
-            @click=${() => {
-							this._showBackendDebugLog = !this._showBackendDebugLog;
-							if (!this._showBackendDebugLog) {
-								this._backendDebugLogLines = [];
-								this._backendDebugLogPrev = null;
-							}
-						}}
-          >
-            <ha-icon icon=${this._showBackendDebugLog ? "mdi:chevron-down" : "mdi:chevron-right"} style="--mdc-icon-size: 14px;"></ha-icon>
-            ${this._localize("live.debug.detection_events")}
-          </button>
-          ${
-						this._showBackendDebugLog
-							? html`
-            <div style="margin-left: auto; display: flex; gap: 4px;">
-              <button
-                class="debug-log-btn"
-                @click=${() => {
-									navigator.clipboard
-										.writeText(this._backendDebugLogLines.join("\n"))
-										.catch((err) =>
-											console.warn("Clipboard write failed", err),
-										);
-								}}
-              >${this._localize("live.debug.copy_all")}</button>
-              <button
-                class="debug-log-btn"
-                @click=${() => {
-									this._backendDebugLogLines = [];
-									this._backendDebugLogPrev = null;
-									const el = this.shadowRoot?.getElementById(
-										"backend-debug-log-scroll",
-									);
-									if (el) {
-										el.innerHTML = "";
-										const placeholder = document.createElement("div");
-										placeholder.style.cssText =
-											"color: var(--secondary-text-color, #999); font-style: italic;";
-										placeholder.textContent = this._localize(
-											"live.debug.waiting_for_events",
-										);
-										el.appendChild(placeholder);
-									}
-								}}
-              >${this._localize("live.debug.clear")}</button>
-            </div>
-          `
-							: nothing
-					}
-        </div>
-        ${
-					this._showBackendDebugLog
-						? html`
-          <div class="debug-log-container" id="backend-debug-log-scroll">
-            <div style="color: var(--secondary-text-color, #999); font-style: italic;">${this._localize("live.debug.waiting_for_events")}</div>
-          </div>
-        `
-						: nothing
-				}
-      </div>
-    `;
+		return this._renderDebugLogSection(
+			"_showBackendDebugLog",
+			"_backendDebugLogLines",
+			"_backendDebugLogPrev",
+			"backend-debug-log-scroll",
+		);
 	}
 
 	private _renderDebugLog() {
-		return html`
-      <div style="margin-top: 8px; min-width: 0;">
-        <div style="display: flex; align-items: center; gap: 4px;">
-          <button
-            class="live-section-header live-section-link"
-            style="font-size: 12px; gap: 4px; min-width: 0; overflow: hidden;"
-            @click=${() => {
-							this._showDebugLog = !this._showDebugLog;
-							if (!this._showDebugLog) {
-								this._debugLogLines = [];
-								this._debugLogPrev = null;
-							}
-						}}
-          >
-            <ha-icon icon=${this._showDebugLog ? "mdi:chevron-down" : "mdi:chevron-right"} style="--mdc-icon-size: 14px;"></ha-icon>
-            ${this._localize("live.debug.detection_events")}
-          </button>
-          ${
-						this._showDebugLog
-							? html`
-            <div style="margin-left: auto; display: flex; gap: 4px;">
-              <button
-                class="debug-log-btn"
-                @click=${() => {
-									navigator.clipboard
-										.writeText(this._debugLogLines.join("\n"))
-										.catch((err) =>
-											console.warn("Clipboard write failed", err),
-										);
-								}}
-              >${this._localize("live.debug.copy_all")}</button>
-              <button
-                class="debug-log-btn"
-                @click=${() => {
-									this._debugLogLines = [];
-									this._debugLogPrev = null;
-									const el =
-										this.shadowRoot?.getElementById("debug-log-scroll");
-									if (el) {
-										el.innerHTML = "";
-										const placeholder = document.createElement("div");
-										placeholder.style.cssText =
-											"color: var(--secondary-text-color, #999); font-style: italic;";
-										placeholder.textContent = this._localize(
-											"live.debug.waiting_for_events",
-										);
-										el.appendChild(placeholder);
-									}
-								}}
-              >${this._localize("live.debug.clear")}</button>
-            </div>
-          `
-							: nothing
-					}
-        </div>
-        ${
-					this._showDebugLog
-						? html`
-          <div class="debug-log-container" id="debug-log-scroll">
-            <div style="color: var(--secondary-text-color, #999); font-style: italic;">${this._localize("live.debug.waiting_for_events")}</div>
-          </div>
-        `
-						: nothing
-				}
-      </div>
-    `;
-	}
-
-	private _renderFurnitureOverlay(
-		cellPx: number,
-		minCol: number,
-		minRow: number,
-		visCols: number,
-		visRows: number,
-	) {
-		if (!this._furniture.length) return nothing;
-
-		return html`
-			<epp-furniture-overlay
-				.furniture=${this._furniture}
-				.selectedFurnitureId=${this._selectedFurnitureId}
-				.roomWidth=${this._roomWidth}
-				.cellPx=${cellPx}
-				.minCol=${minCol}
-				.minRow=${minRow}
-				.visCols=${visCols}
-				.visRows=${visRows}
-				.sidebarTab=${this._sidebarTab}
-				.localize=${this._localize}
-				@furniture-select=${(e: CustomEvent) => {
-					this._selectedFurnitureId = e.detail;
-				}}
-				@furniture-pointer-down=${(e: CustomEvent) => {
-					const { e: ptrEvent, id, type, handle, rotation } = e.detail;
-					this._onFurniturePointerDown(ptrEvent, id, type, handle, rotation);
-				}}
-				@furniture-delete=${(e: CustomEvent) => {
-					this._removeFurniture(e.detail);
-				}}
-			></epp-furniture-overlay>
-		`;
+		return this._renderDebugLogSection(
+			"_showDebugLog",
+			"_debugLogLines",
+			"_debugLogPrev",
+			"debug-log-scroll",
+		);
 	}
 }
 

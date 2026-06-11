@@ -195,6 +195,67 @@ describe("TargetController", () => {
 	// -------------------------------------------------------------------------
 	// handleTargetData
 	// -------------------------------------------------------------------------
+	describe("handleTargetData prev-XY tracking (moved out of _renderLiveGrid)", () => {
+		it("records last in-room XY for active targets in live view", () => {
+			host._view = "live";
+			ctrl.handleTargetData(
+				makeTargetData({
+					targets: [{ x: 1500, y: 2000, status: "active", signal: 50 }] as any,
+				}),
+			);
+			expect(ctrl.zoneEngineState.targetPrevXY[0]).toEqual({
+				x: 1500,
+				y: 2000,
+			});
+		});
+
+		it("does not record XY for non-active targets", () => {
+			host._view = "live";
+			ctrl.handleTargetData(
+				makeTargetData({
+					targets: [{ x: 1500, y: 2000, status: "pending", signal: 50 }] as any,
+				}),
+			);
+			expect(ctrl.zoneEngineState.targetPrevXY[0]).toBeNull();
+		});
+
+		it("does not record XY for targets without coordinates", () => {
+			host._view = "live";
+			ctrl.handleTargetData(
+				makeTargetData({
+					targets: [{ x: null, y: null, status: "active", signal: 50 }] as any,
+				}),
+			);
+			expect(ctrl.zoneEngineState.targetPrevXY[0]).toBeNull();
+		});
+	});
+
+	describe("handleTargetData editor engine tick", () => {
+		it("ticks the local zone engine and caches the result in editor view", () => {
+			host._view = "editor";
+			const spy = vi.spyOn(ctrl, "runLocalZoneEngine");
+			ctrl.handleTargetData(makeTargetData());
+			expect(spy).toHaveBeenCalledTimes(1);
+			expect(ctrl.editorEngineResult).toBe(spy.mock.results[0].value);
+		});
+
+		it("does not tick the engine in live view", () => {
+			host._view = "live";
+			const spy = vi.spyOn(ctrl, "runLocalZoneEngine");
+			ctrl.handleTargetData(makeTargetData());
+			expect(spy).not.toHaveBeenCalled();
+			expect(ctrl.editorEngineResult).toBeNull();
+		});
+
+		it("resetZoneEngineState clears the cached engine result", () => {
+			host._view = "editor";
+			ctrl.handleTargetData(makeTargetData());
+			expect(ctrl.editorEngineResult).not.toBeNull();
+			ctrl.resetZoneEngineState();
+			expect(ctrl.editorEngineResult).toBeNull();
+		});
+	});
+
 	describe("handleTargetData", () => {
 		it("stores targets on host._targets", () => {
 			const targets = [{ x: 100, y: 200, status: "active", signal: 50 }];

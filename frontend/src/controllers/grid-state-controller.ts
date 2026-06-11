@@ -37,6 +37,7 @@ import { autoDetectionRange, boundsToRoomMm } from "../lib/room-geometry.js";
 import {
 	cloneSettingsDefault,
 	ENTITY_DEFAULTS,
+	SETTINGS_DEFAULTS,
 	SETTINGS_FIELD_MAP,
 	type SettingsHostProp,
 } from "../lib/settings-defaults.js";
@@ -795,43 +796,34 @@ export class GridStateController implements ReactiveController {
 					this.host._perspective,
 					this.host._grid,
 				);
+				const targetMaxDefault = SETTINGS_DEFAULTS.target_max_distance;
+				const staticMaxDefault = SETTINGS_DEFAULTS.static_max_distance;
 				const targetMaxDist = this.host._targetAutoDistance
 					? autoRange > 0
-						? Math.min(autoRange, 6)
-						: 6
+						? Math.min(autoRange, targetMaxDefault)
+						: targetMaxDefault
 					: this.host._targetMaxDistance;
 				const staticMinDist = this.host._staticAutoDistance
-					? 0.3
+					? SETTINGS_DEFAULTS.static_min_distance
 					: this.host._staticMinDistance;
 				const staticMaxDist = this.host._staticAutoDistance
 					? autoRange > 0
-						? Math.min(autoRange, 16)
-						: 16
+						? Math.min(autoRange, staticMaxDefault)
+						: staticMaxDefault
 					: this.host._staticMaxDistance;
 
+				// Base payload from SETTINGS_FIELD_MAP via the host's
+				// _buildSettingsPayload, then the three auto-computed distance
+				// overrides on top — a hand-built field list here silently
+				// missed new settings fields (the drift hazard catalogued in
+				// settings-defaults.ts).
 				await this.host.hass.callWS({
 					type: "eppgrid/set_settings",
 					mac: this.host._selectedMac,
-					temperature_offset: this.host._temperatureOffset,
-					humidity_offset: this.host._humidityOffset,
-					illuminance_offset: this.host._illuminanceOffset,
-					motion_timeout: this.host._motionTimeout,
-					target_auto_distance: this.host._targetAutoDistance,
+					...this.host._buildSettingsPayload(),
 					target_max_distance: targetMaxDist,
-					stuck_target_timeout: this.host._stuckTargetTimeout,
-					static_auto_distance: this.host._staticAutoDistance,
 					static_min_distance: staticMinDist,
 					static_max_distance: staticMaxDist,
-					static_trigger_threshold: this.host._staticTriggerThreshold,
-					static_renew_threshold: this.host._staticRenewThreshold,
-					static_timeout: this.host._staticTimeout,
-					static_on_delay: this.host._staticOnDelay,
-					led_mode: this.host._ledMode,
-					led_brightness: this.host._ledBrightness,
-					led_presence_color: this.host._ledPresenceColor,
-					relay_trigger_mode: this.host._relayTriggerMode,
-					relay_contact_mode: this.host._relayContactMode,
-					entities: this.host._entitiesConfig || {},
 				});
 			}
 			// Commit pruned slots / filtered furniture and clear _dirty only
@@ -862,58 +854,28 @@ export class GridStateController implements ReactiveController {
 	async saveSettings(payload: Record<string, any>): Promise<void> {
 		this.host._saving = true;
 		try {
+			// Whitelist payload keys against SETTINGS_FIELD_MAP so a stray key
+			// (caller typo, stale field) never reaches the WS schema.
+			const sanitized: Record<string, any> = {};
+			for (const [key] of SETTINGS_FIELD_MAP) {
+				if (key in payload) {
+					sanitized[key] = payload[key];
+				}
+			}
 			await this.host.hass.callWS({
 				type: "eppgrid/set_settings",
 				mac: this.host._selectedMac,
-				...payload,
+				...sanitized,
 			});
-			// Update panel state with saved values so settings page shows
-			// correct state if reopened before a full config reload
-			if (payload.entities) {
-				this.host._entitiesConfig = payload.entities;
+			// Mirror saved values back into panel state so the settings page
+			// shows the correct state if reopened before a full config reload.
+			// Driven by SETTINGS_FIELD_MAP — the previous hand-written 21-field
+			// mirror silently dropped newly added settings.
+			for (const [key, prop] of SETTINGS_FIELD_MAP) {
+				if (key in sanitized && sanitized[key] != null) {
+					(this.host as any)[prop] = sanitized[key];
+				}
 			}
-			this.host._temperatureOffset =
-				payload.temperature_offset ?? this.host._temperatureOffset;
-			this.host._humidityOffset =
-				payload.humidity_offset ?? this.host._humidityOffset;
-			this.host._illuminanceOffset =
-				payload.illuminance_offset ?? this.host._illuminanceOffset;
-			this.host._motionTimeout =
-				payload.motion_timeout ?? this.host._motionTimeout;
-			this.host._staticTimeout =
-				payload.static_timeout ?? this.host._staticTimeout;
-			this.host._staticTriggerThreshold =
-				payload.static_trigger_threshold ?? this.host._staticTriggerThreshold;
-			this.host._staticRenewThreshold =
-				payload.static_renew_threshold ?? this.host._staticRenewThreshold;
-			this.host._staticOnDelay =
-				payload.static_on_delay ?? this.host._staticOnDelay;
-			this.host._logLevels = payload.log_levels ?? this.host._logLevels;
-			this.host._targetAutoDistance =
-				payload.target_auto_distance ?? this.host._targetAutoDistance;
-			this.host._targetMaxDistance =
-				payload.target_max_distance ?? this.host._targetMaxDistance;
-			this.host._stuckTargetTimeout =
-				payload.stuck_target_timeout ?? this.host._stuckTargetTimeout;
-			this.host._staticAutoDistance =
-				payload.static_auto_distance ?? this.host._staticAutoDistance;
-			this.host._staticMinDistance =
-				payload.static_min_distance ?? this.host._staticMinDistance;
-			this.host._staticMaxDistance =
-				payload.static_max_distance ?? this.host._staticMaxDistance;
-			this.host._ledMode = payload.led_mode ?? this.host._ledMode;
-			this.host._ledBrightness =
-				payload.led_brightness ?? this.host._ledBrightness;
-			this.host._ledPresenceColor =
-				payload.led_presence_color ?? this.host._ledPresenceColor;
-			this.host._relayTriggerMode =
-				payload.relay_trigger_mode ?? this.host._relayTriggerMode;
-			this.host._relayContactMode =
-				payload.relay_contact_mode ?? this.host._relayContactMode;
-			this.host._targetUpdateRateMs =
-				payload.target_update_rate_ms ?? this.host._targetUpdateRateMs;
-			this.host._zoneUpdateRateMs =
-				payload.zone_update_rate_ms ?? this.host._zoneUpdateRateMs;
 			this.host._dirty = false;
 			this.host._view = "live";
 		} catch (e) {

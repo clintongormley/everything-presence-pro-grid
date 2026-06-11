@@ -352,3 +352,126 @@ describe("panel handles target-undismissed from <epp-grid>", () => {
 		document.body.removeChild(a);
 	});
 });
+
+// ============================================================
+// Task 6.4 — _renderLiveGrid purity + render memoisation
+// ============================================================
+describe("_renderLiveGrid purity", () => {
+	it("does not mutate _zoneEngineState.targetPrevXY during render", () => {
+		const a = createPanel() as any;
+		a._view = "live";
+		// An active in-room target — the pre-fix renderer recorded its XY
+		// into the engine state as a side effect of rendering.
+		a._targets = [
+			{
+				x: 1500,
+				y: 2000,
+				raw_x: 1500,
+				raw_y: 2000,
+				speed: 0,
+				status: "active" as const,
+				signal: 7,
+			},
+		];
+		const before = a._zoneEngineState.targetPrevXY[0];
+
+		a._renderLiveGrid();
+
+		expect(a._zoneEngineState.targetPrevXY[0]).toBe(before);
+	});
+
+	it("passes _zoneState.occupancy to epp-grid by reference", () => {
+		// The pre-fix renderer rebuilt the occupancy map every render — a
+		// no-op clone whose fresh identity defeated epp-grid's dirty-check.
+		const a = createPanel() as any;
+		a._view = "live";
+		a._zoneState = {
+			occupancy: { 1: true },
+			target_counts: {},
+			frame_count: 1,
+		};
+
+		const tpl = a._renderLiveGrid();
+		const c = renderTo(tpl);
+
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid).not.toBeNull();
+		expect(grid.occupancy).toBe(a._zoneState.occupancy);
+
+		document.body.removeChild(c);
+	});
+});
+
+describe("_renderEditor engine-tick caching", () => {
+	it("re-renders between target frames reuse the cached engine result", () => {
+		const a = createPanel() as any;
+		const spy = vi.spyOn(a._targetCtrl, "runLocalZoneEngine");
+
+		// First render: cache empty -> one lazy tick. Subsequent renders
+		// (e.g. pointermove-driven) must NOT tick the engine again.
+		a._renderEditor();
+		a._renderEditor();
+		a._renderEditor();
+
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+
+	it("target-data frames refresh the cache that renders then reuse", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		const spy = vi.spyOn(a._targetCtrl, "runLocalZoneEngine");
+
+		a._targetCtrl.handleTargetData({
+			targets: [],
+			sensors: { ...a._sensorState },
+			zones: null,
+		});
+		expect(spy).toHaveBeenCalledTimes(1);
+
+		// Renders after the frame read the cached result — no extra ticks.
+		a._renderEditor();
+		a._renderEditor();
+		expect(spy).toHaveBeenCalledTimes(1);
+	});
+});
+
+describe("memoised child props", () => {
+	it("_namedZones returns the same array until _zoneConfigs is replaced", () => {
+		const a = createPanel() as any;
+		const first = a._namedZones();
+		expect(a._namedZones()).toBe(first);
+
+		a._zoneConfigs = [...a._zoneConfigs];
+		const second = a._namedZones();
+		expect(second).not.toBe(first);
+		expect(a._namedZones()).toBe(second);
+	});
+
+	it("wizard sensorState binding is stable until occupancy changes", () => {
+		const a = createPanel() as any;
+		a._view = "live";
+		a._perspective = null; // uncalibrated-fov wizard path
+
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(a._renderLiveOverview(), c);
+		const wiz = c.querySelector("epp-wizard") as any;
+		expect(wiz).not.toBeNull();
+		const first = wiz.sensorState;
+		expect(first).toEqual({ occupancy: false });
+
+		// Re-render with unchanged occupancy — same object identity, so the
+		// wizard's dirty-check skips the update.
+		render(a._renderLiveOverview(), c);
+		expect((c.querySelector("epp-wizard") as any).sensorState).toBe(first);
+
+		// Occupancy flip — new object.
+		a._sensorState = { ...a._sensorState, occupancy: true };
+		render(a._renderLiveOverview(), c);
+		const after = (c.querySelector("epp-wizard") as any).sensorState;
+		expect(after).not.toBe(first);
+		expect(after).toEqual({ occupancy: true });
+
+		document.body.removeChild(c);
+	});
+});
