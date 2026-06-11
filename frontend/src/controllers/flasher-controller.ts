@@ -54,6 +54,10 @@ export class FlasherController implements ReactiveController {
 	private _opRunning = false;
 	private _otaUnsubs: Record<string, () => void> = {};
 	private _otaTimeouts: Record<string, ReturnType<typeof setTimeout>> = {};
+	// Generation token for OTA subscriptions. Bumped on hostDisconnected and
+	// connection swap so a late-resolving subscribeMessage promise releases
+	// its unsub instead of stashing it on a torn-down/stale controller.
+	private _otaGen = 0;
 	// Generation token for the flashable-devices subscription. Bumped on
 	// (un)subscribe and connection swap so a late-resolving subscribeMessage
 	// promise drops its unsub instead of stashing it on a torn-down controller.
@@ -75,6 +79,7 @@ export class FlasherController implements ReactiveController {
 		this._wantDeviceListSub = false;
 		this.unsubscribeDeviceList();
 		this._tearDownSerialPort();
+		this._otaGen++;
 		for (const mac of Object.keys(this._otaUnsubs)) {
 			this._unsubOta(mac);
 		}
@@ -105,8 +110,26 @@ export class FlasherController implements ReactiveController {
 		this._serialPort = null;
 	}
 
+	// otaStates is bound by the panel as `.otaStates=${ctrl.otaStates}` on
+	// epp-flasher-view; Lit dirty-checks the property by reference. Every
+	// transition must REASSIGN the Record (never mutate in place), or
+	// progress/success/error would only repaint on unrelated hass churn.
+	private _setOtaState(mac: string, next: OtaDeviceState): void {
+		this.otaStates = { ...this.otaStates, [mac]: next };
+	}
+
+	private _deleteOtaState(mac: string): void {
+		if (!(mac in this.otaStates)) return;
+		const { [mac]: _removed, ...rest } = this.otaStates;
+		this.otaStates = rest;
+	}
+
 	async startOta(mac: string): Promise<void> {
-		this.otaStates[mac] = { state: "updating", progress: 0, errorKey: null };
+		// Already updating — a second click (or a retry race) must not fire
+		// a duplicate update_firmware call / progress subscription.
+		if (this.otaStates[mac]?.state === "updating") return;
+		const token = this._otaGen;
+		this._setOtaState(mac, { state: "updating", progress: 0, errorKey: null });
 		this._host.requestUpdate();
 
 		try {
@@ -115,14 +138,16 @@ export class FlasherController implements ReactiveController {
 				mac,
 			});
 		} catch {
-			this.otaStates[mac] = {
+			if (this._otaGen !== token) return;
+			this._setOtaState(mac, {
 				state: "error",
 				progress: null,
 				errorKey: "flasher.errors.start_failed",
-			};
+			});
 			this._host.requestUpdate();
 			return;
 		}
+		if (this._otaGen !== token) return;
 
 		try {
 			const unsub = await this._hass!.connection.subscribeMessage(
@@ -131,16 +156,27 @@ export class FlasherController implements ReactiveController {
 				},
 				{ type: "eppgrid/subscribe_ota_progress", mac },
 			);
+			if (this._otaGen !== token) {
+				// Disconnected / connection swapped while subscribing — the
+				// controller no longer wants this subscription.
+				try {
+					unsub();
+				} catch {}
+				return;
+			}
+			// Never orphan a previous subscription's unsub for this mac.
+			this._unsubOta(mac);
 			this._otaUnsubs[mac] = unsub;
 			// Start initial timeout — if no progress events arrive at all,
 			// the device rejected the update or something went wrong
 			this._startOtaTimeout(mac, 15000);
 		} catch {
-			this.otaStates[mac] = {
+			if (this._otaGen !== token) return;
+			this._setOtaState(mac, {
 				state: "error",
 				progress: null,
 				errorKey: "flasher.errors.connect_failed",
-			};
+			});
 			this._host.requestUpdate();
 		}
 	}
@@ -152,7 +188,11 @@ export class FlasherController implements ReactiveController {
 				if (progress != null && progress >= 100) {
 					this._otaSuccess(mac);
 				} else {
-					this.otaStates[mac] = { state: "updating", progress, errorKey: null };
+					this._setOtaState(mac, {
+						state: "updating",
+						progress,
+						errorKey: null,
+					});
 					this._startOtaTimeout(
 						mac,
 						progress != null && progress > 0 ? 10000 : 15000,
@@ -166,11 +206,14 @@ export class FlasherController implements ReactiveController {
 			case "error": {
 				const errorKey: string =
 					event.error_key ?? "flasher.errors.update_failed_generic";
-				this.otaStates[mac] = {
+				this._setOtaState(mac, {
 					state: "error",
 					progress: null,
 					errorKey,
-				};
+					// Log-derived OTA failures carry the device's message; the
+					// ota_device_error translation interpolates {message}.
+					errorParams: { message: event.message ?? "" },
+				});
 				this._resetOtaTimeout(mac);
 				this._unsubOta(mac);
 				break;
@@ -184,13 +227,17 @@ export class FlasherController implements ReactiveController {
 	}
 
 	private _otaSuccess(mac: string): void {
-		this.otaStates[mac] = { state: "success", progress: null, errorKey: null };
+		this._setOtaState(mac, {
+			state: "success",
+			progress: null,
+			errorKey: null,
+		});
 		this._unsubOta(mac);
 		this._resetOtaTimeout(mac);
 		this._otaTimeouts[mac] = setTimeout(() => {
 			delete this._otaTimeouts[mac];
 			if (this.otaStates[mac]?.state === "success") {
-				delete this.otaStates[mac];
+				this._deleteOtaState(mac);
 				this._host.requestUpdate();
 			}
 		}, 5000);
@@ -203,18 +250,18 @@ export class FlasherController implements ReactiveController {
 			if (!ota || ota.state !== "updating") return;
 			if (ota.progress != null && ota.progress > 0) {
 				// Had progress then stopped — connection lost
-				this.otaStates[mac] = {
+				this._setOtaState(mac, {
 					state: "error",
 					progress: null,
 					errorKey: "flasher.errors.connection_lost",
-				};
+				});
 			} else {
 				// No progress ever received — update failed to start
-				this.otaStates[mac] = {
+				this._setOtaState(mac, {
 					state: "error",
 					progress: null,
 					errorKey: "flasher.errors.update_timeout",
-				};
+				});
 			}
 			this._unsubOta(mac);
 			this._host.requestUpdate();
@@ -232,7 +279,7 @@ export class FlasherController implements ReactiveController {
 	dismissOtaError(mac: string): void {
 		this._unsubOta(mac);
 		this._resetOtaTimeout(mac);
-		delete this.otaStates[mac];
+		this._deleteOtaState(mac);
 		this._host.requestUpdate();
 	}
 
@@ -270,6 +317,7 @@ export class FlasherController implements ReactiveController {
 			const wantsSub = this._wantDeviceListSub;
 			this._unsubDeviceList = undefined;
 			this._deviceListGen++;
+			this._otaGen++;
 			for (const mac of Object.keys(this._otaUnsubs)) {
 				delete this._otaUnsubs[mac];
 			}
@@ -363,11 +411,11 @@ export class FlasherController implements ReactiveController {
 			if (ota.state !== "updating") continue;
 			const device = this.flashableDevices.find((d) => d.mac === mac);
 			if (device && !device.available) {
-				this.otaStates[mac] = {
+				this._setOtaState(mac, {
 					state: "error",
 					progress: null,
 					errorKey: "flasher.errors.device_offline",
-				};
+				});
 				this._unsubOta(mac);
 				this._resetOtaTimeout(mac);
 				this._host.requestUpdate();

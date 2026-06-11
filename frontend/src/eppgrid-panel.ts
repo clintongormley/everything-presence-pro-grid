@@ -1797,7 +1797,6 @@ export class EPPGridPanel extends LitElement {
 			return html`<div class="tab-layout">
 				${this._renderTabBar()}
 				<epp-flasher-view
-					.hass=${this.hass}
 					.flashableDevices=${this._flasherCtrl.flashableDevices}
 					.loading=${this._flasherCtrl.loading}
 					.localize=${this._localize}
@@ -1832,7 +1831,11 @@ export class EPPGridPanel extends LitElement {
 						this._flasherCtrl.startOta(e.detail.mac);
 					}}
 					@retry-ota=${(e: CustomEvent) => {
+						// Clear the error AND start a fresh OTA — dismissing alone
+						// made "Retry" a two-click flow (the second click being the
+						// Update button that reappeared).
 						this._flasherCtrl.dismissOtaError(e.detail.mac);
+						this._flasherCtrl.startOta(e.detail.mac);
 					}}
 					@wifi-complete=${() => {
 						this._flasherCtrl.resetUsbState();

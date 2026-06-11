@@ -2,6 +2,8 @@ import { render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import "../../components/epp-flasher-view.js";
 import type { EppFlasherView } from "../../components/epp-flasher-view.js";
+import { FlasherController } from "../../controllers/flasher-controller.js";
+import { setupLocalize } from "../../localize.js";
 import type { FlashableDevice, OtaDeviceState } from "../../types.js";
 
 function renderTo(tpl: any): HTMLDivElement {
@@ -15,7 +17,6 @@ function createView(
 	overrides: Partial<Record<string, unknown>> = {},
 ): EppFlasherView {
 	const el = document.createElement("epp-flasher-view") as EppFlasherView;
-	el.hass = { callWS: () => Promise.resolve({}) };
 	el.flashableDevices = [];
 	el.loading = false;
 	el.localize = Object.assign(
@@ -119,7 +120,6 @@ describe("epp-flasher-view element", () => {
 		// Callers are expected to inject a localize, but the view renders
 		// raw keys as a safe fallback when they don't.
 		const el = document.createElement("epp-flasher-view") as EppFlasherView;
-		el.hass = { callWS: () => Promise.resolve({}) };
 		el.flashableDevices = [];
 		el.loading = true;
 		const tpl = (el as any).render();
@@ -1675,6 +1675,79 @@ describe("OTA inline rendering", () => {
 		expect(c.querySelector(".ota-error")).not.toBeNull();
 		// Retry button should NOT be present since device is unavailable
 		expect(c.querySelector(".ota-error ha-button")).toBeNull();
+	});
+
+	it("renders the device-reported message interpolated into the error popover", () => {
+		// Backend log-derived OTA failures send
+		// error_key=flasher.errors.ota_device_error + message; the en
+		// translation is "Update failed: {message}". The popover must show
+		// the interpolated device message, not the literal "{message}".
+		const el = createView({
+			localize: setupLocalize(),
+			flashableDevices: [updatableDevice],
+			otaStates: {
+				[updatableDevice.mac]: {
+					state: "error",
+					progress: null,
+					errorKey: "flasher.errors.ota_device_error",
+					errorParams: { message: "ESP_ERR_HTTP_CONNECT" },
+				},
+			},
+		});
+		(el as any)._errorPopoverMac = updatableDevice.mac;
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		expect(c.querySelector(".ota-error-popover")!.textContent).toContain(
+			"Update failed: ESP_ERR_HTTP_CONNECT",
+		);
+	});
+});
+
+// =========================================================
+// Controller → view repaint integration
+// =========================================================
+describe("OTA progress repaint (controller → view integration)", () => {
+	it("a controller OTA progress event repaints the view with no hass churn", async () => {
+		// The panel binds `.otaStates=${ctrl.otaStates}` and re-renders when
+		// the controller calls host.requestUpdate(). Lit dirty-checks the
+		// property by reference: if the controller mutates the same Record
+		// in place, the view NEVER repaints on OTA progress — historically
+		// it only updated when unrelated hass churn re-rendered the panel.
+		const view = createView({ flashableDevices: [updatableDevice] });
+		document.body.appendChild(view);
+		await view.updateComplete;
+
+		// Host mirrors the panel: on controller requestUpdate, re-bind the
+		// controller's otaStates onto the view.
+		const host = {
+			addController: () => {},
+			removeController: () => {},
+			requestUpdate: () => {
+				view.otaStates = ctrl.otaStates;
+			},
+			updateComplete: Promise.resolve(true),
+		};
+		const subscribeMessage = vi.fn().mockResolvedValue(vi.fn());
+		const ctrl = new FlasherController(host as any);
+		ctrl.hass = {
+			callWS: vi.fn().mockResolvedValue({}),
+			connection: { subscribeMessage },
+		};
+
+		await ctrl.startOta(updatableDevice.mac);
+		await view.updateComplete;
+		expect(view.shadowRoot!.querySelector(".ota-pct")!.textContent).toContain(
+			"0",
+		);
+
+		const callback = subscribeMessage.mock.calls[0][0];
+		callback({ state: "updating", progress: 65 });
+		await view.updateComplete;
+
+		expect(view.shadowRoot!.querySelector(".ota-pct")!.textContent).toContain(
+			"65",
+		);
 	});
 });
 

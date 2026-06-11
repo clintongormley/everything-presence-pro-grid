@@ -613,6 +613,7 @@ describe("FlasherController", () => {
 				state: "error",
 				progress: null,
 				errorKey: "flasher.errors.ota_failed_version_unchanged",
+				errorParams: { message: "" },
 			});
 		});
 
@@ -626,6 +627,7 @@ describe("FlasherController", () => {
 				state: "error",
 				progress: null,
 				errorKey: "flasher.errors.update_failed_generic",
+				errorParams: { message: "" },
 			});
 		});
 
@@ -677,6 +679,7 @@ describe("FlasherController", () => {
 				state: "error",
 				progress: null,
 				errorKey: "flasher.errors.update_failed_generic",
+				errorParams: { message: "" },
 			});
 		});
 
@@ -1121,6 +1124,204 @@ describe("FlasherController", () => {
 				"flasher.errors.update_timeout",
 			);
 			vi.useRealTimers();
+		});
+
+		// --- otaStates immutability ---
+		// The panel binds `.otaStates=${ctrl.otaStates}` on epp-flasher-view.
+		// Lit dirty-checks by reference, so in-place mutation of the Record
+		// means progress/success/error NEVER repaint unless unrelated hass
+		// churn happens to re-render the panel. Every transition must
+		// reassign the Record.
+		describe("otaStates immutability", () => {
+			it("reassigns otaStates when startOta begins", async () => {
+				const before = ctrl.otaStates;
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+				expect(ctrl.otaStates).not.toBe(before);
+			});
+
+			it("reassigns otaStates on a progress event", async () => {
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+				const callback = hass.connection.subscribeMessage.mock.calls[0][0];
+				const before = ctrl.otaStates;
+				callback({ state: "updating", progress: 65 });
+				expect(ctrl.otaStates).not.toBe(before);
+			});
+
+			it("reassigns otaStates on success and on the auto-dismiss delete", async () => {
+				vi.useFakeTimers();
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+				const callback = hass.connection.subscribeMessage.mock.calls[0][0];
+				const beforeSuccess = ctrl.otaStates;
+				callback({ state: "success" });
+				expect(ctrl.otaStates).not.toBe(beforeSuccess);
+
+				const beforeDismiss = ctrl.otaStates;
+				vi.advanceTimersByTime(5000);
+				expect(ctrl.otaStates).not.toBe(beforeDismiss);
+				expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toBeUndefined();
+				vi.useRealTimers();
+			});
+
+			it("reassigns otaStates on an error event", async () => {
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+				const callback = hass.connection.subscribeMessage.mock.calls[0][0];
+				const before = ctrl.otaStates;
+				callback({ state: "error" });
+				expect(ctrl.otaStates).not.toBe(before);
+			});
+
+			it("reassigns otaStates on watchdog timeout", async () => {
+				vi.useFakeTimers();
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+				const before = ctrl.otaStates;
+				vi.advanceTimersByTime(15000);
+				expect(ctrl.otaStates).not.toBe(before);
+				vi.useRealTimers();
+			});
+
+			it("reassigns otaStates on dismissOtaError", async () => {
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+				const callback = hass.connection.subscribeMessage.mock.calls[0][0];
+				callback({ state: "error" });
+				const before = ctrl.otaStates;
+				ctrl.dismissOtaError("AA:BB:CC:DD:EE:01");
+				expect(ctrl.otaStates).not.toBe(before);
+				expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toBeUndefined();
+			});
+
+			it("reassigns otaStates when a device goes offline mid-OTA", async () => {
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+				ctrl.flashableDevices = [
+					{
+						mac: "AA:BB:CC:DD:EE:01",
+						name: "Test",
+						host: "192.168.1.10",
+						available: false,
+						firmware_type: "eppgrid",
+						firmware_version: "1.0.0",
+						esphome_config_entry_id: "entry-1",
+						update_available: true,
+						firmware_status: "firmware_behind",
+					},
+				];
+				const before = ctrl.otaStates;
+				(ctrl as any)._checkOtaDevicesOffline();
+				expect(ctrl.otaStates).not.toBe(before);
+			});
+		});
+
+		// --- startOta guards ---
+		describe("startOta guards", () => {
+			it("two rapid startOta for the same mac issue only one update_firmware call", async () => {
+				const p1 = ctrl.startOta("AA:BB:CC:DD:EE:01");
+				const p2 = ctrl.startOta("AA:BB:CC:DD:EE:01");
+				await Promise.all([p1, p2]);
+
+				expect(
+					hass.callWS.mock.calls.filter(
+						(c: any[]) => c[0].type === "eppgrid/update_firmware",
+					),
+				).toHaveLength(1);
+				expect(hass.connection.subscribeMessage).toHaveBeenCalledTimes(1);
+			});
+
+			it("startOta for a different mac is not blocked by another device updating", async () => {
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+				await ctrl.startOta("AA:BB:CC:DD:EE:02");
+
+				expect(
+					hass.callWS.mock.calls.filter(
+						(c: any[]) => c[0].type === "eppgrid/update_firmware",
+					),
+				).toHaveLength(2);
+			});
+
+			it("a late-resolving OTA subscription after hostDisconnected is immediately unsubscribed", async () => {
+				let resolveSub!: (unsub: () => void) => void;
+				const unsub = vi.fn();
+				hass.connection.subscribeMessage = vi.fn().mockImplementation(
+					() =>
+						new Promise<() => void>((resolve) => {
+							resolveSub = resolve;
+						}),
+				);
+
+				const p = ctrl.startOta("AA:BB:CC:DD:EE:01");
+				// Let callWS settle so subscribeMessage is in flight.
+				await new Promise((r) => setTimeout(r, 0));
+				ctrl.hostDisconnected();
+				resolveSub(unsub);
+				await p;
+
+				expect(unsub).toHaveBeenCalledTimes(1);
+				expect((ctrl as any)._otaUnsubs["AA:BB:CC:DD:EE:01"]).toBeUndefined();
+			});
+
+			it("a late-resolving OTA subscription after a connection swap is immediately unsubscribed", async () => {
+				let resolveSub!: (unsub: () => void) => void;
+				const unsub = vi.fn();
+				hass.connection.subscribeMessage = vi.fn().mockImplementation(
+					() =>
+						new Promise<() => void>((resolve) => {
+							resolveSub = resolve;
+						}),
+				);
+
+				const p = ctrl.startOta("AA:BB:CC:DD:EE:01");
+				await new Promise((r) => setTimeout(r, 0));
+				// HA reconnect: new connection object.
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: vi.fn().mockResolvedValue(vi.fn()) },
+				};
+				resolveSub(unsub);
+				await p;
+
+				expect(unsub).toHaveBeenCalledTimes(1);
+				expect((ctrl as any)._otaUnsubs["AA:BB:CC:DD:EE:01"]).toBeUndefined();
+			});
+
+			it("startOta replaces a stale subscription for the same mac without orphaning its unsub", async () => {
+				// Defensive: if a subscription somehow survives for this mac
+				// (e.g. an error state that never delivered its event), a new
+				// startOta must release it instead of overwriting the record
+				// entry and leaking the server-side subscription.
+				const oldUnsub = vi.fn();
+				(ctrl as any)._otaUnsubs["AA:BB:CC:DD:EE:01"] = oldUnsub;
+				ctrl.otaStates = {
+					"AA:BB:CC:DD:EE:01": {
+						state: "error",
+						progress: null,
+						errorKey: "flasher.errors.update_failed_generic",
+					},
+				};
+
+				await ctrl.startOta("AA:BB:CC:DD:EE:01");
+
+				expect(oldUnsub).toHaveBeenCalledTimes(1);
+				expect((ctrl as any)._otaUnsubs["AA:BB:CC:DD:EE:01"]).not.toBe(
+					oldUnsub,
+				);
+			});
+		});
+
+		// --- device-reported error messages ---
+		it("stores errorParams.message from a device error event so the view can interpolate it", async () => {
+			await ctrl.startOta("AA:BB:CC:DD:EE:01");
+
+			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
+			callback({
+				state: "error",
+				error_key: "flasher.errors.ota_device_error",
+				message: "ESP_ERR_HTTP_CONNECT",
+			});
+
+			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toEqual({
+				state: "error",
+				progress: null,
+				errorKey: "flasher.errors.ota_device_error",
+				errorParams: { message: "ESP_ERR_HTTP_CONNECT" },
+			});
 		});
 	});
 });

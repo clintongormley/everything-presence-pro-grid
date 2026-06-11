@@ -1704,9 +1704,13 @@ describe("epp-flasher-view inline event handlers", () => {
 		expect(spy).toHaveBeenCalledWith("aa:bb:cc");
 	});
 
-	it("@retry-ota calls flasherCtrl.dismissOtaError", () => {
+	it("@retry-ota dismisses the error then starts a fresh OTA", () => {
+		// "Retry" used to only clear the error — the user needed a second
+		// click on "Update" to actually retry. The handler must chain
+		// dismissOtaError + startOta.
 		const ctrl = (panel as any)._flasherCtrl;
-		const spy = vi.spyOn(ctrl, "dismissOtaError").mockResolvedValue(undefined);
+		const dismissSpy = vi.spyOn(ctrl, "dismissOtaError");
+		const startSpy = vi.spyOn(ctrl, "startOta").mockResolvedValue(undefined);
 
 		getFlasherView().dispatchEvent(
 			new CustomEvent("retry-ota", {
@@ -1715,7 +1719,24 @@ describe("epp-flasher-view inline event handlers", () => {
 			}),
 		);
 
-		expect(spy).toHaveBeenCalledWith("aa:bb:cc");
+		expect(dismissSpy).toHaveBeenCalledWith("aa:bb:cc");
+		expect(startSpy).toHaveBeenCalledWith("aa:bb:cc");
+	});
+
+	it("@retry-ota issues an eppgrid/update_firmware WS call", () => {
+		// End-to-end through the real controller: the retry click must reach
+		// the backend, not just mutate frontend state.
+		getFlasherView().dispatchEvent(
+			new CustomEvent("retry-ota", {
+				detail: { mac: "aa:bb:cc" },
+				bubbles: true,
+			}),
+		);
+
+		expect((panel as any).hass.callWS).toHaveBeenCalledWith({
+			type: "eppgrid/update_firmware",
+			mac: "aa:bb:cc",
+		});
 	});
 
 	it("switching to flasher tab resets stale usbFlashState", () => {

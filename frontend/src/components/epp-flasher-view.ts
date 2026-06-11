@@ -530,7 +530,6 @@ const flasherStyles = css`
 export class EppFlasherView extends LitElement {
 	static styles = [flasherStyles];
 
-	@property({ attribute: false }) hass: any;
 	@property({ attribute: false }) flashableDevices: FlashableDevice[] = [];
 	@property({ type: Boolean }) loading = false;
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
@@ -561,15 +560,6 @@ export class EppFlasherView extends LitElement {
 	@state() private _showWifiProvisioning = false;
 
 	@state() private _errorPopoverMac: string | null = null;
-	// Per-mac "retry click in flight" tracking. Stored as a Set so multiple
-	// devices can retry concurrently without one's state stamping over
-	// another's.
-	@state() private _retryPendingMacs: Set<string> = new Set();
-	// Snapshot of the OTA entry for each pending mac, captured at click time.
-	// Whenever the entry reference changes (any update — start, progress,
-	// success, or another error) we know the dispatcher has processed the
-	// retry and can clear the spinner, so the button never gets stuck.
-	private _retryPendingOta: Map<string, OtaDeviceState> = new Map();
 
 	private _dispatchUpdateFirmware(device: FlashableDevice): void {
 		this.dispatchEvent(
@@ -588,11 +578,6 @@ export class EppFlasherView extends LitElement {
 
 	private _dispatchRetryOta(device: FlashableDevice): void {
 		this._errorPopoverMac = null;
-		const next = new Set(this._retryPendingMacs);
-		next.add(device.mac);
-		this._retryPendingMacs = next;
-		const current = this.otaStates[device.mac];
-		if (current) this._retryPendingOta.set(device.mac, current);
 		this.dispatchEvent(
 			new CustomEvent("retry-ota", {
 				detail: { mac: device.mac },
@@ -630,7 +615,6 @@ export class EppFlasherView extends LitElement {
 			case "success":
 				return html`<ha-icon class="ota-success" icon="mdi:check-circle"></ha-icon>`;
 			case "error": {
-				const retryPending = this._retryPendingMacs.has(device.mac);
 				return html`
 					<div class="ota-error">
 						<ha-icon class="ota-error-icon"
@@ -640,13 +624,7 @@ export class EppFlasherView extends LitElement {
 						${
 							device.available
 								? html`<ha-button
-									?disabled=${retryPending}
 									@click=${() => this._dispatchRetryOta(device)}>
-									${
-										retryPending
-											? html`<div class="ota-spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></div>`
-											: nothing
-									}
 									${this.localize("flasher.ota_retry")}
 								</ha-button>`
 								: nothing
@@ -716,28 +694,6 @@ export class EppFlasherView extends LitElement {
 		// the cancel handler awaited the in-flight op + closed the port).
 		if (changed.has("usbFlashState") && this.usbFlashState == null) {
 			this._cancelling = false;
-		}
-		// Clear the retry-pending spinner once the dispatcher has handled the
-		// retry. We can't gate on `changed.has("otaStates")` because the
-		// FlasherController mutates the same Record reference in place
-		// (otaStates[mac] = {...}), so Lit never flags otaStates as changed.
-		// Reconcile on every updated() instead: compare the current OTA entry
-		// reference for each pending mac against the snapshot we captured at
-		// click time. Any reference change (start, progress, success, or a
-		// fresh error from a failed retry) means the dispatcher ran, so we
-		// re-enable the button — preventing the spinner from getting stuck.
-		if (this._retryPendingMacs.size > 0) {
-			let cleared: Set<string> | null = null;
-			for (const mac of this._retryPendingMacs) {
-				const next = this.otaStates[mac];
-				const snapshot = this._retryPendingOta.get(mac);
-				if (!next || next !== snapshot) {
-					if (cleared === null) cleared = new Set(this._retryPendingMacs);
-					cleared.delete(mac);
-					this._retryPendingOta.delete(mac);
-				}
-			}
-			if (cleared !== null) this._retryPendingMacs = cleared;
 		}
 	}
 
