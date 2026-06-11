@@ -11,6 +11,7 @@ import { solvePerspective } from "../perspective.js";
 import {
 	autoComputeRoomDimensions,
 	autoDetectionRange,
+	boundsToRoomMm,
 	classifyCellInSensor,
 	computeMaxRangeMm,
 	computeSensorFov,
@@ -603,5 +604,27 @@ describe("getGridRoomMetrics", () => {
 		const coneLimited = getGridRoomMetrics(grid, 3000, null, fov, 6000);
 		expect(coneLimited).not.toBeNull();
 		expect(coneLimited!.depthM).toBeLessThan(full!.depthM);
+	});
+});
+
+describe("boundsToRoomMm", () => {
+	it("converts cell-space bounds to room-relative mm extents", () => {
+		// 3000mm room → startCol 5. Bounds covering exactly the room
+		// (cols 5-14, rows 0-9) span 0..3000mm in both axes.
+		const mm = boundsToRoomMm(
+			{ minCol: 5, maxCol: 14, minRow: 0, maxRow: 9 },
+			3000,
+		);
+		expect(mm).toEqual({ minX: 0, maxX: 3000, minY: 0, maxY: 3000 });
+	});
+
+	it("yields negative minX for padded bounds left of the room", () => {
+		const mm = boundsToRoomMm(
+			{ minCol: 4, maxCol: 15, minRow: 0, maxRow: 10 },
+			3000,
+		);
+		expect(mm.minX).toBe(-300);
+		expect(mm.maxX).toBe(3300);
+		expect(mm.maxY).toBe(3300);
 	});
 });

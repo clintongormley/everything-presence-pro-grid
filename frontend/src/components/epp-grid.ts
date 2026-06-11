@@ -2,7 +2,7 @@ import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { MAX_TARGETS, TARGET_COLORS } from "../constants.js";
-import { mapTargetToGridCell } from "../lib/coordinates.js";
+import { mapTargetToGridCell, targetCellIndex } from "../lib/coordinates.js";
 import type { FurnitureItem } from "../lib/furniture.js";
 import {
 	CELL_OVERLAY_ENTRY,
@@ -179,9 +179,11 @@ export class EppGrid extends LitElement {
 			if (!t || t.status === "inactive" || t.x == null || t.y == null) continue;
 			const pos = mapTargetToGridCell(t.x, t.y, this.roomWidth, this.roomDepth);
 			if (!pos) continue;
-			const col = Math.floor(pos.col);
-			const row = Math.floor(pos.row);
-			const idx = row * GRID_COLS + col;
+			// Bounds-checked: an off-grid target (idx === null) has by definition
+			// moved off its dismissed cell. The raw row*GRID_COLS+col aliased
+			// col ≥ 20 into the next row and could coincide with dismissedIdx,
+			// suppressing the undismiss.
+			const idx = targetCellIndex(pos);
 			if (idx !== dismissedIdx) {
 				this.dispatchEvent(
 					new CustomEvent("target-undismissed", {
@@ -418,35 +420,28 @@ export class EppGrid extends LitElement {
 							0,
 							Math.min(100, ((pos.row - minRow) / visRows) * 100),
 						);
+						// Bounds-checked cell index (null when off-grid, e.g. a pending
+						// fallback position) shared by the dismissed + overlay checks.
+						const cellIdx = targetCellIndex(pos);
 						// Hide dismissed targets while they remain on the dismissed cell.
 						// Detection of "moved off the cell" lives in willUpdate, where
 						// the target-undismissed event is dispatched. The child never
 						// mutates this.dismissedTargets — that's the parent's prop.
-						if (this.dismissedTargets.has(i)) {
-							const col = Math.floor(pos.col);
-							const row = Math.floor(pos.row);
-							const idx = row * GRID_COLS + col;
-							if (this.dismissedTargets.get(i) === idx) {
-								return nothing;
-							}
+						if (cellIdx !== null && this.dismissedTargets.get(i) === cellIdx) {
+							return nothing;
 						}
 						// Interference/suppress cells don't confirm presence by themselves:
 						// suppress is skipped by the engine, interference requires continuity.
 						// Hide the dot when the zone isn't already occupied via another path.
-						if (this.grid.length > 0) {
-							const col = Math.floor(pos.col);
-							const row = Math.floor(pos.row);
-							const idx = row * GRID_COLS + col;
-							if (idx >= 0 && idx < this.grid.length) {
-								const overlay = cellOverlay(this.grid[idx]);
-								if (
-									overlay === CELL_OVERLAY_INTERFERENCE ||
-									overlay === CELL_OVERLAY_SUPPRESS
-								) {
-									const zid = cellZone(this.grid[idx]);
-									if (!this.occupancy[zid]) {
-										return nothing;
-									}
+						if (cellIdx !== null && cellIdx < this.grid.length) {
+							const overlay = cellOverlay(this.grid[cellIdx]);
+							if (
+								overlay === CELL_OVERLAY_INTERFERENCE ||
+								overlay === CELL_OVERLAY_SUPPRESS
+							) {
+								const zid = cellZone(this.grid[cellIdx]);
+								if (!this.occupancy[zid]) {
+									return nothing;
 								}
 							}
 						}

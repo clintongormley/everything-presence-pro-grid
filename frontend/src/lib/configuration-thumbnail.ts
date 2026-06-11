@@ -12,6 +12,7 @@ import {
 	GRID_CELL_MM,
 	GRID_COLS,
 	getRoomBounds,
+	roomStartCol,
 } from "./grid.js";
 import { getCellColor } from "./heatmap.js";
 import type { ZoneConfig } from "./zone-defaults.js";
@@ -109,8 +110,7 @@ export function renderConfigurationThumbnail(
 			: "";
 
 	// Furniture: convert mm positions to grid-cell units relative to room bounds
-	const roomCols = Math.ceil(roomWidth / GRID_CELL_MM);
-	const startCol = Math.floor((GRID_COLS - roomCols) / 2);
+	const startCol = roomStartCol(roomWidth);
 
 	const furnitureElements: SVGTemplateResult[] = [];
 	for (const item of furniture) {

@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { GridStateController } from "../../controllers/grid-state-controller.js";
+import {
+	GridStateController,
+	serializeFurniture,
+} from "../../controllers/grid-state-controller.js";
 import type { FurnitureItem, FurnitureSticker } from "../../lib/furniture.js";
 import {
 	CELL_OVERLAY_ENTRY,
@@ -1897,6 +1900,34 @@ describe("GridStateController", () => {
 			// The furniture item should have moved (not silently aborted)
 			const updated = host._furniture[0];
 			expect(updated.x).not.toBe(500);
+		});
+	});
+});
+
+describe("serializeFurniture", () => {
+	it("maps exactly the 9 wire fields and drops the local-only id", () => {
+		const item: FurnitureItem = {
+			id: "f_local_123",
+			type: "svg",
+			icon: "armchair",
+			label: "furniture.armchair",
+			x: 150,
+			y: 600,
+			width: 800,
+			height: 900,
+			rotation: 45,
+			lockAspect: true,
+		};
+		expect(serializeFurniture(item)).toEqual({
+			type: "svg",
+			icon: "armchair",
+			label: "furniture.armchair",
+			x: 150,
+			y: 600,
+			width: 800,
+			height: 900,
+			rotation: 45,
+			lockAspect: true,
 		});
 	});
 });

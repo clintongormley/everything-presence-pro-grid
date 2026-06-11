@@ -23,7 +23,6 @@ import {
 	cellZone,
 	computeAlignmentOffset,
 	GRID_CELL_MM,
-	GRID_COLS,
 	getRoomBounds,
 	gridHasInsideRoom,
 	initGridFromRoom,
@@ -31,8 +30,9 @@ import {
 	NUM_ZONE_SLOTS,
 	OVERLAY_MODE_TO_KIND,
 	type OverlayMode,
+	roomStartCol,
 } from "../lib/grid.js";
-import { autoDetectionRange } from "../lib/room-geometry.js";
+import { autoDetectionRange, boundsToRoomMm } from "../lib/room-geometry.js";
 import {
 	ENTITY_DEFAULTS,
 	SETTINGS_DEFAULTS,
@@ -87,6 +87,25 @@ export function serializeSlot(
 		slot.handoff_timeout = nz.handoff_timeout;
 	}
 	return slot;
+}
+
+/**
+ * Serialize a furniture item for the `set_room_layout` wire payload.
+ * Exactly these nine fields — the local-only `id` is intentionally dropped
+ * (the backend regenerates ids on load via parseFurniture).
+ */
+export function serializeFurniture(f: FurnitureItem): Record<string, unknown> {
+	return {
+		type: f.type,
+		icon: f.icon,
+		label: f.label,
+		x: f.x,
+		y: f.y,
+		width: f.width,
+		height: f.height,
+		rotation: f.rotation,
+		lockAspect: f.lockAspect,
+	};
 }
 
 export class GridStateController implements ReactiveController {
@@ -373,14 +392,12 @@ export class GridStateController implements ReactiveController {
 			const item = (this.host._furniture as FurnitureItem[]).find(
 				(f) => f.id === ds.id,
 			);
-			// Compute visible grid bounds in room-relative mm
-			const bounds = this.host._getVisibleRoomBounds();
-			const roomCols = Math.ceil(this.host._roomWidth / GRID_CELL_MM);
-			const startCol = Math.floor((GRID_COLS - roomCols) / 2);
-			const visMinX = (bounds.minCol - startCol) * GRID_CELL_MM;
-			const visMaxX = (bounds.maxCol + 1 - startCol) * GRID_CELL_MM;
-			const visMinY = bounds.minRow * GRID_CELL_MM; // startRow = 0
-			const visMaxY = (bounds.maxRow + 1) * GRID_CELL_MM;
+			// Clamp to the FOV-aware visible bounds (not the physical room
+			// bounds) so a drag can't park furniture in hidden cells.
+			const mm = boundsToRoomMm(
+				this.host._getVisibleRoomBounds(),
+				this.host._roomWidth,
+			);
 			const pos = clampFurnitureMove(
 				ds.origX,
 				ds.origY,
@@ -389,10 +406,10 @@ export class GridStateController implements ReactiveController {
 				cellPx,
 				item?.width ?? 0,
 				item?.height ?? 0,
-				visMinX,
-				visMaxX,
-				visMinY,
-				visMaxY,
+				mm.minX,
+				mm.maxX,
+				mm.minY,
+				mm.maxY,
 				ds.origRot,
 			);
 			this.updateFurniture(ds.id, pos);
@@ -564,10 +581,8 @@ export class GridStateController implements ReactiveController {
 				templateHasRoom,
 				currentHasRoom,
 			);
-			const backupRoomCols = Math.ceil(cfg.roomWidth / GRID_CELL_MM);
-			const currentRoomCols = Math.ceil(this.host._roomWidth / GRID_CELL_MM);
-			const startColB = Math.floor((GRID_COLS - backupRoomCols) / 2);
-			const startColC = Math.floor((GRID_COLS - currentRoomCols) / 2);
+			const startColB = roomStartCol(cfg.roomWidth);
+			const startColC = roomStartCol(this.host._roomWidth);
 			const dxMm = (dc + startColB - startColC) * GRID_CELL_MM;
 			const dyMm = dr * GRID_CELL_MM;
 			this.host._furniture = (cfg.furniture || []).map((f: any) => ({
@@ -690,14 +705,9 @@ export class GridStateController implements ReactiveController {
 		const bounds = getRoomBounds(this.host._grid);
 		let filteredFurniture = this.host._furniture as FurnitureItem[];
 		if (bounds.minCol <= bounds.maxCol && bounds.minRow <= bounds.maxRow) {
-			const roomCols = Math.ceil(this.host._roomWidth / GRID_CELL_MM);
-			const startCol = Math.floor((GRID_COLS - roomCols) / 2);
-			const visMinX = (bounds.minCol - startCol) * GRID_CELL_MM;
-			const visMaxX = (bounds.maxCol + 1 - startCol) * GRID_CELL_MM;
-			const visMinY = bounds.minRow * GRID_CELL_MM;
-			const visMaxY = (bounds.maxRow + 1) * GRID_CELL_MM;
+			const mm = boundsToRoomMm(bounds, this.host._roomWidth);
 			filteredFurniture = filteredFurniture.filter(
-				(f) => !isFurnitureOutsideGrid(f, visMinX, visMaxX, visMinY, visMaxY),
+				(f) => !isFurnitureOutsideGrid(f, mm.minX, mm.maxX, mm.minY, mm.maxY),
 			);
 		}
 
@@ -708,17 +718,7 @@ export class GridStateController implements ReactiveController {
 				mac: this.host._selectedMac,
 				grid_bytes: Array.from(this.host._grid),
 				zone_slots: prunedSlots.map((z, idx) => serializeSlot(z, idx)),
-				furniture: filteredFurniture.map((f) => ({
-					type: f.type,
-					icon: f.icon,
-					label: f.label,
-					x: f.x,
-					y: f.y,
-					width: f.width,
-					height: f.height,
-					rotation: f.rotation,
-					lockAspect: f.lockAspect,
-				})),
+				furniture: filteredFurniture.map(serializeFurniture),
 			});
 			// Commit pruned slots and filtered furniture only after the
 			// backend acknowledges the layout save.

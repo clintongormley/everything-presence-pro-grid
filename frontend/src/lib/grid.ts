@@ -169,6 +169,34 @@ export function alignTemplateGrid(
 	return result;
 }
 
+/**
+ * First grid column occupied by the room. The room is centered horizontally
+ * in the 20-column grid; partial cells round up to a whole column. This is
+ * the single source of the cell-space ↔ room-space x-offset — every
+ * conversion between grid columns and room-relative mm must go through it.
+ */
+export function roomStartCol(roomWidthMm: number): number {
+	const roomCols = Math.ceil(roomWidthMm / GRID_CELL_MM);
+	return Math.floor((GRID_COLS - roomCols) / 2);
+}
+
+/**
+ * Centre of grid cell (col, row) in room-space mm. Rows are anchored at the
+ * front wall (startRow = 0, where the sensor sits), so y is room-width
+ * independent; x is relative to the room's left edge and can be negative
+ * for columns left of the room.
+ */
+export function cellCentreMm(
+	col: number,
+	row: number,
+	roomWidthMm: number,
+): { x: number; y: number } {
+	return {
+		x: (col - roomStartCol(roomWidthMm) + 0.5) * GRID_CELL_MM,
+		y: (row + 0.5) * GRID_CELL_MM,
+	};
+}
+
 /** Initialize a grid from room dimensions (mm). Room is centered horizontally. */
 export function initGridFromRoom(
 	roomWidth: number,
@@ -178,7 +206,7 @@ export function initGridFromRoom(
 
 	const roomCols = Math.ceil(roomWidth / GRID_CELL_MM);
 	const roomRows = Math.ceil(roomDepth / GRID_CELL_MM);
-	const startCol = Math.floor((GRID_COLS - roomCols) / 2);
+	const startCol = roomStartCol(roomWidth);
 	const startRow = 0; // sensor is at front wall
 
 	for (let r = 0; r < GRID_ROWS; r++) {

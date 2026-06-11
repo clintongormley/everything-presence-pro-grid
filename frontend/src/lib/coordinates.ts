@@ -1,5 +1,11 @@
 import { FOV_X_EXTENT } from "../constants.js";
-import { GRID_CELL_MM, GRID_COLS, MAX_RANGE } from "./grid.js";
+import {
+	GRID_CELL_MM,
+	GRID_COLS,
+	GRID_ROWS,
+	MAX_RANGE,
+	roomStartCol,
+} from "./grid.js";
 
 /**
  * Map a target to percentage coordinates for the editor grid.
@@ -37,15 +43,28 @@ export function mapTargetToGridCell(
 ): { col: number; row: number } | null {
 	if (roomWidth <= 0 || roomDepth <= 0) return null;
 
-	// Room is centered horizontally in the grid
-	const roomCols = Math.ceil(roomWidth / GRID_CELL_MM);
-	const startCol = Math.floor((GRID_COLS - roomCols) / 2);
-
-	// target x/y are room-space mm (perspective applied server-side)
-	const col = startCol + targetX / GRID_CELL_MM;
+	// target x/y are room-space mm (perspective applied server-side);
+	// the room is centered horizontally in the grid.
+	const col = roomStartCol(roomWidth) + targetX / GRID_CELL_MM;
 	const row = targetY / GRID_CELL_MM;
 
 	return { col, row };
+}
+
+/**
+ * Bounds-checked cell index for a fractional grid position (e.g. from
+ * `mapTargetToGridCell`). Returns null when the position is off-grid —
+ * a raw `row * GRID_COLS + col` would alias a col ≥ GRID_COLS into the
+ * first cells of the next row.
+ */
+export function targetCellIndex(pos: {
+	col: number;
+	row: number;
+}): number | null {
+	const col = Math.floor(pos.col);
+	const row = Math.floor(pos.row);
+	if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) return null;
+	return row * GRID_COLS + col;
 }
 
 /** Map raw sensor coords to percentage in the FOV view (marking step). */

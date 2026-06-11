@@ -4,7 +4,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { FLOOR_PLAN_SVGS } from "../constants.js";
 import type { FurnitureItem } from "../lib/furniture.js";
 import { getResizeCursor, mmToPx } from "../lib/furniture.js";
-import { GRID_CELL_MM, GRID_COLS } from "../lib/grid.js";
+import { roomStartCol } from "../lib/grid.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 
 export class EppFurnitureOverlay extends LitElement {
@@ -212,8 +212,7 @@ export class EppFurnitureOverlay extends LitElement {
 	render() {
 		if (!this.furniture.length) return nothing;
 
-		const roomCols = Math.ceil(this.roomWidth / GRID_CELL_MM);
-		const startCol = Math.floor((GRID_COLS - roomCols) / 2);
+		const startCol = roomStartCol(this.roomWidth);
 		const step = this.cellPx + 1;
 
 		const interactive = this.sidebarTab === "furniture";

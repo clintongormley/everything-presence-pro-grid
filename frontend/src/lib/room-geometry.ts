@@ -1,4 +1,5 @@
 import {
+	cellCentreMm,
 	cellIsInside,
 	GRID_CELL_COUNT,
 	GRID_CELL_MM,
@@ -6,6 +7,7 @@ import {
 	GRID_ROWS,
 	getRawRoomBounds,
 	MAX_RANGE,
+	roomStartCol,
 } from "./grid.js";
 import { applyPerspective } from "./perspective.js";
 
@@ -78,10 +80,7 @@ export function classifyCellInSensor(
 	if (!fov) return "in_range"; // no calibration — allow all
 
 	// Cell centre in room-space mm
-	const roomCols = Math.ceil(roomWidth / GRID_CELL_MM);
-	const startCol = Math.floor((GRID_COLS - roomCols) / 2);
-	const rx = (col - startCol + 0.5) * GRID_CELL_MM;
-	const ry = (row + 0.5) * GRID_CELL_MM;
+	const { x: rx, y: ry } = cellCentreMm(col, row, roomWidth);
 
 	// Vector from sensor to cell in room-space
 	const dx = rx - fov.sensorPos.x;
@@ -166,6 +165,26 @@ export function getVisibleRoomBounds(
 }
 
 /**
+ * Convert cell-space bounds (e.g. from `getRoomBounds` or
+ * `getVisibleRoomBounds`) to room-relative mm extents — the coordinate
+ * space furniture positions live in. The caller chooses which bounds to
+ * pass: physical room bounds vs FOV-aware visible bounds carry different
+ * semantics (save-filtering vs drag-clamping) and must not be conflated.
+ */
+export function boundsToRoomMm(
+	bounds: { minCol: number; maxCol: number; minRow: number; maxRow: number },
+	roomWidthMm: number,
+): { minX: number; maxX: number; minY: number; maxY: number } {
+	const startCol = roomStartCol(roomWidthMm);
+	return {
+		minX: (bounds.minCol - startCol) * GRID_CELL_MM,
+		maxX: (bounds.maxCol + 1 - startCol) * GRID_CELL_MM,
+		minY: bounds.minRow * GRID_CELL_MM, // startRow = 0 (sensor at front wall)
+		maxY: (bounds.maxRow + 1) * GRID_CELL_MM,
+	};
+}
+
+/**
  * Compute the effective maximum range in mm, given the current settings.
  *
  * When auto-range is enabled, uses the auto-computed range (capped at 6m).
@@ -211,16 +230,13 @@ export function autoDetectionRange(
 	// Compute max room-space distance from sensor to any room cell
 	const sensorPos = getSensorRoomPosition(perspective);
 	if (sensorPos) {
-		const roomCols = Math.ceil(roomWidth / GRID_CELL_MM);
-		const startCol = Math.floor((GRID_COLS - roomCols) / 2);
 		let maxDistMm = 0;
 		const raw = getRawRoomBounds(grid);
 		for (let r = raw.minRow; r <= raw.maxRow; r++) {
 			for (let c = raw.minCol; c <= raw.maxCol; c++) {
 				const idx = r * GRID_COLS + c;
 				if (!cellIsInside(grid[idx])) continue;
-				const rx = (c - startCol + 0.5) * GRID_CELL_MM;
-				const ry = (r + 0.5) * GRID_CELL_MM;
+				const { x: rx, y: ry } = cellCentreMm(c, r, roomWidth);
 				const dx = rx - sensorPos.x;
 				const dy = ry - sensorPos.y;
 				const dist = Math.sqrt(dx * dx + dy * dy);
@@ -317,9 +333,6 @@ export function getGridRoomMetrics(
 	fov?: SensorFov | null,
 	maxRangeMm?: number,
 ): { widthM: number; depthM: number; furthestM: number } | null {
-	const roomCols = Math.ceil(roomWidth / GRID_CELL_MM);
-	const startCol = Math.floor((GRID_COLS - roomCols) / 2);
-
 	// Compute bounds first, then compute furthest distance in a second pass.
 	let minCol = GRID_COLS;
 	let maxCol = 0;
@@ -368,8 +381,7 @@ export function getGridRoomMetrics(
 				"out_of_cone"
 		)
 			continue;
-		const cellMmX = (col - startCol + 0.5) * GRID_CELL_MM;
-		const cellMmY = (row + 0.5) * GRID_CELL_MM;
+		const { x: cellMmX, y: cellMmY } = cellCentreMm(col, row, roomWidth);
 		const dx = cellMmX - sensorMmX;
 		const dy = cellMmY - sensorMmY;
 		const distSq = dx * dx + dy * dy;

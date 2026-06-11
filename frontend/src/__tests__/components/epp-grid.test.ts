@@ -1038,6 +1038,32 @@ describe("epp-grid dismissedTargets", () => {
 		document.body.removeChild(el);
 	});
 
+	it("fires target-undismissed for a target that moved off-grid, even when the unchecked index would alias the dismissed cell", async () => {
+		// roomWidth=3000 → startCol=5. x=4500 → col = 5 + 15 = 20 (off-grid
+		// right edge), y=300 → row=1. The historical unchecked index
+		// row*GRID_COLS+col = 1*20+20 = 40 aliases into (row 2, col 0) — if the
+		// target was dismissed on cell 40, the aliased index suppressed the
+		// undismiss event even though the target is nowhere near that cell.
+		const targets: Target[] = [
+			{ x: 4500, y: 300, status: "active", signal: 7 },
+		];
+		const dismissedTargets = new Map([[0, 40]]);
+		const el = createGrid({ targets, dismissedTargets });
+		document.body.appendChild(el);
+
+		const events: CustomEvent[] = [];
+		el.addEventListener("target-undismissed", (e) =>
+			events.push(e as CustomEvent),
+		);
+
+		await el.updateComplete;
+
+		expect(events.length).toBe(1);
+		expect(events[0].detail.targetIndex).toBe(0);
+
+		document.body.removeChild(el);
+	});
+
 	it("does NOT re-fire target-undismissed on subsequent updates with no movement", async () => {
 		// Once the parent has handled the event and cleared the dismiss, further
 		// re-renders (e.g. unrelated property changes) must not re-fire the event.

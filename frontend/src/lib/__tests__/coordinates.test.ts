@@ -5,6 +5,7 @@ import {
 	mapTargetToPercent,
 	rawToFovPct,
 	type SmoothBufferEntry,
+	targetCellIndex,
 } from "../coordinates.js";
 
 describe("mapTargetToPercent", () => {
@@ -189,5 +190,30 @@ describe("getSmoothedValue", () => {
 		// y: [100, 200, 300, 400] → median = (200+300)/2 = 250
 		expect(result.x).toBe(25);
 		expect(result.y).toBe(250);
+	});
+});
+
+describe("targetCellIndex", () => {
+	it("returns the cell index for an in-grid fractional position", () => {
+		// col 10.5, row 6.67 → floor → (10, 6) → 6*20+10 = 130
+		expect(targetCellIndex({ col: 10.5, row: 6.67 })).toBe(130);
+	});
+
+	it("returns null when the column is past the right edge", () => {
+		// col 20 would alias into (row+1, col 0) with unchecked row*COLS+col
+		expect(targetCellIndex({ col: 20, row: 1 })).toBeNull();
+	});
+
+	it("returns null when the row is past the bottom edge", () => {
+		expect(targetCellIndex({ col: 5, row: 20 })).toBeNull();
+	});
+
+	it("returns null for negative positions", () => {
+		expect(targetCellIndex({ col: -0.5, row: 3 })).toBeNull();
+		expect(targetCellIndex({ col: 3, row: -0.5 })).toBeNull();
+	});
+
+	it("keeps boundary cells inclusive (col/row 19)", () => {
+		expect(targetCellIndex({ col: 19.9, row: 19.9 })).toBe(399);
 	});
 });

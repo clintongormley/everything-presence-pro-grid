@@ -14,13 +14,18 @@ import { DeviceController } from "./controllers/device-controller.js";
 import { FlasherController } from "./controllers/flasher-controller.js";
 import {
 	GridStateController,
+	serializeFurniture,
 	serializeSlot,
 } from "./controllers/grid-state-controller.js";
 import { TargetController } from "./controllers/target-controller.js";
 import type { PaintAction } from "./lib/cell-painting.js";
 import { parseConfig } from "./lib/config-serialization.js";
 import { renderConfigurationThumbnail } from "./lib/configuration-thumbnail.js";
-import { mapTargetToGridCell, mapTargetToPercent } from "./lib/coordinates.js";
+import {
+	mapTargetToGridCell,
+	mapTargetToPercent,
+	targetCellIndex,
+} from "./lib/coordinates.js";
 import {
 	type FurnitureItem,
 	type FurnitureSticker,
@@ -33,7 +38,6 @@ import {
 	cellIsInside,
 	cellSetOverlay,
 	GRID_CELL_COUNT,
-	GRID_CELL_MM,
 	GRID_COLS,
 	GRID_ROWS,
 	getRawRoomBounds,
@@ -46,6 +50,7 @@ import { getHelpUrl, type PanelTab } from "./lib/help-url.js";
 import { applyPerspective, getInversePerspective } from "./lib/perspective.js";
 import {
 	autoDetectionRange,
+	boundsToRoomMm,
 	computeMaxRangeMm,
 	computeSensorFov,
 	getGridRoomMetrics,
@@ -645,19 +650,16 @@ export class EPPGridPanel extends LitElement {
 			e.preventDefault();
 			const id = `f_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
 			const cb = this._furnitureClipboard;
-			const bounds = this._getRoomBounds();
-			const roomCols = Math.ceil(this._roomWidth / GRID_CELL_MM);
-			const startCol = Math.floor((GRID_COLS - roomCols) / 2);
-			const visMinX = (bounds.minCol - startCol) * GRID_CELL_MM;
-			const visMaxX = (bounds.maxCol + 1 - startCol) * GRID_CELL_MM;
-			const visMinY = bounds.minRow * GRID_CELL_MM;
-			const visMaxY = (bounds.maxRow + 1) * GRID_CELL_MM;
+			// Paste clamps to the PHYSICAL room bounds (drag clamps to the
+			// FOV-aware visible bounds) — a paste must not silently relocate
+			// furniture that legitimately sits in an out-of-FOV corner.
+			const mm = boundsToRoomMm(this._getRoomBounds(), this._roomWidth);
 			const offset = 300; // 1 cell offset so paste is visible
 			const newItem: FurnitureItem = {
 				...cb,
 				id,
-				x: Math.max(visMinX, Math.min(visMaxX - cb.width, cb.x + offset)),
-				y: Math.max(visMinY, Math.min(visMaxY - cb.height, cb.y + offset)),
+				x: Math.max(mm.minX, Math.min(mm.maxX - cb.width, cb.x + offset)),
+				y: Math.max(mm.minY, Math.min(mm.maxY - cb.height, cb.y + offset)),
 			};
 			this._furniture = [...this._furniture, newItem];
 			this._selectedFurnitureId = newItem.id;
@@ -2383,13 +2385,12 @@ export class EPPGridPanel extends LitElement {
 		this._targetMenu = null;
 	}
 
+	// Wraps the shared bounds-checked helper; keeps the -1 sentinel the
+	// panel's callers test with `idx >= 0` / `idx < 0`.
 	private _targetCellIndex(x: number, y: number): number {
 		const pos = mapTargetToGridCell(x, y, this._roomWidth, this._roomDepth);
 		if (!pos) return -1;
-		const col = Math.floor(pos.col);
-		const row = Math.floor(pos.row);
-		if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) return -1;
-		return row * GRID_COLS + col;
+		return targetCellIndex(pos) ?? -1;
 	}
 
 	/**
@@ -2448,17 +2449,7 @@ export class EPPGridPanel extends LitElement {
 				mac: this._selectedMac,
 				grid_bytes: Array.from(this._grid),
 				zone_slots: this._zoneConfigs.map((z, i) => serializeSlot(z, i)),
-				furniture: this._furniture.map((f) => ({
-					type: f.type,
-					icon: f.icon,
-					label: f.label,
-					x: f.x,
-					y: f.y,
-					width: f.width,
-					height: f.height,
-					rotation: f.rotation,
-					lockAspect: f.lockAspect,
-				})),
+				furniture: this._furniture.map(serializeFurniture),
 			});
 		} catch (err) {
 			// Roll back ONLY the cell we mutated, and only if it still holds our

@@ -10,6 +10,7 @@ import {
 	CELL_ROOM_BIT,
 	CELL_ZONE_AND_OVERLAY_MASK,
 	CELL_ZONE_MASK,
+	cellCentreMm,
 	cellIsInside,
 	cellOverlay,
 	cellSetInside,
@@ -25,6 +26,7 @@ import {
 	gridHasInsideRoom,
 	initGridFromRoom,
 	MAX_ZONES,
+	roomStartCol,
 } from "../grid.js";
 
 describe("cellIsInside", () => {
@@ -602,5 +604,39 @@ describe("alignTemplateGrid", () => {
 		expect(cellOverlay(result[3 * GRID_COLS + 3])).toBe(CELL_OVERLAY_ENTRY);
 		expect(warnSpy).toHaveBeenCalled();
 		warnSpy.mockRestore();
+	});
+});
+
+describe("roomStartCol", () => {
+	it("centres a 3000mm room (10 cols) at startCol 5", () => {
+		// roomCols = ceil(3000/300) = 10; startCol = floor((20-10)/2) = 5
+		expect(roomStartCol(3000)).toBe(5);
+	});
+
+	it("rounds partial cells up before centring", () => {
+		// 3100mm → ceil(3100/300) = 11 cols; startCol = floor((20-11)/2) = 4
+		expect(roomStartCol(3100)).toBe(4);
+	});
+
+	it("returns 0 for a room spanning the full grid width", () => {
+		expect(roomStartCol(GRID_COLS * 300)).toBe(0);
+	});
+});
+
+describe("cellCentreMm", () => {
+	it("maps the first room column's centre to x=150mm", () => {
+		// startCol = 5 for a 3000mm room; col 5 centre = (5-5+0.5)*300 = 150
+		const { x, y } = cellCentreMm(5, 0, 3000);
+		expect(x).toBe(150);
+		expect(y).toBe(150);
+	});
+
+	it("maps row independent of room width (sensor at front wall)", () => {
+		expect(cellCentreMm(10, 3, 3000).y).toBe(3.5 * 300);
+		expect(cellCentreMm(10, 3, 5500).y).toBe(3.5 * 300);
+	});
+
+	it("yields negative x for columns left of the room", () => {
+		expect(cellCentreMm(4, 0, 3000).x).toBe(-150);
 	});
 });
