@@ -12,6 +12,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 
 from ..const import DOMAIN
+from ..const import EPP_MANUFACTURER
+from ..const import EPP_MODEL
 from ..const import NUM_ZONE_SLOTS
 from ..const import STATIC_ON_DELAY_MAX
 
@@ -301,6 +303,15 @@ def _sync_firmware_repair_issue(
     else:
         ir.async_delete_issue(hass, DOMAIN, behind_id)
         ir.async_delete_issue(hass, DOMAIN, ahead_id)
+
+
+def _is_epp_device(device: dr.DeviceEntry) -> bool:
+    """Return True when a HA device carries the EPP manufacturer/model signature.
+
+    Shared by discovery, the entity-create pre-filter, and the delete-guard so
+    the check cannot drift between call sites.
+    """
+    return device.manufacturer == EPP_MANUFACTURER and device.model == EPP_MODEL
 
 
 def _extract_mac(device: dr.DeviceEntry) -> str | None:

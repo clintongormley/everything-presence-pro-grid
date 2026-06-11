@@ -182,14 +182,10 @@ async def websocket_delete_esphome_device(
     # an entry with no registered devices yet is also rejected.
     from homeassistant.helpers import device_registry as dr
 
-    from ..const import EPP_MANUFACTURER
-    from ..const import EPP_MODEL
+    from ..device_manager._helpers import _is_epp_device
 
     dev_reg = dr.async_get(hass)
-    if not any(
-        device.manufacturer == EPP_MANUFACTURER and device.model == EPP_MODEL
-        for device in dr.async_entries_for_config_entry(dev_reg, msg["config_entry_id"])
-    ):
+    if not any(_is_epp_device(device) for device in dr.async_entries_for_config_entry(dev_reg, msg["config_entry_id"])):
         connection.send_error(
             msg["id"],
             "not_epp_device",

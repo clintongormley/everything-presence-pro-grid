@@ -8,8 +8,8 @@
 # changes.
 #
 # Used by .github/workflows/post-release-bump.yml to roll main forward to the
-# next minor after a release is promoted. (bin/release.sh remains the separate
-# local release-prep tool and is intentionally not refactored to share this.)
+# next minor after a release is promoted. Also called by bin/release.sh for
+# the manifest version bump — bump-version.sh is the single owner of that edit.
 #
 # Usage: bin/bump-version.sh <version>             bump manifest to <version>
 #        bin/bump-version.sh --validate <version>  semver-check only, no writes

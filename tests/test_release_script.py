@@ -434,6 +434,33 @@ def test_pr_create_failure_after_push_prints_recovery(tmp_path: Path):
     assert "release-v0.93.0" in branches
 
 
+def test_pre_existing_branch_survives_name_collision(tmp_path: Path):
+    """If release-v<version> already exists (with unique commits), and
+    `git checkout -b` fails on the name collision, the script must NOT delete
+    the pre-existing branch — its commits must survive intact."""
+    _init_repo(tmp_path)  # main branch, tag v0.92.0
+
+    # Create the release branch manually with a unique commit.
+    _git("checkout", "-qb", "release-v0.93.0", cwd=tmp_path)
+    (tmp_path / "unique_file.txt").write_text("important work\n")
+    _git("add", ".", cwd=tmp_path)
+    _git("commit", "-qm", "important: unique commit on pre-existing branch", cwd=tmp_path)
+    unique_sha = _git("rev-parse", "HEAD", cwd=tmp_path, capture_output=True, text=True).stdout.strip()
+    _git("checkout", "-q", "main", cwd=tmp_path)
+
+    # Run the script — it will fail because release-v0.93.0 already exists.
+    result = _run(tmp_path, "0.93.0", "--no-push")
+    assert result.returncode != 0, "expected failure on branch name collision"
+
+    # The pre-existing branch must still exist.
+    branches = _git("branch", "--list", "release-v0.93.0", cwd=tmp_path, capture_output=True, text=True).stdout
+    assert "release-v0.93.0" in branches, "pre-existing branch was deleted by the trap"
+
+    # Its unique commit must still be reachable.
+    log = _git("log", "release-v0.93.0", "--oneline", cwd=tmp_path, capture_output=True, text=True).stdout
+    assert unique_sha[:7] in log, f"unique commit {unique_sha[:7]} lost; log:\n{log}"
+
+
 def test_does_not_leak_to_parent_git_dir_via_env(tmp_path: Path, monkeypatch):
     """If GIT_DIR is set in the env (e.g. by a hook or wrapper), tests must not
     accidentally write to that repo. Regression for the bug that caused

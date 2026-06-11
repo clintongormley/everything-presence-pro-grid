@@ -107,6 +107,7 @@ fi
 
 BRANCH="release-$TAG"
 PUSHED=false
+BRANCH_CREATED=false
 
 # From the moment the release branch exists, a failure must not strand the
 # repo on a half-prepared branch (the on-main / clean-tree pre-flights would
@@ -130,13 +131,17 @@ cleanup_on_failure() {
     } >&2
     return 0
   fi
-  echo "✗ release preparation failed; returning to main and deleting $BRANCH" >&2
+  echo "✗ release preparation failed; returning to main" >&2
   git checkout -qf main || true
-  git branch -qD "$BRANCH" 2>/dev/null || true
+  if [ "$BRANCH_CREATED" = "true" ]; then
+    echo "  deleting $BRANCH" >&2
+    git branch -qD "$BRANCH" 2>/dev/null || true
+  fi
 }
 trap cleanup_on_failure EXIT
 
 git checkout -q -b "$BRANCH"
+BRANCH_CREATED=true
 
 # Always bump manifest.json version (delegated to bump-version.sh, the single
 # owner of the manifest edit and its non-greedy sed pattern).

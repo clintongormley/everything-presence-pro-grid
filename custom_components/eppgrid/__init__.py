@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import logging
 import os
@@ -77,12 +76,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # half-started manager (or its listeners) and don't leave a panel
         # registered that the retry can't overwrite.
         hass.data.pop(DOMAIN, None)
-        await async_apply_panel_visibility(hass, False)
+        try:
+            await async_apply_panel_visibility(hass, False)
+        except Exception:
+            _LOGGER.exception("async_apply_panel_visibility(False) failed during setup unwind")
         # A raising cleanup must not mask the original setup error — it would
         # e.g. turn ConfigEntryNotReady (retry later) into a permanent
         # SETUP_ERROR.
-        with contextlib.suppress(Exception):
+        try:
             await manager.async_stop()
+        except Exception:
+            _LOGGER.exception("manager.async_stop failed during setup unwind")
         raise
 
     # Options changes are applied directly by the options flow (store write +

@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 from collections.abc import AsyncIterator
+from collections.abc import Callable
 from collections.abc import Coroutine
 from dataclasses import dataclass
 from typing import Any
@@ -24,8 +25,6 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 
-from ..const import EPP_MANUFACTURER
-from ..const import EPP_MODEL
 from ..const import FIRMWARE_VERSION
 from ..const import MAX_ZONES
 from ..const import empty_zone_slots
@@ -38,6 +37,7 @@ from ._helpers import _compute_pipeline
 from ._helpers import _extract_host
 from ._helpers import _extract_mac
 from ._helpers import _extract_noise_psk
+from ._helpers import _is_epp_device
 from ._helpers import _raise_service_unavailable as _raise_service_unavailable  # re-export for tests
 from ._helpers import _resolve_zone_name
 from ._helpers import _sync_firmware_repair_issue
@@ -64,6 +64,23 @@ _BUILD_FLAGS_CONNECT_TRANSIENT: tuple[type[BaseException], ...] = (
     ConnectionError,
     APIConnectionError,
 )
+
+# States that count as "device offline" for the availability transition guard.
+# Treat 'unknown' like 'unavailable' — newly-added ESPHome entities can go
+# unknown → value without passing through unavailable, and that transition
+# still means the device just came online.
+_OFFLINE_STATES: frozenset[str] = frozenset({STATE_UNAVAILABLE, STATE_UNKNOWN})
+# `read_firmware_version` treats unavailable, unknown, AND empty string as
+# 'no data'. Mirror that for the firmware-arrival guard in `_on_state_changed`;
+# otherwise `unavailable → "" → real_version` would slip past because the
+# second transition has `old_state=""` which the narrower `_OFFLINE_STATES`
+# set wouldn't match, and the push retrigger would never fire.
+_FW_OFFLINE_STATES: frozenset[str] = frozenset({STATE_UNAVAILABLE, STATE_UNKNOWN, ""})
+
+#: Type for device-list-change callbacks. The shared payload must be treated
+#: as read-only — all subscribers receive the **same** list object, so
+#: mutating it would corrupt other subscribers' view of the data.
+DeviceListCallback = Callable[[list[dict[str, Any]]], None]
 
 
 @dataclass
@@ -190,7 +207,7 @@ class DeviceManager:
         # broadcast; consecutive retries against the same already-failing
         # device are silent so we don't spam every subscriber on every poll.
         self._connection_failed: set[str] = set()
-        self._device_list_callbacks: list[Any] = []
+        self._device_list_callbacks: list[DeviceListCallback] = []
         # Unsub callables for ESPHome config-entry update listeners, keyed by entry_id
         self._entry_update_unsubs: dict[str, Any] = {}
         # Tracks fire-and-forget tasks scheduled by event handlers so
@@ -260,12 +277,14 @@ class DeviceManager:
         DeviceManager._manage_log_subscription(conn, config)
 
     @callback
-    def on_device_list_changed(self, cb: Any) -> Any:
+    def on_device_list_changed(self, cb: DeviceListCallback) -> Callable[[], None]:
         """Register a callback for device list changes. Returns an unsub callable.
 
         The callback receives the fresh ``list_devices()`` payload as its
         single argument — computed ONCE per change event and shared across
         all subscribers, so N subscribers don't trigger N registry scans.
+        The shared payload must be treated as read-only — all subscribers
+        receive the same list object.
         """
         self._device_list_callbacks.append(cb)
 
@@ -703,7 +722,7 @@ class DeviceManager:
             if device is None:
                 continue
 
-            if device.manufacturer != EPP_MANUFACTURER or device.model != EPP_MODEL:
+            if not _is_epp_device(device):
                 continue
 
             mac = _extract_mac(device)
@@ -839,7 +858,7 @@ class DeviceManager:
         if entry.device_id:
             dev_reg = dr.async_get(self._hass)
             device = dev_reg.async_get(entry.device_id)
-            if device is not None and (device.manufacturer != EPP_MANUFACTURER or device.model != EPP_MODEL):
+            if device is not None and not _is_epp_device(device):
                 return
         # New EPP-candidate entity — refresh the targeted state-change
         # tracker so the new entity_id gets included, whether it's on a
@@ -913,25 +932,13 @@ class DeviceManager:
         # STATE_UNAVAILABLE → value from our point of view.
         old_state_value = old_state.state if old_state is not None else STATE_UNAVAILABLE
 
-        # Treat 'unknown' like 'unavailable' — newly-added ESPHome entities
-        # can go unknown → value without passing through unavailable, and
-        # that transition still means the device just came online.
-        offline_states = (STATE_UNAVAILABLE, STATE_UNKNOWN)
-        # `read_firmware_version` treats unavailable, unknown, AND empty
-        # string as 'no data'. Mirror that for the firmware-arrival guard
-        # below; otherwise `unavailable → "" → real_version` would slip past
-        # because the second transition has `old_state=""` which the
-        # narrower `offline_states` set wouldn't match, and the push
-        # retrigger would never fire.
-        fw_offline_states = (STATE_UNAVAILABLE, STATE_UNKNOWN, "")
-
         # Hot-path guard: every state change of every tracked entity lands
         # here, and everything below acts only on availability transitions.
         # A plain value→value sensor update (the overwhelmingly common case)
         # must bail before paying the ent_reg/dev_reg lookups and MAC
-        # extraction. The old side uses the wider `fw_offline_states` set so
+        # extraction. The old side uses the wider `_FW_OFFLINE_STATES` set so
         # the firmware-version `"" → value` arrival still gets through.
-        if old_state_value not in fw_offline_states and new_state.state not in offline_states:
+        if old_state_value not in _FW_OFFLINE_STATES and new_state.state not in _OFFLINE_STATES:
             return
 
         # Check if this entity belongs to a managed ESPHome device
@@ -962,8 +969,8 @@ class DeviceManager:
         if (
             entry.domain == "sensor"
             and entry.unique_id.endswith("-firmware_version")
-            and old_state_value in fw_offline_states
-            and new_state.state not in fw_offline_states
+            and old_state_value in _FW_OFFLINE_STATES
+            and new_state.state not in _FW_OFFLINE_STATES
         ):
             fw_ver = self.read_firmware_version(entry.device_id)
             if fw_ver is not None:
@@ -985,7 +992,7 @@ class DeviceManager:
                 if mac in self._pushing:
                     self._spawn(self._on_device_available(mac))
 
-        if new_state.state in offline_states:
+        if new_state.state in _OFFLINE_STATES:
             # Device went offline — allow a fresh push when it comes back and
             # close any active session so the stale APIClient is replaced on
             # the next frontend reconnect. Route through schedule_close_session
@@ -1005,7 +1012,7 @@ class DeviceManager:
                 self._fire_device_list_changed()
             return
 
-        if old_state_value not in offline_states:
+        if old_state_value not in _OFFLINE_STATES:
             return
 
         # Device came online — push config once. The `_pushing` guard
@@ -1700,9 +1707,7 @@ class DeviceManager:
 
         for device in dev_reg.devices.values():
             # Must be an EPP device (check manufacturer + model)
-            if device.manufacturer != EPP_MANUFACTURER:
-                continue
-            if device.model != EPP_MODEL:
+            if not _is_epp_device(device):
                 continue
 
             mac = _extract_mac(device)

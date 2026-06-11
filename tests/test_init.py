@@ -395,12 +395,14 @@ async def test_setup_entry_unwinds_on_start_failure_and_allows_retry(
 
 
 async def test_setup_unwind_stop_failure_does_not_mask_original_error(
-    hass: HomeAssistant, config_entry: MockConfigEntry
+    hass: HomeAssistant, config_entry: MockConfigEntry, caplog
 ) -> None:
     """If the unwind's manager.async_stop itself raises, the ORIGINAL setup
     error must still propagate — a raising cleanup would otherwise replace
     e.g. ConfigEntryNotReady (retry later) with the cleanup's exception
-    (permanent SETUP_ERROR)."""
+    (permanent SETUP_ERROR). The cleanup error must be logged, not swallowed."""
+    import logging
+
     from homeassistant.exceptions import ConfigEntryNotReady
 
     if hass.http is None:
@@ -414,6 +416,7 @@ async def test_setup_unwind_stop_failure_does_not_mask_original_error(
             return_value="/eppgrid_static/eppgrid-panel.js?v=deadbeef",
         ),
         patch("custom_components.eppgrid._register_panel", new_callable=AsyncMock),
+        caplog.at_level(logging.ERROR, logger="custom_components.eppgrid"),
     ):
         mock_dm = mock_dm_cls.return_value
         mock_dm.async_start = AsyncMock(side_effect=ConfigEntryNotReady("device offline"))
@@ -424,6 +427,55 @@ async def test_setup_unwind_stop_failure_does_not_mask_original_error(
 
         mock_dm.async_stop.assert_awaited_once()
     assert DOMAIN not in hass.data
+    assert "manager.async_stop failed during setup unwind" in caplog.text
+
+
+async def test_setup_unwind_panel_visibility_failure_does_not_mask_original_error(
+    hass: HomeAssistant, config_entry: MockConfigEntry, caplog
+) -> None:
+    """If async_apply_panel_visibility(False) raises during unwind, async_stop
+    must still run and the original setup error must still propagate."""
+    import logging
+
+    from homeassistant.exceptions import ConfigEntryNotReady
+
+    if hass.http is None:
+        hass.http = MagicMock()
+
+    with (
+        patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch(
+            "custom_components.eppgrid._register_frontend_resources",
+            new_callable=AsyncMock,
+            return_value="/eppgrid_static/eppgrid-panel.js?v=deadbeef",
+        ),
+        patch("custom_components.eppgrid._register_panel", new_callable=AsyncMock),
+        patch(
+            "custom_components.eppgrid.async_apply_panel_visibility",
+            new_callable=AsyncMock,
+        ) as mock_panel_vis,
+        caplog.at_level(logging.ERROR, logger="custom_components.eppgrid"),
+    ):
+        mock_dm = mock_dm_cls.return_value
+        mock_dm.async_start = AsyncMock(side_effect=ConfigEntryNotReady("device offline"))
+        mock_dm.async_stop = AsyncMock()
+
+        call_count = 0
+
+        async def panel_vis_side_effect(h, visible):
+            nonlocal call_count
+            call_count += 1
+            if not visible:
+                raise RuntimeError("panel removal exploded")
+
+        mock_panel_vis.side_effect = panel_vis_side_effect
+
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, config_entry)
+
+        mock_dm.async_stop.assert_awaited_once()
+    assert DOMAIN not in hass.data
+    assert "async_apply_panel_visibility(False) failed during setup unwind" in caplog.text
 
 
 async def test_setup_entry_unwinds_on_panel_failure(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
