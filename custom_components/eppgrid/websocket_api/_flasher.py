@@ -175,6 +175,29 @@ async def websocket_delete_esphome_device(
             translation_key="only_esphome_can_be_deleted",
         )
         return
+    # Scope to EPP hardware: the entry must own at least one device carrying
+    # the EPP manufacturer/model signature (same check discovery uses).
+    # Without this, an admin panel client could remove ANY ESPHome
+    # integration in the installation through this command. Fail-closed:
+    # an entry with no registered devices yet is also rejected.
+    from homeassistant.helpers import device_registry as dr
+
+    from ..const import EPP_MANUFACTURER
+    from ..const import EPP_MODEL
+
+    dev_reg = dr.async_get(hass)
+    if not any(
+        device.manufacturer == EPP_MANUFACTURER and device.model == EPP_MODEL
+        for device in dr.async_entries_for_config_entry(dev_reg, msg["config_entry_id"])
+    ):
+        connection.send_error(
+            msg["id"],
+            "not_epp_device",
+            "Config entry is not an Everything Presence Pro device",
+            translation_domain=DOMAIN,
+            translation_key="not_epp_device",
+        )
+        return
     try:
         await hass.config_entries.async_remove(msg["config_entry_id"])
     except Exception as err:

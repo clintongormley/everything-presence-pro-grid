@@ -12,15 +12,16 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 
-from ..const import DOMAIN
 from ..const import GRID_COLS
 from ..const import GRID_ROWS
 from . import _LOGGER
 from . import _OTA_LOG_CATEGORY
 from . import _OTA_LOG_LEVEL
 from . import MAC_SCHEMA
+from . import _require_known_device
 from . import _require_manager
 from . import _send_exception
+from . import _send_no_session
 
 # Outer safety net: if no terminal state arrives within 5 minutes after the
 # OTA starts, emit `state: error` so the UI doesn't spin forever.
@@ -45,8 +46,6 @@ async def websocket_update_firmware(
     manager: Any,
 ) -> None:
     """Trigger firmware OTA update — delegates to DeviceManager.async_trigger_ota."""
-    from homeassistant.exceptions import HomeAssistantError
-
     try:
         await manager.async_trigger_ota(msg["mac"])
     except HomeAssistantError as err:
@@ -83,13 +82,7 @@ async def websocket_subscribe_ota_progress(
     with contextlib.suppress(Exception):
         device_conn = await manager.async_open_session(mac)
     if device_conn is None:
-        connection.send_error(
-            msg["id"],
-            "no_session",
-            "Device not available",
-            translation_domain=DOMAIN,
-            translation_key="device_not_available",
-        )
+        _send_no_session(connection, msg["id"])
         return
     if not device_conn.connected:
         # The connection raced to close between the open and here; treat it
@@ -97,13 +90,7 @@ async def websocket_subscribe_ota_progress(
         # execute_service calls AttributeError — but release the reference
         # the open just took, or the dead session's refcount never drains.
         manager.release_session(mac, device_conn)
-        connection.send_error(
-            msg["id"],
-            "no_session",
-            "Device not available",
-            translation_domain=DOMAIN,
-            translation_key="device_not_available",
-        )
+        _send_no_session(connection, msg["id"])
         return
 
     # Start sentinel: latched once we've seen evidence that the device is
@@ -119,14 +106,15 @@ async def websocket_subscribe_ota_progress(
     # Ensure device logs are subscribed so _on_log callbacks fire
     from aioesphomeapi import LogLevel as ESPLogLevel
 
-    # Shared watcher state lives on the DeviceConnection: N concurrent OTA
-    # watchers (two tabs, two users) share ONE device log subscription and
-    # ONE log-level bump, reverted only when the last watcher releases.
-    device_conn.ota_watchers += 1
-    if device_conn.ota_watchers == 1:
+    # Shared watcher state lives on the DeviceConnection (`ota`): N
+    # concurrent OTA watchers (two tabs, two users) share ONE device log
+    # subscription and ONE log-level bump, reverted only when the last
+    # watcher releases.
+    device_conn.ota.watchers += 1
+    if device_conn.ota.watchers == 1:
         if not device_conn.is_log_subscribed:
             device_conn.subscribe_logs(ESPLogLevel.LOG_LEVEL_ERROR)
-            device_conn.ota_started_log_sub = True
+            device_conn.ota.started_log_sub = True
 
         # Firmware silences the ESPHome logger to NONE on boot, so even ERROR
         # messages from http_request.ota / http_request.update never leave the
@@ -139,7 +127,7 @@ async def websocket_subscribe_ota_progress(
                 "epp_set_log_level",
                 {"category": _OTA_LOG_CATEGORY, "level": _OTA_LOG_LEVEL},
             )
-            device_conn.ota_bumped_log_level = True
+            device_conn.ota.bumped_log_level = True
         except HomeAssistantError:
             # Older firmware doesn't expose epp_set_log_level — fine; the
             # ESPHome OTA logger isn't silenced on those builds anyway.
@@ -315,15 +303,19 @@ async def websocket_subscribe_ota_progress(
         resets log levels) or the next config push of the stored
         log_levels.
         """
-        device_conn.ota_watchers -= 1
-        last_watcher = device_conn.ota_watchers <= 0
+        ota = device_conn.ota
+        ota.watchers -= 1
+        # `<= 0` (not `== 0`): a force-closed connection resets the shared
+        # state mid-flight, so a late release can land on an already-zeroed
+        # counter — clamp instead of going negative.
+        last_watcher = ota.watchers <= 0
         bumped = started = False
         if last_watcher:
-            device_conn.ota_watchers = 0
-            bumped = device_conn.ota_bumped_log_level
-            started = device_conn.ota_started_log_sub
-            device_conn.ota_bumped_log_level = False
-            device_conn.ota_started_log_sub = False
+            ota.watchers = 0
+            bumped = ota.bumped_log_level
+            started = ota.started_log_sub
+            ota.bumped_log_level = False
+            ota.started_log_sub = False
         closing = manager.release_session(mac, device_conn)
         if not last_watcher or closing is not None:
             return
@@ -340,13 +332,7 @@ async def websocket_subscribe_ota_progress(
         # last watcher, release the session reference) before erroring out.
         _LOGGER.debug("Failed to subscribe to states for OTA progress on %s", mac, exc_info=True)
         _release_watcher()
-        connection.send_error(
-            msg["id"],
-            "no_session",
-            "Device not available",
-            translation_domain=DOMAIN,
-            translation_key="device_not_available",
-        )
+        _send_no_session(connection, msg["id"])
         return
     device_conn.add_log_callback(_on_log)
     connection.send_result(msg["id"])
@@ -390,28 +376,16 @@ async def websocket_dismiss_target(
     manager: Any,
 ) -> None:
     """Dismiss a target at a specific cell (ephemeral, firmware-only)."""
-    mac = msg["mac"]
-    dev = manager.devices.get(mac)
-    if not dev or not dev.host:
-        connection.send_error(
-            msg["id"],
-            "device_unavailable",
-            "Device not connected",
-            translation_domain=DOMAIN,
-            translation_key="device_not_connected",
-        )
+    if not _require_known_device(connection, manager, msg):
         return
+    mac = msg["mac"]
 
     try:
         session = manager.get_session(mac)
         if session is None:
-            connection.send_error(
-                msg["id"],
-                "no_session",
-                "No active session",
-                translation_domain=DOMAIN,
-                translation_key="no_active_session",
-            )
+            # Known device but no live session (offline devices land here
+            # too — without a session there's nothing to dismiss against).
+            _send_no_session(connection, msg["id"])
             return
         await session.async_dismiss_target(msg["target_index"], msg["cell_index"])
     except Exception as err:

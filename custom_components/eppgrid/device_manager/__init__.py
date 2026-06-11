@@ -31,6 +31,7 @@ from ..const import MAX_ZONES
 from ..const import empty_zone_slots
 from ..storage import EPPGridStore
 from ._connection import DeviceConnection
+from ._connection import OtaWatcherState as OtaWatcherState  # re-export for websocket_api / tests
 from ._helpers import ZONE_TYPE_DEFAULTS as ZONE_TYPE_DEFAULTS  # re-export for tests
 from ._helpers import _compare_firmware_version
 from ._helpers import _compute_pipeline

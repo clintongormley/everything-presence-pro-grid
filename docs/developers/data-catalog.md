@@ -229,7 +229,9 @@ Triggers OTA firmware update on a device via the `set_update_manifest` API actio
 
 Subscribes to OTA firmware update progress for a device. Takes one refcounted session reference via `async_open_session` (shared with `subscribe_device` — see the session-lifecycle section). Subscribes to ESPHome `UpdateState` entity changes and device log messages to forward progress, success, and error events to the frontend. Uses a shared `done` flag so only one terminal event (success or error) is sent.
 
-N concurrent OTA watchers on the same device share ONE device log subscription and ONE `epp_set_log_level` bump (tracked as `ota_watchers` / `ota_started_log_sub` / `ota_bumped_log_level` on the `DeviceConnection`); the bump is reverted to the stored level — and the log subscription dropped — only when the last watcher unsubscribes, and skipped entirely when that release also closes the session.
+N concurrent OTA watchers on the same device share ONE device log subscription and ONE `epp_set_log_level` bump (tracked in the `OtaWatcherState` dataclass on the `DeviceConnection`); the bump is reverted to the stored level — and the log subscription dropped — only when the last watcher unsubscribes, and skipped entirely when that release also closes the session.
+
+When the device session can't be opened (device offline/unknown, or the connection raced to close), the command returns the standard no-session error: code `no_session`, translation key `no_active_session`.
 
 **Request:** `{ "type": "eppgrid/subscribe_ota_progress", "mac": str }`
 
@@ -262,7 +264,7 @@ Saves grid, zones, furniture. Pushes config to device. Updates zone entity enabl
 
 **Request:** `{ "type": "eppgrid/set_room_layout", "mac": str, "grid_bytes": int[400], "zone_slots": ZoneSlot[8], "furniture": FurnitureItem[] }`
 
-`grid_bytes` must contain exactly `GRID_COLS * GRID_ROWS` (400) entries — firmware rejects partial grids, so the schema does too. Each `furniture` item is validated against the shape the frontend serializes (`type`/`icon`/`label` bounded strings, `x`/`y`/`width`/`height`/`rotation` finite numbers, `lockAspect` bool, optional bounded `id`; unknown keys rejected) and the list's serialized JSON is capped at 64 KiB.
+`grid_bytes` must contain exactly `GRID_COLS * GRID_ROWS` (400) entries — firmware rejects partial grids, so the schema does too. Each `furniture` item is validated against the shape the frontend serializes (`type`/`icon`/`label` bounded strings, **required** finite `x`/`y`/`width`/`height` geometry, optional finite `rotation`, `lockAspect` bool, optional bounded `id`; unknown keys rejected) and the list's serialized JSON is capped at 64 KiB.
 
 `zone_slots` is a fixed-length-8 array. Slot 0 is zone 0 (always present, no name/color); slots 1-7 are named zones or `null` when unused.
 
@@ -362,6 +364,8 @@ Marks a single target slot as dismissed at a given grid cell so the firmware's g
 
 `cell_index = -1` means "any cell" (clears the dismiss flag for that target). Read-only from an authorisation perspective — open to any authenticated user.
 
+Errors: `device_not_found` for an unknown MAC (standard `_require_known_device` check), `no_session` / `no_active_session` when no live session exists (including known-but-offline devices), `dismiss_failed` when the firmware service call fails.
+
 ### `set_show_room_calibration_tutorial`
 
 Per-device toggle for the calibration-tutorial overlay shown above the wizard. Persisted alongside the rest of the device's settings.
@@ -412,7 +416,7 @@ Returns all ESPHome devices matching EPP manufacturer/model, regardless of wheth
 
 #### `delete_esphome_device`
 
-Removes an ESPHome config entry (used to clean up after flashing).
+Removes an ESPHome config entry (used to clean up after flashing). Scoped to EPP hardware: the entry must be an ESPHome entry (`only_esphome_can_be_deleted` otherwise) AND own at least one device-registry entry carrying the EPP manufacturer/model signature — otherwise the command returns `not_epp_device`. Entries with no registered devices yet are rejected (fail-closed).
 
 **Request:** `{ "type": "eppgrid/delete_esphome_device", "config_entry_id": str }`
 

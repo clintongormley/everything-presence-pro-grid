@@ -38,6 +38,7 @@
     "build_flags_unavailable": { "message": "Device build flags not yet available" },
     "config_entry_not_found": { "message": "Config entry not found" },
     "only_esphome_can_be_deleted": { "message": "Only ESPHome config entries can be deleted by this command" },
+    "not_epp_device": { "message": "Config entry is not an Everything Presence Pro device" },
     "service_not_available": { "message": "Service {service} not available" },
     "firmware_behind": { "message": "Firmware update required" },
     "firmware_ahead": { "message": "Integration update required" },

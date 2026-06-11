@@ -66,12 +66,22 @@ def _check_finite(value: float) -> float:
     return value
 
 
+def finite_float(min: float = -1e6, max: float = 1e6) -> vol.All:
+    """Schema factory: coerced, finite float within [min, max].
+
+    Single definition of the `Coerce(float) → _check_finite → Range` chain —
+    _check_finite must run BEFORE Range (NaN slips through every < / >
+    comparison), and the factory keeps call sites from re-assembling the
+    chain in the wrong order.
+    """
+    return vol.All(vol.Coerce(float), _check_finite, vol.Range(min=min, max=max))
+
+
 # Finite-float schema for numeric fields with no natural tighter range.
 # ±1e6 generously bounds everything the frontend sends (mm coordinates,
 # metres, seconds, sensor offsets) while rejecting absurd magnitudes.
-# Fields with a tighter domain keep their own vol.Range but still chain
-# _check_finite before it (see set_settings / set_setup in _devices.py).
-FINITE_FLOAT_SCHEMA: vol.All = vol.All(vol.Coerce(float), _check_finite, vol.Range(min=-1e6, max=1e6))
+# Fields with a tighter domain use `finite_float(min=…, max=…)` directly.
+FINITE_FLOAT_SCHEMA: vol.All = finite_float()
 
 # Cap a configuration blob's serialized JSON size at 256 KiB. Stored
 # configurations include grid bytes (~400 ints), zone slots (8), and
@@ -118,17 +128,19 @@ _MAX_FURNITURE_JSON_BYTES = 64 * 1024
 # explicit known keys only. `id` is stripped by the frontend before saving
 # (parseFurniture regenerates ids on load) but is accepted — bounded — for
 # safety. PREVENT_EXTRA plus bounded strings and finite geometry keep
-# arbitrary blobs out of storage.
+# arbitrary blobs out of storage. Geometry (`x`/`y`/`width`/`height`) is
+# required — the frontend always sends it, and a degenerate item without it
+# can't be rendered.
 _FURNITURE_ITEM_SCHEMA = vol.Schema(
     {
         vol.Optional("id"): vol.All(str, vol.Length(max=64)),
         vol.Optional("type"): vol.In(["icon", "svg"]),
         vol.Optional("icon"): vol.All(str, vol.Length(max=128)),
         vol.Optional("label"): vol.All(str, vol.Length(max=128)),
-        vol.Optional("x"): FINITE_FLOAT_SCHEMA,
-        vol.Optional("y"): FINITE_FLOAT_SCHEMA,
-        vol.Optional("width"): FINITE_FLOAT_SCHEMA,
-        vol.Optional("height"): FINITE_FLOAT_SCHEMA,
+        vol.Required("x"): FINITE_FLOAT_SCHEMA,
+        vol.Required("y"): FINITE_FLOAT_SCHEMA,
+        vol.Required("width"): FINITE_FLOAT_SCHEMA,
+        vol.Required("height"): FINITE_FLOAT_SCHEMA,
         vol.Optional("rotation"): FINITE_FLOAT_SCHEMA,
         vol.Optional("lockAspect"): bool,
     },
@@ -204,6 +216,23 @@ def _validate_zone_slots(value: Any) -> list:
             if field in slot and (not isinstance(slot[field], (int, float)) or isinstance(slot[field], bool)):
                 raise vol.Invalid(f"zone_slots[{i}] '{field}' must be numeric when present")
     return value
+
+
+def _send_no_session(connection: websocket_api.ActiveConnection, msg_id: int) -> None:
+    """Send the standard no-session error.
+
+    ONE code+key pairing (`no_session` / `no_active_session`) for every
+    handler that needs a live device session and doesn't have one —
+    raw/grid target streams, distance override, dismiss target, and the
+    OTA progress watcher.
+    """
+    connection.send_error(
+        msg_id,
+        "no_session",
+        "No active session — call subscribe_device first",
+        translation_domain=DOMAIN,
+        translation_key="no_active_session",
+    )
 
 
 def _send_not_loaded(connection: websocket_api.ActiveConnection, msg_id: int) -> None:

@@ -447,6 +447,34 @@ class TestWebSocketSetSetup:
 
         assert "AA:BB:CC:DD:EE:FF" in mock_dm._entity_update_macs
 
+    async def test_set_setup_arms_guard_before_zone_entity_update(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """The NON-deleting path must also arm the entity-update guard, and
+        do so BEFORE async_update_zone_entities mutates the registry —
+        mirroring what set_settings already does."""
+        mock_dm = await setup_integration(hass, config_entry)
+        register_managed_device(mock_dm)
+
+        order: list[str] = []
+        mock_dm.schedule_entity_update_clear = MagicMock(side_effect=lambda *a, **k: order.append("guard"))
+        mock_dm.async_update_zone_entities = AsyncMock(side_effect=lambda *a, **k: order.append("update"))
+
+        from custom_components.eppgrid.websocket_api import websocket_set_setup
+
+        msg = {
+            "id": 7,
+            "type": "eppgrid/set_setup",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "perspective": [1.0] * 8,
+            "room_width": 3000.0,
+            "room_depth": 4000.0,
+        }
+        await call_async_handler(hass, websocket_set_setup, MagicMock(), msg)
+
+        assert order[0] == "guard"
+        assert "update" in order
+
     async def test_set_setup_calibration_does_not_enable_target_xy(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
@@ -543,6 +571,51 @@ class TestWebSocketSetRoomLayout:
         mock_dm.request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
         mock_dm.async_update_zone_entities.assert_awaited_with("AA:BB:CC:DD:EE:FF", zone_slots)
         connection.send_result.assert_called_once_with(5)
+
+    @staticmethod
+    def _layout_msg(msg_id: int = 5) -> dict:
+        return {
+            "id": msg_id,
+            "type": "eppgrid/set_room_layout",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "grid_bytes": [1] * 400,
+            "zone_slots": [{"type": "default"}] + [None] * 7,
+            "furniture": [],
+        }
+
+    async def test_set_room_layout_requests_push_without_host(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """request_push is called even when the device has no host yet —
+        the debounced push no-ops safely without a host and arms the
+        failed-push recovery, so the asymmetric `dev.host` gate is gone."""
+        mock_dm = await setup_integration(hass, config_entry)
+        register_managed_device(mock_dm, host=None)
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        await call_async_handler(hass, websocket_set_room_layout, MagicMock(), self._layout_msg())
+
+        mock_dm.request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
+
+    async def test_set_room_layout_arms_guard_before_zone_entity_update(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """The entity-update reload guard must be armed BEFORE
+        async_update_zone_entities mutates the registry — arming after would
+        leave a window where the ESPHome reload triggers a redundant push."""
+        mock_dm = await setup_integration(hass, config_entry)
+        register_managed_device(mock_dm)
+
+        order: list[str] = []
+        mock_dm.schedule_entity_update_clear = MagicMock(side_effect=lambda *a, **k: order.append("guard"))
+        mock_dm.async_update_zone_entities = AsyncMock(side_effect=lambda *a, **k: order.append("update"))
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        await call_async_handler(hass, websocket_set_room_layout, MagicMock(), self._layout_msg())
+
+        assert order == ["guard", "update"]
 
     async def test_set_room_layout_requires_admin(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """Non-admin users cannot push room layout."""
@@ -1626,13 +1699,20 @@ class TestSchemaInputBounds:
         with pytest.raises(vol.Invalid):
             self._validate(websocket_set_room_layout, self._room_layout_payload(["garbage"]))
 
+    @staticmethod
+    def _furniture_item(**overrides: object) -> dict:
+        """A minimal valid furniture item (all required geometry present)."""
+        item: dict = {"icon": "mdi:sofa", "x": 1.0, "y": 2.0, "width": 100.0, "height": 50.0}
+        item.update(overrides)
+        return item
+
     def test_furniture_rejects_unknown_keys(self) -> None:
         """Unknown keys in a furniture item are rejected (no arbitrary blobs)."""
         import voluptuous as vol
 
         from custom_components.eppgrid.websocket_api import websocket_set_room_layout
 
-        item = {"icon": "mdi:sofa", "evil": "payload"}
+        item = self._furniture_item(evil="payload")
         with pytest.raises(vol.Invalid):
             self._validate(websocket_set_room_layout, self._room_layout_payload([item]))
 
@@ -1642,7 +1722,7 @@ class TestSchemaInputBounds:
 
         from custom_components.eppgrid.websocket_api import websocket_set_room_layout
 
-        item = {"icon": "mdi:sofa", "label": "x" * 1000}
+        item = self._furniture_item(label="x" * 1000)
         with pytest.raises(vol.Invalid):
             self._validate(websocket_set_room_layout, self._room_layout_payload([item]))
 
@@ -1653,7 +1733,29 @@ class TestSchemaInputBounds:
 
         from custom_components.eppgrid.websocket_api import websocket_set_room_layout
 
-        item = {"icon": "mdi:sofa", field: "NaN"}
+        item = self._furniture_item(**{field: "NaN"})
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, self._room_layout_payload([item]))
+
+    def test_furniture_rejects_empty_item(self) -> None:
+        """A degenerate `{}` item is rejected — geometry keys are required."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        with pytest.raises(vol.Invalid):
+            self._validate(websocket_set_room_layout, self._room_layout_payload([{}]))
+
+    @pytest.mark.parametrize("field", ["x", "y", "width", "height"])
+    def test_furniture_rejects_missing_geometry_key(self, field: str) -> None:
+        """`x`/`y`/`width`/`height` are required — the frontend always sends
+        them, and an item without geometry can't be rendered."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import websocket_set_room_layout
+
+        item = self._furniture_item()
+        del item[field]
         with pytest.raises(vol.Invalid):
             self._validate(websocket_set_room_layout, self._room_layout_payload([item]))
 
@@ -3216,6 +3318,36 @@ class TestWebSocketEntityEnabled:
                 "binary_sensor.epp_zone_1_presence",
                 disabled_by=RegistryEntryDisabler.INTEGRATION,
             )
+
+    async def test_set_entity_enabled_arms_guard_before_registry_write(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Toggling an entity triggers an ESPHome reload via the registry
+        write — the entity-update guard must be armed BEFORE the write so
+        the reload's reconnect doesn't fire a redundant push."""
+        mock_dm = await setup_integration(hass, config_entry)
+        self._register_device_with_id(mock_dm)
+
+        order: list[str] = []
+        mock_dm.schedule_entity_update_clear = MagicMock(side_effect=lambda *a, **k: order.append("guard"))
+
+        from custom_components.eppgrid.websocket_api import websocket_set_entity_enabled
+
+        with patch("custom_components.eppgrid.websocket_api._devices.er.async_get") as mock_er:
+            mock_registry = mock_er.return_value
+            mock_registry.async_get.return_value = MagicMock(device_id="ha-device-1")
+            mock_registry.async_update_entity = MagicMock(side_effect=lambda *a, **k: order.append("write"))
+
+            msg = {
+                "id": 81,
+                "type": "eppgrid/set_entity_enabled",
+                "mac": "AA:BB:CC:DD:EE:FF",
+                "entity_id": "binary_sensor.epp_zone_1_presence",
+                "enabled": True,
+            }
+            websocket_set_entity_enabled(hass, MagicMock(), msg)
+
+        assert order == ["guard", "write"]
 
     async def test_set_entity_enabled_unknown_mac_rejected(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
@@ -5112,7 +5244,8 @@ class TestWebSocketDismissTarget:
         connection.send_result.assert_called_once_with(200)
 
     async def test_dismiss_target_no_device(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
-        """dismiss_target returns error when device not found."""
+        """dismiss_target uses the standard `device_not_found` error for an
+        unknown MAC (via `_require_known_device`), not a hand-rolled code."""
         mock_dm = await setup_integration(hass, config_entry)
         mock_dm.devices = {}
 
@@ -5131,7 +5264,7 @@ class TestWebSocketDismissTarget:
 
         connection.send_error.assert_called_once()
         args = connection.send_error.call_args[0]
-        assert args[1] == "device_unavailable"
+        assert args[1] == "device_not_found"
 
     async def test_dismiss_target_no_session(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """dismiss_target returns error when no active session."""

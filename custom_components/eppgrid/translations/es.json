@@ -38,6 +38,7 @@
     "build_flags_unavailable": { "message": "Los indicadores de compilación del dispositivo aún no están disponibles" },
     "config_entry_not_found": { "message": "Entrada de configuración no encontrada" },
     "only_esphome_can_be_deleted": { "message": "Solo las entradas de configuración de ESPHome pueden eliminarse con este comando" },
+    "not_epp_device": { "message": "La entrada de configuración no es un dispositivo Everything Presence Pro" },
     "service_not_available": { "message": "El servicio {service} no está disponible" },
     "firmware_behind": { "message": "Actualización de firmware necesaria" },
     "firmware_ahead": { "message": "Actualización de la integración necesaria" },

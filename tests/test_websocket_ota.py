@@ -42,8 +42,6 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
         mock_dm._entity_update_macs = set()
         mock_dm.async_update_zone_entities = AsyncMock()
         mock_dm.async_open_session = AsyncMock(return_value=None)
-        mock_dm.async_close_session = AsyncMock()
-        mock_dm.get_session = MagicMock(return_value=None)
         # release_session returns None when other references keep the session
         # alive, or the scheduled close task when this release closed it.
         # Default to "kept alive" — tests pinning the closing path override.
@@ -70,11 +68,12 @@ def make_mock_device_conn(entities=None, services=None):
     conn.unsubscribe_states = MagicMock()
     conn.add_log_callback = MagicMock()
     conn.remove_log_callback = MagicMock()
-    # Shared OTA-watcher state — real values (not MagicMock attributes) so
-    # the handler's increment / compare logic behaves like production.
-    conn.ota_watchers = 0
-    conn.ota_started_log_sub = False
-    conn.ota_bumped_log_level = False
+    # Shared OTA-watcher state — a real OtaWatcherState (not MagicMock
+    # attributes) so the handler's increment / compare logic behaves like
+    # production.
+    from custom_components.eppgrid.device_manager import OtaWatcherState
+
+    conn.ota = OtaWatcherState()
     # By default, async_execute_service succeeds (firmware exposes
     # epp_set_log_level). Pass services={} to simulate older firmware
     # without the action — that path raises HomeAssistantError, which
@@ -155,12 +154,14 @@ class TestSubscribeOtaProgress:
         connection = MagicMock()
         msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
         await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+        # Standard no-session pairing shared by every no-session error site:
+        # code `no_session` + translation_key `no_active_session`.
         connection.send_error.assert_called_once_with(
             1,
             "no_session",
-            "Device not available",
+            "No active session — call subscribe_device first",
             translation_domain=DOMAIN,
-            translation_key="device_not_available",
+            translation_key="no_active_session",
         )
 
     async def test_subscribes_and_sends_result(
@@ -991,9 +992,9 @@ class TestSubscribeOtaProgress:
         # The session reference taken on subscribe was released.
         mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", device_conn)
         # Shared watcher state rolled back for the next subscriber.
-        assert device_conn.ota_watchers == 0
-        assert device_conn.ota_bumped_log_level is False
-        assert device_conn.ota_started_log_sub is False
+        assert device_conn.ota.watchers == 0
+        assert device_conn.ota.bumped_log_level is False
+        assert device_conn.ota.started_log_sub is False
 
     async def test_two_watchers_share_one_bump_and_log_subscription(
         self,
@@ -1036,7 +1037,7 @@ class TestSubscribeOtaProgress:
             log_svc, {"category": "system", "level": "Error"}, return_response=False
         )
         device_conn.subscribe_logs.assert_called_once()
-        assert device_conn.ota_watchers == 2
+        assert device_conn.ota.watchers == 2
         device_conn._client.execute_service.reset_mock()
 
         # First unsubscribe: the other watcher still needs the bump + logs.
@@ -1044,7 +1045,7 @@ class TestSubscribeOtaProgress:
         await hass.async_block_till_done()
         device_conn._client.execute_service.assert_not_awaited()
         device_conn.unsubscribe_logs.assert_not_called()
-        assert device_conn.ota_watchers == 1
+        assert device_conn.ota.watchers == 1
 
         # Second (last) unsubscribe: revert the bump, drop the log sub.
         conn_b.subscriptions[2]()
@@ -1053,7 +1054,7 @@ class TestSubscribeOtaProgress:
             log_svc, {"category": "system", "level": "None"}, return_response=False
         )
         device_conn.unsubscribe_logs.assert_called_once()
-        assert device_conn.ota_watchers == 0
+        assert device_conn.ota.watchers == 0
 
         # Each watcher released exactly one session reference.
         assert mock_dm.release_session.call_count == 2

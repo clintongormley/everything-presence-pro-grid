@@ -8,6 +8,7 @@ import contextlib
 import json
 import logging
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any
 
 from aioesphomeapi import APIClient
@@ -49,6 +50,28 @@ def _fan_out(callbacks: list[Any], invoke: Callable[[Any], None], label: str) ->
             callbacks.remove(cb)
 
 
+@dataclass
+class OtaWatcherState:
+    """Shared OTA-progress watcher state for one connection.
+
+    Owned by ``websocket_api._firmware.websocket_subscribe_ota_progress``:
+    N concurrent watchers share ONE device log subscription and ONE
+    log-level bump, reverted only when the last watcher releases. Lives on
+    the ``DeviceConnection`` so the state dies with the connection instead
+    of leaking across reconnects.
+    """
+
+    watchers: int = 0
+    started_log_sub: bool = False
+    bumped_log_level: bool = False
+
+    def reset(self) -> None:
+        """Drop all watcher state — the owning connection is gone."""
+        self.watchers = 0
+        self.started_log_sub = False
+        self.bumped_log_level = False
+
+
 class DeviceConnection:
     """On-demand API connection to an EPP device."""
 
@@ -67,15 +90,8 @@ class DeviceConnection:
         self.connected: bool = False
         self.raw_target_subs: int = 0
         self.grid_target_subs: int = 0
-        # Shared OTA-progress watcher state, owned by
-        # websocket_api._firmware.websocket_subscribe_ota_progress: N
-        # concurrent watchers share ONE device log subscription and ONE
-        # log-level bump on this connection, reverted only when the last
-        # watcher releases. Lives here (per-connection) so the state dies
-        # with the connection instead of leaking across reconnects.
-        self.ota_watchers: int = 0
-        self.ota_started_log_sub: bool = False
-        self.ota_bumped_log_level: bool = False
+        # See OtaWatcherState — shared per-connection OTA watcher bookkeeping.
+        self.ota: OtaWatcherState = OtaWatcherState()
 
     @property
     def entities(self) -> list:
@@ -152,9 +168,7 @@ class DeviceConnection:
         self._unsub_logs = None
         # OTA watcher state is per-connection: a dead connection took its
         # log subscription and level bump with it.
-        self.ota_watchers = 0
-        self.ota_started_log_sub = False
-        self.ota_bumped_log_level = False
+        self.ota.reset()
 
     async def subscribe_states(self, cb: Any) -> None:
         """Add a state subscriber. Idempotent under concurrent callers.
