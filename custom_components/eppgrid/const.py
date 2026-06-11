@@ -18,6 +18,13 @@ STATIC_ON_DELAY_MAX = 2.0
 MAX_ZONES = 7
 NUM_ZONE_SLOTS = MAX_ZONES + 1  # 8: zone 0 + named zones 1-7
 
+# Upper bound (bytes) on a zones JSON payload accepted by the firmware.
+# Mirror of ZONES_JSON_MAX in
+# firmware/lib/epp_zone_engine/include/epp_zone_config_parser.h —
+# tests/test_firmware_zones_json_max.py asserts the two agree.
+# Both must be bumped together if the firmware cap changes.
+ZONES_JSON_MAX: int = 8192
+
 
 def empty_zone_slots() -> list[dict[str, str] | None]:
     """Return a fresh fallback layout when a device has no stored room_layout.

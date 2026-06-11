@@ -18,6 +18,7 @@ from aioesphomeapi import UserService
 from ..const import DEFAULT_PORT
 from ..const import GRID_CELL_SIZE_MM
 from ..const import GRID_COLS
+from ..const import ZONES_JSON_MAX as _ZONES_JSON_MAX
 from ._helpers import _ESPHOME_TO_PYTHON_LOG
 from ._helpers import _expand_zone_slot
 from ._helpers import _raise_device_not_connected
@@ -425,14 +426,30 @@ class DeviceConnection:
                     # / wire stays lean, firmware sees a fully-populated record.
                     expanded_slots = [_expand_zone_slot(s) if s is not None else None for s in zone_slots]
                     zone_data = {"zone_slots": expanded_slots}
-                    await self._client.execute_service(
-                        service,
-                        {
-                            "zones_json": json.dumps(zone_data),
-                        },
-                    )
-                    _LOGGER.debug("Pushed %d zones to %s", len(named), self._host)
-                    pushed.append(f"zones={len(named)}")
+                    zones_json = json.dumps(zone_data)
+                    zones_json_bytes = len(zones_json.encode("utf-8"))
+                    if zones_json_bytes > _ZONES_JSON_MAX:
+                        # Payload exceeds the firmware's hard cap (ZONES_JSON_MAX in
+                        # epp_zone_config_parser.h). The firmware would reject it on
+                        # device, so skip the push rather than store a silently-broken
+                        # config. The websocket validator should catch this first; this
+                        # guard is belt-and-braces for expanded payloads or future drift.
+                        _LOGGER.warning(
+                            "Skipping zone push to %s — serialised zones_json is %d bytes "
+                            "(cap %d). Payload after timing expansion is too large for firmware.",
+                            self._host,
+                            zones_json_bytes,
+                            _ZONES_JSON_MAX,
+                        )
+                    else:
+                        await self._client.execute_service(
+                            service,
+                            {
+                                "zones_json": zones_json,
+                            },
+                        )
+                        _LOGGER.debug("Pushed %d zones to %s", len(named), self._host)
+                        pushed.append(f"zones={len(named)}")
 
         # Push device settings from unified settings key
         settings = config.get("settings")

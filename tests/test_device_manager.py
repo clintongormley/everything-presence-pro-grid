@@ -3463,6 +3463,57 @@ class TestPushConfig:
 
             mock_client.execute_service.assert_not_awaited()
 
+    async def test_push_config_skips_oversized_zone_payload(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Zone push must be skipped with a warning when the serialised payload
+        exceeds ZONES_JSON_MAX — belt-and-braces guard for payloads that somehow
+        pass the websocket validator but are still too large after expansion.
+        """
+        import logging
+
+        from custom_components.eppgrid.const import ZONES_JSON_MAX
+
+        conn = DeviceConnection("192.168.1.100")
+        mock_zones = MagicMock()
+        mock_zones.name = "epp_set_zones"
+
+        # Build a zone_slots payload whose JSON exceeds ZONES_JSON_MAX after
+        # expansion. Use a custom-type slot so _expand_zone_slot preserves user
+        # timing — avoiding type-default lookup which is harder to inflate.
+        # A single name of 8 KB+ is more than enough (normal max is 64 chars).
+        fat_name = "x" * (ZONES_JSON_MAX + 1)
+        zone_slots = [
+            {"type": "default"},
+            {
+                "name": fat_name,
+                "color": "#aabbcc",
+                "type": "custom",
+                "trigger": 5,
+                "renew": 3,
+                "timeout": 10.0,
+                "handoff_timeout": 3.0,
+            },
+        ] + [None] * 6
+
+        with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.connect = AsyncMock()
+            mock_client.list_entities_services = AsyncMock(return_value=([], [mock_zones]))
+            mock_client.execute_service = AsyncMock()
+
+            await conn.async_connect()
+            with caplog.at_level(
+                logging.WARNING,
+                logger="custom_components.eppgrid.device_manager",
+            ):
+                await conn.async_push_config({"room_layout": {"zone_slots": zone_slots}})
+
+        # Service must NOT have been called — payload is too large
+        mock_client.execute_service.assert_not_awaited()
+        # A warning must have been emitted
+        assert any(
+            "zones_json" in rec.getMessage().lower() or "payload" in rec.getMessage().lower() for rec in caplog.records
+        )
+
     async def test_push_config_already_connected_noop(self) -> None:
         """async_connect is a no-op when already connected."""
         conn = DeviceConnection("192.168.1.100")
