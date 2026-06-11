@@ -221,6 +221,9 @@ export class GridStateController implements ReactiveController {
 		this.host._grid = new Uint8Array(this.host._grid);
 		this.host._grid[index] = newValue;
 		this.host._dirty = true;
+		// Grid changed → per-target continuity/dismiss state is stale
+		// (firmware set_grid semantics).
+		this.host._zoneEngineGridChanged();
 	}
 
 	initGridFromRoom(): void {
@@ -228,6 +231,7 @@ export class GridStateController implements ReactiveController {
 			this.host._roomWidth,
 			this.host._roomDepth,
 		);
+		this.host._zoneEngineGridChanged();
 	}
 
 	// =====================================================================
@@ -264,6 +268,9 @@ export class GridStateController implements ReactiveController {
 		this.host._zoneConfigs = configs as unknown as ZoneSlots;
 		this.host._activeZone = firstEmpty; // slot index = 1-based zone number
 		this.host._dirty = true;
+		// Zone configs changed → full engine reset (firmware set_zones
+		// semantics: every ZoneRuntime back to CLEAR).
+		this.host._zoneEngineZoneConfigChanged();
 	}
 
 	removeZone(slot: number): void {
@@ -282,6 +289,9 @@ export class GridStateController implements ReactiveController {
 			this.host._activeZone = null;
 		}
 		this.host._dirty = true;
+		// Covers both the grid mutation (cleared cells) and the config
+		// change — the zone-config reset is a superset of the grid reset.
+		this.host._zoneEngineZoneConfigChanged();
 	}
 
 	// =====================================================================
@@ -698,6 +708,9 @@ export class GridStateController implements ReactiveController {
 		}
 
 		this.host._showConfigurationRestore = false;
+		// Loaded configuration replaced grid AND zone configs — full engine
+		// reset (firmware receives set_grid + set_zones on apply).
+		this.host._zoneEngineZoneConfigChanged();
 		// Mark dirty before auto-apply: if applyLayout throws (e.g. websocket
 		// failure), the UI state has changed but the backend hasn't, so the
 		// user needs an Apply button to retry. On success, applyLayout clears
@@ -866,6 +879,10 @@ export class GridStateController implements ReactiveController {
 				this.host._overlayMode = null;
 				this.host._view = "live";
 			}
+			// The device just ran set_grid + set_zones for this layout —
+			// mirror its full reset so the local engine starts the next
+			// editor session from the same state as the firmware.
+			this.host._zoneEngineZoneConfigChanged();
 		} catch (err) {
 			this.onError?.("apply_layout", err);
 			throw err;

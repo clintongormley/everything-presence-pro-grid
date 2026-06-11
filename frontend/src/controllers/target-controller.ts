@@ -5,6 +5,9 @@ import { cellIsInside, cellZone, GRID_COLS, GRID_ROWS } from "../lib/grid.js";
 import { resolveZoneParams, type ZoneConfig } from "../lib/zone-defaults.js";
 import {
 	createZoneEngineState,
+	dismissTarget,
+	resetForGridChange,
+	resetForZoneConfigChange,
 	runLocalZoneEngine,
 	type ZoneEngineResult,
 	type ZoneEngineState,
@@ -63,6 +66,39 @@ export class TargetController implements ReactiveController {
 	resetZoneEngineState(): void {
 		this._zoneEngineState = createZoneEngineState();
 		this._editorEngineResult = null;
+	}
+
+	/**
+	 * Mirror of firmware set_grid's per-target reset — called whenever the
+	 * panel applies a grid edit (paint, overlay, template load). Continuity
+	 * coords, gating, dismissals and stuck refs are old-grid-relative; zone
+	 * occupancy state is preserved.
+	 */
+	resetEngineForGridChange(): void {
+		resetForGridChange(this._zoneEngineState);
+	}
+
+	/**
+	 * Mirror of firmware set_zones — called whenever the panel applies a
+	 * zone-config edit (add/remove zone, threshold/type change). Resets
+	 * per-target tracking AND all zone runtimes + sensor presence state.
+	 */
+	resetEngineForZoneConfigChange(): void {
+		resetForZoneConfigChange(this._zoneEngineState);
+	}
+
+	/**
+	 * Mirror the panel's dismiss-target action into the local engine so the
+	 * editor preview collapses the zone immediately, exactly like the
+	 * firmware's dismiss_target service does on-device.
+	 */
+	dismissTarget(targetIndex: number, cellIndex: number): void {
+		dismissTarget(
+			this._zoneEngineState,
+			targetIndex,
+			cellIndex,
+			this.host._grid,
+		);
 	}
 
 	// =====================================================================
@@ -172,6 +208,7 @@ export class TargetController implements ReactiveController {
 			// pending-state behaviour mirrors the firmware's.
 			staticTimeout: this.host._staticTimeout,
 			motionTimeout: this.host._motionTimeout,
+			stuckTargetTimeout: this.host._stuckTargetTimeout,
 		});
 
 		// Engine mutates `localZoneState` (a Map) in place. Lit's

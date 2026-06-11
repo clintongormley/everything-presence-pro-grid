@@ -120,6 +120,14 @@ export interface PanelHost extends ReactiveControllerHost {
 	_buildSettingsPayload: () => Record<string, any>;
 	_buildSparseSettings: () => Record<string, any>;
 
+	// Zone-engine reset hooks (declared on the panel, delegating to
+	// TargetController). GridStateController calls these whenever it applies
+	// a grid / zone-config edit, mirroring the firmware's set_grid /
+	// set_zones resets so the editor-preview engine never runs new inputs
+	// against stale tracking state.
+	_zoneEngineGridChanged: () => void;
+	_zoneEngineZoneConfigChanged: () => void;
+
 	// Targets / sensors / zones (TargetController-side)
 	_targets: Target[];
 	_rawTargets: RawTarget[];

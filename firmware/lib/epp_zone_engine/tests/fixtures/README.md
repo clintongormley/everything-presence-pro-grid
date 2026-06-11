@@ -67,6 +67,11 @@ Each scenario runs on a **fresh engine** (no state carries across scenarios).
 
 ```jsonc
 "test_example": {
+  "stuck_target_timeout": 5.0,          // optional, SECONDS — stuck-target
+                                        // auto-dismiss timeout for the whole
+                                        // scenario (absent ⇒ 0 = disabled;
+                                        // C++: set_stuck_target_timeout,
+                                        // TS: params.stuckTargetTimeout)
   "ticks": [
     { "t": 100.0,                       // engine timestamp, SECONDS (drives all
                                         // timeout math — no wall clock anywhere)
@@ -76,7 +81,13 @@ Each scenario runs on a **fresh engine** (no state carries across scenarios).
                                         // signal = min(frames, 9);
                                         // frames = 0 ⇒ sensor NOT tracking
                                         // (C++: active=false; TS: x/y null)
-      ] }
+      ],
+      "sensors": {                      // optional — static/motion presence
+        "static_on": true,              // inputs for this tick. Absent fields
+        "motion_on": false,             // keep the defaults: off, 10s timeouts
+        "static_timeout": 1.0,          // (C++: SensorInput{}; TS: the engine's
+        "motion_timeout": 10.0          // staticTimeout/motionTimeout defaults)
+      } }
   ],
   "expected": [                         // one entry per tick
     { "zone_occupancy": { "1": true },  // zone-id → occupied; only listed

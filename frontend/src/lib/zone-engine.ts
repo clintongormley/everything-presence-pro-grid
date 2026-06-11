@@ -33,6 +33,14 @@ export interface ZoneEngineState {
 	// Sticky flag: target's last in-room cell carried (or neighboured) an
 	// entry overlay. Cleared together with lastZone after the handoff fires.
 	lastOnOverlay: boolean[];
+	// Cell index each target was dismissed at, or -1. Mirrors firmware
+	// dismissed_cell_: while the target stays on its dismissed cell it is
+	// ignored; moving to a different cell clears the dismissal.
+	dismissedCells: number[];
+	// Stuck-target reference: position + first-seen timestamp of a target
+	// dwelling at bit-identical coordinates. Mirrors firmware stuck_ref_x_/
+	// stuck_ref_y_/stuck_since_s_/stuck_has_ref_ (null = no reference).
+	stuckRef: ({ x: number; y: number; since: number } | null)[];
 	staticState: "active" | "pending" | "inactive";
 	motionState: "active" | "pending" | "inactive";
 	staticPendingSince: number | null;
@@ -60,6 +68,9 @@ export interface ZoneEngineParams {
 	motionPresence?: boolean;
 	staticTimeout?: number; // seconds
 	motionTimeout?: number; // seconds
+	// Stuck-target auto-dismiss timeout in seconds; 0 (default) disables.
+	// Mirrors firmware set_stuck_target_timeout.
+	stuckTargetTimeout?: number;
 	now?: number; // seconds (defaults to Date.now() / 1000)
 }
 
@@ -82,6 +93,8 @@ export function createZoneEngineState(): ZoneEngineState {
 		targetPrevXY: [null, null, null],
 		lastZone: [null, null, null],
 		lastOnOverlay: [false, false, false],
+		dismissedCells: [-1, -1, -1],
+		stuckRef: [null, null, null],
 		staticState: "inactive",
 		motionState: "inactive",
 		staticPendingSince: null,
@@ -94,6 +107,83 @@ export function createZoneEngineState(): ZoneEngineState {
 
 const MAX_MOVEMENT_CELLS = 5;
 const MAX_TARGETS = 3;
+
+/**
+ * Dismiss a target at a cell — mirror of firmware ZoneEngine::dismiss_target.
+ * Drops only THIS target's confirmation bit (other targets confirmed in the
+ * same zone keep their evidence); when that was the last evidence, the zone
+ * collapses to CLEAR immediately (no PENDING_CLEAR — a dismiss is an explicit
+ * action, not a sensor-driven transition). Also used by the engine's own
+ * stuck-target auto-dismiss.
+ */
+export function dismissTarget(
+	state: ZoneEngineState,
+	targetIndex: number,
+	cellIndex: number,
+	grid: Uint8Array,
+): void {
+	if (targetIndex < 0 || targetIndex >= MAX_TARGETS) return;
+	state.dismissedCells[targetIndex] = cellIndex;
+
+	if (
+		cellIndex >= 0 &&
+		cellIndex < GRID_CELL_COUNT &&
+		cellIsInside(grid[cellIndex])
+	) {
+		const zid = cellZone(grid[cellIndex]);
+		// localZoneState only ever holds configured zones — the lookup is the
+		// TS equivalent of firmware's find_zone_index(zone_id) >= 0 check.
+		const st = state.localZoneState.get(zid);
+		if (st) {
+			st.confirmedTargets.delete(targetIndex);
+			if (st.confirmedTargets.size === 0) {
+				st.occupied = false;
+				st.pendingSince = null;
+			}
+		}
+	}
+
+	// Reset this target's tracking only.
+	state.targetPrev[targetIndex] = null;
+	state.targetGateCount[targetIndex] = 0;
+	state.lastOnOverlay[targetIndex] = false;
+	state.lastZone[targetIndex] = null;
+	state.stuckRef[targetIndex] = null;
+}
+
+/**
+ * Mirror of firmware ZoneEngine::set_grid's per-target reset: prev-cell
+ * coords, gating, overlay sticky, lastZone, dismissals and stuck refs are
+ * all OLD-grid-relative and must not carry across a grid edit. Zone
+ * occupancy state is intentionally preserved (only a zone-config change
+ * resets it — see resetForZoneConfigChange).
+ */
+export function resetForGridChange(state: ZoneEngineState): void {
+	for (let i = 0; i < MAX_TARGETS; i++) {
+		state.targetPrev[i] = null;
+		state.targetPrevXY[i] = null;
+		state.targetGateCount[i] = 0;
+		state.lastOnOverlay[i] = false;
+		state.lastZone[i] = null;
+		state.dismissedCells[i] = -1;
+		state.stuckRef[i] = null;
+	}
+}
+
+/**
+ * Mirror of firmware ZoneEngine::set_zones: everything set_grid resets,
+ * PLUS every zone's runtime back to CLEAR and the sensor-presence state
+ * machine back to its initial state.
+ */
+export function resetForZoneConfigChange(state: ZoneEngineState): void {
+	resetForGridChange(state);
+	state.localZoneState.clear();
+	state.staticState = "inactive";
+	state.motionState = "inactive";
+	state.staticPendingSince = null;
+	state.motionPendingSince = null;
+	state.sensorsEverActive = false;
+}
 
 /** True if any cell in the 3×3 around (row,col) is an entry overlay in the same zone. */
 function hasEntryOverlayNear(
@@ -170,6 +260,7 @@ export function runLocalZoneEngine(
 		if (!t || t.x == null || t.y == null || t.signal <= 0) {
 			state.targetPrev[i] = null;
 			state.targetGateCount[i] = 0;
+			state.stuckRef[i] = null;
 			continue;
 		}
 
@@ -186,6 +277,7 @@ export function runLocalZoneEngine(
 		if (!pos) {
 			state.targetPrev[i] = null;
 			state.targetGateCount[i] = 0;
+			state.stuckRef[i] = null;
 			continue;
 		}
 		const col = Math.floor(pos.col);
@@ -193,6 +285,7 @@ export function runLocalZoneEngine(
 		if (col < 0 || col >= GRID_COLS || row < 0 || row >= GRID_ROWS) {
 			state.targetPrev[i] = null;
 			state.targetGateCount[i] = 0;
+			state.stuckRef[i] = null;
 			continue;
 		}
 		const idx = row * GRID_COLS + col;
@@ -200,7 +293,43 @@ export function runLocalZoneEngine(
 		if (!cellIsInside(cellVal)) {
 			state.targetPrev[i] = null;
 			state.targetGateCount[i] = 0;
+			state.stuckRef[i] = null;
 			continue;
+		}
+
+		// Check if this target is dismissed at this cell (firmware checks
+		// this right after the in-room test, before suppress/stuck).
+		if (state.dismissedCells[i] === idx) {
+			// Target still at dismissed location — skip
+			state.targetPrev[i] = null;
+			state.targetGateCount[i] = 0;
+			continue;
+		}
+		if (state.dismissedCells[i] >= 0) {
+			// Target moved to a different cell — clear dismiss
+			state.dismissedCells[i] = -1;
+		}
+
+		// Stuck-target detection: dwell at exactly the same (x, y) for
+		// stuckTargetTimeout seconds → auto-dismiss via the same path as a
+		// manual click-dismiss. 0 disables. Bit-exact comparison is
+		// intentional (mirrors firmware): the LD2450 produces deterministic
+		// per-tick coordinates, and any 1mm jitter from a real human breaks
+		// the streak.
+		const stuckTimeout = params.stuckTargetTimeout ?? 0;
+		if (stuckTimeout > 0) {
+			const ref = state.stuckRef[i];
+			if (ref !== null && t.x === ref.x && t.y === ref.y) {
+				if (now - ref.since >= stuckTimeout) {
+					dismissTarget(state, i, idx, params.grid);
+					// dismissTarget reset prev/gate/overlay/lastZone/stuckRef.
+					// Skip remaining per-target work — the dismiss collapses
+					// the zone.
+					continue;
+				}
+			} else {
+				state.stuckRef[i] = { x: t.x, y: t.y, since: now };
+			}
 		}
 
 		// Interference suppress: skip this cell entirely
@@ -464,6 +593,36 @@ export function runLocalZoneEngine(
 		}
 	}
 
+	// Build per-target status (mirrors firmware Step 4). This runs BEFORE
+	// Step-5 cleanup and Step-5c force-clear, exactly like the firmware: on
+	// a force-clear tick the target must still publish its pending status —
+	// the cleared zone only affects the NEXT tick's results.
+	// Only status is needed — position for pending display is handled
+	// by targetPrevXY in the rendering layer.
+	const targetResults: { status: "active" | "pending" | "inactive" }[] = [];
+	for (let i = 0; i < MAX_TARGETS && i < params.targets.length; i++) {
+		const sig = targetSignal.get(i) ?? 0;
+		const inRoom = targetZoneCurr[i] !== null;
+		if (targetActive[i] && sig > 0 && inRoom) {
+			targetResults.push({ status: "active" });
+		} else {
+			let isPending = false;
+			if (!targetActive[i] || !inRoom) {
+				for (const [, st] of state.localZoneState) {
+					if (
+						st.occupied &&
+						st.pendingSince !== null &&
+						st.confirmedTargets.has(i)
+					) {
+						isPending = true;
+						break;
+					}
+				}
+			}
+			targetResults.push({ status: isPending ? "pending" : "inactive" });
+		}
+	}
+
 	// Clean up stale confirmed targets in non-pending zones (mirrors firmware
 	// Step 5). Iterates ALL slots: an absent/inactive slot must release its
 	// confirmation bits exactly like firmware `!window.targets[i].active`.
@@ -559,33 +718,6 @@ export function runLocalZoneEngine(
 				mmwave = true;
 				break;
 			}
-		}
-	}
-
-	// Build per-target status (mirrors backend _tick lines 661-700).
-	// Only status is needed — position for pending display is handled
-	// by targetPrevXY in the rendering layer.
-	const targetResults: { status: "active" | "pending" | "inactive" }[] = [];
-	for (let i = 0; i < MAX_TARGETS && i < params.targets.length; i++) {
-		const sig = targetSignal.get(i) ?? 0;
-		const inRoom = targetZoneCurr[i] !== null;
-		if (targetActive[i] && sig > 0 && inRoom) {
-			targetResults.push({ status: "active" });
-		} else {
-			let isPending = false;
-			if (!targetActive[i] || !inRoom) {
-				for (const [, st] of state.localZoneState) {
-					if (
-						st.occupied &&
-						st.pendingSince !== null &&
-						st.confirmedTargets.has(i)
-					) {
-						isPending = true;
-						break;
-					}
-				}
-			}
-			targetResults.push({ status: isPending ? "pending" : "inactive" });
 		}
 	}
 

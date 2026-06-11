@@ -458,6 +458,88 @@
         }
       ]
     },
+    "test_stuck_target_auto_dismissed": {
+      "stuck_target_timeout": 5.0,
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
+        {"t": 103.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
+        {"t": 105.5, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
+        {"t": 106.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"1": true}
+        },
+        {
+          "zone_occupancy": {"1": true}
+        },
+        {
+          "zone_occupancy": {"1": false},
+          "targets": [{"status": "inactive"}]
+        },
+        {
+          "zone_occupancy": {"1": false},
+          "targets": [{"status": "inactive"}]
+        }
+      ]
+    },
+    "test_dismissed_target_clears_on_move": {
+      "stuck_target_timeout": 5.0,
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
+        {"t": 106.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
+        {"t": 107.0, "targets": [{"x": 2550, "y": 750, "frames": 7}]},
+        {"t": 107.5, "targets": [{"x": 2550, "y": 750, "frames": 7}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"1": true}
+        },
+        {
+          "zone_occupancy": {"1": false}
+        },
+        {
+          "zone_occupancy": {"0": false, "1": false}
+        },
+        {
+          "zone_occupancy": {"0": true, "1": false}
+        }
+      ]
+    },
+    "test_force_clear_tick_still_reports_pending": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2550, "y": 150, "frames": 7}],
+         "sensors": {"static_on": true, "static_timeout": 1.0}},
+        {"t": 100.5, "targets": [{"x": 2550, "y": 150, "frames": 7}],
+         "sensors": {"static_on": true, "static_timeout": 1.0}},
+        {"t": 101.0, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}},
+        {"t": 102.5, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}},
+        {"t": 103.0, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"0": false}
+        },
+        {
+          "zone_occupancy": {"0": true}
+        },
+        {
+          "zone_occupancy": {"0": true},
+          "targets": [{"status": "pending", "x": 2550, "y": 150}]
+        },
+        {
+          "zone_occupancy": {"0": false},
+          "targets": [{"status": "pending", "x": 2550, "y": 150}]
+        },
+        {
+          "zone_occupancy": {"0": false},
+          "targets": [{"status": "inactive"}]
+        }
+      ]
+    },
     "test_overlay_exit_handoff_suppress_cell": {
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},

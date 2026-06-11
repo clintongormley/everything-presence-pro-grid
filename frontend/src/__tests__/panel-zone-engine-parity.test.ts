@@ -61,6 +61,12 @@ import {
 interface FixtureTick {
 	t: number;
 	targets: { x: number; y: number; frames: number }[];
+	sensors?: {
+		static_on?: boolean;
+		motion_on?: boolean;
+		static_timeout?: number;
+		motion_timeout?: number;
+	};
 }
 
 interface FixtureExpectedTarget {
@@ -77,6 +83,7 @@ interface FixtureExpected {
 
 interface FixtureScenario {
 	known_divergence?: { ts?: string; cpp?: string };
+	stuck_target_timeout?: number;
 	ticks: FixtureTick[];
 	expected: FixtureExpected[];
 }
@@ -330,6 +337,14 @@ describe("Shared-fixture parity (parity_scenarios.json drives both engines)", ()
 					roomWidth: geometry.roomWidth,
 					roomDepth: geometry.roomDepth,
 					...zoneParams,
+					// Mirror of the C++ harness's SensorInput build: absent
+					// fields keep the defaults (off, 10s timeouts).
+					staticPresence: tick.sensors?.static_on ?? false,
+					motionPresence: tick.sensors?.motion_on ?? false,
+					staticTimeout: tick.sensors?.static_timeout ?? 10,
+					motionTimeout: tick.sensors?.motion_timeout ?? 10,
+					// Mirror of engine.set_stuck_target_timeout (0 = disabled).
+					stuckTargetTimeout: scenario.stuck_target_timeout ?? 0,
 					// Fixture-driven clock — never Date.now(), so timeout
 					// scenarios are exact instead of wall-clock approximations.
 					now: tick.t,

@@ -90,6 +90,10 @@ function mockHost(overrides: Record<string, any> = {}) {
 		_getVisibleRoomBounds() {
 			return getRoomBounds(this._grid);
 		},
+		// Zone-engine reset hooks (PanelHost contract) — spies so the wiring
+		// tests can assert the controller fires them at edit points.
+		_zoneEngineGridChanged: vi.fn(),
+		_zoneEngineZoneConfigChanged: vi.fn(),
 		_buildSettingsPayload() {
 			return {
 				temperature_offset: 0,
@@ -2252,6 +2256,76 @@ describe("GridStateController", () => {
 			window.dispatchEvent(new PointerEvent("pointerup"));
 
 			expect(host._isPainting).toBe(false);
+		});
+	});
+
+	// =========================================================================
+	// Zone-engine reset wiring — every applied grid / zone-config edit must
+	// fire the matching PanelHost reset hook (mirror of the firmware's
+	// set_grid / set_zones resets on the local editor-preview engine).
+	// =========================================================================
+	describe("zone-engine reset wiring", () => {
+		it("applyPaintToCell fires _zoneEngineGridChanged when a cell changes", () => {
+			host._activeZone = 0;
+			host._paintAction = "set";
+			ctrl.applyPaintToCell(5);
+			expect(host._zoneEngineGridChanged).toHaveBeenCalledTimes(1);
+			expect(host._zoneEngineZoneConfigChanged).not.toHaveBeenCalled();
+		});
+
+		it("applyPaintToCell does NOT fire when the cell value is unchanged", () => {
+			host._activeZone = null; // paint is a no-op
+			ctrl.applyPaintToCell(5);
+			expect(host._zoneEngineGridChanged).not.toHaveBeenCalled();
+		});
+
+		it("initGridFromRoom fires _zoneEngineGridChanged", () => {
+			ctrl.initGridFromRoom();
+			expect(host._zoneEngineGridChanged).toHaveBeenCalledTimes(1);
+		});
+
+		it("addZone fires _zoneEngineZoneConfigChanged", () => {
+			host._zoneConfigs = emptyZoneSlots();
+			ctrl.addZone();
+			expect(host._zoneEngineZoneConfigChanged).toHaveBeenCalledTimes(1);
+		});
+
+		it("removeZone fires _zoneEngineZoneConfigChanged", () => {
+			host._zoneConfigs = emptyZoneSlots();
+			ctrl.addZone();
+			(host._zoneEngineZoneConfigChanged as any).mockClear();
+			ctrl.removeZone(1);
+			expect(host._zoneEngineZoneConfigChanged).toHaveBeenCalledTimes(1);
+		});
+
+		it("removeZone of an empty slot does not fire", () => {
+			host._zoneConfigs = emptyZoneSlots();
+			ctrl.removeZone(3);
+			expect(host._zoneEngineZoneConfigChanged).not.toHaveBeenCalled();
+		});
+
+		it("applyLayout fires _zoneEngineZoneConfigChanged after a successful save", async () => {
+			host = mockHost({
+				_selectedMac: "AA:BB:CC:DD:EE:FF",
+				_targetAutoDistance: false,
+				_staticAutoDistance: false,
+			});
+			ctrl = new GridStateController(host as any);
+			host.hass.callWS.mockResolvedValue({});
+			await ctrl.applyLayout();
+			expect(host._zoneEngineZoneConfigChanged).toHaveBeenCalledTimes(1);
+		});
+
+		it("applyLayout does NOT fire when the save fails", async () => {
+			host = mockHost({
+				_selectedMac: "AA:BB:CC:DD:EE:FF",
+				_targetAutoDistance: false,
+				_staticAutoDistance: false,
+			});
+			ctrl = new GridStateController(host as any);
+			host.hass.callWS.mockRejectedValue(new Error("ws down"));
+			await expect(ctrl.applyLayout()).rejects.toThrow("ws down");
+			expect(host._zoneEngineZoneConfigChanged).not.toHaveBeenCalled();
 		});
 	});
 });

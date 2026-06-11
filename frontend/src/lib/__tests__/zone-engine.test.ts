@@ -11,6 +11,9 @@ import {
 } from "../grid.js";
 import {
 	createZoneEngineState,
+	dismissTarget,
+	resetForGridChange,
+	resetForZoneConfigChange,
 	runLocalZoneEngine,
 	type ZoneEngineParams,
 	type ZoneEngineState,
@@ -1211,6 +1214,255 @@ describe("unconfigured zones (firmware find_zone_index parity)", () => {
 		);
 		expect(result.occupancy[1]).toBe(false);
 		expect(state.localZoneState.has(1)).toBe(false);
+	});
+});
+
+// Grid with an entry overlay on the zone-1 cell (index 29) so a single tick
+// confirms — mirrors make_parity_engine's grid in the C++ engine tests.
+function makeOverlayGrid(): Uint8Array {
+	const grid = makeParityGrid();
+	grid[1 * GRID_COLS + 9] = cellSetOverlay(grid[29], CELL_OVERLAY_ENTRY);
+	return grid;
+}
+const ZONE1_CELL = 1 * GRID_COLS + 9;
+
+describe("dismissTarget (firmware dismiss_target parity)", () => {
+	let state: ZoneEngineState;
+	let grid: Uint8Array;
+
+	beforeEach(() => {
+		state = createZoneEngineState();
+		grid = makeOverlayGrid();
+	});
+
+	it("collapses the zone to CLEAR when the last evidence is dismissed", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 100 }),
+		);
+		expect(state.localZoneState.get(1)?.occupied).toBe(true);
+
+		dismissTarget(state, 0, ZONE1_CELL, grid);
+		const st = state.localZoneState.get(1);
+		expect(st?.occupied).toBe(false);
+		expect(st?.pendingSince).toBeNull();
+		expect(state.dismissedCells[0]).toBe(ZONE1_CELL);
+	});
+
+	it("skips the target while it stays at the dismissed cell", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 100 }),
+		);
+		dismissTarget(state, 0, ZONE1_CELL, grid);
+
+		// Same position, max signal — still dismissed, zone stays clear.
+		const r = runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 9)], grid, now: 101 }),
+		);
+		expect(r.occupancy[1]).toBe(false);
+	});
+
+	it("clears the dismissal when the target moves to a different cell", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 100 }),
+		);
+		dismissTarget(state, 0, ZONE1_CELL, grid);
+
+		// Target moves to a zone-0 cell: dismissal clears, gating restarts
+		// (dismiss also reset prev), confirming on the second tick.
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(150, 150, 7)], grid, now: 101 }),
+		);
+		expect(state.dismissedCells[0]).toBe(-1);
+		const r = runLocalZoneEngine(
+			state,
+			makeDefaultParams({
+				targets: [makeTarget(150, 150, 7)],
+				grid,
+				now: 101.5,
+			}),
+		);
+		expect(r.occupancy[0]).toBe(true);
+	});
+
+	it("keeps the zone occupied when other targets remain confirmed", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({
+				targets: [makeTarget(450, 450, 5), makeTarget(450, 450, 5)],
+				grid,
+				now: 100,
+			}),
+		);
+		const st = state.localZoneState.get(1);
+		expect(st?.confirmedTargets.has(0)).toBe(true);
+		expect(st?.confirmedTargets.has(1)).toBe(true);
+
+		dismissTarget(state, 0, ZONE1_CELL, grid);
+		expect(st?.occupied).toBe(true);
+		expect(st?.confirmedTargets.has(0)).toBe(false);
+		expect(st?.confirmedTargets.has(1)).toBe(true);
+	});
+
+	it("out-of-range target index is a no-op", () => {
+		dismissTarget(state, -1, ZONE1_CELL, grid);
+		dismissTarget(state, 3, ZONE1_CELL, grid);
+		expect(state.dismissedCells).toEqual([-1, -1, -1]);
+	});
+});
+
+describe("stuck-target auto-dismiss (engine-level)", () => {
+	// Occupancy-level behaviour is pinned by the shared fixture
+	// (test_stuck_target_auto_dismissed / test_dismissed_target_clears_on_move);
+	// these cover the knob the fixture defaults away from.
+	it("stuckTargetTimeout=0 (default) disables auto-dismiss", () => {
+		const state = createZoneEngineState();
+		const grid = makeOverlayGrid();
+		for (let i = 0; i < 5; i++) {
+			const r = runLocalZoneEngine(
+				state,
+				makeDefaultParams({
+					targets: [makeTarget(450, 450, 5)],
+					grid,
+					now: 100 + i * 300,
+				}),
+			);
+			expect(r.occupancy[1]).toBe(true);
+		}
+		expect(state.dismissedCells[0]).toBe(-1);
+	});
+
+	it("coordinate jitter breaks the stuck streak (bit-exact comparison)", () => {
+		const state = createZoneEngineState();
+		const grid = makeOverlayGrid();
+		const base = makeDefaultParams({
+			targets: [makeTarget(450, 450, 5)],
+			grid,
+			stuckTargetTimeout: 5,
+			now: 100,
+		});
+		runLocalZoneEngine(state, base);
+		// 1mm of movement resets the reference each time — never dismissed.
+		for (let i = 1; i <= 4; i++) {
+			const r = runLocalZoneEngine(
+				state,
+				makeDefaultParams({
+					targets: [makeTarget(450 + (i % 2), 450, 5)],
+					grid,
+					stuckTargetTimeout: 5,
+					now: 100 + i * 3,
+				}),
+			);
+			expect(r.occupancy[1]).toBe(true);
+		}
+		expect(state.dismissedCells[0]).toBe(-1);
+	});
+});
+
+describe("reset semantics (firmware set_grid / set_zones parity)", () => {
+	let state: ZoneEngineState;
+	let grid: Uint8Array;
+
+	beforeEach(() => {
+		state = createZoneEngineState();
+		grid = makeOverlayGrid();
+	});
+
+	it("resetForGridChange resets gating (mirror: set_zones resets per-target gating state)", () => {
+		// First gating tick for zone 0 (gated threshold 7).
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(150, 150, 7)], grid, now: 100 }),
+		);
+		resetForGridChange(state);
+		// Next tick must be treated as a FIRST gating tick again.
+		const r = runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(150, 150, 7)], grid, now: 101 }),
+		);
+		expect(r.occupancy[0]).toBe(false);
+	});
+
+	it("resetForGridChange clears dismissals (mirror: set_grid clears dismissed_cell_)", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 100 }),
+		);
+		dismissTarget(state, 0, ZONE1_CELL, grid);
+
+		// Grid edit: the dismissed cell index now references a different room
+		// location — the dismissal must not survive.
+		resetForGridChange(state);
+		expect(state.dismissedCells[0]).toBe(-1);
+		const r = runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 101 }),
+		);
+		expect(r.occupancy[1]).toBe(true);
+	});
+
+	it("resetForGridChange preserves zone occupancy state (only set_zones resets it)", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 100 }),
+		);
+		resetForGridChange(state);
+		expect(state.localZoneState.get(1)?.occupied).toBe(true);
+	});
+
+	it("resetForZoneConfigChange resets zone occupancy state", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 100 }),
+		);
+		resetForZoneConfigChange(state);
+		expect(state.localZoneState.size).toBe(0);
+		const r = runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [], grid, now: 101 }),
+		);
+		expect(r.occupancy[1]).toBe(false);
+	});
+
+	it("resetForZoneConfigChange clears dismissals (mirror: set_zones clears dismissed_cell_)", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 100 }),
+		);
+		dismissTarget(state, 0, ZONE1_CELL, grid);
+		resetForZoneConfigChange(state);
+		// Target back at the previously-dismissed cell — confirms normally.
+		const r = runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now: 101 }),
+		);
+		expect(r.occupancy[1]).toBe(true);
+	});
+
+	it("resetForZoneConfigChange resets the sensor presence state machine", () => {
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({
+				targets: [],
+				grid,
+				staticPresence: true,
+				motionPresence: true,
+				now: 100,
+			}),
+		);
+		expect(state.staticState).toBe("active");
+		expect(state.sensorsEverActive).toBe(true);
+
+		resetForZoneConfigChange(state);
+		expect(state.staticState).toBe("inactive");
+		expect(state.motionState).toBe("inactive");
+		expect(state.staticPendingSince).toBeNull();
+		expect(state.motionPendingSince).toBeNull();
+		expect(state.sensorsEverActive).toBe(false);
 	});
 });
 

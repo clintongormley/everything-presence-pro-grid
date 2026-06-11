@@ -147,6 +147,12 @@ static void run_scenario(const std::string& name, const json& scenario,
     engine.set_grid(grid);
     engine.set_zones(zone_cfgs.data(), static_cast<int>(zone_cfgs.size()));
 
+    // Optional scenario-level stuck-target auto-dismiss timeout (seconds).
+    // Default (absent) leaves the engine's 0 = disabled.
+    if (scenario.contains("stuck_target_timeout")) {
+        engine.set_stuck_target_timeout(scenario["stuck_target_timeout"].get<float>());
+    }
+
     auto& ticks = scenario["ticks"];
     auto& expected_arr = scenario["expected"];
 
@@ -174,7 +180,20 @@ static void run_scenario(const std::string& name, const json& scenario,
             }
             wo.targets[ti].on_overlay = target_on_overlay[ti];
         }
-        const ProcessingResult& result = engine.tick(wo, t);
+
+        // Optional per-tick sensor inputs (static/motion presence) — absent
+        // fields keep SensorInput's defaults (off, 10s timeouts).
+        SensorInput sensors{};
+        if (ticks[i].contains("sensors")) {
+            auto& s = ticks[i]["sensors"];
+            if (s.contains("static_on")) sensors.static_on = s["static_on"].get<bool>();
+            if (s.contains("motion_on")) sensors.motion_on = s["motion_on"].get<bool>();
+            if (s.contains("static_timeout"))
+                sensors.static_timeout = s["static_timeout"].get<float>();
+            if (s.contains("motion_timeout"))
+                sensors.motion_timeout = s["motion_timeout"].get<float>();
+        }
+        const ProcessingResult& result = engine.tick(wo, t, sensors);
 
         auto& expected = expected_arr[i];
         {

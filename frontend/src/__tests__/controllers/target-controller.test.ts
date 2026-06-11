@@ -3,7 +3,10 @@ import { DEBUG_LOG_MAX } from "../../constants.js";
 import type { TargetData } from "../../controllers/device-controller.js";
 import { TargetController } from "../../controllers/target-controller.js";
 import {
+	CELL_OVERLAY_ENTRY,
 	CELL_ROOM_BIT,
+	cellSetOverlay,
+	cellSetZone,
 	GRID_CELL_COUNT,
 	GRID_COLS,
 	GRID_ROWS,
@@ -58,6 +61,9 @@ function mockHost() {
 		// Sensor timeouts forwarded to runLocalZoneEngine (panel defaults).
 		_staticTimeout: 30,
 		_motionTimeout: 5,
+		// Stuck-target auto-dismiss timeout forwarded to the engine (panel
+		// default 300s — far beyond any test's wall-clock span).
+		_stuckTargetTimeout: 300,
 
 		// Debug log (frontend)
 		_showDebugLog: false,
@@ -1191,6 +1197,134 @@ describe("TargetController", () => {
 				ctrl.runLocalZoneEngine();
 				expect(container.scrollTop).toBe(500);
 			});
+		});
+	});
+
+	// =========================================================================
+	// Zone-engine reset / dismiss delegation (firmware set_grid / set_zones /
+	// dismiss_target parity at the controller boundary)
+	// =========================================================================
+	describe("zone-engine reset / dismiss delegation", () => {
+		/** Grid: room cell at (1,1) carrying zone 1 + entry overlay. */
+		function installZone1Grid(): number {
+			const grid = new Uint8Array(GRID_CELL_COUNT);
+			const idx = 1 * GRID_COLS + 1;
+			grid[idx] = cellSetOverlay(
+				cellSetZone(CELL_ROOM_BIT, 1),
+				CELL_OVERLAY_ENTRY,
+			);
+			host._grid = grid;
+			host._zoneConfigs = [
+				host._zoneConfigs[0],
+				{
+					name: "Zone 1",
+					color: "#ff0000",
+					type: "custom",
+					trigger: 3,
+					renew: 2,
+					timeout: 5,
+					handoff_timeout: 1,
+				},
+				null,
+				null,
+				null,
+				null,
+				null,
+				null,
+			];
+			return idx;
+		}
+
+		it("resetEngineForGridChange clears per-target tracking, keeps zone state", () => {
+			const st = ctrl.zoneEngineState;
+			st.targetPrev[0] = { col: 1, row: 1 };
+			st.targetGateCount[0] = 1;
+			st.dismissedCells[0] = 12;
+			st.lastZone[0] = 1;
+			st.lastOnOverlay[0] = true;
+			st.localZoneState.set(1, {
+				occupied: true,
+				pendingSince: null,
+				confirmedTargets: new Set([0]),
+			});
+
+			ctrl.resetEngineForGridChange();
+
+			expect(st.targetPrev[0]).toBeNull();
+			expect(st.targetGateCount[0]).toBe(0);
+			expect(st.dismissedCells[0]).toBe(-1);
+			expect(st.lastZone[0]).toBeNull();
+			expect(st.lastOnOverlay[0]).toBe(false);
+			// Zone occupancy survives a grid edit (only set_zones resets it).
+			expect(st.localZoneState.get(1)?.occupied).toBe(true);
+		});
+
+		it("resetEngineForZoneConfigChange also clears zone + sensor state", () => {
+			const st = ctrl.zoneEngineState;
+			st.localZoneState.set(1, {
+				occupied: true,
+				pendingSince: null,
+				confirmedTargets: new Set([0]),
+			});
+			st.staticState = "active";
+			st.sensorsEverActive = true;
+
+			ctrl.resetEngineForZoneConfigChange();
+
+			expect(st.localZoneState.size).toBe(0);
+			expect(st.staticState).toBe("inactive");
+			expect(st.sensorsEverActive).toBe(false);
+		});
+
+		it("dismissTarget collapses the zone in the local engine", () => {
+			const idx = installZone1Grid();
+			host._targets = [
+				{ x: 450, y: 450, raw_x: 450, raw_y: 450, status: "active", signal: 5 },
+			];
+			host._roomWidth = 6000;
+			host._roomDepth = 6000;
+			ctrl.runLocalZoneEngine();
+			expect(ctrl.zoneEngineState.localZoneState.get(1)?.occupied).toBe(true);
+
+			ctrl.dismissTarget(0, idx);
+
+			const st = ctrl.zoneEngineState.localZoneState.get(1);
+			expect(st?.occupied).toBe(false);
+			expect(ctrl.zoneEngineState.dismissedCells[0]).toBe(idx);
+		});
+
+		it("runLocalZoneEngine forwards _stuckTargetTimeout (auto-dismiss fires)", () => {
+			vi.useFakeTimers();
+			try {
+				vi.setSystemTime(new Date("2026-06-10T12:00:00Z"));
+				host._stuckTargetTimeout = 5;
+				installZone1Grid();
+				host._targets = [
+					{
+						x: 450,
+						y: 450,
+						raw_x: 450,
+						raw_y: 450,
+						status: "active",
+						signal: 5,
+					},
+				];
+				host._roomWidth = 6000;
+				host._roomDepth = 6000;
+
+				let result = ctrl.runLocalZoneEngine();
+				expect(result.occupancy[1]).toBe(true);
+
+				// Bit-identical coordinates 6s later → past the 5s timeout.
+				vi.setSystemTime(new Date("2026-06-10T12:00:06Z"));
+				result = ctrl.runLocalZoneEngine();
+				expect(result.occupancy[1]).toBe(false);
+				expect(ctrl.zoneEngineState.dismissedCells[0]).toBeGreaterThanOrEqual(
+					0,
+				);
+			} finally {
+				vi.useRealTimers();
+			}
 		});
 	});
 });

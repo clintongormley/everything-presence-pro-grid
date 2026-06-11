@@ -2248,6 +2248,10 @@ export class EPPGridPanel extends LitElement {
 		if (idx >= 0) {
 			this._dismissedTargets = new Map(this._dismissedTargets);
 			this._dismissedTargets.set(targetIndex, idx);
+			// Mirror the dismiss into the local zone engine so the editor
+			// preview collapses the zone immediately — same semantics as the
+			// firmware's dismiss_target service applied on-device below.
+			this._targetCtrl.dismissTarget(targetIndex, idx);
 
 			try {
 				await this.hass.callWS({
@@ -2275,6 +2279,7 @@ export class EPPGridPanel extends LitElement {
 		const next = new Uint8Array(this._grid);
 		next[idx] = optimisticByte;
 		this._grid = next;
+		this._zoneEngineGridChanged();
 		this._closeTargetMenu();
 		// One-shot save: persist directly without going through applyLayout
 		// (which prunes zones, filters furniture, switches view, and clears
@@ -2676,6 +2681,8 @@ export class EPPGridPanel extends LitElement {
 											configs[slot] = { ...current, ...updates };
 											this._zoneConfigs = configs as unknown as ZoneSlots;
 											this._dirty = true;
+											// Engine input changed → firmware set_zones reset.
+											this._zoneEngineZoneConfigChanged();
 										}}
                     @zone0-change=${(e: CustomEvent<Partial<Zone0Config>>) => {
 											const current = this._zoneConfigs[0];
@@ -2683,6 +2690,8 @@ export class EPPGridPanel extends LitElement {
 											next[0] = { ...current, ...e.detail };
 											this._zoneConfigs = next as unknown as ZoneSlots;
 											this._dirty = true;
+											// Engine input changed → firmware set_zones reset.
+											this._zoneEngineZoneConfigChanged();
 										}}
                   ></epp-zone-sidebar>`
 								: this._sidebarTab === "overlays"
@@ -2739,6 +2748,20 @@ export class EPPGridPanel extends LitElement {
 	/** Run local zone engine replica — delegated to TargetController. */
 	private _runLocalZoneEngine(): ZoneEngineResult {
 		return this._targetCtrl.runLocalZoneEngine();
+	}
+
+	/**
+	 * Zone-engine reset hooks (PanelHost contract). Called whenever a grid /
+	 * zone-config edit is applied so the local engine mirrors the firmware's
+	 * set_grid / set_zones resets. Not `private`: part of the PanelHost
+	 * structural interface used by GridStateController.
+	 */
+	_zoneEngineGridChanged(): void {
+		this._targetCtrl.resetEngineForGridChange();
+	}
+
+	_zoneEngineZoneConfigChanged(): void {
+		this._targetCtrl.resetEngineForZoneConfigChange();
 	}
 
 	/**
