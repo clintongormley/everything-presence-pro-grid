@@ -486,3 +486,20 @@ describe("epp-furniture-overlay default localize", () => {
 		expect(el.localize("another.key")).toBe("another.key");
 	});
 });
+
+describe("touch support CSS", () => {
+	it("disables touch-action on draggable furniture surfaces", () => {
+		// Without touch-action: none the browser claims the touch gesture for
+		// scrolling mid-drag, firing pointercancel and wedging the drag.
+		const cssText = (
+			(customElements.get("epp-furniture-overlay") as any).styles as {
+				cssText: string;
+			}
+		).cssText;
+		expect(cssText).toMatch(/\.furniture-item\s*{[^}]*touch-action:\s*none/);
+		expect(cssText).toMatch(/\.furn-handle\s*{[^}]*touch-action:\s*none/);
+		expect(cssText).toMatch(
+			/\.furn-rotate-handle\s*{[^}]*touch-action:\s*none/,
+		);
+	});
+});

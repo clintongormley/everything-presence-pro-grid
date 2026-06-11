@@ -1650,8 +1650,8 @@ describe("GridStateController", () => {
 	// =========================================================================
 	// onCellMouseDown / onUp lambda coverage
 	// =========================================================================
-	describe("onCellMouseDown mouseup cleanup", () => {
-		it("zone painting: mouseup clears isPainting via onUp lambda", () => {
+	describe("onCellMouseDown pointerup cleanup", () => {
+		it("zone painting: pointerup clears isPainting via onUp lambda", () => {
 			host._sidebarTab = "zones";
 			host._activeZone = 1;
 			host._grid[5] = CELL_ROOM_BIT;
@@ -1675,7 +1675,7 @@ describe("GridStateController", () => {
 			addSpy.mockRestore();
 		});
 
-		it("interference painting: mouseup clears isPainting via onUp lambda", () => {
+		it("interference painting: pointerup clears isPainting via onUp lambda", () => {
 			host._overlayMode = "interference";
 			host._grid[5] = CELL_ROOM_BIT;
 
@@ -1696,7 +1696,7 @@ describe("GridStateController", () => {
 			addSpy.mockRestore();
 		});
 
-		it("entry painting: mouseup clears isPainting via onUp lambda", () => {
+		it("entry painting: pointerup clears isPainting via onUp lambda", () => {
 			host._overlayMode = "entry";
 			host._grid[5] = CELL_ROOM_BIT;
 
@@ -1747,8 +1747,8 @@ describe("GridStateController", () => {
 
 			ctrl.onCellMouseDown(5);
 			expect(host._isPainting).toBe(true);
-			// Clean up the mouseup listener
-			window.dispatchEvent(new Event("mouseup"));
+			// Clean up the stroke-end listeners
+			window.dispatchEvent(new PointerEvent("pointerup"));
 		});
 	});
 
@@ -1900,6 +1900,72 @@ describe("GridStateController", () => {
 			// The furniture item should have moved (not silently aborted)
 			const updated = host._furniture[0];
 			expect(updated.x).not.toBe(500);
+		});
+	});
+
+	// =========================================================================
+	// Touch input: pointercancel must end drags and paint strokes — a
+	// touch-scroll takeover fires pointercancel instead of pointerup, and
+	// without cleanup the next touch anywhere keeps dragging/painting.
+	// =========================================================================
+	describe("pointercancel cleanup (touch)", () => {
+		const dragItem: FurnitureItem = {
+			id: "f1",
+			type: "icon",
+			icon: "mdi:sofa",
+			label: "Sofa",
+			x: 500,
+			y: 500,
+			width: 600,
+			height: 300,
+			rotation: 0,
+			lockAspect: false,
+		};
+
+		it("pointercancel during a furniture drag clears _dragState and removes window listeners", () => {
+			host._furniture = [dragItem];
+			const removeSpy = vi.spyOn(window, "removeEventListener");
+
+			ctrl.onFurniturePointerDown(
+				new PointerEvent("pointerdown", { clientX: 5, clientY: 5 }),
+				"f1",
+				"move",
+			);
+			expect(host._dragState).not.toBeNull();
+
+			window.dispatchEvent(new PointerEvent("pointercancel"));
+
+			expect(host._dragState).toBeNull();
+			const removed = removeSpy.mock.calls.map((c) => c[0]);
+			expect(removed).toContain("pointermove");
+			removeSpy.mockRestore();
+		});
+
+		it("pointercancel during painting ends the stroke", () => {
+			host._sidebarTab = "zones";
+			host._activeZone = 1;
+			host._grid[5] = CELL_ROOM_BIT;
+
+			ctrl.onCellMouseDown(5);
+			expect(host._isPainting).toBe(true);
+
+			window.dispatchEvent(new PointerEvent("pointercancel"));
+
+			expect(host._isPainting).toBe(false);
+			expect(host._frozenBounds).toBeNull();
+		});
+
+		it("painting stroke ends on window pointerup (released outside the grid)", () => {
+			host._sidebarTab = "zones";
+			host._activeZone = 1;
+			host._grid[5] = CELL_ROOM_BIT;
+
+			ctrl.onCellMouseDown(5);
+			expect(host._isPainting).toBe(true);
+
+			window.dispatchEvent(new PointerEvent("pointerup"));
+
+			expect(host._isPainting).toBe(false);
 		});
 	});
 });

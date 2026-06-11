@@ -134,7 +134,7 @@ describe("epp-grid render", () => {
 });
 
 describe("epp-grid cell events", () => {
-	it("dispatches cell-paint down on mousedown", async () => {
+	it("dispatches cell-paint down on pointerdown", async () => {
 		const el = createGrid({ editable: true });
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -144,7 +144,7 @@ describe("epp-grid cell events", () => {
 
 		const cell = el.shadowRoot!.querySelector(".cell") as HTMLElement;
 		expect(cell).not.toBeNull();
-		cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 
 		expect(events.length).toBe(1);
 		expect(events[0].detail.action).toBe("down");
@@ -153,7 +153,7 @@ describe("epp-grid cell events", () => {
 		document.body.removeChild(el);
 	});
 
-	it("dispatches cell-paint enter on mouseenter", async () => {
+	it("dispatches cell-paint enter on pointerenter", async () => {
 		const el = createGrid({ editable: true });
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -162,7 +162,7 @@ describe("epp-grid cell events", () => {
 		el.addEventListener("cell-paint", (e) => events.push(e as CustomEvent));
 
 		const cell = el.shadowRoot!.querySelector(".cell") as HTMLElement;
-		cell.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+		cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
 
 		expect(events.length).toBe(1);
 		expect(events[0].detail.action).toBe("enter");
@@ -170,7 +170,7 @@ describe("epp-grid cell events", () => {
 		document.body.removeChild(el);
 	});
 
-	it("coalesces consecutive mouseenters on the same cell", async () => {
+	it("coalesces consecutive pointerenters on the same cell", async () => {
 		const el = createGrid({ editable: true });
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -179,9 +179,9 @@ describe("epp-grid cell events", () => {
 		el.addEventListener("cell-paint", (e) => events.push(e as CustomEvent));
 
 		const cell = el.shadowRoot!.querySelector(".cell") as HTMLElement;
-		cell.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-		cell.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-		cell.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+		cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+		cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+		cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
 
 		// Re-entering the same cell should not refire — only the first enter dispatches
 		expect(events.length).toBe(1);
@@ -189,8 +189,8 @@ describe("epp-grid cell events", () => {
 		document.body.removeChild(el);
 	});
 
-	it("re-fires mouseenter on the same cell when a new drag starts (mousedown resets coalesce state)", async () => {
-		// Drag can end with a window-level mouseup outside the grid; the next
+	it("re-fires pointerenter on the same cell when a new drag starts (pointerdown resets coalesce state)", async () => {
+		// Drag can end with a window-level pointerup outside the grid; the next
 		// stroke must still paint the cell the user clicks first, even if it
 		// was the last cell they hovered.
 		const el = createGrid({ editable: true });
@@ -201,13 +201,13 @@ describe("epp-grid cell events", () => {
 		el.addEventListener("cell-paint", (e) => events.push(e as CustomEvent));
 
 		const cell = el.shadowRoot!.querySelector(".cell") as HTMLElement;
-		cell.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-		// Drag ended outside the grid — no mouseup event reaches epp-grid
-		cell.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+		// Drag ended outside the grid — no pointerup event reaches epp-grid
+		cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 		// User now drags back over the same cell
-		cell.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+		cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
 
-		// First enter, then mousedown, then enter again on the same cell — all 3
+		// First enter, then pointerdown, then enter again on the same cell — all 3
 		expect(events.length).toBe(3);
 		expect(events[0].detail.action).toBe("enter");
 		expect(events[1].detail.action).toBe("down");
@@ -216,7 +216,7 @@ describe("epp-grid cell events", () => {
 		document.body.removeChild(el);
 	});
 
-	it("re-fires mouseenter when entering a different cell", async () => {
+	it("re-fires pointerenter when entering a different cell", async () => {
 		const el = createGrid({ editable: true });
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -229,9 +229,9 @@ describe("epp-grid cell events", () => {
 		const cellB = cells[1] as HTMLElement;
 		expect(cellA).not.toBeNull();
 		expect(cellB).not.toBeNull();
-		cellA.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-		cellB.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
-		cellA.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true }));
+		cellA.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+		cellB.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+		cellA.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
 
 		expect(events.length).toBe(3);
 		expect(events.map((e) => e.detail.index)).toEqual([
@@ -246,7 +246,7 @@ describe("epp-grid cell events", () => {
 		document.body.removeChild(el);
 	});
 
-	it("dispatches cell-paint up on mouseup on grid", async () => {
+	it("dispatches cell-paint up on pointerup on grid", async () => {
 		const el = createGrid({ editable: true });
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -255,12 +255,61 @@ describe("epp-grid cell events", () => {
 		el.addEventListener("cell-paint", (e) => events.push(e as CustomEvent));
 
 		const grid = el.shadowRoot!.querySelector(".grid") as HTMLElement;
-		grid.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+		grid.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
 
 		expect(events.length).toBe(1);
 		expect(events[0].detail.action).toBe("up");
 
 		document.body.removeChild(el);
+	});
+
+	it("dispatches cell-paint up on pointercancel (touch-scroll takeover)", async () => {
+		const el = createGrid({ editable: true });
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const events: CustomEvent[] = [];
+		el.addEventListener("cell-paint", (e) => events.push(e as CustomEvent));
+
+		const grid = el.shadowRoot!.querySelector(".grid") as HTMLElement;
+		grid.dispatchEvent(new PointerEvent("pointercancel", { bubbles: true }));
+
+		expect(events.length).toBe(1);
+		expect(events[0].detail.action).toBe("up");
+
+		document.body.removeChild(el);
+	});
+
+	it("does not dispatch cell-paint at all in live view (editable=false)", async () => {
+		// Live view used to attach the paint handlers anyway, dispatching
+		// cell-paint events nothing listened to on every hover.
+		const el = createGrid({ editable: false });
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const events: CustomEvent[] = [];
+		el.addEventListener("cell-paint", (e) => events.push(e as CustomEvent));
+
+		const cell = el.shadowRoot!.querySelector(".cell") as HTMLElement;
+		cell.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+		cell.dispatchEvent(new PointerEvent("pointerenter", { bubbles: true }));
+		const grid = el.shadowRoot!.querySelector(".grid") as HTMLElement;
+		grid.dispatchEvent(new PointerEvent("pointerup", { bubbles: true }));
+
+		expect(events.length).toBe(0);
+
+		document.body.removeChild(el);
+	});
+
+	it("disables touch-action on the paintable grid so strokes aren't hijacked for scrolling", () => {
+		// Only the editable grid opts out of touch gestures — the live view
+		// must keep scrolling normally.
+		const cssText = (
+			(customElements.get("epp-grid") as any).styles as { cssText: string }
+		).cssText;
+		expect(cssText).toMatch(
+			/:host\(\[editable\]\)\s+\.grid\s*{[^}]*touch-action:\s*none/,
+		);
 	});
 });
 
@@ -750,14 +799,16 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		) as NodeListOf<HTMLElement>;
 		const beyondCell = Array.from(cells).find(isBeyondMaxRangeCell);
 		expect(beyondCell).toBeDefined();
-		beyondCell!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		beyondCell!.dispatchEvent(
+			new PointerEvent("pointerdown", { bubbles: true }),
+		);
 
 		expect(events.length).toBe(0);
 
 		document.body.removeChild(el);
 	});
 
-	it("does not emit cell-paint for dark cells on mousedown", async () => {
+	it("does not emit cell-paint for dark cells on pointerdown", async () => {
 		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
 		const el = createGrid({
 			perspective,
@@ -779,7 +830,7 @@ describe("epp-grid darkness (sensor FOV)", () => {
 			c.style.cssText.includes("c8c8c8"),
 		);
 		expect(darkCell).toBeDefined();
-		darkCell!.dispatchEvent(new MouseEvent("mousedown", { bubbles: true }));
+		darkCell!.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
 
 		expect(events.length).toBe(0);
 

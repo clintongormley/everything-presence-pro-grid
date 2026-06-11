@@ -150,11 +150,16 @@ export class GridStateController implements ReactiveController {
 		this.host._isPainting = true;
 		this.host._frozenBounds = this.host._getVisibleRoomBounds();
 		this.applyPaintToCell(index);
+		// pointerup ends a stroke released outside the grid; pointercancel ends
+		// one the browser takes over (touch-scroll) — without it the stroke
+		// stays live and the next touch anywhere keeps painting.
 		const onUp = () => {
 			this.onCellMouseUp();
-			window.removeEventListener("mouseup", onUp);
+			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
 		};
-		window.addEventListener("mouseup", onUp);
+		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
 	}
 
 	onCellMouseEnter(index: number): void {
@@ -363,13 +368,18 @@ export class GridStateController implements ReactiveController {
 		};
 
 		const onMove = (ev: PointerEvent) => this.onFurnitureDrag(ev);
+		// pointercancel fires instead of pointerup when the browser takes the
+		// gesture over (touch-scroll); without it the drag wedges permanently
+		// and the next touch anywhere keeps dragging.
 		const onUp = () => {
 			this.host._dragState = null;
 			window.removeEventListener("pointermove", onMove);
 			window.removeEventListener("pointerup", onUp);
+			window.removeEventListener("pointercancel", onUp);
 		};
 		window.addEventListener("pointermove", onMove);
 		window.addEventListener("pointerup", onUp);
+		window.addEventListener("pointercancel", onUp);
 	}
 
 	onFurnitureDrag(e: PointerEvent): void {

@@ -102,6 +102,13 @@ export class EppGrid extends LitElement {
 			user-select: none;
 		}
 
+		/* Paint strokes must own the touch gesture — otherwise the browser
+		   claims it for scrolling and fires pointercancel mid-stroke. The
+		   live grid stays scrollable. */
+		:host([editable]) .grid {
+			touch-action: none;
+		}
+
 		.cell {
 			transition: opacity 0.1s;
 		}
@@ -223,7 +230,8 @@ export class EppGrid extends LitElement {
 				<div
 					class="grid"
 					style="grid-template-columns: repeat(${visCols}, ${cellPx}px); grid-template-rows: repeat(${visRows}, ${cellPx}px);"
-					@mouseup=${this._onCellMouseUp}
+					@pointerup=${this.editable ? this._onStrokeEnd : nothing}
+					@pointercancel=${this.editable ? this._onStrokeEnd : nothing}
 				>
 					${this._renderVisibleCells(minCol, maxCol, minRow, maxRow, cellPx)}
 				</div>
@@ -313,16 +321,22 @@ export class EppGrid extends LitElement {
 					inRange && cellIsInside(cellVal)
 						? (OVERLAY_STRIPE_CSS[cellOverlay(cellVal)] ?? "")
 						: "";
+				// Paint handlers only exist in the editor AND on paintable cells —
+				// the live grid is a passive display (hover there used to dispatch
+				// cell-paint events nothing listened to).
+				const paintable = this.editable && inRange;
 				cells.push(html`
 					<div
 						class="cell"
 						style="background: ${bg}; width: ${cellPx}px; height: ${cellPx}px; ${occupancyStyle} ${overlayMarker}"
-						@mousedown=${() => {
-							if (inRange) this._onCellMouseDown(idx);
-						}}
-						@mouseenter=${() => {
-							if (inRange) this._onCellMouseEnter(idx);
-						}}
+						@pointerdown=${
+							paintable
+								? (e: PointerEvent) => this._onCellPointerDown(idx, e)
+								: nothing
+						}
+						@pointerenter=${
+							paintable ? () => this._onCellPointerEnter(idx) : nothing
+						}
 					></div>
 				`);
 			}
@@ -330,11 +344,21 @@ export class EppGrid extends LitElement {
 		return cells;
 	}
 
-	private _onCellMouseDown(index: number): void {
-		// Reset coalesce state at the start of every drag. The matching mouseup
-		// might be window-level (drag ends outside the grid), so we can't rely
-		// on _onCellMouseUp alone to clear _lastEnterIdx — otherwise the next
-		// stroke would skip the first enter on a re-entered cell.
+	private _onCellPointerDown(index: number, e: PointerEvent): void {
+		// Touch pointers are implicitly captured by the pointerdown target,
+		// which would retarget the whole stroke to the first cell. Release the
+		// capture so per-cell pointerenter keeps firing as the finger moves
+		// (the grid's touch-action: none stops the browser claiming the
+		// gesture for scrolling). Guarded: synthetic test events and mouse
+		// pointers hold no capture, and happy-dom lacks the API entirely.
+		const target = e.target as Element | null;
+		if (target?.hasPointerCapture?.(e.pointerId)) {
+			target.releasePointerCapture(e.pointerId);
+		}
+		// Reset coalesce state at the start of every drag. The matching
+		// pointerup might be window-level (drag ends outside the grid), so we
+		// can't rely on _onStrokeEnd alone to clear _lastEnterIdx — otherwise
+		// the next stroke would skip the first enter on a re-entered cell.
 		this._lastEnterIdx = -1;
 		this.dispatchEvent(
 			new CustomEvent("cell-paint", {
@@ -346,12 +370,12 @@ export class EppGrid extends LitElement {
 	}
 
 	// Throttle: skip repeats on the same cell during a continuous hover.
-	// Native mouseenter can re-fire as the DOM re-renders mid-drag, and even
+	// Native pointerenter can re-fire as the DOM re-renders mid-drag, and even
 	// during plain hover Lit re-renders bind fresh listeners. Coalescing here
 	// prevents ~900 redundant dispatches across the shadow DOM boundary.
 	private _lastEnterIdx = -1;
 
-	private _onCellMouseEnter(index: number): void {
+	private _onCellPointerEnter(index: number): void {
 		if (index === this._lastEnterIdx) return;
 		this._lastEnterIdx = index;
 		this.dispatchEvent(
@@ -363,7 +387,9 @@ export class EppGrid extends LitElement {
 		);
 	}
 
-	private _onCellMouseUp(): void {
+	// Bound handler for both pointerup and pointercancel on the grid —
+	// a touch-scroll takeover must end the stroke exactly like a release.
+	private _onStrokeEnd = (): void => {
 		this._lastEnterIdx = -1;
 		this.dispatchEvent(
 			new CustomEvent("cell-paint", {
@@ -372,7 +398,7 @@ export class EppGrid extends LitElement {
 				composed: true,
 			}),
 		);
-	}
+	};
 
 	private _renderTargetDots(
 		minCol: number,

@@ -43,6 +43,9 @@ export class EppFurnitureOverlay extends LitElement {
 			opacity: 0.6;
 		}
 
+		/* touch-action: none on every draggable surface — otherwise the
+		   browser claims the touch gesture for scrolling mid-drag and fires
+		   pointercancel, wedging the drag. */
 		.furniture-item {
 			position: absolute;
 			display: flex;
@@ -55,6 +58,7 @@ export class EppFurnitureOverlay extends LitElement {
 			cursor: grab;
 			transform-origin: center center;
 			user-select: none;
+			touch-action: none;
 		}
 
 		.furniture-item:hover {
@@ -89,6 +93,7 @@ export class EppFurnitureOverlay extends LitElement {
 			display: flex;
 			align-items: center;
 			justify-content: center;
+			touch-action: none;
 		}
 
 		/* Visible square (8×8) sits centered inside the larger touch area. */
@@ -137,6 +142,7 @@ export class EppFurnitureOverlay extends LitElement {
 			cursor: grab;
 			pointer-events: auto;
 			color: #fff;
+			touch-action: none;
 		}
 
 		.furn-delete-btn {
