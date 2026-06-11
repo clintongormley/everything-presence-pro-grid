@@ -881,8 +881,12 @@ export class EPPGridPanel extends LitElement {
 		// flight) must not (re)open device sessions nothing will ever close.
 		if (!this.isConnected) return;
 		if (this._loadedConfigMac === mac) {
+			// reopenSession traps its own failures; .catch guards a late
+			// rejection surfacing as "Uncaught (in promise)".
 			this._deviceCtrl.reopenSession(mac).catch(() => {});
 		} else {
+			// _loadDeviceConfig traps its own failures; .catch guards a late
+			// rejection surfacing as "Uncaught (in promise)".
 			this._loadDeviceConfig(mac).catch(() => {});
 		}
 	}
@@ -941,6 +945,8 @@ export class EPPGridPanel extends LitElement {
 			this._loading = false;
 			this._initRetryTimer = setTimeout(() => {
 				if (!this.isConnected) return;
+				// _initialize traps its own failures; .catch guards a late
+				// rejection surfacing as "Uncaught (in promise)".
 				this._initialize().catch(() => {});
 			}, 2000);
 			return;

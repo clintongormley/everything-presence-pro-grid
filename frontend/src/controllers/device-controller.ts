@@ -113,6 +113,19 @@ export class DeviceController implements ReactiveController {
 		host.addController(this);
 	}
 
+	/**
+	 * Claim the next generation for one of the token fields above.
+	 * The returned handle reports staleness: `stale()` becomes true once a
+	 * later claim or bump supersedes this one, meaning the awaited result
+	 * must be dropped (and its unsub released) instead of stashed.
+	 */
+	private _claimGen(
+		field: "_targetsGen" | "_displayGen" | "_deviceListGen" | "_sessionGen",
+	): { stale: () => boolean } {
+		const token = ++this[field];
+		return { stale: () => this[field] !== token };
+	}
+
 	// --- ReactiveController lifecycle ---
 	hostConnected(): void {
 		// HA re-attaches the same panel element on suspend/restore, so the
@@ -239,7 +252,7 @@ export class DeviceController implements ReactiveController {
 		safeUnsub(this._unsubDeviceList);
 		this._unsubDeviceList = undefined;
 		if (!this._hass) return;
-		const token = ++this._deviceListGen;
+		const claim = this._claimGen("_deviceListGen");
 		try {
 			const unsub = await this._hass.connection.subscribeMessage(
 				(msg: any) => {
@@ -250,10 +263,8 @@ export class DeviceController implements ReactiveController {
 				},
 				{ type: "eppgrid/subscribe_device_list" },
 			);
-			if (this._deviceListGen !== token) {
-				try {
-					unsub();
-				} catch {}
+			if (claim.stale()) {
+				safeUnsub(unsub);
 				return;
 			}
 			this._unsubDeviceList = unsub;
@@ -291,7 +302,9 @@ export class DeviceController implements ReactiveController {
 			// can still switch via the picker's unsaved-changes guard. The
 			// switch happens on the next push once the host is clean, and a
 			// re-added device (USB reflash) reconnects through the normal
-			// offline→online edge below.
+			// offline→online edge below. Boundary: the guard only covers the
+			// selected-mac-missing case — a stored-mac change while the device
+			// is still listed intentionally switches (out of scope here).
 			const deferSwitch =
 				next !== this.selectedMac &&
 				!!this.selectedMac &&
@@ -457,27 +470,25 @@ export class DeviceController implements ReactiveController {
 	async openDeviceSession(mac: string): Promise<void> {
 		this.closeDeviceSession();
 		if (!this._hass || !mac) return;
-		const token = ++this._sessionGen;
+		const claim = this._claimGen("_sessionGen");
 		try {
 			const unsub = await this._hass.connection.subscribeMessage(
 				() => {}, // session has no events, just lifecycle
 				{ type: "eppgrid/subscribe_device", mac },
 			);
-			if (this._sessionGen !== token) {
+			if (claim.stale()) {
 				// The host disconnected, the session was closed, or the
 				// connection swapped while the subscribe was in flight.
 				// Release the just-created server-side session immediately —
 				// stashing the unsub on a torn-down controller would leak it.
-				try {
-					unsub();
-				} catch {}
+				safeUnsub(unsub);
 				return;
 			}
 			this._unsubDevice = unsub;
 			this._connectionFailed = false;
 			this._host.requestUpdate();
 		} catch (e) {
-			if (this._sessionGen !== token) return;
+			if (claim.stale()) return;
 			console.warn("Failed to open device session:", e);
 			const err = e as Record<string, unknown>;
 			this._connectionFailed =
@@ -519,89 +530,59 @@ export class DeviceController implements ReactiveController {
 		this._unsubTargets = undefined;
 	}
 
-	private _subscribeGridTargets(conn: any, mac: string, attempt = 1): void {
-		const token = ++this._targetsGen;
-		conn
-			.subscribeMessage(
-				(event: any) => {
-					const targets: Target[] = (event.targets || []).map((t: any) => ({
-						x: t.x,
-						y: t.y,
-						status: (t.status as TargetStatus) ?? "inactive",
-						signal: t.signal ?? 0,
-					}));
-					const sensors = event.sensors
-						? {
-								occupancy: event.sensors.occupancy ?? false,
-								static_presence: event.sensors.static_presence ?? false,
-								motion_presence: event.sensors.motion_presence ?? false,
-								target_presence: event.sensors.target_presence ?? false,
-								mmwave: event.sensors.mmwave ?? false,
-								static_state: event.sensors.static_state,
-								motion_state: event.sensors.motion_state,
-								occupancy_state: event.sensors.occupancy_state,
-								illuminance: event.sensors.illuminance ?? null,
-								temperature: event.sensors.temperature ?? null,
-								humidity: event.sensors.humidity ?? null,
-								co2: event.sensors.co2 ?? null,
-							}
-						: {
-								occupancy: false,
-								static_presence: false,
-								motion_presence: false,
-								target_presence: false,
-								mmwave: false,
-								static_state: undefined,
-								motion_state: undefined,
-								occupancy_state: undefined,
-								illuminance: null,
-								temperature: null,
-								humidity: null,
-								co2: null,
-							};
-					const zones = event.zones
-						? {
-								occupancy: event.zones.occupancy ?? {},
-								target_counts: event.zones.target_counts ?? {},
-								frame_count: event.zones.frame_count ?? 0,
-								debug_log: event.zones.debug_log,
-							}
-						: null;
-					this.onTargetData?.({ targets, sensors, zones });
-				},
-				{
-					type: "eppgrid/subscribe_grid_targets",
-					mac,
-				},
-			)
-			.then((unsub: () => void) => {
-				if (this._targetsGen !== token) {
-					try {
-						unsub();
-					} catch {}
-					return;
-				}
-				this._unsubTargets = unsub;
-			})
-			.catch(() => {
-				if (this._targetsGen !== token) return;
-				if (attempt >= SUBSCRIBE_RETRY_LIMIT) {
-					// Out of retries — surface the same connection-failed
-					// state the session-open path uses so the panel shows the
-					// banner instead of silently retrying forever.
-					this._connectionFailed = true;
-					this._host.requestUpdate();
-					return;
-				}
-				if (this._targetRetryTimer) {
-					clearTimeout(this._targetRetryTimer);
-				}
-				this._targetRetryTimer = setTimeout(() => {
-					this._targetRetryTimer = undefined;
-					if (this._hass?.connection !== conn) return;
-					this._subscribeGridTargets(conn, mac, attempt + 1);
-				}, SUBSCRIBE_RETRY_DELAY_MS);
-			});
+	private _subscribeGridTargets(conn: any, mac: string): void {
+		this._subscribeStream(conn, mac, {
+			type: "eppgrid/subscribe_grid_targets",
+			genField: "_targetsGen",
+			timerField: "_targetRetryTimer",
+			unsubField: "_unsubTargets",
+			onEvent: (event: any) => {
+				const targets: Target[] = (event.targets || []).map((t: any) => ({
+					x: t.x,
+					y: t.y,
+					status: (t.status as TargetStatus) ?? "inactive",
+					signal: t.signal ?? 0,
+				}));
+				const sensors = event.sensors
+					? {
+							occupancy: event.sensors.occupancy ?? false,
+							static_presence: event.sensors.static_presence ?? false,
+							motion_presence: event.sensors.motion_presence ?? false,
+							target_presence: event.sensors.target_presence ?? false,
+							mmwave: event.sensors.mmwave ?? false,
+							static_state: event.sensors.static_state,
+							motion_state: event.sensors.motion_state,
+							occupancy_state: event.sensors.occupancy_state,
+							illuminance: event.sensors.illuminance ?? null,
+							temperature: event.sensors.temperature ?? null,
+							humidity: event.sensors.humidity ?? null,
+							co2: event.sensors.co2 ?? null,
+						}
+					: {
+							occupancy: false,
+							static_presence: false,
+							motion_presence: false,
+							target_presence: false,
+							mmwave: false,
+							static_state: undefined,
+							motion_state: undefined,
+							occupancy_state: undefined,
+							illuminance: null,
+							temperature: null,
+							humidity: null,
+							co2: null,
+						};
+				const zones = event.zones
+					? {
+							occupancy: event.zones.occupancy ?? {},
+							target_counts: event.zones.target_counts ?? {},
+							frame_count: event.zones.frame_count ?? 0,
+							debug_log: event.zones.debug_log,
+						}
+					: null;
+				this.onTargetData?.({ targets, sensors, zones });
+			},
+		});
 	}
 
 	// --- Raw display subscription ---
@@ -611,51 +592,83 @@ export class DeviceController implements ReactiveController {
 		this._subscribeRawTargets(this._hass.connection, mac);
 	}
 
-	private _subscribeRawTargets(conn: any, mac: string, attempt = 1): void {
-		const token = ++this._displayGen;
+	private _subscribeRawTargets(conn: any, mac: string): void {
+		this._subscribeStream(conn, mac, {
+			type: "eppgrid/subscribe_raw_targets",
+			genField: "_displayGen",
+			timerField: "_displayRetryTimer",
+			unsubField: "_unsubDisplay",
+			onEvent: (event: any) => {
+				const rawTargets: RawTarget[] = (event.targets || []).map((t: any) => ({
+					raw_x: t.raw_x,
+					raw_y: t.raw_y,
+				}));
+				this.onRawTargetData?.(rawTargets);
+			},
+		});
+	}
+
+	/**
+	 * Shared subscribe/retry scaffolding for the two live data streams
+	 * (grid targets, raw targets). Each stream owns its own generation
+	 * token, retry timer and unsub slot — named via `stream` — so the
+	 * streams tear down independently; everything else (stash-or-drop on
+	 * resolution, capped retry on rejection) lives here so a future
+	 * backoff or cap change is a one-site edit.
+	 */
+	private _subscribeStream(
+		conn: any,
+		mac: string,
+		stream: {
+			type: string;
+			genField: "_targetsGen" | "_displayGen";
+			timerField: "_targetRetryTimer" | "_displayRetryTimer";
+			unsubField: "_unsubTargets" | "_unsubDisplay";
+			onEvent: (event: any) => void;
+		},
+		attempt = 1,
+	): void {
+		const claim = this._claimGen(stream.genField);
 		conn
-			.subscribeMessage(
-				(event: any) => {
-					const rawTargets: RawTarget[] = (event.targets || []).map(
-						(t: any) => ({
-							raw_x: t.raw_x,
-							raw_y: t.raw_y,
-						}),
-					);
-					this.onRawTargetData?.(rawTargets);
-				},
-				{
-					type: "eppgrid/subscribe_raw_targets",
-					mac,
-				},
-			)
+			.subscribeMessage(stream.onEvent, { type: stream.type, mac })
 			.then((unsub: () => void) => {
-				if (this._displayGen !== token) {
-					try {
-						unsub();
-					} catch {}
+				if (claim.stale()) {
+					// Torn down (or resubscribed) while the subscribe was in
+					// flight — release the server-side subscription now.
+					safeUnsub(unsub);
 					return;
 				}
-				this._unsubDisplay = unsub;
+				this[stream.unsubField] = unsub;
+				if (this._connectionFailed) {
+					// An earlier attempt exhausted its retries and latched the
+					// connection banner — a subscribe succeeding now means the
+					// connection is back, so self-heal it.
+					this._connectionFailed = false;
+					this._host.requestUpdate();
+				}
 			})
 			.catch(() => {
 				// The WS lib only auto-resubscribes *established* subscriptions
 				// on reconnect — a rejected initial subscribe is gone for good,
-				// which used to leave the raw-target stream silently dead.
-				// Retry like the grid stream, then surface connection-failed.
-				if (this._displayGen !== token) return;
+				// which would leave the stream silently dead. Retry on a timer,
+				// then surface connection-failed.
+				if (claim.stale()) return;
 				if (attempt >= SUBSCRIBE_RETRY_LIMIT) {
+					// Out of retries — surface the same connection-failed
+					// state the session-open path uses so the panel shows the
+					// banner instead of silently retrying forever.
 					this._connectionFailed = true;
 					this._host.requestUpdate();
 					return;
 				}
-				if (this._displayRetryTimer) {
-					clearTimeout(this._displayRetryTimer);
+				const pending = this[stream.timerField];
+				if (pending) {
+					clearTimeout(pending);
 				}
-				this._displayRetryTimer = setTimeout(() => {
-					this._displayRetryTimer = undefined;
+				this[stream.timerField] = setTimeout(() => {
+					this[stream.timerField] = undefined;
 					if (this._hass?.connection !== conn) return;
-					this._subscribeRawTargets(conn, mac, attempt + 1);
+					this._subscribeStream(conn, mac, stream, attempt + 1);
 				}, SUBSCRIBE_RETRY_DELAY_MS);
 			});
 	}

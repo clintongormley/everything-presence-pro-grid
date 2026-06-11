@@ -1609,6 +1609,78 @@ describe("DeviceController", () => {
 			}
 		});
 
+		it("clears connectionFailed when a later grid-targets subscribe succeeds", async () => {
+			vi.useFakeTimers();
+			try {
+				let fail = true;
+				const subscribeMock = vi
+					.fn()
+					.mockImplementation((_cb: any, msg: any) => {
+						if (msg.type === "eppgrid/subscribe_grid_targets" && fail) {
+							return Promise.reject(new Error("unknown command"));
+						}
+						return Promise.resolve(vi.fn());
+					});
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: subscribeMock },
+				};
+
+				// Exhaust the retries — banner state latches on.
+				ctrl.subscribeTargets("aa");
+				await vi.advanceTimersByTimeAsync(0);
+				for (let i = 0; i < 8; i++) {
+					await vi.advanceTimersByTimeAsync(2000);
+				}
+				expect(ctrl.connectionFailed).toBe(true);
+
+				// A later resubscribe (e.g. host reopened the session)
+				// succeeds — the banner must self-heal.
+				fail = false;
+				host.requestUpdate.mockClear();
+				ctrl.subscribeTargets("aa");
+				await vi.advanceTimersByTimeAsync(0);
+
+				expect(ctrl.connectionFailed).toBe(false);
+				expect(host.requestUpdate).toHaveBeenCalled();
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("clears connectionFailed when a later raw-targets subscribe succeeds", async () => {
+			vi.useFakeTimers();
+			try {
+				let fail = true;
+				const subscribeMock = vi.fn().mockImplementation(() => {
+					return fail
+						? Promise.reject(new Error("unknown command"))
+						: Promise.resolve(vi.fn());
+				});
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: subscribeMock },
+				};
+
+				ctrl.subscribeDisplay("aa");
+				await vi.advanceTimersByTimeAsync(0);
+				for (let i = 0; i < 8; i++) {
+					await vi.advanceTimersByTimeAsync(2000);
+				}
+				expect(ctrl.connectionFailed).toBe(true);
+
+				fail = false;
+				host.requestUpdate.mockClear();
+				ctrl.subscribeDisplay("aa");
+				await vi.advanceTimersByTimeAsync(0);
+
+				expect(ctrl.connectionFailed).toBe(false);
+				expect(host.requestUpdate).toHaveBeenCalled();
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
 		it("does not retry raw-targets after unsubscribeDisplay", async () => {
 			vi.useFakeTimers();
 			try {
