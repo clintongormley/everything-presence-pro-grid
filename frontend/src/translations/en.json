@@ -400,6 +400,7 @@
 			"update_failed_generic": "Update failed",
 			"ota_failed_version_unchanged": "Update failed — firmware version unchanged",
 			"ota_timeout": "OTA update timed out",
+			"ota_device_error": "Update failed: {message}",
 			"flash_cancelled": "Flash cancelled",
 			"timeout": "Timeout",
 			"aborted": "Cancelled"

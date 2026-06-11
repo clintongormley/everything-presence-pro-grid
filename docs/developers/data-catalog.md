@@ -236,7 +236,7 @@ N concurrent OTA watchers on the same device share ONE device log subscription a
 **Events:**
 - `{ "state": "updating", "progress": float|null }` — download progress (0-100 or null for indeterminate)
 - `{ "state": "success", "version": str }` — update complete, versions match
-- `{ "state": "error", "message": str }` — update failed (log error, version mismatch, or connection lost)
+- `{ "state": "error", "message": str, "error_key": str }` — update failed (log error, version mismatch, or timeout). `error_key` is a frontend translation key (`flasher.errors.*`) — the frontend renders errors exclusively through it. Log-derived failures use `flasher.errors.ota_device_error`, whose translation interpolates the cleaned device text via the `{message}` placeholder.
 
 The handler also monitors device log messages for `http_request.ota` and `http_request.update` errors, forwarding the actual error message immediately. Unsubscribe releases the session reference; the manager closes the connection when no other subscriber holds one.
 

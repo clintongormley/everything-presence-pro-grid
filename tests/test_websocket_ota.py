@@ -412,6 +412,7 @@ class TestSubscribeOtaProgress:
             {
                 "state": "error",
                 "message": "Failed to fetch manifest from https://example.com/manifest.json",
+                "error_key": "flasher.errors.ota_device_error",
             },
         )
 
@@ -475,7 +476,11 @@ class TestSubscribeOtaProgress:
         sent = connection.send_message.call_args[0][0]
         assert sent == event_message(
             1,
-            {"state": "error", "message": "HTTP Request failed: ESP_ERR_HTTP_CONNECT"},
+            {
+                "state": "error",
+                "message": "HTTP Request failed: ESP_ERR_HTTP_CONNECT",
+                "error_key": "flasher.errors.ota_device_error",
+            },
         )
 
     async def test_forwards_actionable_set_error_flag_messages(
@@ -516,6 +521,7 @@ class TestSubscribeOtaProgress:
             {
                 "state": "error",
                 "message": "http_request.update set Error flag: Failed to install firmware",
+                "error_key": "flasher.errors.ota_device_error",
             },
         )
 
@@ -680,7 +686,14 @@ class TestSubscribeOtaProgress:
 
         connection.send_message.assert_called_once()
         sent = connection.send_message.call_args[0][0]
-        assert sent == event_message(1, {"state": "error", "message": "OTA download failed"})
+        assert sent == event_message(
+            1,
+            {
+                "state": "error",
+                "message": "OTA download failed",
+                "error_key": "flasher.errors.ota_device_error",
+            },
+        )
 
     async def test_on_log_ignores_empty_message(
         self,

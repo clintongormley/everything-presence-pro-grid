@@ -274,12 +274,17 @@ async def websocket_subscribe_ota_progress(
         # Format: [E][http_request.ota:294]: Actual message here
         parts = text.split("]: ", 1)
         clean_msg = parts[1] if len(parts) > 1 else text
+        # The frontend renders error events exclusively via `error_key`
+        # (flasher-controller falls back to update_failed_generic when the
+        # key is absent) — without it, the extracted device message never
+        # reaches the user. The key's translation interpolates {message}.
         connection.send_message(
             websocket_api.event_message(
                 msg["id"],
                 {
                     "state": "error",
                     "message": clean_msg,
+                    "error_key": "flasher.errors.ota_device_error",
                 },
             )
         )
