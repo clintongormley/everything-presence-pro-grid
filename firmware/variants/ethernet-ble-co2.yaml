@@ -1,20 +1,8 @@
+# Only the delta from ../common/variant-defaults.yaml (included below);
+# ESPHome deep-merges package mappings with this file winning per key.
 substitutions:
-  name: "everything-presence-pro"
-  friendly_name: "Everything Presence Pro"
-  hidden_ssid: "false"
-  factory_reset_disabled: "true"
-  uart_target_output_disabled: "true"
-  uart_presence_output_disabled: "true"
-  log_level: "DEBUG"
-
   device_config:
     ethernet_enabled: true
-    co2_enabled: true
-    bluetooth_enabled: true
-    board_revision: "1.8"
-    sensor_variant: "ld2450+sen0609"
-    firmware_channel: "stable"
-    model: "everything-presence-pro"
 
 dashboard_import:
   package_import_url: github://clintongormley/everything-presence-pro-grid/firmware/variants/ethernet-ble-co2.yaml@main
@@ -27,6 +15,7 @@ esp32:
     version: recommended
 
 packages:
+   variant_defaults: !include ../common/variant-defaults.yaml
    pro_base: !include ../common/everything-presence-pro-base.yaml
    ld2450_base: !include ../common/ld2450-base.yaml
    sen0609_base: !include ../common/sen0609-base.yaml

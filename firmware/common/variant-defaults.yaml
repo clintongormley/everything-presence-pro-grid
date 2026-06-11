@@ -1,0 +1,27 @@
+# Shared variant defaults — the substitutions / device_config block common to
+# every firmware variant, included via `packages:` from firmware/variants/*.
+#
+# ESPHome deep-merges package mappings with the including file winning per
+# key, so a variant only declares its delta. Example (ethernet-ble-co2.yaml):
+#
+#   substitutions:
+#     device_config:
+#       ethernet_enabled: true
+#
+# Everything else (names, the rest of device_config) comes from here.
+substitutions:
+  name: "everything-presence-pro"
+  friendly_name: "Everything Presence Pro"
+  hidden_ssid: "false"
+  factory_reset_disabled: "true"
+  uart_target_output_disabled: "true"
+  uart_presence_output_disabled: "true"
+
+  device_config:
+    ethernet_enabled: false
+    co2_enabled: true
+    bluetooth_enabled: true
+    board_revision: "1.8"
+    sensor_variant: "ld2450+sen0609"
+    firmware_channel: "stable"
+    model: "everything-presence-pro"

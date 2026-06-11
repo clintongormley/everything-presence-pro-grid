@@ -243,7 +243,11 @@ class EPPComponent : public esphome::Component {
   uint32_t last_zone_state_ms_ = 0;
   uint32_t last_system_ms_ = 0;
 
-  // Cached zone result
+  // Cached zone result for the publish throttles. Only the fields BEFORE the
+  // log buffer are maintained — loop() copies offsetof(ProcessingResult, log)
+  // bytes per drained frame; log[] / log_count stay at their zero brace-init
+  // values (engine log entries are flushed to the ESP log at drain time, never
+  // read from this cache).
   ProcessingResult last_zone_result_{};
   // Cached window output (rolling-median view) of the most recent frame
   // processed. Used by the Display throttle when no new frames arrived this

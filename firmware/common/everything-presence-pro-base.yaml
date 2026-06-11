@@ -255,9 +255,6 @@ globals:
   - id: env_illuminance_offset
     type: float
     initial_value: '0'
-  - id: motion_timeout
-    type: float
-    initial_value: '1'
   - id: current_connection_count
     type: int
     initial_value: '0'
@@ -339,9 +336,8 @@ api:
       then:
         - lambda: |-
             ESP_LOGI("epp", "epp_set_motion_timeout: timeout=%.1f", timeout);
-            // motion_timeout is a fixed 1s PIR debounce; the real timeout
-            // is managed by the zone engine via set_motion_timeout()
-            id(motion_timeout) = 1;
+            // The PIR's debounce is a fixed 1s delayed_off (see pir_motion);
+            // the real timeout is managed by the zone engine.
             id(epp_component).set_motion_timeout(timeout);
     - action: epp_set_stuck_target_timeout
       variables:
@@ -690,7 +686,11 @@ binary_sensor:
     pin:
       number: GPIO36
     filters:
-      - delayed_off: !lambda 'return id(motion_timeout) * 1000.0;'
+      # Fixed 1s debounce. This used to read a motion_timeout global, but the
+      # epp_set_motion_timeout action pinned that global to 1 and forwarded
+      # the real timeout to the zone engine, so the lambda always returned
+      # 1000 ms.
+      - delayed_off: 1000ms
 
   # Mirror zone engine occupancy to trigger LED updates on state change
   - platform: template

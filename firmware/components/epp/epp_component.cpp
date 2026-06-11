@@ -9,15 +9,38 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <mbedtls/base64.h>
 #include <nvs_flash.h>
 #include <nvs.h>
+#include <type_traits>
 
 namespace epp {
 
 static const char *const TAG = "epp";
 static const char *const NVS_NAMESPACE = "epp";
+
+// Human-readable target status for the transport text sensors. Shared by the
+// display and zone-state publish blocks so the strings can't drift apart.
+static const char *status_str(TargetStatus status) {
+  switch (status) {
+    case TargetStatus::ACTIVE: return "active";
+    case TargetStatus::PENDING: return "pending";
+    default: return "inactive";
+  }
+}
+
+// Zone id at the target's grid cell, or -1 when the target has no queryable
+// position (per is_target_valid) or its position maps outside the grid.
+// Shared by the zone-state debug log and the per-target zone entity publish
+// so the lookup-with-bounds-check sequence can't drift apart.
+static int target_zone_or_invalid(const Grid &grid, TargetStatus status, float x, float y) {
+  if (!is_target_valid(status, x, y)) return -1;
+  int cell = grid.xy_to_cell(x, y);
+  if (cell < 0 || cell >= GRID_CELL_COUNT) return -1;
+  return grid.cell_zone(cell);
+}
 
 void EPPComponent::setup() {
   ESP_LOGI(TAG, "EPP Zone Engine component initialized");
@@ -146,7 +169,16 @@ void EPPComponent::loop() {
       }
     }
 
-    last_zone_result_ = result;
+    // Cache the result for the publish throttles below, skipping the trailing
+    // LogEntry log[16] buffer (~1.5 KB): its entries were already flushed to
+    // the ESP log just above and nothing reads the log from the cache, so the
+    // previous full-struct assignment was copying dead data on every drained
+    // frame at 10Hz. Same offsetof idiom as the engine's own result_ reset in
+    // ZoneEngine::tick(). last_zone_result_.log_count stays 0 from brace-init,
+    // so any future reader of the cached log sees "no entries".
+    static_assert(std::is_trivially_copyable<ProcessingResult>::value,
+                  "partial memcpy of ProcessingResult requires trivial copyability");
+    std::memcpy(&last_zone_result_, &result, offsetof(ProcessingResult, log));
     last_window_output_ = win;
   }
 
@@ -228,12 +260,10 @@ void EPPComponent::loop() {
     for (int i = 0; i < NUM_TARGETS; i++) {
       if (target_position_sensors_[i] != nullptr) {
         if (i < result.target_count && !std::isnan(result.targets[i].x)) {
-          const char* status_str = result.targets[i].status == TargetStatus::ACTIVE ? "active"
-                                 : result.targets[i].status == TargetStatus::PENDING ? "pending"
-                                 : "inactive";
           char buf[64];
           snprintf(buf, sizeof(buf), "%.0f,%.0f,%s",
-                   result.targets[i].x, result.targets[i].y, status_str);
+                   result.targets[i].x, result.targets[i].y,
+                   status_str(result.targets[i].status));
           publish_text_if_changed(target_position_sensors_[i], buf,
                                   last_target_position_text_[i],
                                   has_last_target_position_text_[i]);
@@ -265,17 +295,11 @@ void EPPComponent::loop() {
       BoundedWriter w(json, sizeof(json));
       w.printf("{\"targets\":[");
       for (int i = 0; i < NUM_TARGETS; i++) {
-        const char *status_str = "inactive";
-        if (i < result.target_count) {
-          switch (result.targets[i].status) {
-            case TargetStatus::ACTIVE: status_str = "active"; break;
-            case TargetStatus::PENDING: status_str = "pending"; break;
-            default: break;
-          }
-        }
+        const char *status =
+            (i < result.target_count) ? status_str(result.targets[i].status) : "inactive";
         int signal = (i < result.target_count) ? result.targets[i].signal : 0;
         w.printf("%s{\"signal\":%d,\"status\":\"%s\"}",
-                 i > 0 ? "," : "", signal, status_str);
+                 i > 0 ? "," : "", signal, status);
       }
       w.printf("],\"zones\":{\"occupancy\":[");
       for (int i = 0; i < MAX_ZONE_SLOTS; i++) {
@@ -301,15 +325,10 @@ void EPPComponent::loop() {
       for (int i = 0; i < NUM_TARGETS; i++) {
         if (!is_target_active(result, i)) continue;
         const char *s = result.targets[i].status == TargetStatus::ACTIVE ? "A" : "P";
-        int zone = 0;
-        if (is_target_valid(result.targets[i].status,
-                            result.targets[i].x,
-                            result.targets[i].y)) {
-          auto cell = grid_.xy_to_cell(result.targets[i].x, result.targets[i].y);
-          if (cell >= 0 && cell < GRID_CELL_COUNT) {
-            zone = grid_.cell_zone(cell);
-          }
-        }
+        // Debug log historically prints zone 0 for an unresolvable position.
+        int zone = target_zone_or_invalid(grid_, result.targets[i].status,
+                                          result.targets[i].x, result.targets[i].y);
+        if (zone < 0) zone = 0;
         w.printf("%sT%d:Z%d:%s:%d",
                  first_target ? "" : " ", i, zone, s, result.targets[i].signal);
         first_target = false;
@@ -352,19 +371,13 @@ void EPPComponent::loop() {
         target_active_sensors_[i]->publish_state(active);
       if (target_zone_sensors_[i] != nullptr) {
         // `active` is the per-slot status check the throttle uses for x/y/etc.
-        // is_target_valid layers an additional finite-coords gate on top so a
-        // NaN position from the engine doesn't trip a spurious cell lookup.
-        if (active && is_target_valid(result.targets[i].status,
-                                      result.targets[i].x,
-                                      result.targets[i].y)) {
-          auto cell = grid_.xy_to_cell(result.targets[i].x, result.targets[i].y);
-          if (cell >= 0 && cell < GRID_CELL_COUNT)
-            target_zone_sensors_[i]->publish_state(static_cast<float>(grid_.cell_zone(cell)));
-          else
-            target_zone_sensors_[i]->publish_state(NAN);
-        } else {
-          target_zone_sensors_[i]->publish_state(NAN);
-        }
+        // target_zone_or_invalid layers the is_target_valid finite-coords gate
+        // plus the grid bounds check on top, returning -1 when the position
+        // can't be resolved to a zone — published as NAN.
+        int zone = active ? target_zone_or_invalid(grid_, result.targets[i].status,
+                                                   result.targets[i].x, result.targets[i].y)
+                          : -1;
+        target_zone_sensors_[i]->publish_state(zone >= 0 ? static_cast<float>(zone) : NAN);
       }
     }
     if (target_count_sensor_ != nullptr)
@@ -504,6 +517,9 @@ void EPPComponent::dump_config() {
 
 void EPPComponent::feed_targets(const float xy[NUM_TARGETS][2],
                                 const bool detected[NUM_TARGETS]) {
+  // SPSC safety: this producer (LD2450 UART lambda) and the loop() consumer
+  // both run on ESPHome's single main FreeRTOS task, so ring-buffer push/pop
+  // never interleave — revisit if either ever moves to another task/core.
   TargetFrame frame;
   for (int i = 0; i < NUM_TARGETS; i++) {
     frame.targets[i] = {xy[i][0], xy[i][1], detected[i]};

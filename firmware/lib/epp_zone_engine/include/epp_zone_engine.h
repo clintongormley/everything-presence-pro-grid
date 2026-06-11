@@ -41,7 +41,10 @@ struct ProcessingResult {
     bool occupancy = false;
     bool mmwave = false;
 
-    // Diagnostic log entries produced during this tick
+    // Diagnostic log entries produced during this tick.
+    // Keep log/log_count LAST: ZoneEngine::tick()'s reset and the component's
+    // publish cache both use offsetof(ProcessingResult, log) to skip the
+    // ~1.5 KB buffer when clearing/copying the fields above.
     LogEntry log[MAX_LOG_ENTRIES]{};
     int log_count = 0;
 };
@@ -125,7 +128,7 @@ private:
     bool sensors_ever_active_ = false;  // true once any sensor has been ACTIVE
     bool prev_occupancy_ = false;       // previous tick's occupancy for transition logging
 
-    ProcessingResult result_;
+    ProcessingResult result_{};
 
     /// Find the ZoneRuntime index for a given zone_id. Returns -1 if not found.
     /// Invariant: slot index == config.id; established by parse_zone_configs.
