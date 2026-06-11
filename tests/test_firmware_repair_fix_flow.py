@@ -312,6 +312,38 @@ async def test_progress_step_handles_cancelled_task_as_failed(hass: HomeAssistan
     assert result["step_id"] == "failed"
 
 
+async def test_run_ota_task_fails_fast_when_device_unknown(hass: HomeAssistant) -> None:
+    """If the device is no longer in `manager.devices` after the trigger,
+    the task must fail immediately with a curated error — not burn the full
+    OTA-completion poll (180 s) against a device_id of None.
+    """
+    from unittest.mock import MagicMock
+
+    from custom_components.eppgrid.device_manager import DeviceManager
+    from custom_components.eppgrid.storage import EPPGridStore
+
+    manager = DeviceManager(hass, EPPGridStore(hass))
+    hass.data[DOMAIN] = manager  # no devices registered
+    flow = _make_flow(hass, mac="AA:BB:CC:DD:EE:62")
+
+    # `times` makes the poll loop terminate even on pre-fix code so the
+    # test fails by assertion, not by spinning for 180 real seconds.
+    times = iter([0, 0, 999_999])
+    with (
+        patch.object(manager, "async_trigger_ota", new=AsyncMock()),
+        patch.object(manager, "read_firmware_version", new=MagicMock(return_value=None)) as mock_read,
+        patch("custom_components.eppgrid.repairs.asyncio.sleep", new=AsyncMock()),
+        patch("custom_components.eppgrid.repairs.time.monotonic", side_effect=lambda: next(times)),
+        pytest.raises(HomeAssistantError) as excinfo,
+    ):
+        await flow._run_ota_task()
+
+    # Fail-fast: the version poll never ran, and the error carries the
+    # curated device_not_found translation key (not the timeout message).
+    mock_read.assert_not_called()
+    assert excinfo.value.translation_key == "device_not_found"
+
+
 async def test_run_ota_task_raises_clean_error_when_integration_unloaded(hass: HomeAssistant) -> None:
     """If the integration is unloaded between flow start and task run,
     `_run_ota_task` must surface a HomeAssistantError instead of a raw

@@ -77,19 +77,6 @@ def _format_error(hass: HomeAssistant, exc: BaseException) -> str:
     return str(exc)
 
 
-async def _trigger_ota(hass: HomeAssistant, mac: str) -> None:
-    """Trigger an OTA firmware update on a device.
-
-    Thin wrapper over `DeviceManager.async_trigger_ota`. Raises
-    HomeAssistantError on failure (no manager, device, build flags, variant,
-    host, or service call failure).
-    """
-    manager = hass.data.get(DOMAIN)
-    if manager is None:
-        raise HomeAssistantError("EPP Grid integration not loaded")
-    await manager.async_trigger_ota(mac)
-
-
 class FirmwareUpdateRepairFlow(RepairsFlow):
     """Confirm + trigger an OTA update for a device with outdated firmware."""
 
@@ -206,13 +193,23 @@ class FirmwareUpdateRepairFlow(RepairsFlow):
         if manager is None:
             raise HomeAssistantError("EPP Grid integration not loaded")
 
-        await _trigger_ota(self.hass, self._mac)
+        # `async_trigger_ota` raises HomeAssistantError itself on every
+        # failure path (unknown device, no host/flags/variant, service call).
+        await manager.async_trigger_ota(self._mac)
 
         dev = manager.devices.get(self._mac)
-        device_id = dev.device_id if dev is not None else None
+        if dev is None:
+            # The device vanished between trigger and poll (removed/re-added).
+            # Fail fast — polling read_firmware_version(None) would burn the
+            # full completion timeout and then report a misleading timeout.
+            raise HomeAssistantError(
+                f"Device {self._mac} is no longer known to the integration",
+                translation_domain=DOMAIN,
+                translation_key="device_not_found",
+            )
         deadline = time.monotonic() + _OTA_COMPLETION_TIMEOUT_S
         while time.monotonic() < deadline:
-            fw_ver = manager.read_firmware_version(device_id)
+            fw_ver = manager.read_firmware_version(dev.device_id)
             if fw_ver == FIRMWARE_VERSION:
                 return
             await asyncio.sleep(_OTA_POLL_INTERVAL_S)

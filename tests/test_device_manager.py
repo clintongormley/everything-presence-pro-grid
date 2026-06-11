@@ -7260,7 +7260,32 @@ class TestZoneEntities:
 
 
 class TestHelpers:
-    """Tests for _extract_mac, _extract_host."""
+    """Tests for _extract_mac, _extract_host, _expand_zone_slot."""
+
+    def test_expand_zone_slot_maps_legacy_types_to_closest_semantics(self) -> None:
+        """Pre-0.95 layouts stored `rest` / `thoroughfare` zone types.
+
+        They must expand to the timing of their closest modern equivalents —
+        rest→bed (600 s timeout: someone sleeping must not time out) and
+        thoroughfare→transit (3 s: walk-through spaces clear fast) — NOT to
+        the generic `default` row (10 s), which would break bedrooms saved
+        on old layouts.
+        """
+        from custom_components.eppgrid.device_manager import ZONE_TYPE_DEFAULTS
+        from custom_components.eppgrid.device_manager._helpers import _expand_zone_slot
+
+        rest = _expand_zone_slot({"name": "Bed", "color": "#aabbcc", "type": "rest"})
+        for field, value in ZONE_TYPE_DEFAULTS["bed"].items():
+            assert rest[field] == value, f"rest.{field} should match bed defaults"
+
+        thoroughfare = _expand_zone_slot({"name": "Hall", "color": "#aabbcc", "type": "thoroughfare"})
+        for field, value in ZONE_TYPE_DEFAULTS["transit"].items():
+            assert thoroughfare[field] == value, f"thoroughfare.{field} should match transit defaults"
+
+        # Unrecognised types still fall back to the default row.
+        unknown = _expand_zone_slot({"name": "X", "color": "#aabbcc", "type": "mystery"})
+        for field, value in ZONE_TYPE_DEFAULTS["default"].items():
+            assert unknown[field] == value
 
     async def test_extract_mac_no_mac_connection(self, hass: HomeAssistant) -> None:
         """Returns None when device has no MAC connection."""

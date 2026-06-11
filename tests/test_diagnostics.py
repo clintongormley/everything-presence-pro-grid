@@ -104,15 +104,62 @@ class TestDiagnosticDump:
             "office_zone_1_presence",
             config_entry=config_entry,
             device_id=device.id,
+            suggested_object_id="office_zone_1_presence",
         )
         entity_id = ent_entry.entity_id
+        assert entity_id == "binary_sensor.office_zone_1_presence"
         hass.states.async_set(entity_id, "on")
 
         result = await async_get_config_entry_diagnostics(hass, config_entry)
 
-        # MAC keys are reindexed; the inner entity-state dict is preserved.
+        # MAC keys are reindexed; entity_ids inside are re-keyed too — the
+        # device-name prefix ("office") is replaced by the device index so a
+        # default ESPHome name embedding the MAC can't leak through the key.
         assert "device_0" in result["entity_states"]
-        assert result["entity_states"]["device_0"][entity_id] == "on"
+        assert result["entity_states"]["device_0"]["binary_sensor.device_0_zone_1_presence"] == "on"
+        assert entity_id not in result["entity_states"]["device_0"]
+
+    async def test_entity_ids_do_not_leak_mac_fragment_for_default_named_device(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry, manager: DeviceManager, store: EPPGridStore
+    ) -> None:
+        """Default ESPHome device names embed the MAC's last 6 hex digits,
+        and entity_ids inherit that as their object_id prefix — so the
+        entity_state KEYS would leak the MAC despite field redaction.
+        Diagnostics must re-key entity_ids by the device index."""
+        import json
+
+        mac = "AA:BB:CC:DD:EE:FF"
+
+        dev_reg = dr.async_get(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=config_entry.entry_id,
+            identifiers={("esphome", "test_device")},
+            name="Everything Presence Pro DDEEFF",
+        )
+        manager.devices[mac] = ManagedDevice(
+            mac=mac, name="Everything Presence Pro DDEEFF", host="192.168.1.100", device_id=device.id
+        )
+        # Stored display name keeps list_devices' `name` field (which is not
+        # part of this fix) out of the full-dump assertion below — the leak
+        # under test is the entity_id KEY prefix.
+        store.devices[mac] = {"name": "Office"}
+
+        ent_reg = er.async_get(hass)
+        ent_entry = ent_reg.async_get_or_create(
+            "sensor",
+            "esphome",
+            "AA:BB:CC:DD:EE:FF-sensor-firmware_version",
+            config_entry=config_entry,
+            device_id=device.id,
+            suggested_object_id="everything_presence_pro_ddeeff_firmware_version",
+        )
+        hass.states.async_set(ent_entry.entity_id, "0.99.0")
+
+        result = await async_get_config_entry_diagnostics(hass, config_entry)
+
+        serialized = json.dumps(result).lower()
+        assert "ddeeff" not in serialized
+        assert result["entity_states"]["device_0"]["sensor.device_0_firmware_version"] == "0.99.0"
 
     async def test_entity_states_skips_devices_without_device_id(
         self, hass: HomeAssistant, config_entry: MockConfigEntry, manager: DeviceManager

@@ -39,30 +39,42 @@ def _reindex_by_mac(mac_keyed: dict[str, Any], mac_to_index: dict[str, str]) -> 
 
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
+    from homeassistant.util import slugify
+
     manager: DeviceManager = hass.data[DOMAIN]
 
-    # Collect entity states per device
+    # Build a stable MAC -> index mapping so MAC-keyed dicts don't leak the
+    # MAC string in the dump. Index order tracks `manager.devices` insertion.
+    mac_to_index = {mac: f"device_{i}" for i, mac in enumerate(manager.devices)}
+
+    # Collect entity states per device. Entity_ids are re-keyed: ESPHome's
+    # default entity_id embeds the slugified device name, which for a
+    # default-named device contains the MAC's last hex digits — the KEY
+    # would leak the MAC despite the mac/host field redaction below.
+    # Replacing the device-name prefix with the same `device_N` index used
+    # for the MAC keys keeps the dump shareable.
     ent_reg = er.async_get(hass)
     entity_states: dict[str, dict[str, str]] = {}
     for mac, dev in manager.devices.items():
         if dev.device_id is None:
             entity_states[mac] = {}
             continue
+        name_slug = slugify(dev.name)
         states: dict[str, str] = {}
         for ent_entry in er.async_entries_for_device(ent_reg, dev.device_id, include_disabled_entities=True):
             state = hass.states.get(ent_entry.entity_id)
-            if state is not None:
-                states[ent_entry.entity_id] = state.state
+            if state is None:
+                continue
+            domain, _, object_id = ent_entry.entity_id.partition(".")
+            if name_slug and (object_id == name_slug or object_id.startswith(f"{name_slug}_")):
+                object_id = f"{mac_to_index[mac]}{object_id[len(name_slug) :]}"
+            states[f"{domain}.{object_id}"] = state.state
         entity_states[mac] = states
 
     try:
         integration_version = async_get_loaded_integration(hass, DOMAIN).version or "unknown"
     except Exception:  # defensive: loader may raise during teardown
         integration_version = "unknown"
-
-    # Build a stable MAC -> index mapping so MAC-keyed dicts don't leak the
-    # MAC string in the dump. Index order tracks `manager.devices` insertion.
-    mac_to_index = {mac: f"device_{i}" for i, mac in enumerate(manager.devices)}
 
     payload: dict[str, Any] = {
         "integration_version": integration_version,

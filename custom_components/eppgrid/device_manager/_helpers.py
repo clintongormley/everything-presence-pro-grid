@@ -25,6 +25,19 @@ ZONE_TYPE_DEFAULTS: dict[str, dict[str, float]] = {
     "transit": {"trigger": 3, "renew": 2, "timeout": 3.0, "handoff_timeout": 1.0},
 }
 
+# Pre-0.95 layouts stored `rest` / `thoroughfare` zone types. Map them to
+# the timing of their closest modern equivalents — rest→bed (600 s timeout:
+# someone sleeping must not time out) and thoroughfare→transit (3 s) — NOT
+# the generic `default` row (10 s), which would break bedrooms saved on old
+# layouts. NOTE: the frontend's display-side mapping in
+# frontend/src/lib/config-serialization.ts still normalizes these to
+# "default"; it must be updated to match (tracked as a separate frontend
+# task).
+_LEGACY_ZONE_TYPE_MAP: dict[str, str] = {
+    "rest": "bed",
+    "thoroughfare": "transit",
+}
+
 
 # Map aioesphomeapi LogLevel values to Python logging levels
 _ESPHOME_TO_PYTHON_LOG = {
@@ -52,12 +65,17 @@ def _expand_zone_slot(slot: dict[str, Any]) -> dict[str, Any]:
     Custom: user-supplied timing is authoritative.
     Non-custom: ZONE_TYPE_DEFAULTS always wins (stored timing is overwritten,
     not defaulted — keeps the defaults-table the single source of truth).
+    Legacy pre-0.95 types resolve via _LEGACY_ZONE_TYPE_MAP; the stored
+    `type` value itself is left untouched (firmware ignores it — see
+    epp_zone_config_parser.h).
     """
     if slot.get("type") == "custom":
         return dict(slot)
     # `type` is guaranteed to be a string by _validate_zone_slots at the ws boundary;
     # the dict[str, Any] type erases that, hence the ignore.
-    defaults = ZONE_TYPE_DEFAULTS.get(slot.get("type"), ZONE_TYPE_DEFAULTS["default"])  # type: ignore[arg-type]
+    zone_type: str = slot.get("type")  # type: ignore[assignment]
+    zone_type = _LEGACY_ZONE_TYPE_MAP.get(zone_type, zone_type)
+    defaults = ZONE_TYPE_DEFAULTS.get(zone_type, ZONE_TYPE_DEFAULTS["default"])
     expanded = dict(slot)
     expanded["trigger"] = defaults["trigger"]
     expanded["renew"] = defaults["renew"]
