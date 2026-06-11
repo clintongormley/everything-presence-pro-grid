@@ -124,6 +124,179 @@ describe("panel HA reconnect handling", () => {
 		}
 	});
 
+	it("does not re-attach connection listeners on a zombie panel", async () => {
+		// HA keeps pushing `hass` to elements it has already removed from the
+		// DOM (the panel resolver holds a reference briefly). Lit still runs
+		// the update cycle on those zombies, and re-attaching ready/disconnected
+		// listeners would undo disconnectedCallback's teardown and pin the dead
+		// panel in memory via the connection's listener list.
+		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
+		const hass = mockHass(true);
+		el.hass = hass;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		document.body.removeChild(el);
+		expect(hass.connection.__listenerCount("ready")).toBe(0);
+
+		// Late hass push on the detached element re-runs updated().
+		el.hass = { ...hass };
+		await el.updateComplete;
+
+		expect(hass.connection.__listenerCount("ready")).toBe(0);
+		expect(hass.connection.__listenerCount("disconnected")).toBe(0);
+	});
+
+	it("dedupes concurrent _initialize calls into a single device-list subscription", async () => {
+		// While `_loading && !_devices.length`, every hass push re-enters
+		// _initialize via updated(). Without an in-flight guard each run
+		// tears down and re-creates the device-list subscription (~2
+		// subscribes + 1 unsub per mount).
+		let resolveSub!: (unsub: () => void) => void;
+		const subPromise = new Promise<() => void>((resolve) => {
+			resolveSub = resolve;
+		});
+		const hass = mockHass(true);
+		hass.connection.subscribeMessage = vi
+			.fn()
+			.mockImplementation((cb: any, msg: any) => {
+				if (msg.type === "eppgrid/subscribe_device_list") {
+					cb({
+						devices: [
+							{
+								mac: "aa",
+								name: "Alpha",
+								host: null,
+								available: false,
+								configured: true,
+								firmware_status: "unavailable",
+								current_connection_count: null,
+								area: null,
+							},
+						],
+					});
+					return subPromise;
+				}
+				return Promise.resolve(vi.fn());
+			});
+		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
+		el.hass = hass;
+		document.body.appendChild(el); // _initialize #1 blocks on the subscribe
+		const a = el as any;
+		void a._initialize(); // #2 concurrent
+		void a._initialize(); // #3 concurrent
+		resolveSub(vi.fn());
+		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => setTimeout(r, 0));
+
+		const listSubs = (
+			hass.connection.subscribeMessage as any
+		).mock.calls.filter(
+			(c: any[]) => c[1]?.type === "eppgrid/subscribe_device_list",
+		);
+		expect(listSubs).toHaveLength(1);
+		document.body.removeChild(el);
+	});
+
+	it("does not leak an unhandled rejection when updated() triggers a failing _initialize", async () => {
+		const unhandled: unknown[] = [];
+		const handler = (reason: unknown) => {
+			unhandled.push(reason);
+		};
+		process.on("unhandledRejection", handler);
+		try {
+			const el = document.createElement("eppgrid-panel") as EPPGridPanel;
+			const hass = mockHass(true);
+			el.hass = hass;
+			document.body.appendChild(el);
+			await el.updateComplete;
+			const a = el as any;
+			// Force the `_loading && !_devices.length` branch in updated() and
+			// make _initialize reject — the call site must swallow it like the
+			// other two call sites do. NOTE: must be a raw assignment, not
+			// vi.spyOn().mockRejectedValue() — the spy machinery attaches its
+			// own handlers to returned promises, masking the unhandled
+			// rejection this test exists to detect.
+			a._initialize = () => Promise.reject(new Error("boom"));
+			a._loading = true;
+			a._devices = [];
+			el.hass = { ...hass };
+			await el.updateComplete;
+			await new Promise((r) => setTimeout(r, 0));
+			await new Promise((r) => setTimeout(r, 0));
+			expect(unhandled).toEqual([]);
+			document.body.removeChild(el);
+		} finally {
+			process.off("unhandledRejection", handler);
+		}
+	});
+
+	it("does not apply config or open a session when the panel is removed mid config-load", async () => {
+		// Navigating away while get_config is in flight: the resumed pipeline
+		// used to apply config to the dead element and open a device session
+		// nothing would ever close (occupying one of the ESP32's API slots).
+		let resolveConfig!: (v: any) => void;
+		const hass = mockHass(true);
+		hass.callWS = vi.fn().mockImplementation((msg: any) => {
+			if (msg.type === "eppgrid/get_config") {
+				return new Promise((resolve) => {
+					resolveConfig = resolve;
+				});
+			}
+			return Promise.resolve({});
+		});
+		hass.connection.subscribeMessage = vi
+			.fn()
+			.mockImplementation((cb: any, msg: any) => {
+				if (msg.type === "eppgrid/subscribe_device_list") {
+					cb({
+						devices: [
+							{
+								mac: "aa",
+								name: "Alpha",
+								host: null,
+								available: true,
+								configured: true,
+								firmware_status: "compatible",
+								current_connection_count: null,
+								area: null,
+							},
+						],
+					});
+				}
+				return Promise.resolve(vi.fn());
+			});
+		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
+		el.hass = hass;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		await new Promise((r) => setTimeout(r, 0));
+		const a = el as any;
+
+		// Panel torn down while the config fetch is pending.
+		document.body.removeChild(el);
+		resolveConfig({
+			config: {
+				calibration: {
+					perspective: [1, 2, 3, 4, 5, 6, 7, 8, 9],
+					room_width: 4000,
+					room_depth: 3000,
+				},
+				room_layout: {},
+			},
+		});
+		await new Promise((r) => setTimeout(r, 0));
+		await new Promise((r) => setTimeout(r, 0));
+
+		expect(a._loadedConfigMac).toBeNull();
+		expect(a._perspective).toBeNull();
+		const deviceSubs = (
+			hass.connection.subscribeMessage as any
+		).mock.calls.filter(
+			(c: any[]) => c[1]?.type === "eppgrid/subscribe_device",
+		);
+		expect(deviceSubs).toHaveLength(0);
+	});
+
 	it("requests a re-render when a 'ready' event fires after disconnect", async () => {
 		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
 		const hass = mockHass(true);

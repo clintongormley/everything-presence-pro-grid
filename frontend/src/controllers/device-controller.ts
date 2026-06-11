@@ -72,6 +72,13 @@ export class DeviceController implements ReactiveController {
 	private _targetsGen = 0;
 	private _displayGen = 0;
 	private _deviceListGen = 0;
+	// Guards the `subscribe_device` session itself. The backend refcounts
+	// these sessions and the ESP32 has only a few API connection slots, so a
+	// leaked late-resolving subscribe holds a slot until the websocket
+	// closes. Bumped by closeDeviceSession (and therefore hostDisconnected)
+	// and on connection swap; checked after every await in the session-open
+	// pipeline.
+	private _sessionGen = 0;
 
 	constructor(host: ReactiveControllerHost) {
 		this._host = host;
@@ -108,6 +115,7 @@ export class DeviceController implements ReactiveController {
 			this._targetsGen++;
 			this._displayGen++;
 			this._deviceListGen++;
+			this._sessionGen++;
 		}
 	}
 
@@ -275,6 +283,12 @@ export class DeviceController implements ReactiveController {
 			this._reconnecting = true;
 			this._host.requestUpdate();
 			try {
+				// Snapshot the session generation before the fetch: if the
+				// host disconnects (or the session is explicitly closed, e.g.
+				// the device went offline) while get_config is in flight,
+				// resuming the pipeline would open a fresh session that
+				// nothing will ever close.
+				const sessionToken = this._sessionGen;
 				let config: any = null;
 				try {
 					const result = await this._hass.callWS({
@@ -285,6 +299,7 @@ export class DeviceController implements ReactiveController {
 				} catch {
 					// Device may not be ready yet
 				}
+				if (this._sessionGen !== sessionToken) return config;
 				await this.reopenSession(mac);
 				return config;
 			} finally {
@@ -330,6 +345,12 @@ export class DeviceController implements ReactiveController {
 		entry.promise = (async () => {
 			try {
 				await this.openDeviceSession(mac);
+				// Post-await staleness check: openDeviceSession only stores
+				// `_unsubDevice` when its `_sessionGen` token is still current,
+				// so this also covers the host disconnecting (or the
+				// connection swapping) while the subscribe was in flight —
+				// without it we'd resurrect the whole target pipeline, with
+				// fresh tokens, on a dead controller.
 				if (this._unsubDevice) {
 					this.subscribeTargets(mac);
 				}
@@ -347,14 +368,27 @@ export class DeviceController implements ReactiveController {
 	async openDeviceSession(mac: string): Promise<void> {
 		this.closeDeviceSession();
 		if (!this._hass || !mac) return;
+		const token = ++this._sessionGen;
 		try {
-			this._unsubDevice = await this._hass.connection.subscribeMessage(
+			const unsub = await this._hass.connection.subscribeMessage(
 				() => {}, // session has no events, just lifecycle
 				{ type: "eppgrid/subscribe_device", mac },
 			);
+			if (this._sessionGen !== token) {
+				// The host disconnected, the session was closed, or the
+				// connection swapped while the subscribe was in flight.
+				// Release the just-created server-side session immediately —
+				// stashing the unsub on a torn-down controller would leak it.
+				try {
+					unsub();
+				} catch {}
+				return;
+			}
+			this._unsubDevice = unsub;
 			this._connectionFailed = false;
 			this._host.requestUpdate();
 		} catch (e) {
+			if (this._sessionGen !== token) return;
 			console.warn("Failed to open device session:", e);
 			const err = e as Record<string, unknown>;
 			this._connectionFailed =
@@ -364,6 +398,7 @@ export class DeviceController implements ReactiveController {
 	}
 
 	closeDeviceSession(): void {
+		this._sessionGen++;
 		this.unsubscribeTargets();
 		safeUnsub(this._unsubDevice);
 		this._unsubDevice = undefined;

@@ -766,14 +766,25 @@ export class EPPGridPanel extends LitElement {
 			this._flasherCtrl.hass = this.hass;
 			const conn = this.hass.connection;
 			if (conn) {
-				this._attachConnectionListeners(conn);
+				// HA keeps pushing `hass` to panels it has already removed
+				// from the DOM, and Lit still runs the update cycle on those
+				// zombies. Re-attaching here would undo disconnectedCallback's
+				// teardown and pin the dead panel in memory via the
+				// connection's listener list.
+				if (this.isConnected) {
+					this._attachConnectionListeners(conn);
+				}
 				if (typeof conn.connected === "boolean") {
 					this._haConnected = conn.connected;
 				}
 			}
 			if (!this._haConnected) return;
 			if (this._loading && !this._devices.length) {
-				this._initialize();
+				this._initialize().catch(() => {
+					// _initialize traps its own failures; guard here (as at the
+					// other call sites) so a late rejection can't surface as
+					// "Uncaught (in promise)".
+				});
 			} else if (
 				this._selectedMac &&
 				this._isSelectedDeviceAvailable() &&
@@ -798,6 +809,9 @@ export class EPPGridPanel extends LitElement {
 	 * may not yet be populated.
 	 */
 	private _ensureSession(mac: string): void {
+		// A zombie panel (removed from the DOM while async work was still in
+		// flight) must not (re)open device sessions nothing will ever close.
+		if (!this.isConnected) return;
 		if (this._loadedConfigMac === mac) {
 			this._deviceCtrl.reopenSession(mac).catch(() => {});
 		} else {
@@ -805,7 +819,28 @@ export class EPPGridPanel extends LitElement {
 		}
 	}
 
+	// In-flight _initialize run, shared by concurrent callers (see below).
+	private _initializeInFlight: Promise<void> | null = null;
+
 	private async _initialize(): Promise<void> {
+		// Dedupe concurrent runs: while `_loading && !_devices.length`, every
+		// `hass` property push re-enters _initialize via updated(), and each
+		// run tears down and re-creates the device-list subscription (~2
+		// subscribes + 1 unsub per mount). Concurrent callers share the
+		// in-flight run instead.
+		if (this._initializeInFlight) return this._initializeInFlight;
+		const promise = this._runInitialize();
+		this._initializeInFlight = promise;
+		try {
+			await promise;
+		} finally {
+			if (this._initializeInFlight === promise) {
+				this._initializeInFlight = null;
+			}
+		}
+	}
+
+	private async _runInitialize(): Promise<void> {
 		if (!this.hass) return;
 		if (!this.isConnected) return;
 		const isRetry = this._initRetryTimer !== undefined;
@@ -923,6 +958,13 @@ export class EPPGridPanel extends LitElement {
 			this._targetCtrl.handleRawTargetData(rawTargets);
 		};
 		const config = await this._deviceCtrl.loadDeviceConfig(mac);
+		// Re-check after the await (mirroring _initialize): if the panel was
+		// removed while the load was in flight, don't apply config to a dead
+		// element, and close whatever session survived the teardown race.
+		if (!this.isConnected) {
+			this._deviceCtrl.closeDeviceSession();
+			return;
+		}
 		if (this._selectedMac !== mac) {
 			this._deviceCtrl.closeDeviceSession();
 			return;

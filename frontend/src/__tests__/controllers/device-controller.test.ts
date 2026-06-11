@@ -1367,6 +1367,130 @@ describe("DeviceController", () => {
 		});
 	});
 
+	describe("device session generation token", () => {
+		// The ESP32 backend has only a handful of API connection slots and
+		// refcounts `subscribe_device` sessions — a leaked subscription holds
+		// a slot until the browser websocket closes. These tests pin the
+		// in-flight-subscribe races that used to leak.
+
+		function pendingDeviceSubHass() {
+			let resolveSub!: (unsub: () => void) => void;
+			const subscribeMock = vi.fn().mockImplementation((_cb: any, msg: any) => {
+				if (msg.type === "eppgrid/subscribe_device") {
+					return new Promise<() => void>((resolve) => {
+						resolveSub = resolve;
+					});
+				}
+				return Promise.resolve(vi.fn());
+			});
+			const hass = {
+				callWS: vi.fn().mockResolvedValue({}),
+				connection: { subscribeMessage: subscribeMock },
+			};
+			return {
+				hass,
+				subscribeMock,
+				resolveSub: (fn: () => void) => resolveSub(fn),
+			};
+		}
+
+		it("immediately unsubscribes a late subscribe_device resolution after hostDisconnected", async () => {
+			// Subscribe in flight → host disconnects → subscribe resolves.
+			// Without a generation token the unsub is stashed on the dead
+			// controller and the server-side session leaks.
+			const { hass, resolveSub } = pendingDeviceSubHass();
+			const unsubFn = vi.fn();
+			ctrl.hass = hass;
+
+			const p = ctrl.openDeviceSession("aa");
+			ctrl.hostDisconnected();
+			resolveSub(unsubFn);
+			await p;
+
+			expect(unsubFn).toHaveBeenCalledTimes(1);
+			expect(ctrl.hasDeviceSession).toBe(false);
+		});
+
+		it("immediately unsubscribes a late subscribe_device resolution after closeDeviceSession", async () => {
+			const { hass, resolveSub } = pendingDeviceSubHass();
+			const unsubFn = vi.fn();
+			ctrl.hass = hass;
+
+			const p = ctrl.openDeviceSession("aa");
+			ctrl.closeDeviceSession();
+			resolveSub(unsubFn);
+			await p;
+
+			expect(unsubFn).toHaveBeenCalledTimes(1);
+			expect(ctrl.hasDeviceSession).toBe(false);
+		});
+
+		it("immediately unsubscribes a late subscribe_device resolution after a connection swap", async () => {
+			const { hass, resolveSub } = pendingDeviceSubHass();
+			const unsubFn = vi.fn();
+			ctrl.hass = hass;
+
+			const p = ctrl.openDeviceSession("aa");
+			// Connection swaps before the subscription resolves.
+			ctrl.hass = {
+				callWS: vi.fn(),
+				connection: { subscribeMessage: vi.fn().mockResolvedValue(vi.fn()) },
+			};
+			resolveSub(unsubFn);
+			await p;
+
+			expect(unsubFn).toHaveBeenCalledTimes(1);
+			expect(ctrl.hasDeviceSession).toBe(false);
+		});
+
+		it("does not subscribe targets when the host disconnects while reopenSession's session-open is in flight", async () => {
+			// reopenSession's continuation must not resurrect the full target
+			// pipeline (with fresh tokens!) on a controller that has already
+			// been torn down.
+			const { hass, subscribeMock, resolveSub } = pendingDeviceSubHass();
+			ctrl.hass = hass;
+
+			const p = ctrl.reopenSession("aa");
+			ctrl.hostDisconnected();
+			resolveSub(vi.fn());
+			await p;
+
+			const targetSubs = subscribeMock.mock.calls.filter(
+				(c: any[]) =>
+					c[1]?.type === "eppgrid/subscribe_grid_targets" ||
+					c[1]?.type === "eppgrid/subscribe_raw_targets",
+			);
+			expect(targetSubs).toHaveLength(0);
+		});
+
+		it("does not reopen the session when the host disconnects while loadDeviceConfig's fetch is in flight", async () => {
+			// hostDisconnected lands while get_config is pending. Resuming the
+			// pipeline afterwards would open a brand-new session (fresh token)
+			// that nothing will ever close.
+			let resolveConfig!: (v: any) => void;
+			const callWS = vi.fn().mockImplementation((req: any) => {
+				if (req.type === "eppgrid/get_config") {
+					return new Promise((resolve) => {
+						resolveConfig = resolve;
+					});
+				}
+				return Promise.resolve({});
+			});
+			const subscribeMock = vi.fn().mockResolvedValue(vi.fn());
+			ctrl.hass = { callWS, connection: { subscribeMessage: subscribeMock } };
+
+			const p = ctrl.loadDeviceConfig("aa");
+			ctrl.hostDisconnected();
+			resolveConfig({ config: { foo: "bar" } });
+			await p;
+
+			const deviceSubs = subscribeMock.mock.calls.filter(
+				(c: any[]) => c[1]?.type === "eppgrid/subscribe_device",
+			);
+			expect(deviceSubs).toHaveLength(0);
+		});
+	});
+
 	describe("_applyDeviceList defensive handling", () => {
 		it("does not crash and treats it as empty list when devices field is missing", async () => {
 			// The backend's subscribe_device_list push could omit `devices`
