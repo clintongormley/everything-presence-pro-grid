@@ -41,6 +41,11 @@ columns match the TS engine's centred-room placement and fails loudly if not).
 | `overlay_entry_cells` | optional `[col, row][]` — entry overlay (instant trigger, bypasses gating) |
 | `overlay_suppress_cells` | optional `[col, row][]` — suppress overlay (targets on these cells are ignored / treated as "left room") |
 
+A zone id that appears in `zone_cells` but **not** in `zones` is a
+*painted-but-unconfigured* zone: both engines treat it as disabled (firmware
+`find_zone_index` returns -1) — it can never confirm or occupy, but targets on
+its cells still record position for continuity.
+
 ### `zones`
 
 Keyed by zone id (`"0"`–`"7"`; `"0"` is the room-boundary zone). Every zone
@@ -50,8 +55,8 @@ values and ignore `type` (it is informational only):
 | key | value |
 | --- | --- |
 | `type` | informational label (`"normal"`, `"custom"`, …) — not consumed |
-| `trigger` | 0–9 signal needed to confirm a CLEAR zone |
-| `renew` | 0–9 signal needed to re-confirm an OCCUPIED/PENDING zone |
+| `trigger` | 0–9 signal needed to confirm a CLEAR zone (0 clamps to 1 — `clamp_threshold`) |
+| `renew` | 0–9 signal needed to re-confirm an OCCUPIED/PENDING zone (0 clamps to 1) |
 | `timeout` | seconds from pending-start until the zone clears |
 | `handoff_timeout` | seconds the pending timer is accelerated to on handoff |
 

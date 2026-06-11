@@ -1,7 +1,10 @@
 export interface Zone0Config {
 	type: "default" | "bed" | "seating" | "transit" | "custom";
-	trigger?: number; // 0-9 threshold, 0=disabled, higher=harder
-	renew?: number; // 0-9 threshold, 0=disabled, higher=harder
+	// 0-9 threshold, higher=harder. 0 is NOT "disabled": the engine clamps
+	// it to 1 ("any active frame triggers"), mirroring firmware
+	// clamp_threshold in epp_types.h.
+	trigger?: number;
+	renew?: number; // 0-9 threshold, same 0-clamps-to-1 semantics as trigger
 	timeout?: number; // seconds, if undefined use type default
 	handoff_timeout?: number; // seconds, time for zone to clear after target leaves
 }
@@ -109,10 +112,25 @@ export function resolveZoneParams(z: Zone0Config): {
 }
 
 /**
+ * Mirror of firmware `clamp_threshold` (epp_types.h): trigger/renew are
+ * stored 0-9; 0 is treated as 1 ("any active frame triggers") so a
+ * disabled-looking value never makes every tick confirm.
+ */
+function clampThreshold(threshold: number): number {
+	return Math.max(1, threshold);
+}
+
+/**
  * Get trigger/renew/timeout for a zone from the current editor state.
+ * Trigger/renew are clamped to >= 1 (firmware clamp_threshold semantics);
+ * a stored 0 therefore behaves as 1, not as "disabled".
  *
  * - zid === 0: room boundary (uses roomType/roomTrigger/roomRenew/roomTimeout/etc.)
  * - zid 1-7: named zone (uses zone config)
+ *
+ * Callers must not pass unconfigured zone ids (the engine skips them, the
+ * firmware-equivalent of `find_zone_index` returning -1); doing so throws so
+ * the bug surfaces instead of silently running with made-up thresholds.
  */
 export function getZoneThresholds(
 	zid: number,
@@ -128,14 +146,14 @@ export function getZoneThresholds(
 		const isCustom = roomType === "custom";
 		return isCustom
 			? {
-					trigger: roomTrigger,
-					renew: roomRenew,
+					trigger: clampThreshold(roomTrigger),
+					renew: clampThreshold(roomRenew),
 					timeout: roomTimeout,
 					handoffTimeout: roomHandoffTimeout,
 				}
 			: {
-					trigger: d.trigger,
-					renew: d.renew,
+					trigger: clampThreshold(d.trigger),
+					renew: clampThreshold(d.renew),
 					timeout: d.timeout,
 					handoffTimeout: d.handoff_timeout,
 				};
@@ -147,36 +165,21 @@ export function getZoneThresholds(
 			const isCustom = cfg.type === "custom";
 			return isCustom
 				? {
-						trigger: cfg.trigger ?? d.trigger,
-						renew: cfg.renew ?? d.renew,
+						trigger: clampThreshold(cfg.trigger ?? d.trigger),
+						renew: clampThreshold(cfg.renew ?? d.renew),
 						timeout: cfg.timeout ?? d.timeout,
 						handoffTimeout: cfg.handoff_timeout ?? d.handoff_timeout,
 					}
 				: {
-						trigger: d.trigger,
-						renew: d.renew,
+						trigger: clampThreshold(d.trigger),
+						renew: clampThreshold(d.renew),
 						timeout: d.timeout,
 						handoffTimeout: d.handoff_timeout,
 					};
 		}
 	}
-	// Should be unreachable: zid is either 0 (handled above) or 1..MAX_ZONES
-	// with a non-null cfg. If we get here, log once per zid (the engine calls
-	// this per target per frame, so an unguarded warn would flood the console)
-	// then fall back to canonical defaults rather than a magic-number set.
-	if (!_warnedMissingThresholds.has(zid)) {
-		_warnedMissingThresholds.add(zid);
-		console.warn(
-			`getZoneThresholds: no thresholds for zid=${zid}, falling back to defaults`,
-		);
-	}
-	const d = ZONE_TYPE_DEFAULTS.default;
-	return {
-		trigger: d.trigger,
-		renew: d.renew,
-		timeout: d.timeout,
-		handoffTimeout: d.handoff_timeout,
-	};
+	// Unconfigured zone: the firmware has no ZoneRuntime here and the TS
+	// engine skips such zones before looking up thresholds — reaching this
+	// is a caller bug, so fail loudly instead of inventing defaults.
+	throw new Error(`getZoneThresholds: zone ${zid} is not configured`);
 }
-
-const _warnedMissingThresholds = new Set<number>();

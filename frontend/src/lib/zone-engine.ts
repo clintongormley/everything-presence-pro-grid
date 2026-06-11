@@ -116,6 +116,33 @@ function hasEntryOverlayNear(
 	return false;
 }
 
+/**
+ * Mirror of firmware `find_zone_index(zid) >= 0`: zone 0 (room boundary) is
+ * always configured; named zones 1-7 are configured iff their slot holds a
+ * config. Painted-but-unconfigured zone ids are treated as disabled — they
+ * can never confirm or occupy (firmware `find_zone_index` returns -1).
+ */
+function isZoneConfigured(
+	zid: number,
+	zoneConfigs: (ZoneConfig | null)[],
+): boolean {
+	if (zid === 0) return true;
+	return zid >= 1 && zid <= zoneConfigs.length && zoneConfigs[zid - 1] != null;
+}
+
+function getOrCreateZoneState(state: ZoneEngineState, zid: number): ZoneState {
+	let st = state.localZoneState.get(zid);
+	if (!st) {
+		st = {
+			occupied: false,
+			pendingSince: null,
+			confirmedTargets: new Set(),
+		};
+		state.localZoneState.set(zid, st);
+	}
+	return st;
+}
+
 export function runLocalZoneEngine(
 	state: ZoneEngineState,
 	params: ZoneEngineParams,
@@ -126,21 +153,28 @@ export function runLocalZoneEngine(
 	const targetSignal: Map<number, number> = new Map();
 	const targetZonePrev: (number | null)[] = [null, null, null];
 	const targetZoneCurr: (number | null)[] = [null, null, null];
+	// Mirror of firmware target_active[]: sensor is tracking AND produced
+	// frames this window. Pending targets echoed by the backend (x/y non-null
+	// but signal=0) correspond to firmware tw.active=false.
+	const targetActive: boolean[] = [false, false, false];
 
-	for (let i = 0; i < MAX_TARGETS && i < params.targets.length; i++) {
-		const t = params.targets[i];
+	for (let i = 0; i < MAX_TARGETS; i++) {
+		const t = i < params.targets.length ? params.targets[i] : null;
 
-		// Check if sensor is tracking (x/y non-null), NOT backend status.
-		// The zone editor ignores backend status and recalculates its own.
-		if (t.x == null || t.y == null) {
+		// Mirror firmware `!tw.active` (target gone): the sensor isn't
+		// tracking (x/y null), the slot is absent from this frame, or the
+		// rolling window holds no active frames (signal<=0 — the backend
+		// echoes pending targets with a position but signal 0). All three
+		// must clear tracking state exactly like the firmware does, so a
+		// reappearing target can't inherit stale continuity/gating.
+		if (!t || t.x == null || t.y == null || t.signal <= 0) {
 			state.targetPrev[i] = null;
 			state.targetGateCount[i] = 0;
 			continue;
 		}
 
+		targetActive[i] = true;
 		const signal = t.signal;
-		if (signal <= 0) continue;
-
 		targetSignal.set(i, signal);
 
 		const pos = mapTargetToGridCell(
@@ -209,6 +243,14 @@ export function runLocalZoneEngine(
 			continuous = dist <= MAX_MOVEMENT_CELLS;
 		}
 
+		// Mirror firmware's `find_zone_index(zone_id)` gate: only configured
+		// zones run the confirm logic; painted-but-unconfigured zones still
+		// record position for continuity but can never confirm.
+		if (!isZoneConfigured(zid, params.zoneConfigs)) {
+			state.targetPrev[i] = { col, row };
+			continue;
+		}
+
 		const thresholds = getZoneThresholds(
 			zid,
 			params.zoneConfigs,
@@ -220,9 +262,12 @@ export function runLocalZoneEngine(
 		);
 		const { trigger, renew } = thresholds;
 
-		const st = state.localZoneState.get(zid);
-		const isOccupied = st?.occupied ?? false;
-		const isClear = !isOccupied;
+		// Get-or-create the zone state HERE (not lazily in the Step-3 state
+		// machine): a target confirmed on its very first tick must land in
+		// confirmedTargets, exactly like the firmware's unconditional
+		// `rt.confirmed_targets |= (1 << i)`.
+		const st = getOrCreateZoneState(state, zid);
+		const isClear = !st.occupied;
 
 		// No first appearance: targets cannot originate in interference zones.
 		// They must be handed off from a clean zone (continuity required).
@@ -256,7 +301,7 @@ export function runLocalZoneEngine(
 				state.targetGateCount[i]++;
 				if (state.targetGateCount[i] >= 2) {
 					zoneConfirmed.set(zid, true);
-					if (st) st.confirmedTargets.add(i);
+					st.confirmedTargets.add(i);
 					state.targetPrev[i] = { col, row };
 					state.targetGateCount[i] = 0;
 				} else {
@@ -269,7 +314,7 @@ export function runLocalZoneEngine(
 		} else {
 			if (signal >= baseTrigger) {
 				zoneConfirmed.set(zid, true);
-				if (st) st.confirmedTargets.add(i);
+				st.confirmedTargets.add(i);
 				state.targetPrev[i] = { col, row };
 				state.targetGateCount[i] = 0;
 			} else {
@@ -284,6 +329,9 @@ export function runLocalZoneEngine(
 		const currZid = targetZoneCurr[i];
 		if (prevZid === null || currZid === null || prevZid === currZid) continue;
 
+		// Mirror firmware `if (src_zi >= 0)`: unconfigured source zones have
+		// no runtime to hand off from.
+		if (!isZoneConfigured(prevZid, params.zoneConfigs)) continue;
 		const srcSt = state.localZoneState.get(prevZid);
 		if (!srcSt) continue;
 		srcSt.confirmedTargets.delete(i);
@@ -322,7 +370,11 @@ export function runLocalZoneEngine(
 		const leftRoom = !isGone && targetZoneCurr[i] === null;
 		const lastZid = state.lastZone[i];
 		if ((isGone || leftRoom) && state.lastOnOverlay[i] && lastZid !== null) {
-			const st = state.localZoneState.get(lastZid);
+			// Mirror firmware `find_zone_index(prev_zid) >= 0`: an
+			// unconfigured zone has no runtime to accelerate.
+			const st = isZoneConfigured(lastZid, params.zoneConfigs)
+				? state.localZoneState.get(lastZid)
+				: undefined;
 			if (st?.occupied) {
 				// Check if this target is the only confirmed target remaining
 				let remaining = 0;
@@ -360,15 +412,14 @@ export function runLocalZoneEngine(
 		if (cellIsInside(params.grid[i])) allZoneIds.add(cellZone(params.grid[i]));
 	}
 	for (const zid of allZoneIds) {
-		let st = state.localZoneState.get(zid);
-		if (!st) {
-			st = {
-				occupied: false,
-				pendingSince: null,
-				confirmedTargets: new Set(),
-			};
-			state.localZoneState.set(zid, st);
+		// Painted-but-unconfigured zone ids are disabled (firmware
+		// find_zone_index returns -1): no state machine, no zone state —
+		// report unoccupied, mirroring the firmware's zeroed zone_occupancy.
+		if (!isZoneConfigured(zid, params.zoneConfigs)) {
+			occupancy[zid] = false;
+			continue;
 		}
+		const st = getOrCreateZoneState(state, zid);
 		const zoneThresholds = getZoneThresholds(
 			zid,
 			params.zoneConfigs,
@@ -404,25 +455,20 @@ export function runLocalZoneEngine(
 		occupancy[zid] = st.occupied;
 	}
 
-	// Clear stale zones no longer in the grid
+	// Clear stale zones no longer in the grid (or no longer configured —
+	// firmware set_zones resets every ZoneRuntime, so a zone whose config
+	// disappears must not keep occupancy state around).
 	for (const zid of state.localZoneState.keys()) {
-		if (!allZoneIds.has(zid)) {
+		if (!allZoneIds.has(zid) || !isZoneConfigured(zid, params.zoneConfigs)) {
 			state.localZoneState.delete(zid);
 		}
 	}
 
-	// activeTargets = sensor is tracking (mirrors backend tw.active)
-	const activeTargets = new Set<number>();
-	for (let i = 0; i < MAX_TARGETS && i < params.targets.length; i++) {
-		if (params.targets[i].x != null && params.targets[i].y != null) {
-			activeTargets.add(i);
-		}
-	}
-
-	// Clean up stale confirmed targets in non-pending zones
-	// (mirrors backend _tick lines 705-709)
-	for (let i = 0; i < MAX_TARGETS && i < params.targets.length; i++) {
-		if (!activeTargets.has(i)) {
+	// Clean up stale confirmed targets in non-pending zones (mirrors firmware
+	// Step 5). Iterates ALL slots: an absent/inactive slot must release its
+	// confirmation bits exactly like firmware `!window.targets[i].active`.
+	for (let i = 0; i < MAX_TARGETS; i++) {
+		if (!targetActive[i]) {
 			for (const st of state.localZoneState.values()) {
 				if (st.pendingSince === null) {
 					st.confirmedTargets.delete(i);
@@ -523,11 +569,11 @@ export function runLocalZoneEngine(
 	for (let i = 0; i < MAX_TARGETS && i < params.targets.length; i++) {
 		const sig = targetSignal.get(i) ?? 0;
 		const inRoom = targetZoneCurr[i] !== null;
-		if (activeTargets.has(i) && sig > 0 && inRoom) {
+		if (targetActive[i] && sig > 0 && inRoom) {
 			targetResults.push({ status: "active" });
 		} else {
 			let isPending = false;
-			if (!activeTargets.has(i) || !inRoom) {
+			if (!targetActive[i] || !inRoom) {
 				for (const [, st] of state.localZoneState) {
 					if (
 						st.occupied &&

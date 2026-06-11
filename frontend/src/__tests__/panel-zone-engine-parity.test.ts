@@ -614,15 +614,11 @@ describe("TS-engine specifics: per-target status via panel path", () => {
 	});
 
 	it("target disappears while zone pending → status=pending with last position", () => {
-		// Two active ticks are needed: the first tick creates the zone state and
-		// occupies it; the second tick registers the target in confirmedTargets so
-		// the pending check can identify which target was last in the zone.
-		// (This two-tick requirement IS the "first-tick confirmedTargets"
-		// KNOWN-DIVERGENCE(7.2) — the fixture's tagged scenarios cover the
-		// single-tick behaviour both engines should agree on.)
+		// A single active tick both occupies the zone AND registers the
+		// target in confirmedTargets (first-tick confirm — parity with the
+		// firmware's unconditional `rt.confirmed_targets |= (1 << i)`).
 		a._targets = [makeTarget(450, 450, 5)];
-		a._runLocalZoneEngine(); // tick 1: zone created and occupied
-		a._runLocalZoneEngine(); // tick 2: target added to confirmedTargets
+		a._runLocalZoneEngine(); // zone occupied + target in confirmedTargets
 
 		// Target disappears (sensor stops tracking → x/y null)
 		a._targets = [{ x: null, y: null, status: "inactive" as const, signal: 0 }];
@@ -632,10 +628,8 @@ describe("TS-engine specifics: per-target status via panel path", () => {
 	});
 
 	it("zone clears after timeout → status=inactive", () => {
-		// Two active ticks to register the target in confirmedTargets (see above).
 		a._targets = [makeTarget(450, 450, 5)];
-		a._runLocalZoneEngine(); // tick 1: zone occupied
-		a._runLocalZoneEngine(); // tick 2: target in confirmedTargets
+		a._runLocalZoneEngine(); // zone occupied + target in confirmedTargets
 
 		// Target disappears
 		a._targets = [{ x: null, y: null, status: "inactive" as const, signal: 0 }];
@@ -660,8 +654,7 @@ describe("TS-engine specifics: per-target status via panel path", () => {
 		// Target was in room, then moves outside while still tracked.
 		// Zone goes pending, target shows at last in-room position.
 		a._targets = [makeTarget(450, 450, 5)];
-		a._runLocalZoneEngine(); // tick 1: zone occupied
-		a._runLocalZoneEngine(); // tick 2: target in confirmedTargets
+		a._runLocalZoneEngine(); // zone occupied + target in confirmedTargets
 
 		// Target moves outside room but still tracked with signal
 		a._targets = [makeTarget(-900, 150, 9)];
@@ -670,10 +663,8 @@ describe("TS-engine specifics: per-target status via panel path", () => {
 	});
 
 	it("target reappears during pending → back to active", () => {
-		// Two active ticks to register target in confirmedTargets (lazy init).
 		a._targets = [makeTarget(450, 450, 5)];
-		a._runLocalZoneEngine(); // tick 1: zone created and occupied
-		a._runLocalZoneEngine(); // tick 2: target added to confirmedTargets
+		a._runLocalZoneEngine(); // zone occupied + target in confirmedTargets
 
 		// Target disappears → zone 1 pending
 		a._targets = [{ x: null, y: null, status: "inactive" as const, signal: 0 }];
@@ -707,10 +698,8 @@ describe("TS-engine specifics: per-target status via panel path", () => {
 	});
 
 	it("tracking outside room then sensor stops → pending throughout", () => {
-		// Two active ticks to register target in confirmedTargets.
 		a._targets = [makeTarget(450, 450, 5)];
-		a._runLocalZoneEngine(); // tick 1
-		a._runLocalZoneEngine(); // tick 2: target in confirmedTargets
+		a._runLocalZoneEngine(); // zone occupied + target in confirmedTargets
 
 		// Target moves outside room but still tracked with signal →
 		// immediately pending at last in-room position (not active)
@@ -729,13 +718,11 @@ describe("TS-engine specifics: per-target status via panel path", () => {
 		// active from frames, so frames=0 always means "not tracking" there.
 		// Occupy zone 1 first so zone has state.
 		a._targets = [makeTarget(450, 450, 5)];
-		a._runLocalZoneEngine(); // tick 1: zone occupied
-		a._runLocalZoneEngine(); // tick 2: target in confirmedTargets
+		a._runLocalZoneEngine(); // zone occupied + target in confirmedTargets
 
-		// Same position but signal=0: zone goes pending, target is pending.
-		// signal=0 means targetZoneCurr is never set (signal <= 0 → continue),
-		// so inRoom=false → pending check runs → finds target in pending zone.
-		// Matches backend: frame_count=0 → tw.active=False → pending check.
+		// Same position but signal=0: the firmware-equivalent of
+		// tw.active=false — tracking clears, the zone goes pending, and the
+		// target reports pending from the pending-zone membership check.
 		a._targets = [makeTarget(450, 450, 0)];
 		const result = a._runLocalZoneEngine();
 		expect(result.targets[0].status).toBe("pending");
@@ -744,8 +731,7 @@ describe("TS-engine specifics: per-target status via panel path", () => {
 	it("handoff: target moves from zone 1 to zone 0, zone 1 goes pending", () => {
 		// Establish zone 1 occupied (overlay entry → immediate, no gating needed).
 		a._targets = [makeTarget(450, 450, 5)];
-		a._runLocalZoneEngine(); // tick 1: zone 1 occupied
-		a._runLocalZoneEngine(); // tick 2: target in confirmedTargets for zone 1
+		a._runLocalZoneEngine(); // zone 1 occupied + target in confirmedTargets
 
 		// Target moves to zone 0; zone 0 needs 2 ticks to confirm via gating.
 		a._targets = [makeTarget(150, 150, 7)];

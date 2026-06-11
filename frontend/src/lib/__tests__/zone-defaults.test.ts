@@ -157,24 +157,40 @@ describe("getZoneThresholds", () => {
 		expect(result.handoffTimeout).toBe(3);
 	});
 
-	it("null config for named zone: returns fallback defaults", () => {
-		const result = getZoneThresholds(3, emptyConfigs, "default", 5, 3, 10, 3);
-		expect(result).toEqual({
-			trigger: 5,
-			renew: 3,
-			timeout: 10,
-			handoffTimeout: 3,
-		});
+	it("null config for named zone: throws (engine must skip unconfigured zones)", () => {
+		expect(() =>
+			getZoneThresholds(3, emptyConfigs, "default", 5, 3, 10, 3),
+		).toThrow(/zone 3 is not configured/);
 	});
 
-	it("out-of-range zone id: returns fallback defaults", () => {
-		const result = getZoneThresholds(99, emptyConfigs, "default", 5, 3, 10, 3);
-		expect(result).toEqual({
-			trigger: 5,
-			renew: 3,
-			timeout: 10,
-			handoffTimeout: 3,
-		});
+	it("out-of-range zone id: throws (engine must skip unconfigured zones)", () => {
+		expect(() =>
+			getZoneThresholds(99, emptyConfigs, "default", 5, 3, 10, 3),
+		).toThrow(/zone 99 is not configured/);
+	});
+
+	it("clamps trigger/renew 0 to 1 (firmware clamp_threshold semantics)", () => {
+		// Zone 0 custom with stored 0s: 0 is not "disabled" — it clamps to 1
+		// so a single active frame triggers, mirroring the firmware.
+		const room = getZoneThresholds(0, emptyConfigs, "custom", 0, 0, 10, 3);
+		expect(room.trigger).toBe(1);
+		expect(room.renew).toBe(1);
+
+		const configs: (ZoneConfig | null)[] = [
+			{
+				name: "Zone 1",
+				color: "#E69F00",
+				type: "custom",
+				trigger: 0,
+				renew: 0,
+				timeout: 5,
+				handoff_timeout: 1,
+			},
+			...new Array(6).fill(null),
+		];
+		const named = getZoneThresholds(1, configs, "default", 5, 3, 10, 3);
+		expect(named.trigger).toBe(1);
+		expect(named.renew).toBe(1);
 	});
 
 	it("seating zone type: returns seating defaults", () => {

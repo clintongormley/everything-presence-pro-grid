@@ -1106,6 +1106,114 @@ describe("interference zones", () => {
 	});
 });
 
+describe("inactive-target tracking (firmware !tw.active parity)", () => {
+	// The shared fixture cannot express "x/y non-null but signal=0": its C++
+	// harness derives active from frames, so frames=0 always means
+	// not-tracking there. The backend DOES send such targets (pending echo
+	// with last-known position, signal 0) — they correspond to firmware
+	// tw.active=false and must clear continuity/gating identically.
+	it("signal=0 while still tracked clears continuity and gating", () => {
+		const state = createZoneEngineState();
+		const now = 100;
+
+		// Tick 1: zone 0 (gated thresh 7), signal 7 → gate=1, prev recorded.
+		const r1 = runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(150, 150, 7)], now }),
+		);
+		expect(r1.occupancy[0]).toBe(false);
+
+		// Tick 2: same position but signal=0 → firmware-equivalent of
+		// tw.active=false → tracking must be cleared.
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(150, 150, 0)], now: now + 1 }),
+		);
+		expect(state.targetPrev[0]).toBeNull();
+		expect(state.targetGateCount[0]).toBe(0);
+
+		// Tick 3: target reactivates at the same cell. Without the clear it
+		// would inherit continuity and confirm immediately; the firmware
+		// restarts gating instead (gate=1, not confirmed).
+		const r3 = runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(150, 150, 7)], now: now + 2 }),
+		);
+		expect(r3.occupancy[0]).toBe(false);
+	});
+
+	it("pending-echo target (signal=0) does not count as active for cleanup", () => {
+		const state = createZoneEngineState();
+		const now = 100;
+		const grid = makeParityGrid();
+		grid[1 * GRID_COLS + 9] = cellSetOverlay(grid[29], CELL_OVERLAY_ENTRY);
+		// Occupy zone 1 (single tick — first-tick confirm registers target 0).
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now }),
+		);
+		expect(state.localZoneState.get(1)?.confirmedTargets.has(0)).toBe(true);
+
+		// Backend pending echo: position present, signal 0. Zone goes
+		// pending and the target reports pending (not inactive).
+		const r = runLocalZoneEngine(
+			state,
+			makeDefaultParams({
+				targets: [makeTarget(450, 450, 0)],
+				grid,
+				now: now + 1,
+			}),
+		);
+		expect(r.occupancy[1]).toBe(true);
+		expect(r.targets[0].status).toBe("pending");
+	});
+});
+
+describe("unconfigured zones (firmware find_zone_index parity)", () => {
+	it("painted-but-unconfigured zone never confirms and gets no state", () => {
+		const state = createZoneEngineState();
+		const grid = makeParityGrid();
+		// Paint cell (10,1) as zone 2; zone 2 has no config (slot null).
+		grid[1 * GRID_COLS + 10] = cellSetZone(CELL_ROOM_BIT, 2);
+		const params = makeDefaultParams({
+			targets: [makeTarget(750, 450, 9)], // cell (10,1)
+			grid,
+		});
+		runLocalZoneEngine(state, params);
+		const result = runLocalZoneEngine(state, params);
+		expect(result.occupancy[2]).toBe(false);
+		expect(state.localZoneState.has(2)).toBe(false);
+		// Position is still recorded for continuity (firmware else-branch).
+		expect(state.targetPrev[0]).toEqual({ col: 10, row: 1 });
+	});
+
+	it("zone state is dropped when its config disappears between ticks", () => {
+		const state = createZoneEngineState();
+		const now = 100;
+		const grid = makeParityGrid();
+		grid[1 * GRID_COLS + 9] = cellSetOverlay(grid[29], CELL_OVERLAY_ENTRY);
+		// Occupy configured zone 1.
+		runLocalZoneEngine(
+			state,
+			makeDefaultParams({ targets: [makeTarget(450, 450, 5)], grid, now }),
+		);
+		expect(state.localZoneState.get(1)?.occupied).toBe(true);
+
+		// Same grid, but zone 1's config is now null (slot deleted).
+		const result = runLocalZoneEngine(
+			state,
+			makeDefaultParams({
+				targets: [],
+				grid,
+				zoneConfigs: new Array(MAX_ZONES).fill(null),
+				now: now + 1,
+			}),
+		);
+		expect(result.occupancy[1]).toBe(false);
+		expect(state.localZoneState.has(1)).toBe(false);
+	});
+});
+
 describe("stale zone cleanup", () => {
 	it("clears occupancy for zones no longer in the grid", () => {
 		const state = createZoneEngineState();

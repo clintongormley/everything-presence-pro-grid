@@ -7,14 +7,17 @@
       [8, 3], [9, 3], [10, 3], [11, 3]
     ],
     "zone_cells": {
-      "1": [[9, 1]]
+      "1": [[9, 1], [9, 2]],
+      "2": [[10, 1]],
+      "3": [[11, 1]]
     },
     "overlay_entry_cells": [[9, 1]],
     "overlay_suppress_cells": [[8, 1]]
   },
   "zones": {
     "0": {"type": "normal", "trigger": 5, "renew": 3, "timeout": 10.0, "handoff_timeout": 3.0},
-    "1": {"type": "custom", "trigger": 3, "renew": 2, "timeout": 5.0, "handoff_timeout": 1.0}
+    "1": {"type": "custom", "trigger": 3, "renew": 2, "timeout": 5.0, "handoff_timeout": 1.0},
+    "2": {"type": "custom", "trigger": 0, "renew": 2, "timeout": 5.0, "handoff_timeout": 1.0}
   },
   "scenarios": {
     "test_no_targets_all_clear": {
@@ -203,9 +206,6 @@
       ]
     },
     "test_pending_target_status": {
-      "known_divergence": {
-        "ts": "first-tick confirmedTargets — TS creates zone state lazily, so a target confirmed on its first tick is missing from confirmedTargets and reports inactive instead of pending"
-      },
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
         {"t": 101.0, "targets": [{"x": 2850, "y": 450, "frames": 0}]}
@@ -251,9 +251,6 @@
       ]
     },
     "test_tracked_target_outside_room_with_prior": {
-      "known_divergence": {
-        "ts": "first-tick confirmedTargets — TS creates zone state lazily, so a target confirmed on its first tick is missing from confirmedTargets and reports inactive instead of pending"
-      },
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
         {"t": 101.0, "targets": [{"x": 9000, "y": 9000, "frames": 9}]}
@@ -269,9 +266,6 @@
       ]
     },
     "test_reappears_during_pending_back_to_active": {
-      "known_divergence": {
-        "ts": "first-tick confirmedTargets — TS creates zone state lazily, so a target confirmed on its first tick is missing from confirmedTargets and reports inactive instead of pending"
-      },
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
         {"t": 101.0, "targets": [{"x": 2850, "y": 450, "frames": 0}]},
@@ -314,9 +308,6 @@
       ]
     },
     "test_outside_room_then_stops_tracking_pending": {
-      "known_divergence": {
-        "ts": "first-tick confirmedTargets — TS creates zone state lazily, so a target confirmed on its first tick is missing from confirmedTargets and reports inactive instead of pending"
-      },
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
         {"t": 101.0, "targets": [{"x": 9000, "y": 9000, "frames": 9}]},
@@ -390,6 +381,80 @@
         },
         {
           "zone_occupancy": {"1": false}
+        }
+      ]
+    },
+    "test_stale_prev_cleared_when_target_absent": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2550, "y": 150, "frames": 7}]},
+        {"t": 101.0, "targets": []},
+        {"t": 102.0, "targets": [{"x": 2550, "y": 150, "frames": 7}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"0": false}
+        },
+        {
+          "zone_occupancy": {"0": false}
+        },
+        {
+          "zone_occupancy": {"0": false}
+        }
+      ]
+    },
+    "test_unconfigured_zone_never_occupies": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 3450, "y": 450, "frames": 9}]},
+        {"t": 101.0, "targets": [{"x": 3450, "y": 450, "frames": 9}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"3": false}
+        },
+        {
+          "zone_occupancy": {"3": false}
+        }
+      ]
+    },
+    "test_unconfigured_zone_still_provides_continuity": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 3450, "y": 450, "frames": 5}]},
+        {"t": 101.0, "targets": [{"x": 3450, "y": 150, "frames": 5}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"0": false, "3": false}
+        },
+        {
+          "zone_occupancy": {"0": true, "3": false}
+        }
+      ]
+    },
+    "test_trigger_zero_clamps_gated_threshold": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 3150, "y": 450, "frames": 2}]},
+        {"t": 101.0, "targets": [{"x": 3150, "y": 450, "frames": 2}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"2": false}
+        },
+        {
+          "zone_occupancy": {"2": false}
+        }
+      ]
+    },
+    "test_trigger_zero_confirms_after_gating": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 3150, "y": 450, "frames": 3}]},
+        {"t": 101.0, "targets": [{"x": 3150, "y": 450, "frames": 3}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"2": false}
+        },
+        {
+          "zone_occupancy": {"2": true}
         }
       ]
     },
