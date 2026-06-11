@@ -305,6 +305,103 @@ const liveMenuStyles = css`
   }
 `;
 
+// ---------------------------------------------------------------------------
+// Shared history interception (unsaved-changes navigation guard)
+//
+// history.pushState/replaceState are wrapped ONCE at module level; the
+// wrapper dispatches to whichever panel instances are currently connected
+// via a registry that instances join in connectedCallback and leave in
+// disconnectedCallback. The bare originals are restored only when the
+// registry empties.
+//
+// Per-instance wrapping is unsafe under the mount guard's duplicate-panel
+// cleanup (see panel-mount-guard.ts): the guard mounts panel A, HA's
+// ha-panel-custom appends its own duplicate B (B's wrapper lands on top of
+// A's), then removeDuplicateEppPanels keeps A and removes B. B's disconnect
+// sees "my wrapper is the installed one" and restores the BARE original —
+// leaving the still-connected A with no interception, so HA-router
+// navigation while dirty discards unsaved edits without the dialog. A
+// refcounted shared wrapper is ordering-independent: either instance can
+// disconnect first and the survivor keeps its interception.
+// ---------------------------------------------------------------------------
+
+type HistoryMethod = typeof history.pushState;
+
+interface HistoryInterceptor {
+	/**
+	 * Offer a history call to the panel. Returns true when the panel
+	 * captured it (unsaved-changes dialog shown, call swallowed).
+	 */
+	intercept(original: HistoryMethod, args: Parameters<HistoryMethod>): boolean;
+	/** A delegated call moved the URL fragment — sync view state. */
+	hashMoved(): void;
+}
+
+const historyInterceptors = new Set<HistoryInterceptor>();
+let installedPushState: HistoryMethod | null = null;
+let installedReplaceState: HistoryMethod | null = null;
+// Module-level copies of the bare originals, captured at install time, so
+// restore-on-empty doesn't depend on the window stash still being intact.
+let originalPushState: HistoryMethod | null = null;
+let originalReplaceState: HistoryMethod | null = null;
+
+function makeSharedHistoryWrapper(original: HistoryMethod): HistoryMethod {
+	return (data, unused, url) => {
+		for (const interceptor of historyInterceptors) {
+			if (interceptor.intercept(original, [data, unused, url])) return;
+		}
+		const before = location.hash;
+		original(data, unused, url);
+		if (location.hash !== before) {
+			for (const interceptor of historyInterceptors) {
+				interceptor.hashMoved();
+			}
+		}
+	};
+}
+
+function registerHistoryInterceptor(interceptor: HistoryInterceptor): void {
+	historyInterceptors.add(interceptor);
+	if (installedPushState && history.pushState === installedPushState) {
+		return; // our shared wrapper is already live
+	}
+	// Stash the truly-original (pre-wrap) methods on window once: a reloaded
+	// module instance would otherwise capture a previous module's wrapper as
+	// "original", chaining wrappers unboundedly across remounts.
+	const w = window as any;
+	if (!w.__eppOriginalPushState) {
+		w.__eppOriginalPushState = history.pushState.bind(history);
+	}
+	if (!w.__eppOriginalReplaceState) {
+		w.__eppOriginalReplaceState = history.replaceState.bind(history);
+	}
+	originalPushState = w.__eppOriginalPushState as HistoryMethod;
+	originalReplaceState = w.__eppOriginalReplaceState as HistoryMethod;
+	installedPushState = makeSharedHistoryWrapper(originalPushState);
+	installedReplaceState = makeSharedHistoryWrapper(originalReplaceState);
+	history.pushState = installedPushState;
+	history.replaceState = installedReplaceState;
+}
+
+function unregisterHistoryInterceptor(interceptor: HistoryInterceptor): void {
+	historyInterceptors.delete(interceptor);
+	if (historyInterceptors.size > 0) return;
+	// Last connected instance gone — restore the originals, but only if our
+	// wrapper is still the installed one. A freshly loaded module instance
+	// may have installed its own wrapper on top (it dispatches through ITS
+	// registry); restoring the bare original here would strip it.
+	if (originalPushState && history.pushState === installedPushState) {
+		history.pushState = originalPushState;
+	}
+	if (originalReplaceState && history.replaceState === installedReplaceState) {
+		history.replaceState = originalReplaceState;
+	}
+	installedPushState = null;
+	installedReplaceState = null;
+	originalPushState = null;
+	originalReplaceState = null;
+}
+
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
 
@@ -495,12 +592,10 @@ export class EPPGridPanel extends LitElement {
 
 	private _originalPushState: typeof history.pushState | null = null;
 	private _originalReplaceState: typeof history.replaceState | null = null;
-	// The wrapper functions this instance installed onto `history`. Track
-	// them so disconnect can detect a later instance overwriting them and
-	// skip the restore in that case (otherwise we'd un-wrap the live
-	// instance and silently disable its navigation interception).
-	private _wrappedPushState: typeof history.pushState | null = null;
-	private _wrappedReplaceState: typeof history.replaceState | null = null;
+	// This instance's entry in the module-level history-interception
+	// registry (see registerHistoryInterceptor above). Created once on
+	// first connect and reused across reconnects.
+	private _historyInterceptor: HistoryInterceptor | null = null;
 
 	private _interceptNavigation = (): boolean => {
 		if (!this._dirty) return false;
@@ -586,45 +681,30 @@ export class EPPGridPanel extends LitElement {
 
 		// Intercept HA's client-side routing. pushState/replaceState do
 		// not fire hashchange/popstate even when the hash changes, so
-		// after delegating we sync if (and only if) the hash moved.
-		// Stash the truly-original (pre-wrap) on window once: a second
-		// panel instance would otherwise capture the first's wrapper as
-		// "original", chaining wrappers and making it impossible to
-		// restore the bare browser implementation on disconnect.
-		const w = window as any;
-		if (!w.__eppOriginalPushState) {
-			w.__eppOriginalPushState = history.pushState.bind(history);
-		}
-		if (!w.__eppOriginalReplaceState) {
-			w.__eppOriginalReplaceState = history.replaceState.bind(history);
-		}
-		const origPush = w.__eppOriginalPushState as typeof history.pushState;
-		const origReplace =
-			w.__eppOriginalReplaceState as typeof history.replaceState;
-		this._originalPushState = origPush;
-		this._originalReplaceState = origReplace;
-		this._wrappedPushState = this._wrapHistoryMethod(origPush);
-		this._wrappedReplaceState = this._wrapHistoryMethod(origReplace);
-		history.pushState = this._wrappedPushState;
-		history.replaceState = this._wrappedReplaceState;
-	}
-
-	private _wrapHistoryMethod(
-		original: typeof history.pushState,
-	): typeof history.pushState {
-		return (data, unused, url) => {
-			if (this._interceptNavigation()) {
+		// after delegating the shared wrapper syncs if (and only if) the
+		// hash moved. Interception is installed once at module level and
+		// dispatches through a registry of connected instances — see
+		// registerHistoryInterceptor above for why per-instance wrapping
+		// breaks under duplicate-panel cleanup.
+		this._historyInterceptor ??= {
+			intercept: (original, args) => {
+				if (!this._interceptNavigation()) return false;
 				this._pendingNavigation = () => {
-					original(data, unused, url);
+					original(...args);
 					window.dispatchEvent(new PopStateEvent("popstate"));
 					this._onHashChange();
 				};
-				return;
-			}
-			const before = location.hash;
-			original(data, unused, url);
-			if (location.hash !== before) this._onHashChange();
+				return true;
+			},
+			hashMoved: () => this._onHashChange(),
 		};
+		registerHistoryInterceptor(this._historyInterceptor);
+		// The register call above guarantees the window stash exists; keep
+		// per-instance references for _replaceHash (panel-driven hash writes
+		// must not re-enter the interceptor).
+		const w = window as any;
+		this._originalPushState = w.__eppOriginalPushState as HistoryMethod;
+		this._originalReplaceState = w.__eppOriginalReplaceState as HistoryMethod;
 	}
 
 	disconnectedCallback(): void {
@@ -639,25 +719,13 @@ export class EPPGridPanel extends LitElement {
 		window.removeEventListener("keydown", this._onKeyDown);
 		window.removeEventListener("hashchange", this._onHashChange);
 
-		// Restore original history methods — but only if our wrapper is
-		// still the installed one. A later panel instance may have
-		// overlapping-mounted and put its own wrapper on top; restoring
-		// the bare original here would silently disable that live
-		// instance's navigation interception.
-		if (
-			this._originalPushState &&
-			history.pushState === this._wrappedPushState
-		) {
-			history.pushState = this._originalPushState;
+		// Leave the shared history-interception registry. The originals are
+		// restored only when the LAST connected instance leaves, so neither
+		// teardown ordering of an overlap-mount (duplicate-panel cleanup or
+		// remount overlap) can strip a live instance's interception.
+		if (this._historyInterceptor) {
+			unregisterHistoryInterceptor(this._historyInterceptor);
 		}
-		if (
-			this._originalReplaceState &&
-			history.replaceState === this._wrappedReplaceState
-		) {
-			history.replaceState = this._originalReplaceState;
-		}
-		this._wrappedPushState = null;
-		this._wrappedReplaceState = null;
 	}
 
 	private _attachConnectionListeners(conn: any): void {

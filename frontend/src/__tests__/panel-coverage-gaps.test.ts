@@ -186,6 +186,72 @@ describe("disconnectedCallback restores history methods", () => {
 		second.disconnectedCallback();
 	});
 
+	it("LATER instance disconnect (duplicate-panel cleanup) keeps the survivor's interception live", () => {
+		// The mount guard's dedup path: the guard mounts panel A into a fresh
+		// host, HA appends its own duplicate B, removeDuplicateEppPanels keeps
+		// A and removes B. B connected last, so B's wrapper sits on top; if
+		// B's disconnect restores the BARE original (because "my wrapper is
+		// the installed one"), the still-connected A is left with NO
+		// interception — HA-router navigation while dirty then discards
+		// unsaved edits without the unsaved-changes dialog.
+		delete (window as any).__eppOriginalPushState;
+		delete (window as any).__eppOriginalReplaceState;
+
+		const first = createPanel() as any;
+		first.hass = null;
+		first.connectedCallback();
+
+		const second = createPanel() as any;
+		second.hass = null;
+		second.connectedCallback();
+
+		// Dedup removes the LATER duplicate; the established first survives.
+		second.disconnectedCallback();
+
+		first._dirty = true;
+		history.pushState({}, "", "/dup-cleanup-push");
+		expect(first._showUnsavedDialog).toBe(true);
+		expect(typeof first._pendingNavigation).toBe("function");
+
+		// replaceState interception must survive the same ordering.
+		first._showUnsavedDialog = false;
+		first._pendingNavigation = null;
+		history.replaceState({}, "", "/dup-cleanup-replace");
+		expect(first._showUnsavedDialog).toBe(true);
+		expect(typeof first._pendingNavigation).toBe("function");
+
+		first._pendingNavigation = null;
+		first._dirty = false;
+		first.disconnectedCallback();
+	});
+
+	it("FIRST instance disconnect keeps the still-connected second instance's interception live", () => {
+		// Symmetric ordering: mid-remount overlap where the OLD instance
+		// disconnects after the new one connected. The survivor's dirty
+		// guard must still be consulted on history navigation.
+		delete (window as any).__eppOriginalPushState;
+		delete (window as any).__eppOriginalReplaceState;
+
+		const first = createPanel() as any;
+		first.hass = null;
+		first.connectedCallback();
+
+		const second = createPanel() as any;
+		second.hass = null;
+		second.connectedCallback();
+
+		first.disconnectedCallback();
+
+		second._dirty = true;
+		history.pushState({}, "", "/overlap-push");
+		expect(second._showUnsavedDialog).toBe(true);
+		expect(typeof second._pendingNavigation).toBe("function");
+
+		second._pendingNavigation = null;
+		second._dirty = false;
+		second.disconnectedCallback();
+	});
+
 	it("disconnect after a second panel instance restores the same truly-original pushState", () => {
 		// Two instances connect in sequence (e.g. panel remount). The
 		// second's _originalPushState was previously captured AFTER the
