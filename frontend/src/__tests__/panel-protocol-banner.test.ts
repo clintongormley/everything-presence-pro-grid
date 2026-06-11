@@ -67,7 +67,7 @@ function createPanel(
 	a._zoneEngineState = createZoneEngineState();
 	a._openAccordions = new Set();
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	a._saving = false;
 	a._showDeleteCalibrationDialog = false;
 	a._showConfigurationBackup = false;

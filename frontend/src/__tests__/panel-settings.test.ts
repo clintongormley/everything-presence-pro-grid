@@ -55,7 +55,7 @@ function createPanel(): EPPGridPanel {
 	a._zoneState = { occupancy: {}, target_counts: {}, frame_count: 0 };
 	a._openAccordions = new Set();
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	a._saving = false;
 	a._showDeleteCalibrationDialog = false;
 	a._showConfigurationBackup = false;
@@ -231,7 +231,7 @@ describe("_beforeUnloadHandler", () => {
 		const event = new Event("beforeunload") as BeforeUnloadEvent;
 		const preventSpy = vi.spyOn(event, "preventDefault");
 
-		a._beforeUnloadHandler(event);
+		a._navGuard._beforeUnloadHandler(event);
 
 		expect(preventSpy).toHaveBeenCalled();
 	});
@@ -244,7 +244,7 @@ describe("_beforeUnloadHandler", () => {
 		const event = new Event("beforeunload") as BeforeUnloadEvent;
 		const preventSpy = vi.spyOn(event, "preventDefault");
 
-		a._beforeUnloadHandler(event);
+		a._navGuard._beforeUnloadHandler(event);
 
 		expect(preventSpy).not.toHaveBeenCalled();
 	});
@@ -256,7 +256,7 @@ describe("_interceptNavigation", () => {
 		const a = el as any;
 		a._dirty = false;
 
-		const result = a._interceptNavigation();
+		const result = a._navGuard._interceptNavigation();
 
 		expect(result).toBe(false);
 		expect(a._showUnsavedDialog).toBe(false);
@@ -267,11 +267,11 @@ describe("_interceptNavigation", () => {
 		const a = el as any;
 		a._dirty = true;
 
-		const result = a._interceptNavigation();
+		const result = a._navGuard._interceptNavigation();
 
 		expect(result).toBe(true);
 		expect(a._showUnsavedDialog).toBe(true);
-		expect(a._pendingNavigation).toBeNull();
+		expect(a._navGuard._pendingNavigation).toBeNull();
 	});
 });
 
@@ -422,7 +422,7 @@ describe("history navigation interception", () => {
 		history.pushState({}, "", "/test");
 
 		expect(a._showUnsavedDialog).toBe(true);
-		expect(a._pendingNavigation).not.toBeNull();
+		expect(a._navGuard._pendingNavigation).not.toBeNull();
 
 		el.disconnectedCallback();
 		// Ensure originals are restored
@@ -439,7 +439,7 @@ describe("history navigation interception", () => {
 		history.replaceState({}, "", "/test");
 
 		expect(a._showUnsavedDialog).toBe(true);
-		expect(a._pendingNavigation).not.toBeNull();
+		expect(a._navGuard._pendingNavigation).not.toBeNull();
 
 		el.disconnectedCallback();
 	});

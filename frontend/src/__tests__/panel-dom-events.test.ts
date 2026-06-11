@@ -70,7 +70,7 @@ function createPanel(): EPPGridPanel {
 	a._zoneState = { occupancy: {}, target_counts: {}, frame_count: 0 };
 	a._openAccordions = new Set();
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	a._saving = false;
 	a._showDeleteCalibrationDialog = false;
 	a._showConfigurationBackup = false;
@@ -1273,7 +1273,7 @@ describe("_renderEditor DOM events", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._showUnsavedDialog = true;
-		a._pendingNavigation = () => {};
+		a._navGuard._pendingNavigation = () => {};
 		// Unsaved dialog is rendered by _renderGlobalDialogs, not _renderEditor
 		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);

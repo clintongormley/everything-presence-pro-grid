@@ -20,6 +20,7 @@ import {
 	serializeFurniture,
 	serializeSlot,
 } from "./controllers/grid-state-controller.js";
+import { NavigationGuardController } from "./controllers/navigation-guard.js";
 import { TargetController } from "./controllers/target-controller.js";
 import type { PaintAction } from "./lib/cell-painting.js";
 import { parseConfig } from "./lib/config-serialization.js";
@@ -74,7 +75,6 @@ import {
 	type SidebarTab,
 	type ViewMode,
 	type ViewState,
-	viewHash,
 } from "./lib/view-hash.js";
 import {
 	getZoneThresholds,
@@ -325,102 +325,9 @@ const liveMenuStyles = css`
   }
 `;
 
-// ---------------------------------------------------------------------------
-// Shared history interception (unsaved-changes navigation guard)
-//
-// history.pushState/replaceState are wrapped ONCE at module level; the
-// wrapper dispatches to whichever panel instances are currently connected
-// via a registry that instances join in connectedCallback and leave in
-// disconnectedCallback. The bare originals are restored only when the
-// registry empties.
-//
-// Per-instance wrapping is unsafe under the mount guard's duplicate-panel
-// cleanup (see panel-mount-guard.ts): the guard mounts panel A, HA's
-// ha-panel-custom appends its own duplicate B (B's wrapper lands on top of
-// A's), then removeDuplicateEppPanels keeps A and removes B. B's disconnect
-// sees "my wrapper is the installed one" and restores the BARE original —
-// leaving the still-connected A with no interception, so HA-router
-// navigation while dirty discards unsaved edits without the dialog. A
-// refcounted shared wrapper is ordering-independent: either instance can
-// disconnect first and the survivor keeps its interception.
-// ---------------------------------------------------------------------------
-
-type HistoryMethod = typeof history.pushState;
-
-interface HistoryInterceptor {
-	/**
-	 * Offer a history call to the panel. Returns true when the panel
-	 * captured it (unsaved-changes dialog shown, call swallowed).
-	 */
-	intercept(original: HistoryMethod, args: Parameters<HistoryMethod>): boolean;
-	/** A delegated call moved the URL fragment — sync view state. */
-	hashMoved(): void;
-}
-
-const historyInterceptors = new Set<HistoryInterceptor>();
-let installedPushState: HistoryMethod | null = null;
-let installedReplaceState: HistoryMethod | null = null;
-// Module-level copies of the bare originals, captured at install time, so
-// restore-on-empty doesn't depend on the window stash still being intact.
-let originalPushState: HistoryMethod | null = null;
-let originalReplaceState: HistoryMethod | null = null;
-
-function makeSharedHistoryWrapper(original: HistoryMethod): HistoryMethod {
-	return (data, unused, url) => {
-		for (const interceptor of historyInterceptors) {
-			if (interceptor.intercept(original, [data, unused, url])) return;
-		}
-		const before = location.hash;
-		original(data, unused, url);
-		if (location.hash !== before) {
-			for (const interceptor of historyInterceptors) {
-				interceptor.hashMoved();
-			}
-		}
-	};
-}
-
-function registerHistoryInterceptor(interceptor: HistoryInterceptor): void {
-	historyInterceptors.add(interceptor);
-	if (installedPushState && history.pushState === installedPushState) {
-		return; // our shared wrapper is already live
-	}
-	// Stash the truly-original (pre-wrap) methods on window once: a reloaded
-	// module instance would otherwise capture a previous module's wrapper as
-	// "original", chaining wrappers unboundedly across remounts.
-	const w = window as any;
-	if (!w.__eppOriginalPushState) {
-		w.__eppOriginalPushState = history.pushState.bind(history);
-	}
-	if (!w.__eppOriginalReplaceState) {
-		w.__eppOriginalReplaceState = history.replaceState.bind(history);
-	}
-	originalPushState = w.__eppOriginalPushState as HistoryMethod;
-	originalReplaceState = w.__eppOriginalReplaceState as HistoryMethod;
-	installedPushState = makeSharedHistoryWrapper(originalPushState);
-	installedReplaceState = makeSharedHistoryWrapper(originalReplaceState);
-	history.pushState = installedPushState;
-	history.replaceState = installedReplaceState;
-}
-
-function unregisterHistoryInterceptor(interceptor: HistoryInterceptor): void {
-	historyInterceptors.delete(interceptor);
-	if (historyInterceptors.size > 0) return;
-	// Last connected instance gone — restore the originals, but only if our
-	// wrapper is still the installed one. A freshly loaded module instance
-	// may have installed its own wrapper on top (it dispatches through ITS
-	// registry); restoring the bare original here would strip it.
-	if (originalPushState && history.pushState === installedPushState) {
-		history.pushState = originalPushState;
-	}
-	if (originalReplaceState && history.replaceState === installedReplaceState) {
-		history.replaceState = originalReplaceState;
-	}
-	installedPushState = null;
-	installedReplaceState = null;
-	originalPushState = null;
-	originalReplaceState = null;
-}
+// The shared history-interception registry (unsaved-changes navigation
+// guard) lives in controllers/navigation-guard.ts together with the
+// NavigationGuardController that joins/leaves it per panel instance.
 
 export class EPPGridPanel extends LitElement {
 	@property({ attribute: false }) hass: any;
@@ -454,6 +361,11 @@ export class EPPGridPanel extends LitElement {
 			this._requestFlasherDeleteConfirm();
 		return ctrl;
 	})();
+	// Navigation guard — owns the unsaved-changes guard (beforeunload,
+	// hashchange, the shared history-interception registry entry) and the
+	// pending-navigation queue behind the dialog. Pass `this` directly so
+	// tsc verifies the panel structurally satisfies NavigationGuardHost.
+	private _navGuard = new NavigationGuardController(this);
 	_localize: import("./localize.js").LocalizeFn = Object.assign(
 		((k: string) => k) as import("./localize.js").LocalizeFn,
 		{ formatNumber: (v: number, d = 1) => v.toFixed(d), lang: "en" },
@@ -564,8 +476,9 @@ export class EPPGridPanel extends LitElement {
 	// as the `errors.*` translation-key suffix. Cleared when a new op starts
 	// or the user dismisses it.
 	@state() private _controllerError: string | null = null;
-	@state() private _showUnsavedDialog = false;
-	private _pendingNavigation: (() => void) | null = null;
+	// Not `private`: part of the NavigationGuardHost contract (the guard
+	// raises/clears it; the panel renders the dialog).
+	@state() _showUnsavedDialog = false;
 	@state() _showConfigurationBackup = false;
 	@state() _showConfigurationRestore = false;
 	@state() _configurationName = "";
@@ -626,27 +539,6 @@ export class EPPGridPanel extends LitElement {
 	@state() _roomDepth = 0; // mm
 
 	// Device session + target subscriptions (delegated to _deviceCtrl)
-
-	private _beforeUnloadHandler = (e: BeforeUnloadEvent) => {
-		if (this._dirty) {
-			e.preventDefault();
-			e.returnValue = "";
-		}
-	};
-
-	private _originalPushState: typeof history.pushState | null = null;
-	private _originalReplaceState: typeof history.replaceState | null = null;
-	// This instance's entry in the module-level history-interception
-	// registry (see registerHistoryInterceptor above). Created once on
-	// first connect and reused across reconnects.
-	private _historyInterceptor: HistoryInterceptor | null = null;
-
-	private _interceptNavigation = (): boolean => {
-		if (!this._dirty) return false;
-		this._showUnsavedDialog = true;
-		this._pendingNavigation = null; // no specific action — just allow navigation on discard
-		return true;
-	};
 
 	private _onKeyDown = (e: KeyboardEvent): void => {
 		if (this._view !== "editor" || this._sidebarTab !== "furniture") return;
@@ -716,36 +608,9 @@ export class EPPGridPanel extends LitElement {
 			// _initialize traps its own failures; guard here so that any
 			// late rejection can't surface as "Uncaught (in promise)".
 		});
-		window.addEventListener("beforeunload", this._beforeUnloadHandler);
+		// beforeunload / hashchange / history interception are owned by
+		// _navGuard (hostConnected ran in super.connectedCallback() above).
 		window.addEventListener("keydown", this._onKeyDown);
-		window.addEventListener("hashchange", this._onHashChange);
-
-		// Intercept HA's client-side routing. pushState/replaceState do
-		// not fire hashchange/popstate even when the hash changes, so
-		// after delegating the shared wrapper syncs if (and only if) the
-		// hash moved. Interception is installed once at module level and
-		// dispatches through a registry of connected instances — see
-		// registerHistoryInterceptor above for why per-instance wrapping
-		// breaks under duplicate-panel cleanup.
-		this._historyInterceptor ??= {
-			intercept: (original, args) => {
-				if (!this._interceptNavigation()) return false;
-				this._pendingNavigation = () => {
-					original(...args);
-					window.dispatchEvent(new PopStateEvent("popstate"));
-					this._onHashChange();
-				};
-				return true;
-			},
-			hashMoved: () => this._onHashChange(),
-		};
-		registerHistoryInterceptor(this._historyInterceptor);
-		// The register call above guarantees the window stash exists; keep
-		// per-instance references for _replaceHash (panel-driven hash writes
-		// must not re-enter the interceptor).
-		const w = window as any;
-		this._originalPushState = w.__eppOriginalPushState as HistoryMethod;
-		this._originalReplaceState = w.__eppOriginalReplaceState as HistoryMethod;
 	}
 
 	disconnectedCallback(): void {
@@ -756,17 +621,9 @@ export class EPPGridPanel extends LitElement {
 		}
 		this._closeDeviceSession();
 		this._detachConnectionListeners();
-		window.removeEventListener("beforeunload", this._beforeUnloadHandler);
+		// beforeunload / hashchange / history-interception teardown is owned
+		// by _navGuard (hostDisconnected ran in super.disconnectedCallback()).
 		window.removeEventListener("keydown", this._onKeyDown);
-		window.removeEventListener("hashchange", this._onHashChange);
-
-		// Leave the shared history-interception registry. The originals are
-		// restored only when the LAST connected instance leaves, so neither
-		// teardown ordering of an overlap-mount (duplicate-panel cleanup or
-		// remount overlap) can strip a live instance's interception.
-		if (this._historyInterceptor) {
-			unregisterHistoryInterceptor(this._historyInterceptor);
-		}
 	}
 
 	private _attachConnectionListeners(conn: any): void {
@@ -806,37 +663,18 @@ export class EPPGridPanel extends LitElement {
 			this._sidebarTab = DEFAULT_SIDEBAR_TAB;
 		}
 		if (changed.has("_view") || changed.has("_sidebarTab")) {
-			this._syncHashFromState();
+			this._navGuard.syncHashFromState();
 		}
-	}
-
-	/**
-	 * Write the URL fragment via the un-patched replaceState (saved in
-	 * connectedCallback) so panel-driven hash updates don't re-enter
-	 * the dirty-navigation interceptor.
-	 */
-	private _replaceHash(hash: string): void {
-		if (typeof location === "undefined") return;
-		if (hash === location.hash) return;
-		const target = `${location.pathname}${location.search}${hash}`;
-		const replace =
-			this._originalReplaceState ?? history.replaceState.bind(history);
-		// Preserve history.state so HA's router state isn't clobbered.
-		replace(history.state, "", target);
-	}
-
-	private _syncHashFromState(): void {
-		this._replaceHash(
-			viewHash({ view: this._view, sidebarTab: this._sidebarTab }),
-		);
 	}
 
 	/**
 	 * Move to a target view + sub-tab. Centralises the side effects
 	 * (overlay-mode reset, range widening) so click handlers and
-	 * URL-driven navigation behave the same.
+	 * URL-driven navigation behave the same. Not `private`: it's part of
+	 * the NavigationGuardHost contract (the guard applies hash-driven
+	 * navigation through it).
 	 */
-	private _applyView(state: ViewState): void {
+	_applyView(state: ViewState): void {
 		this._view = state.view;
 		this._sidebarTab = state.sidebarTab;
 		if (state.view === "editor" && state.sidebarTab !== "overlays") {
@@ -850,24 +688,6 @@ export class EPPGridPanel extends LitElement {
 			this._pushWidenedDistanceOverride();
 		}
 	}
-
-	/**
-	 * React to external hash changes (browser back/forward, sidebar
-	 * icon, manual URL edit). When dirty, snap the URL back so the
-	 * queued navigation only fires once the user discards.
-	 */
-	private _onHashChange = (): void => {
-		const next = parseViewHash(location.hash);
-		if (next.view === this._view && next.sidebarTab === this._sidebarTab) {
-			return;
-		}
-		if (this._dirty) {
-			this._replaceHash(
-				viewHash({ view: this._view, sidebarTab: this._sidebarTab }),
-			);
-		}
-		this._guardNavigation(() => this._applyView(next));
-	};
 
 	updated(changedProps: PropertyValues): void {
 		if (changedProps.has("hass") && this.hass) {
@@ -1388,7 +1208,7 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _enterEditor(tab: SidebarTab): void {
-		this._guardNavigation(() =>
+		this._navGuard.guardNavigation(() =>
 			this._applyView({ view: "editor", sidebarTab: tab }),
 		);
 	}
@@ -1593,25 +1413,6 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	// -- Device selector --
-
-	/** Guard navigation when dirty — shows dialog and queues the action */
-	private _guardNavigation(action: () => void): void {
-		if (this._dirty) {
-			this._pendingNavigation = action;
-			this._showUnsavedDialog = true;
-		} else {
-			action();
-		}
-	}
-
-	private _discardAndNavigate(): void {
-		this._dirty = false;
-		this._showUnsavedDialog = false;
-		if (this._pendingNavigation) {
-			this._pendingNavigation();
-			this._pendingNavigation = null;
-		}
-	}
 
 	// -- Styles --
 
@@ -1840,13 +1641,10 @@ export class EPPGridPanel extends LitElement {
               <p class="overlay-help">${this._localize("dialogs.unsaved_changes_body")}</p>
               <div class="template-dialog-actions">
                 <button class="wizard-btn wizard-btn-back"
-                  @click=${() => {
-										this._showUnsavedDialog = false;
-										this._pendingNavigation = null;
-									}}
+                  @click=${() => this._navGuard.cancelPendingNavigation()}
                 >${this._localize("common.cancel")}</button>
                 <button class="wizard-btn wizard-btn-primary" style="background: var(--error-color, #f44336);"
-                  @click=${this._discardAndNavigate}
+                  @click=${() => this._navGuard.discardAndNavigate()}
                 >${this._localize("common.discard")}</button>
               </div>
             </div>
@@ -2289,7 +2087,7 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _changePlacement(): void {
-		this._guardNavigation(() =>
+		this._navGuard.guardNavigation(() =>
 			this._applyView({
 				view: this._deviceCtrl.showRoomCalibrationTutorial
 					? "tutorial"
@@ -2331,7 +2129,7 @@ export class EPPGridPanel extends LitElement {
           @selected=${(e: CustomEvent<{ value: string }>) => {
 						const val = e.detail.value;
 						if (!val || val === this._selectedMac) return;
-						this._guardNavigation(async () => {
+						this._navGuard.guardNavigation(async () => {
 							this._closeDeviceSession();
 							this._selectedMac = val;
 							persistSelectedMac(val);
@@ -2627,7 +2425,10 @@ export class EPPGridPanel extends LitElement {
 				if (this._view === "settings") {
 					this._saveSettings();
 				} else {
-					this._applyLayout();
+					// applyLayout traps its own failures (controller onError
+					// banner); .catch guards a late rejection surfacing as
+					// "Uncaught (in promise)".
+					this._applyLayout().catch(() => {});
 				}
 			},
 			() => {
@@ -2707,7 +2508,7 @@ export class EPPGridPanel extends LitElement {
 												: nothing
 										}
                     <button class="sidebar-menu-item" @click=${() => {
-											this._guardNavigation(() =>
+											this._navGuard.guardNavigation(() =>
 												this._applyView({
 													view: "settings",
 													sidebarTab: this._sidebarTab,
@@ -2757,7 +2558,7 @@ export class EPPGridPanel extends LitElement {
                 .hasPerspective=${this._perspective != null}
                 .localize=${this._localize}
                 @view-change=${(e: CustomEvent) => {
-									this._guardNavigation(() =>
+									this._navGuard.guardNavigation(() =>
 										this._applyView({
 											view: e.detail.view,
 											sidebarTab: e.detail.sidebarTab ?? this._sidebarTab,

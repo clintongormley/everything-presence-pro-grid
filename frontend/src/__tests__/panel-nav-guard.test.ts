@@ -23,7 +23,7 @@ function createPanel(): EPPGridPanel {
 	a._activeZone = 0;
 	a._loading = false;
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	return el;
 }
 
@@ -65,7 +65,7 @@ describe("_enterEditor — sidebar menu navigation", () => {
 		expect(a._view).toBe("editor");
 		expect(a._sidebarTab).toBe("zones");
 		expect(a._showUnsavedDialog).toBe(true);
-		expect(typeof a._pendingNavigation).toBe("function");
+		expect(typeof a._navGuard._pendingNavigation).toBe("function");
 		el.remove();
 	});
 
@@ -79,7 +79,7 @@ describe("_enterEditor — sidebar menu navigation", () => {
 		await el.updateComplete;
 		a._enterEditor("furniture");
 		await el.updateComplete;
-		a._discardAndNavigate();
+		a._navGuard.discardAndNavigate();
 		await el.updateComplete;
 		expect(a._view).toBe("editor");
 		expect(a._sidebarTab).toBe("furniture");

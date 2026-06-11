@@ -27,7 +27,7 @@ function createPanel(): EPPGridPanel {
 	a._dirty = false;
 	a._loading = false;
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	return el;
 }
 
@@ -338,7 +338,7 @@ describe("panel — hashchange while dirty fires unsaved-changes dialog", () => 
 		// Dialog must be visible so the user can confirm or discard.
 		expect(a._showUnsavedDialog).toBe(true);
 		// Pending navigation is queued so discarding executes the desired nav.
-		expect(typeof a._pendingNavigation).toBe("function");
+		expect(typeof a._navGuard._pendingNavigation).toBe("function");
 		el.remove();
 	});
 
@@ -354,7 +354,7 @@ describe("panel — hashchange while dirty fires unsaved-changes dialog", () => 
 		await el.updateComplete;
 		expect(a._showUnsavedDialog).toBe(true);
 		// Confirm discard.
-		a._discardAndNavigate();
+		a._navGuard.discardAndNavigate();
 		await el.updateComplete;
 		expect(a._view).toBe("live");
 		expect(location.hash).toBe("");

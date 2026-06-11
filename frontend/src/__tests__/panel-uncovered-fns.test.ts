@@ -73,7 +73,7 @@ function createPanel(): EPPGridPanel {
 	a._zoneState = { occupancy: {}, target_counts: {}, frame_count: 0 };
 	a._openAccordions = new Set();
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	a._saving = false;
 	a._showDeleteCalibrationDialog = false;
 	a._showConfigurationBackup = false;
@@ -372,7 +372,7 @@ describe("_renderHeader device selector", () => {
 		a._selectedMac = "AA:BB:CC:DD:EE:01";
 
 		const guardSpy = vi
-			.spyOn(a, "_guardNavigation")
+			.spyOn(a._navGuard, "guardNavigation")
 			.mockImplementation(async (...args: unknown[]) => {
 				const cb = args[0] as () => Promise<void>;
 				await cb();

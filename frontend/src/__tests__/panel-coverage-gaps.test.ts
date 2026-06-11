@@ -69,7 +69,7 @@ function createPanel(): EPPGridPanel {
 	a._zoneState = { occupancy: {}, target_counts: {}, frame_count: 0 };
 	a._openAccordions = new Set();
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	a._saving = false;
 	a._showDeleteCalibrationDialog = false;
 	a._showConfigurationBackup = false;
@@ -134,15 +134,15 @@ function renderTo(tpl: any): HTMLDivElement {
 // Branch: disconnectedCallback restores original push/replace
 // =========================================================
 describe("disconnectedCallback restores history methods", () => {
-	it("restores originalPushState and originalReplaceState", () => {
+	it("stashes the truly-original push/replaceState on window at connect", () => {
+		// The originals live in a module-level window stash (the guard keeps
+		// only a per-instance replaceState reference for _replaceHash).
 		const a = createPanel() as any;
 		a.hass = null;
 		a.connectedCallback();
 
-		const origPush = a._originalPushState;
-		const origReplace = a._originalReplaceState;
-		expect(origPush).toBeDefined();
-		expect(origReplace).toBeDefined();
+		expect((window as any).__eppOriginalPushState).toBeDefined();
+		expect((window as any).__eppOriginalReplaceState).toBeDefined();
 
 		a.disconnectedCallback();
 
@@ -150,10 +150,8 @@ describe("disconnectedCallback restores history methods", () => {
 		// No assertion needed beyond not throwing
 	});
 
-	it("handles null originalPushState/originalReplaceState", () => {
+	it("handles a disconnect without a prior connect (nothing registered)", () => {
 		const a = createPanel() as any;
-		a._originalPushState = null;
-		a._originalReplaceState = null;
 
 		// Should not throw
 		a.disconnectedCallback();
@@ -210,16 +208,16 @@ describe("disconnectedCallback restores history methods", () => {
 		first._dirty = true;
 		history.pushState({}, "", "/dup-cleanup-push");
 		expect(first._showUnsavedDialog).toBe(true);
-		expect(typeof first._pendingNavigation).toBe("function");
+		expect(typeof first._navGuard._pendingNavigation).toBe("function");
 
 		// replaceState interception must survive the same ordering.
 		first._showUnsavedDialog = false;
-		first._pendingNavigation = null;
+		first._navGuard._pendingNavigation = null;
 		history.replaceState({}, "", "/dup-cleanup-replace");
 		expect(first._showUnsavedDialog).toBe(true);
-		expect(typeof first._pendingNavigation).toBe("function");
+		expect(typeof first._navGuard._pendingNavigation).toBe("function");
 
-		first._pendingNavigation = null;
+		first._navGuard._pendingNavigation = null;
 		first._dirty = false;
 		first.disconnectedCallback();
 	});
@@ -244,22 +242,22 @@ describe("disconnectedCallback restores history methods", () => {
 		second._dirty = true;
 		history.pushState({}, "", "/overlap-push");
 		expect(second._showUnsavedDialog).toBe(true);
-		expect(typeof second._pendingNavigation).toBe("function");
+		expect(typeof second._navGuard._pendingNavigation).toBe("function");
 
-		second._pendingNavigation = null;
+		second._navGuard._pendingNavigation = null;
 		second._dirty = false;
 		second.disconnectedCallback();
 	});
 
 	it("disconnect after a second panel instance restores the same truly-original pushState", () => {
-		// Two instances connect in sequence (e.g. panel remount). The
-		// second's _originalPushState was previously captured AFTER the
-		// first wrapped — i.e. it's the first's wrapper. Restoring it on
-		// disconnect "uninstalls" the second but leaves the first's wrapper
-		// in place, and a *third* mount would chain its wrap on top of
-		// that wrap, growing the chain unboundedly across remounts. Stash
-		// the truly-original on window once and chain off it instead so
-		// every instance sees the same bare original.
+		// Two instances connect in sequence (e.g. panel remount). An
+		// instance must never capture another instance's wrapper as its
+		// "original": restoring a wrapper on disconnect would leave it
+		// installed, and a *third* mount would chain its wrap on top of
+		// that wrap, growing the chain unboundedly across remounts. The
+		// truly-original is stashed on window once and every register call
+		// chains off it, so the stash stays the same bare function no
+		// matter how many instances come and go.
 		delete (window as any).__eppOriginalPushState;
 		delete (window as any).__eppOriginalReplaceState;
 
@@ -273,9 +271,9 @@ describe("disconnectedCallback restores history methods", () => {
 		second.hass = null;
 		second.connectedCallback();
 
-		// Second instance must capture the SAME truly-original, not the
-		// first instance's wrapper.
-		expect(second._originalPushState).toBe(trulyOriginal);
+		// The second connect must keep the SAME truly-original in the
+		// stash, not overwrite it with the first instance's wrapper.
+		expect((window as any).__eppOriginalPushState).toBe(trulyOriginal);
 
 		second.disconnectedCallback();
 		first.disconnectedCallback();
@@ -291,10 +289,10 @@ describe("disconnectedCallback restores history methods", () => {
 		a._dirty = true;
 
 		history.pushState({}, "", "/test-push");
-		expect(a._pendingNavigation).toBeInstanceOf(Function);
+		expect(a._navGuard._pendingNavigation).toBeInstanceOf(Function);
 		// Execute the pending navigation to cover the lambda
-		a._pendingNavigation();
-		a._pendingNavigation = null;
+		a._navGuard._pendingNavigation();
+		a._navGuard._pendingNavigation = null;
 		a.disconnectedCallback();
 	});
 
@@ -304,10 +302,10 @@ describe("disconnectedCallback restores history methods", () => {
 		a._dirty = true;
 
 		history.replaceState({}, "", "/test-replace");
-		expect(a._pendingNavigation).toBeInstanceOf(Function);
+		expect(a._navGuard._pendingNavigation).toBeInstanceOf(Function);
 		// Execute the pending navigation to cover the lambda
-		a._pendingNavigation();
-		a._pendingNavigation = null;
+		a._navGuard._pendingNavigation();
+		a._navGuard._pendingNavigation = null;
 		a.disconnectedCallback();
 	});
 });

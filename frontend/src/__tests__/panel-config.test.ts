@@ -48,7 +48,7 @@ function createPanel(): EPPGridPanel {
 	a._selectedFurnitureId = null;
 	a._saving = false;
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	a._view = "live";
 	a._targets = [];
 	a._sensorState = {

@@ -16,7 +16,7 @@ function createPanel(): EPPGridPanel {
 	a._dirty = false;
 	a._loading = false;
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	return el;
 }
 
@@ -32,13 +32,13 @@ describe("_guardNavigation", () => {
 		a._dirty = false;
 		let executed = false;
 
-		a._guardNavigation(() => {
+		a._navGuard.guardNavigation(() => {
 			executed = true;
 		});
 
 		expect(executed).toBe(true);
 		expect(a._showUnsavedDialog).toBe(false);
-		expect(a._pendingNavigation).toBeNull();
+		expect(a._navGuard._pendingNavigation).toBeNull();
 	});
 
 	it("stores action and shows dialog when _dirty is true", () => {
@@ -46,13 +46,13 @@ describe("_guardNavigation", () => {
 		a._dirty = true;
 		let executed = false;
 
-		a._guardNavigation(() => {
+		a._navGuard.guardNavigation(() => {
 			executed = true;
 		});
 
 		expect(executed).toBe(false);
 		expect(a._showUnsavedDialog).toBe(true);
-		expect(a._pendingNavigation).toBeTypeOf("function");
+		expect(a._navGuard._pendingNavigation).toBeTypeOf("function");
 	});
 
 	it("does not execute action when dirty until user confirms", () => {
@@ -60,14 +60,14 @@ describe("_guardNavigation", () => {
 		a._dirty = true;
 		const calls: string[] = [];
 
-		a._guardNavigation(() => {
+		a._navGuard.guardNavigation(() => {
 			calls.push("action");
 		});
 
 		expect(calls).toHaveLength(0);
 
 		// Simulate user confirming discard
-		a._discardAndNavigate();
+		a._navGuard.discardAndNavigate();
 		expect(calls).toEqual(["action"]);
 	});
 });
@@ -83,9 +83,9 @@ describe("_discardAndNavigate", () => {
 		const a = el as any;
 		a._dirty = true;
 		a._showUnsavedDialog = true;
-		a._pendingNavigation = () => {};
+		a._navGuard._pendingNavigation = () => {};
 
-		a._discardAndNavigate();
+		a._navGuard.discardAndNavigate();
 		expect(a._dirty).toBe(false);
 	});
 
@@ -93,9 +93,9 @@ describe("_discardAndNavigate", () => {
 		const a = el as any;
 		a._dirty = true;
 		a._showUnsavedDialog = true;
-		a._pendingNavigation = () => {};
+		a._navGuard._pendingNavigation = () => {};
 
-		a._discardAndNavigate();
+		a._navGuard.discardAndNavigate();
 		expect(a._showUnsavedDialog).toBe(false);
 	});
 
@@ -104,11 +104,11 @@ describe("_discardAndNavigate", () => {
 		a._dirty = true;
 		a._showUnsavedDialog = true;
 		let executed = false;
-		a._pendingNavigation = () => {
+		a._navGuard._pendingNavigation = () => {
 			executed = true;
 		};
 
-		a._discardAndNavigate();
+		a._navGuard.discardAndNavigate();
 		expect(executed).toBe(true);
 	});
 
@@ -116,20 +116,20 @@ describe("_discardAndNavigate", () => {
 		const a = el as any;
 		a._dirty = true;
 		a._showUnsavedDialog = true;
-		a._pendingNavigation = () => {};
+		a._navGuard._pendingNavigation = () => {};
 
-		a._discardAndNavigate();
-		expect(a._pendingNavigation).toBeNull();
+		a._navGuard.discardAndNavigate();
+		expect(a._navGuard._pendingNavigation).toBeNull();
 	});
 
 	it("handles null _pendingNavigation gracefully", () => {
 		const a = el as any;
 		a._dirty = true;
 		a._showUnsavedDialog = true;
-		a._pendingNavigation = null;
+		a._navGuard._pendingNavigation = null;
 
 		// Should not throw
-		expect(() => a._discardAndNavigate()).not.toThrow();
+		expect(() => a._navGuard.discardAndNavigate()).not.toThrow();
 		expect(a._dirty).toBe(false);
 		expect(a._showUnsavedDialog).toBe(false);
 	});
@@ -140,17 +140,17 @@ describe("_discardAndNavigate", () => {
 		const log: string[] = [];
 
 		// Step 1: guard stores the action
-		a._guardNavigation(() => {
+		a._navGuard.guardNavigation(() => {
 			log.push("navigated");
 		});
 		expect(log).toHaveLength(0);
 		expect(a._showUnsavedDialog).toBe(true);
 
 		// Step 2: discard and navigate
-		a._discardAndNavigate();
+		a._navGuard.discardAndNavigate();
 		expect(log).toEqual(["navigated"]);
 		expect(a._dirty).toBe(false);
 		expect(a._showUnsavedDialog).toBe(false);
-		expect(a._pendingNavigation).toBeNull();
+		expect(a._navGuard._pendingNavigation).toBeNull();
 	});
 });

@@ -66,7 +66,7 @@ function createPanel(): EPPGridPanel {
 	a._zoneState = { occupancy: {}, target_counts: {}, frame_count: 0 };
 	a._openAccordions = new Set();
 	a._showUnsavedDialog = false;
-	a._pendingNavigation = null;
+	a._navGuard._pendingNavigation = null;
 	a._saving = false;
 
 	a._showDeleteCalibrationDialog = false;
@@ -995,12 +995,12 @@ describe("_renderEditor inline handlers", () => {
 	it("unsaved dialog cancel button closes dialog", () => {
 		const a = createPanel() as any;
 		a._showUnsavedDialog = true;
-		a._pendingNavigation = () => {};
+		a._navGuard._pendingNavigation = () => {};
 		// Replicate handler (line 4520-4522)
 		a._showUnsavedDialog = false;
-		a._pendingNavigation = null;
+		a._navGuard._pendingNavigation = null;
 		expect(a._showUnsavedDialog).toBe(false);
-		expect(a._pendingNavigation).toBeNull();
+		expect(a._navGuard._pendingNavigation).toBeNull();
 	});
 });
 
@@ -1265,36 +1265,52 @@ describe("furniture sidebar panel handler methods", () => {
 // History interception pendingNavigation callbacks
 // ========================
 describe("history interception pendingNavigation callbacks", () => {
-	it("pushState pendingNavigation calls originalPushState", () => {
+	it("pushState pendingNavigation replays the intercepted call and fires popstate", () => {
+		// Real flow: dirty panel intercepts history.pushState, queues a
+		// pending navigation that replays through the un-wrapped original
+		// and notifies HA's router via a synthetic popstate.
 		const a = createPanel() as any;
-		const originalPush = vi.fn();
-		a._originalPushState = originalPush;
+		a.connectedCallback();
+		a._dirty = true;
+		const popstateSpy = vi.fn();
+		window.addEventListener("popstate", popstateSpy);
 
-		// Simulate the pendingNavigation closure created at line 531-533
-		const args: [any, string, string] = [{}, "", "/test"];
-		const pendingNav = () => {
-			a._originalPushState!(...args);
-			window.dispatchEvent(new PopStateEvent("popstate"));
-		};
+		const before = `${location.pathname}${location.search}${location.hash}`;
+		history.pushState({}, "", "/replayed-push");
+		// Intercepted: the URL must NOT have moved yet.
+		expect(location.pathname).not.toBe("/replayed-push");
 
-		pendingNav();
-		expect(originalPush).toHaveBeenCalledWith({}, "", "/test");
+		a._navGuard._pendingNavigation();
+		expect(location.pathname).toBe("/replayed-push");
+		expect(popstateSpy).toHaveBeenCalled();
+
+		window.removeEventListener("popstate", popstateSpy);
+		a._navGuard._pendingNavigation = null;
+		a._dirty = false;
+		history.replaceState(null, "", before);
+		a.disconnectedCallback();
 	});
 
-	it("replaceState pendingNavigation calls originalReplaceState", () => {
+	it("replaceState pendingNavigation replays the intercepted call and fires popstate", () => {
 		const a = createPanel() as any;
-		const originalReplace = vi.fn();
-		a._originalReplaceState = originalReplace;
+		a.connectedCallback();
+		a._dirty = true;
+		const popstateSpy = vi.fn();
+		window.addEventListener("popstate", popstateSpy);
 
-		// Simulate the pendingNavigation closure created at line 541-543
-		const args: [any, string, string] = [{}, "", "/replaced"];
-		const pendingNav = () => {
-			a._originalReplaceState!(...args);
-			window.dispatchEvent(new PopStateEvent("popstate"));
-		};
+		const before = `${location.pathname}${location.search}${location.hash}`;
+		history.replaceState({}, "", "/replayed-replace");
+		expect(location.pathname).not.toBe("/replayed-replace");
 
-		pendingNav();
-		expect(originalReplace).toHaveBeenCalledWith({}, "", "/replaced");
+		a._navGuard._pendingNavigation();
+		expect(location.pathname).toBe("/replayed-replace");
+		expect(popstateSpy).toHaveBeenCalled();
+
+		window.removeEventListener("popstate", popstateSpy);
+		a._navGuard._pendingNavigation = null;
+		a._dirty = false;
+		history.replaceState(null, "", before);
+		a.disconnectedCallback();
 	});
 });
 
