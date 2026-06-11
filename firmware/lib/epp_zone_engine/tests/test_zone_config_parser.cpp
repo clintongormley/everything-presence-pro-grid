@@ -366,7 +366,7 @@ TEST_CASE("ZONES_JSON_MAX leaves ample headroom over a typical full payload") {
   CHECK(count == MAX_ZONE_SLOTS);
 }
 
-TEST_CASE("ZONES_JSON_MAX accepts the absolute worst validator-passing payload (BWC)") {
+TEST_CASE("ZONES_JSON_MAX accepts the worst frontend-producible payload (BWC)") {
   // The HA websocket boundary caps zone names at 64 chars and types at 32;
   // json.dumps escapes each non-ASCII char as a 6-byte \uXXXX sequence. A
   // payload of 7 named slots with fully-escaped maximal names/types plus

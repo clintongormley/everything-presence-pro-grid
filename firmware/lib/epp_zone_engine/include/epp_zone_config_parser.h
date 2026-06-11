@@ -19,8 +19,8 @@ namespace epp {
 ///
 /// Sizing: the HA websocket boundary caps zone names at 64 chars and types
 /// at 32 (custom_components/eppgrid/websocket_api/_validate_zone_slots);
-/// json.dumps escapes non-ASCII as 6-byte \uXXXX sequences, so the absolute
-/// worst validator-passing payload — 7 named slots with fully-escaped
+/// json.dumps escapes non-ASCII as 6-byte \uXXXX sequences, so the
+/// worst frontend-producible payload — 7 named slots with fully-escaped
 /// maximal names and types plus full timing — is ~5.7 KB. 8 KB therefore
 /// never rejects a legitimate payload (BWC) while a typical 8-zone payload
 /// stays under 1.5 KB. Both bounds are pinned by tests in
