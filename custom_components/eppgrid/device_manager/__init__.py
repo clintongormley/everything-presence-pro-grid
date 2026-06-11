@@ -66,7 +66,13 @@ _BUILD_FLAGS_CONNECT_TRANSIENT: tuple[type[BaseException], ...] = (
 
 @dataclass
 class ManagedDevice:
-    """Tracked ESPHome device with zone engine firmware."""
+    """Tracked ESPHome device with zone engine firmware.
+
+    Fields partition into:
+      * discovery-derived, re-synced in place on every discovery pass:
+        ``name``, ``host``, ``esphome_config_entry_id``, ``device_id``
+      * runtime, preserved across rediscovery: ``available``
+    """
 
     mac: str
     name: str
@@ -74,6 +80,27 @@ class ManagedDevice:
     esphome_config_entry_id: str | None = None
     device_id: str | None = None
     available: bool = False
+
+    def update_from_discovery(
+        self,
+        *,
+        name: str,
+        host: str | None,
+        esphome_config_entry_id: str | None,
+        device_id: str | None,
+    ) -> None:
+        """Re-sync the discovery-derived fields in place, preserving runtime state.
+
+        Replacing the object instead would reset ``available`` to the
+        dataclass default (False); the next real offline transition would
+        then fail the ``dev.available`` guard in ``_on_state_changed`` and
+        never fire the device-list broadcast — the panel would show the
+        device available through the whole outage.
+        """
+        self.name = name
+        self.host = host
+        self.esphome_config_entry_id = esphome_config_entry_id
+        self.device_id = device_id
 
 
 class DeviceManager:
@@ -635,6 +662,7 @@ class DeviceManager:
                 continue
 
             host = _extract_host(device, entry.config_entry_id, self._hass)
+            device_name = device.name_by_user or device.name or "EPP Device"
 
             is_new = mac not in self.devices
             existing = self.devices.get(mac)
@@ -675,23 +703,18 @@ class DeviceManager:
             if existing is None:
                 self.devices[mac] = ManagedDevice(
                     mac=mac,
-                    name=device.name_by_user or device.name or "EPP Device",
+                    name=device_name,
                     host=host,
                     esphome_config_entry_id=entry.config_entry_id,
                     device_id=device.id,
                 )
             else:
-                # Update discovery-derived fields in place, preserving runtime
-                # state (`available`). Replacing the object would reset
-                # `available` to the dataclass default (False), and the next
-                # real offline transition would then fail the `dev.available`
-                # guard in `_on_state_changed` and never fire the device-list
-                # broadcast — the panel would show the device available
-                # through the whole outage.
-                existing.name = device.name_by_user or device.name or "EPP Device"
-                existing.host = host
-                existing.esphome_config_entry_id = entry.config_entry_id
-                existing.device_id = device.id
+                existing.update_from_discovery(
+                    name=device_name,
+                    host=host,
+                    esphome_config_entry_id=entry.config_entry_id,
+                    device_id=device.id,
+                )
             self._device_id_to_mac[device.id] = mac
             # Re-register the listener on every discovery — `_ensure_esphome_entry_listener`
             # is idempotent (skips if already subscribed for this entry_id), so this

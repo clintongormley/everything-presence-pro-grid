@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -77,7 +78,11 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         # registered that the retry can't overwrite.
         hass.data.pop(DOMAIN, None)
         await async_apply_panel_visibility(hass, False)
-        await manager.async_stop()
+        # A raising cleanup must not mask the original setup error — it would
+        # e.g. turn ConfigEntryNotReady (retry later) into a permanent
+        # SETUP_ERROR.
+        with contextlib.suppress(Exception):
+            await manager.async_stop()
         raise
 
     # Options changes are applied directly by the options flow (store write +

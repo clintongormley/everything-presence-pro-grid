@@ -7,6 +7,7 @@ import base64
 import contextlib
 import json
 import logging
+from collections.abc import Callable
 from typing import Any
 
 from aioesphomeapi import APIClient
@@ -25,6 +26,27 @@ from ._helpers import is_valid_zone_slots_shape
 
 _LOGGER = logging.getLogger(__name__)
 _DEVICE_LOGGER = logging.getLogger(f"{__name__}.device_logs")
+
+
+def _fan_out(callbacks: list[Any], invoke: Callable[[Any], None], label: str) -> None:
+    """Invoke ``invoke(cb)`` for every callback, isolating failures.
+
+    Shared drop-on-failure policy for the state and log fan-out paths: a
+    callback that raises must not stop later callbacks or propagate into
+    aioesphomeapi's packet path, and is dropped after logging once —
+    keeping it registered would flood HA logs at the device's emit rate
+    (potentially many Hz on a busy device).
+    """
+    failed: list[Any] = []
+    for cb in list(callbacks):
+        try:
+            invoke(cb)
+        except Exception:
+            _LOGGER.exception("%s raised; dropping it", label)
+            failed.append(cb)
+    for cb in failed:
+        with contextlib.suppress(ValueError):
+            callbacks.remove(cb)
 
 
 class DeviceConnection:
@@ -77,8 +99,8 @@ class DeviceConnection:
             # forever. disconnect(force=True) tears down synchronously inside
             # aioesphomeapi (no internal awaits), so the cleanup can neither
             # be interrupted by a second cancellation nor stretch the
-            # caller's deadline; wait_for converts CancelledError to
-            # TimeoutError based on identity, hence the bare `raise`.
+            # caller's deadline; the bare `raise` preserves the original
+            # cancellation so the caller's timeout machinery can classify it.
             await client.disconnect(force=True)
             raise
         except Exception:
@@ -146,22 +168,9 @@ class DeviceConnection:
             self._state_subscribers.remove(cb)
 
     def _dispatch_state(self, state: Any) -> None:
-        """Fan out state updates to all subscribers, isolating exceptions.
-
-        A subscriber that raises is dropped after logging once — keeping
-        it registered would flood HA logs at the device's state-update
-        rate (potentially many Hz on a busy device).
-        """
-        failed: list[Any] = []
-        for cb in list(self._state_subscribers):
-            try:
-                cb(state)
-            except Exception:
-                _LOGGER.exception("State subscriber raised; dropping subscriber")
-                failed.append(cb)
-        for cb in failed:
-            with contextlib.suppress(ValueError):
-                self._state_subscribers.remove(cb)
+        """Fan out state updates to all subscribers — see `_fan_out` for the
+        shared isolation / drop-on-failure policy."""
+        _fan_out(self._state_subscribers, lambda cb: cb(state), "State subscriber")
 
     def add_log_callback(self, cb: Any) -> None:
         """Add a log callback. Receives raw log messages from the device."""
@@ -192,21 +201,8 @@ class DeviceConnection:
             text = text.rstrip()
             if text:
                 _DEVICE_LOGGER.log(py_level, "[%s] %s", self._host, text)
-            # Per-callback isolation, mirroring _dispatch_state: a raising
-            # callback must not skip the rest or propagate into
-            # aioesphomeapi's packet path. It is dropped after logging once —
-            # keeping it registered would flood HA logs at the device's
-            # log-emit rate.
-            failed: list[Any] = []
-            for cb in list(self._log_callbacks):
-                try:
-                    cb(msg)
-                except Exception:
-                    _LOGGER.exception("Log callback raised; dropping callback")
-                    failed.append(cb)
-            for cb in failed:
-                with contextlib.suppress(ValueError):
-                    self._log_callbacks.remove(cb)
+            # Same isolation / drop-on-failure policy as _dispatch_state.
+            _fan_out(self._log_callbacks, lambda cb: cb(msg), "Log callback")
 
         self._unsub_logs = self._client.subscribe_logs(_on_log, log_level=log_level)
         _LOGGER.debug("Subscribed to device logs from %s (level=%s)", self._host, log_level)

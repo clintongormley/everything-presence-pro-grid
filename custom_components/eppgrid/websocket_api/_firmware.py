@@ -307,8 +307,13 @@ async def websocket_subscribe_ota_progress(
 
         The LAST watcher reverts the shared log-level bump and tears down
         the log subscription it started — unless its release also closed
-        the session (no other subscribers), in which case the teardown is
-        moot: the connection is going away with everything we bumped.
+        the session (no other subscribers). In that case the log
+        subscription dies with the connection, but the bumped device-side
+        log LEVEL persists across connections; we still skip the revert
+        because the closing session can no longer carry the service call.
+        The stale level self-heals on the device's next boot (firmware
+        resets log levels) or the next config push of the stored
+        log_levels.
         """
         device_conn.ota_watchers -= 1
         last_watcher = device_conn.ota_watchers <= 0

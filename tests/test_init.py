@@ -400,6 +400,38 @@ async def test_setup_entry_unwinds_on_start_failure_and_allows_retry(
         mock_panel.assert_awaited_once()
 
 
+async def test_setup_unwind_stop_failure_does_not_mask_original_error(
+    hass: HomeAssistant, config_entry: MockConfigEntry
+) -> None:
+    """If the unwind's manager.async_stop itself raises, the ORIGINAL setup
+    error must still propagate — a raising cleanup would otherwise replace
+    e.g. ConfigEntryNotReady (retry later) with the cleanup's exception
+    (permanent SETUP_ERROR)."""
+    from homeassistant.exceptions import ConfigEntryNotReady
+
+    if hass.http is None:
+        hass.http = MagicMock()
+
+    with (
+        patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch(
+            "custom_components.eppgrid._register_frontend_resources",
+            new_callable=AsyncMock,
+            return_value="/eppgrid_static/eppgrid-panel.js?v=deadbeef",
+        ),
+        patch("custom_components.eppgrid._register_panel", new_callable=AsyncMock),
+    ):
+        mock_dm = mock_dm_cls.return_value
+        mock_dm.async_start = AsyncMock(side_effect=ConfigEntryNotReady("device offline"))
+        mock_dm.async_stop = AsyncMock(side_effect=RuntimeError("stop exploded"))
+
+        with pytest.raises(ConfigEntryNotReady):
+            await async_setup_entry(hass, config_entry)
+
+        mock_dm.async_stop.assert_awaited_once()
+    assert DOMAIN not in hass.data
+
+
 async def test_setup_entry_unwinds_on_panel_failure(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
     """If panel registration itself fails, the started manager is stopped and unpublished."""
     if hass.http is None:
