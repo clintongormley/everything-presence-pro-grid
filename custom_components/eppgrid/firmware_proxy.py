@@ -89,10 +89,14 @@ class FirmwareProxyView(HomeAssistantView):
                 # Stream-read with a running cap so a chunked-transfer upstream
                 # can't bypass the Content-Length check above.
                 # If the cap is exceeded mid-stream we have already sent the 200
-                # header and cannot send a clean 4xx/5xx.  The correct action is
-                # to call force_close() which terminates the TCP connection; the
-                # client will see a truncated / connection-reset response and
-                # must retry or surface an error.
+                # header and cannot send a clean 4xx/5xx.  force_close() alone is
+                # NOT enough: it merely disables keep-alive, and aiohttp would
+                # still finalize the chunked stream with a valid terminator —
+                # delivering a silently truncated firmware binary as a
+                # complete-looking 200.  Closing the transport as well drops the
+                # TCP connection before the terminator can be written, so a real
+                # client raises ClientPayloadError instead of trusting truncated
+                # firmware.
                 total = 0
                 async for chunk in resp.content.iter_chunked(64 * 1024):
                     total += len(chunk)
@@ -103,6 +107,8 @@ class FirmwareProxyView(HomeAssistantView):
                             _MAX_RESPONSE_BYTES,
                         )
                         stream_resp.force_close()
+                        if request.transport is not None:
+                            request.transport.close()
                         return stream_resp
                     await stream_resp.write(chunk)
 

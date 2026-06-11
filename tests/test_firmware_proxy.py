@@ -11,8 +11,12 @@ import pytest
 from aiohttp import web
 from homeassistant.components.http import KEY_HASS
 from homeassistant.core import HomeAssistant
+from homeassistant.setup import async_setup_component
 
+from custom_components.eppgrid.const import FIRMWARE_VERSION
 from custom_components.eppgrid.firmware_proxy import FirmwareProxyView
+
+_UPSTREAM_SESSION = "custom_components.eppgrid.firmware_proxy.async_get_clientsession"
 
 
 @pytest.fixture
@@ -90,81 +94,6 @@ class TestFirmwareProxyView:
         resp = await view.get(request, "malicious-file.exe")
         assert resp.status == 400
 
-    async def test_accepts_short_firmware_filenames(self, hass: HomeAssistant, view):
-        request = make_request(hass)
-        mock_resp = _mock_response(status=200, body=b"\x00")
-        mock_sr = _make_mock_stream_response()
-
-        with (
-            patch(
-                "custom_components.eppgrid.firmware_proxy.async_get_clientsession",
-                return_value=_mock_session(mock_resp),
-            ),
-            patch("custom_components.eppgrid.firmware_proxy.web.StreamResponse", return_value=mock_sr),
-        ):
-            resp = await view.get(request, "wifi.ota.bin")
-
-        assert resp.status == 200
-
-    async def test_proxies_manifest_json(self, hass: HomeAssistant, view):
-        request = make_request(hass)
-        manifest_data = b'{"builds": []}'
-
-        mock_resp = _mock_response(status=200, body=manifest_data)
-        mock_sr = _make_mock_stream_response()
-
-        with (
-            patch(
-                "custom_components.eppgrid.firmware_proxy.async_get_clientsession",
-                return_value=_mock_session(mock_resp),
-            ),
-            patch("custom_components.eppgrid.firmware_proxy.web.StreamResponse", return_value=mock_sr),
-        ):
-            resp = await view.get(request, "everything-presence-pro-wifi-ble-co2-manifest.json")
-
-        assert resp.status == 200
-        # StreamResponse has no .body; check what was written to the stream
-        assert b"".join(mock_sr.written) == manifest_data
-
-    async def test_proxies_binary_file(self, hass: HomeAssistant, view):
-        request = make_request(hass)
-        binary_data = b"\x00\x01\x02\x03"
-
-        mock_resp = _mock_response(status=200, body=binary_data)
-        mock_sr = _make_mock_stream_response()
-
-        with (
-            patch(
-                "custom_components.eppgrid.firmware_proxy.async_get_clientsession",
-                return_value=_mock_session(mock_resp),
-            ),
-            patch("custom_components.eppgrid.firmware_proxy.web.StreamResponse", return_value=mock_sr),
-        ):
-            resp = await view.get(request, "everything-presence-pro-wifi-ble-co2-bootloader.bin")
-
-        assert resp.status == 200
-        assert b"".join(mock_sr.written) == binary_data
-
-    async def test_proxies_multi_chunk_body(self, hass: HomeAssistant, view):
-        """Streamed responses with no Content-Length must concatenate correctly."""
-        request = make_request(hass)
-        chunks = [b"\xaa" * 100, b"\xbb" * 50, b"\xcc" * 25]
-
-        mock_resp = _mock_response(status=200, chunks=chunks, headers={})
-        mock_sr = _make_mock_stream_response()
-
-        with (
-            patch(
-                "custom_components.eppgrid.firmware_proxy.async_get_clientsession",
-                return_value=_mock_session(mock_resp),
-            ),
-            patch("custom_components.eppgrid.firmware_proxy.web.StreamResponse", return_value=mock_sr),
-        ):
-            resp = await view.get(request, "everything-presence-pro-wifi-ble-co2-bootloader.bin")
-
-        assert resp.status == 200
-        assert b"".join(mock_sr.written) == b"".join(chunks)
-
     async def test_returns_404_when_upstream_not_found(self, hass: HomeAssistant, view):
         request = make_request(hass)
 
@@ -215,27 +144,6 @@ class TestFirmwareProxyView:
 
         assert resp.status == 504
 
-    async def test_passes_timeout_to_session_get(self, hass: HomeAssistant, view):
-        """Upstream fetch must use a bounded ClientTimeout to prevent slow-loris hangs."""
-        request = make_request(hass)
-        mock_resp = _mock_response(status=200, body=b"{}")
-        mock_sr = _make_mock_stream_response()
-
-        session = _mock_session(mock_resp)
-        with (
-            patch(
-                "custom_components.eppgrid.firmware_proxy.async_get_clientsession",
-                return_value=session,
-            ),
-            patch("custom_components.eppgrid.firmware_proxy.web.StreamResponse", return_value=mock_sr),
-        ):
-            await view.get(request, "everything-presence-pro-wifi-ble-co2-manifest.json")
-
-        _, kwargs = session.get.call_args
-        timeout = kwargs.get("timeout")
-        assert isinstance(timeout, aiohttp.ClientTimeout)
-        assert timeout.total is not None and timeout.total <= 120
-
     async def test_returns_502_on_oversize_content_length(self, hass: HomeAssistant, view):
         """If upstream advertises Content-Length > size cap, refuse with 502."""
         request = make_request(hass)
@@ -253,32 +161,6 @@ class TestFirmwareProxyView:
             resp = await view.get(request, "everything-presence-pro-wifi-ble-co2-manifest.json")
 
         assert resp.status == 502
-
-    async def test_returns_502_when_streamed_body_exceeds_cap(self, hass: HomeAssistant, view):
-        """If upstream sends chunks totaling > size cap without Content-Length, abort.
-
-        With streaming, the handler calls force_close() on the StreamResponse
-        rather than returning a fresh 502 Response — it has already sent the 200
-        header so it cannot switch status codes.  We verify the abort via
-        force_close() being called; the mid-stream abort is covered more
-        thoroughly in test_streaming_aborts_on_oversize_body.
-        """
-        request = make_request(hass)
-        # 17 chunks of 1 MiB each = 17 MiB, no Content-Length header
-        chunks = [b"\x00" * (1024 * 1024) for _ in range(17)]
-        mock_resp = _mock_response(status=200, chunks=chunks, headers={})
-        mock_sr = _make_mock_stream_response()
-
-        with (
-            patch(
-                "custom_components.eppgrid.firmware_proxy.async_get_clientsession",
-                return_value=_mock_session(mock_resp),
-            ),
-            patch("custom_components.eppgrid.firmware_proxy.web.StreamResponse", return_value=mock_sr),
-        ):
-            await view.get(request, "everything-presence-pro-wifi-ble-co2-manifest.json")
-
-        mock_sr.force_close.assert_called_once()
 
     # ------------------------------------------------------------------
     # Regex anchor: \Z must be used instead of $ so that a trailing
@@ -327,35 +209,20 @@ class TestFirmwareProxyView:
         assert resp.status == 200
 
     # ------------------------------------------------------------------
-    # Streaming: success path delivers chunks via StreamResponse.write()
+    # Streaming: handler-side mechanics of the mid-stream cap abort.
+    # The client-visible effect (ClientPayloadError) is asserted end-to-end
+    # in TestFirmwareProxyE2E; this mocked variant additionally verifies the
+    # handler stops reading/writing past the cap, which the e2e test cannot
+    # observe once the connection is gone.
     # ------------------------------------------------------------------
 
-    async def test_streams_multi_chunk_body(self, hass: HomeAssistant, view):
-        """Multi-chunk upstream body must be streamed; all bytes must be delivered."""
-        request = make_request(hass)
-        chunks = [b"\xaa" * 100, b"\xbb" * 50, b"\xcc" * 25]
-        mock_resp = _mock_response(status=200, chunks=chunks, headers={})
-        mock_sr = _make_mock_stream_response()
-
-        with (
-            patch(
-                "custom_components.eppgrid.firmware_proxy.async_get_clientsession",
-                return_value=_mock_session(mock_resp),
-            ),
-            patch("custom_components.eppgrid.firmware_proxy.web.StreamResponse", return_value=mock_sr),
-        ):
-            await view.get(request, "everything-presence-pro-wifi-ble-co2-bootloader.bin")
-
-        assert mock_sr.prepare.called, "StreamResponse.prepare() was not called"
-        assert b"".join(mock_sr.written) == b"".join(chunks)
-
     async def test_streaming_aborts_on_oversize_body(self, hass: HomeAssistant, view):
-        """When streamed bytes exceed the cap mid-stream, force_close() is called.
+        """Cap overflow mid-stream: abort the connection, stop writing.
 
         Once the 200 header has been sent (``prepare()`` called), the handler
-        cannot emit a 502; instead it calls ``force_close()`` to terminate the
-        TCP connection after the cap is exceeded, then stops writing further
-        chunks.
+        cannot emit a 502. It must instead disable keep-alive (``force_close()``)
+        AND close the request transport — force_close() alone would let aiohttp
+        finalize the chunked stream, delivering a truncated body as a clean 200.
         """
         request = make_request(hass)
         # 17 chunks of 1 MiB each = 17 MiB, no Content-Length header
@@ -372,29 +239,123 @@ class TestFirmwareProxyView:
         ):
             await view.get(request, "everything-presence-pro-wifi-ble-co2-manifest.json")
 
-        # force_close() terminates the connection mid-stream
+        # Keep-alive disabled and the TCP connection actually torn down
         mock_sr.force_close.assert_called_once()
+        request.transport.close.assert_called_once()
         # No further write() calls after the cap was hit; total written < 17 MiB
         total_written = sum(len(c) for c in mock_sr.written)
         assert total_written <= 16 * 1024 * 1024, f"handler wrote {total_written} bytes past the cap"
 
-    async def test_fetches_from_correct_url(self, hass: HomeAssistant, view):
-        request = make_request(hass)
 
-        mock_resp = _mock_response(status=200, body=b"{}")
-        mock_sr = _make_mock_stream_response()
+async def _e2e_client(hass: HomeAssistant, hass_client):
+    """Register the proxy view on HA's real HTTP server and return an authed client."""
+    assert await async_setup_component(hass, "http", {})
+    hass.http.register_view(FirmwareProxyView())
+    return await hass_client()
 
-        session = _mock_session(mock_resp)
-        with (
-            patch(
-                "custom_components.eppgrid.firmware_proxy.async_get_clientsession",
-                return_value=session,
+
+class TestFirmwareProxyE2E:
+    """End-to-end tests over Home Assistant's real aiohttp stack.
+
+    Only the upstream (GitHub) session is mocked, exactly like the unit tests
+    above. Everything on the serving side is real: view registration, the auth
+    middleware, ``web.StreamResponse``, chunked transfer encoding, and the
+    connection-abort behaviour on cap overflow. This is the layer where the
+    force_close() truncation bug lived — a mocked StreamResponse can't see it.
+    """
+
+    @pytest.mark.parametrize(
+        ("filename", "body", "content_type"),
+        [
+            (
+                "everything-presence-pro-wifi-ble-co2-manifest.json",
+                b'{"builds": []}',
+                "application/json",
             ),
-            patch("custom_components.eppgrid.firmware_proxy.web.StreamResponse", return_value=mock_sr),
-        ):
-            await view.get(request, "everything-presence-pro-wifi-ble-co2-manifest.json")
+            (
+                "everything-presence-pro-wifi-ble-co2-bootloader.bin",
+                b"\x00\x01\x02\x03",
+                "application/octet-stream",
+            ),
+            # Short filename: regex must accept compact names like wifi.ota.bin
+            ("wifi.ota.bin", b"\x00", "application/octet-stream"),
+        ],
+    )
+    async def test_success_body_and_content_type(self, hass: HomeAssistant, hass_client, filename, body, content_type):
+        """The real HTTP response must carry the exact body and Content-Type."""
+        mock_resp = _mock_response(status=200, body=body)
+        with patch(_UPSTREAM_SESSION, return_value=_mock_session(mock_resp)):
+            client = await _e2e_client(hass, hass_client)
+            resp = await client.get(f"/api/eppgrid/firmware/{filename}")
+            assert resp.status == 200
+            assert resp.content_type == content_type
+            assert await resp.read() == body
 
-        from custom_components.eppgrid.const import FIRMWARE_VERSION
+    async def test_streams_multi_chunk_body(self, hass: HomeAssistant, hass_client):
+        """A multi-chunk upstream body must arrive complete via real chunked encoding."""
+        chunks = [b"\xaa" * 100, b"\xbb" * 50, b"\xcc" * 25]
+        mock_resp = _mock_response(status=200, chunks=chunks)
+        with patch(_UPSTREAM_SESSION, return_value=_mock_session(mock_resp)):
+            client = await _e2e_client(hass, hass_client)
+            resp = await client.get("/api/eppgrid/firmware/everything-presence-pro-wifi-ble-co2-bootloader.bin")
+            assert resp.status == 200
+            # No Content-Length is known up front, so delivery must be chunked.
+            assert resp.headers.get("Transfer-Encoding") == "chunked"
+            assert "Content-Length" not in resp.headers
+            assert await resp.read() == b"".join(chunks)
+
+    async def test_unauthenticated_request_is_rejected(self, hass: HomeAssistant, hass_client_no_auth):
+        """Requests without a bearer token must be rejected before touching upstream."""
+        session = _mock_session(_mock_response(status=200, body=b"{}"))
+        with patch(_UPSTREAM_SESSION, return_value=session):
+            assert await async_setup_component(hass, "http", {})
+            hass.http.register_view(FirmwareProxyView())
+            client = await hass_client_no_auth()
+            resp = await client.get("/api/eppgrid/firmware/everything-presence-pro-wifi-ble-co2-manifest.json")
+        assert resp.status == 401
+        session.get.assert_not_called()
+
+    async def test_oversize_mid_stream_aborts_connection(self, hass: HomeAssistant, hass_client):
+        """Cap overflow mid-stream must abort the connection, not finalize cleanly.
+
+        The 200 header is already on the wire, so the only safe move is to kill
+        the TCP connection before the chunked terminator is sent. A real client
+        must raise ClientPayloadError — anything less means a silently truncated
+        firmware binary is delivered as a complete-looking 200.
+        """
+        # 17 chunks of 1 MiB each = 17 MiB > 16 MiB cap, no Content-Length header
+        chunks = [b"\x00" * (1024 * 1024) for _ in range(17)]
+        mock_resp = _mock_response(status=200, chunks=chunks)
+        with patch(_UPSTREAM_SESSION, return_value=_mock_session(mock_resp)):
+            client = await _e2e_client(hass, hass_client)
+            resp = await client.get("/api/eppgrid/firmware/everything-presence-pro-wifi-ble-co2-manifest.json")
+            # Header was sent before the cap was hit, so the status is 200 ...
+            assert resp.status == 200
+            # ... but reading the body must fail: the stream is aborted, never
+            # finalized with a valid chunked terminator.
+            with pytest.raises(aiohttp.ClientPayloadError):
+                await resp.read()
+
+    async def test_passes_timeout_to_session_get(self, hass: HomeAssistant, hass_client):
+        """Upstream fetch must use a bounded ClientTimeout to prevent slow-loris hangs."""
+        session = _mock_session(_mock_response(status=200, body=b"{}"))
+        with patch(_UPSTREAM_SESSION, return_value=session):
+            client = await _e2e_client(hass, hass_client)
+            resp = await client.get("/api/eppgrid/firmware/everything-presence-pro-wifi-ble-co2-manifest.json")
+            assert resp.status == 200
+
+        _, kwargs = session.get.call_args
+        timeout = kwargs.get("timeout")
+        assert isinstance(timeout, aiohttp.ClientTimeout)
+        assert timeout.total is not None and timeout.total <= 120
+
+    async def test_fetches_from_correct_url(self, hass: HomeAssistant, hass_client):
+        """The proxy must fetch the requested filename from the pinned release URL."""
+        session = _mock_session(_mock_response(status=200, body=b"{}"))
+        with patch(_UPSTREAM_SESSION, return_value=session):
+            client = await _e2e_client(hass, hass_client)
+            resp = await client.get("/api/eppgrid/firmware/everything-presence-pro-wifi-ble-co2-manifest.json")
+            assert resp.status == 200
 
         call_url = session.get.call_args[0][0]
         assert (
