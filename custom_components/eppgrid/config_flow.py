@@ -10,6 +10,7 @@ from homeassistant.config_entries import ConfigFlow
 from homeassistant.config_entries import OptionsFlow
 from homeassistant.core import callback
 
+from . import async_apply_panel_visibility
 from .const import DOMAIN
 
 
@@ -32,48 +33,47 @@ class EPPGridConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> OptionsFlow:
         """Get the options flow."""
-        return EPPGridOptionsFlow(config_entry)
+        return EPPGridOptionsFlow()
 
 
 class EPPGridOptionsFlow(OptionsFlow):
-    """Options flow for toggling sidebar panel."""
+    """Options flow for the sidebar-panel and tutorial toggles.
 
-    def __init__(self, config_entry: ConfigEntry) -> None:
-        self._config_entry = config_entry
+    The EPPGridStore is the single source of truth for both options;
+    entry.options is never written with meaningful data (and never read).
+    """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> Any:
         """Handle options."""
-        if user_input is not None:
-            # Update the store's settings only when at least one value changed
-            store = self.hass.data.get(DOMAIN)
-            if store is not None:
-                manager = store  # hass.data[DOMAIN] is the DeviceManager
-                new_sidebar_panel = user_input["sidebar_panel"]
-                new_show_tutorial = user_input["show_room_calibration_tutorial"]
-                if (
-                    manager._store.sidebar_panel != new_sidebar_panel
-                    or manager._store.show_room_calibration_tutorial != new_show_tutorial
-                ):
-                    manager._store.sidebar_panel = new_sidebar_panel
-                    manager._store.show_room_calibration_tutorial = new_show_tutorial
-                    await manager._store.async_save()
-                    manager._fire_device_list_changed()
-            return self.async_create_entry(title="", data=user_input)
-
-        # Get current values from store
-        sidebar_panel = True
-        show_tutorial = True
         manager = self.hass.data.get(DOMAIN)
-        if manager is not None:
-            sidebar_panel = manager._store.sidebar_panel
-            show_tutorial = manager._store.show_room_calibration_tutorial
+        if manager is None:
+            # Entry errored or is unloaded — there is no store to read or
+            # update, so "succeeding" here would silently drop the changes.
+            return self.async_abort(reason="not_loaded")
+
+        store = manager.store
+        if user_input is not None:
+            new_sidebar_panel = user_input["sidebar_panel"]
+            new_show_tutorial = user_input["show_room_calibration_tutorial"]
+            if store.sidebar_panel != new_sidebar_panel or store.show_room_calibration_tutorial != new_show_tutorial:
+                store.sidebar_panel = new_sidebar_panel
+                store.show_room_calibration_tutorial = new_show_tutorial
+                await store.async_save()
+                manager._fire_device_list_changed()
+                # Apply the sidebar toggle directly — no config-entry reload,
+                # so ESPHome connections stay up. Idempotent.
+                await async_apply_panel_visibility(self.hass, new_sidebar_panel)
+            return self.async_create_entry(data={})
 
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(
                 {
-                    vol.Required("sidebar_panel", default=sidebar_panel): bool,
-                    vol.Required("show_room_calibration_tutorial", default=show_tutorial): bool,
+                    vol.Required("sidebar_panel", default=store.sidebar_panel): bool,
+                    vol.Required(
+                        "show_room_calibration_tutorial",
+                        default=store.show_room_calibration_tutorial,
+                    ): bool,
                 }
             ),
         )

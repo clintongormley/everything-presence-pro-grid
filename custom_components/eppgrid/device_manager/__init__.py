@@ -165,6 +165,11 @@ class DeviceManager:
         # whenever the managed-device set changes — see _refresh_state_listener.
         self._state_track_unsub: Any = None
 
+    @property
+    def store(self) -> EPPGridStore:
+        """The persistent store backing this manager (read-only accessor)."""
+        return self._store
+
     @callback
     def on_device_list_changed(self, cb: Any) -> Any:
         """Register a callback for device list changes. Returns an unsub callable."""

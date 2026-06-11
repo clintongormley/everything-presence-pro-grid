@@ -18,6 +18,9 @@
           "show_room_calibration_tutorial": "Show room calibration tutorial"
         }
       }
+    },
+    "abort": {
+      "not_loaded": "The Everything Presence Pro Grid integration is not loaded. Fix or reload the integration, then change its options."
     }
   },
   "exceptions": {

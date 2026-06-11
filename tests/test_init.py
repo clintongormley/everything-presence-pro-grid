@@ -145,8 +145,12 @@ async def test_unload_entry_no_manager(hass: HomeAssistant, config_entry: MockCo
     assert result is True
 
 
-async def test_setup_entry_registers_update_listener(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
-    """Setup adds an update listener so options changes trigger a config-entry reload."""
+async def test_options_update_does_not_reload_entry(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+    """Options changes are applied directly by the options flow — no update listener, no reload.
+
+    A reload would tear down every ESPHome connection just to toggle the
+    sidebar panel or the tutorial flag.
+    """
     if hass.http is None:
         hass.http = MagicMock()
 
@@ -162,14 +166,57 @@ async def test_setup_entry_registers_update_listener(hass: HomeAssistant, config
     ):
         mock_dm = mock_dm_cls.return_value
         mock_dm.async_start = AsyncMock()
+        mock_dm.async_stop = AsyncMock()
         await async_setup_entry(hass, config_entry)
 
-        # Simulate an options update — the listener registered during setup
-        # should request a reload.
         hass.config_entries.async_update_entry(config_entry, options={"sidebar_panel": False})
         await hass.async_block_till_done()
 
-    mock_reload.assert_awaited_with(config_entry.entry_id)
+    assert not config_entry.update_listeners
+    mock_reload.assert_not_awaited()
+    mock_dm.async_stop.assert_not_awaited()
+
+
+async def test_apply_panel_visibility_registers_panel_once(hass: HomeAssistant) -> None:
+    """async_apply_panel_visibility(True) registers the panel and is idempotent."""
+    from custom_components.eppgrid import async_apply_panel_visibility
+
+    module_url = "/eppgrid_static/eppgrid-panel.js?v=deadbeef"
+    with (
+        patch(
+            "custom_components.eppgrid._register_frontend_resources",
+            new_callable=AsyncMock,
+            return_value=module_url,
+        ),
+        patch("custom_components.eppgrid._register_panel", new_callable=AsyncMock) as mock_panel,
+    ):
+        await async_apply_panel_visibility(hass, True)
+        await async_apply_panel_visibility(hass, True)
+
+    mock_panel.assert_awaited_once_with(hass, module_url)
+    assert hass.data[_PANEL_REGISTERED_KEY] is True
+
+
+async def test_apply_panel_visibility_removes_registered_panel(hass: HomeAssistant) -> None:
+    """async_apply_panel_visibility(False) removes a registered panel and clears the flag."""
+    from custom_components.eppgrid import async_apply_panel_visibility
+
+    hass.data[_PANEL_REGISTERED_KEY] = True
+    with patch("custom_components.eppgrid.async_remove_panel") as mock_remove:
+        await async_apply_panel_visibility(hass, False)
+
+    mock_remove.assert_called_once_with(hass, DOMAIN, warn_if_unknown=False)
+    assert _PANEL_REGISTERED_KEY not in hass.data
+
+
+async def test_apply_panel_visibility_noop_when_not_registered(hass: HomeAssistant) -> None:
+    """async_apply_panel_visibility(False) is a no-op when no panel was registered."""
+    from custom_components.eppgrid import async_apply_panel_visibility
+
+    with patch("custom_components.eppgrid.async_remove_panel") as mock_remove:
+        await async_apply_panel_visibility(hass, False)
+
+    mock_remove.assert_not_called()
 
 
 async def test_unload_entry_removes_panel(hass: HomeAssistant, config_entry: MockConfigEntry) -> None:

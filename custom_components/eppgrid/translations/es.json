@@ -18,6 +18,9 @@
           "show_room_calibration_tutorial": "Mostrar el tutorial de calibración de la habitación"
         }
       }
+    },
+    "abort": {
+      "not_loaded": "La integración Everything Presence Pro Grid no está cargada. Corrige o recarga la integración y después cambia sus opciones."
     }
   },
   "exceptions": {
