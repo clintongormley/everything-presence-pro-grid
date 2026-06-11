@@ -45,6 +45,15 @@ class DeviceConnection:
         self.connected: bool = False
         self.raw_target_subs: int = 0
         self.grid_target_subs: int = 0
+        # Shared OTA-progress watcher state, owned by
+        # websocket_api._firmware.websocket_subscribe_ota_progress: N
+        # concurrent watchers share ONE device log subscription and ONE
+        # log-level bump on this connection, reverted only when the last
+        # watcher releases. Lives here (per-connection) so the state dies
+        # with the connection instead of leaking across reconnects.
+        self.ota_watchers: int = 0
+        self.ota_started_log_sub: bool = False
+        self.ota_bumped_log_level: bool = False
 
     async def async_connect(self) -> None:
         """Connect to the device and cache available services."""
@@ -109,6 +118,11 @@ class DeviceConnection:
         self._states_subscribed = False
         self._log_callbacks.clear()
         self._unsub_logs = None
+        # OTA watcher state is per-connection: a dead connection took its
+        # log subscription and level bump with it.
+        self.ota_watchers = 0
+        self.ota_started_log_sub = False
+        self.ota_bumped_log_level = False
 
     async def subscribe_states(self, cb: Any) -> None:
         """Add a state subscriber. Idempotent under concurrent callers.

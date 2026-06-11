@@ -44,6 +44,11 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
         mock_dm.async_open_session = AsyncMock(return_value=None)
         mock_dm.async_close_session = AsyncMock()
         mock_dm.get_session = MagicMock(return_value=None)
+        # release_session returns None when other references keep the session
+        # alive, or the scheduled close task when this release closed it.
+        # Default to "kept alive" — tests pinning the closing path override.
+        mock_dm.release_session = MagicMock(return_value=None)
+        mock_dm.schedule_close_session = MagicMock()
         mock_dm.read_firmware_version.return_value = FIRMWARE_VERSION
         mock_dm._build_flags = {}
 
@@ -65,6 +70,11 @@ def make_mock_device_conn(entities=None, services=None):
     conn.unsubscribe_states = MagicMock()
     conn.add_log_callback = MagicMock()
     conn.remove_log_callback = MagicMock()
+    # Shared OTA-watcher state — real values (not MagicMock attributes) so
+    # the handler's increment / compare logic behaves like production.
+    conn.ota_watchers = 0
+    conn.ota_started_log_sub = False
+    conn.ota_bumped_log_level = False
     # By default, async_execute_service succeeds (firmware exposes
     # epp_set_log_level). Pass services={} to simulate older firmware
     # without the action — that path raises HomeAssistantError, which
@@ -139,7 +149,7 @@ class TestSubscribeOtaProgress:
         config_entry: MockConfigEntry,
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
-        mock_dm.get_session.return_value = None
+        mock_dm.async_open_session = AsyncMock(return_value=None)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -160,7 +170,7 @@ class TestSubscribeOtaProgress:
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -185,7 +195,7 @@ class TestSubscribeOtaProgress:
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -206,7 +216,7 @@ class TestSubscribeOtaProgress:
         still succeed (silently no-op the bump) instead of erroring out."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={})
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -227,7 +237,7 @@ class TestSubscribeOtaProgress:
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -253,7 +263,7 @@ class TestSubscribeOtaProgress:
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -277,7 +287,7 @@ class TestSubscribeOtaProgress:
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -298,7 +308,7 @@ class TestSubscribeOtaProgress:
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -320,7 +330,7 @@ class TestSubscribeOtaProgress:
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -352,7 +362,7 @@ class TestSubscribeOtaProgress:
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -373,7 +383,7 @@ class TestSubscribeOtaProgress:
         """When device logs an http_request error, emit error event immediately."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -412,7 +422,7 @@ class TestSubscribeOtaProgress:
     ) -> None:
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -443,7 +453,7 @@ class TestSubscribeOtaProgress:
         """
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -481,7 +491,7 @@ class TestSubscribeOtaProgress:
         """
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -519,7 +529,7 @@ class TestSubscribeOtaProgress:
         Drop it so the user sees the useful message, not the noise."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -545,7 +555,7 @@ class TestSubscribeOtaProgress:
         """Component recovery noise; existing behaviour preserved."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -573,7 +583,7 @@ class TestSubscribeOtaProgress:
         device_conn = make_mock_device_conn()
         device_conn._unsub_logs = None
         device_conn.subscribe_logs = MagicMock()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -590,7 +600,7 @@ class TestSubscribeOtaProgress:
         """Log callback is ignored once a terminal event has been sent."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from aioesphomeapi import LogLevel as ESPLogLevel
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
@@ -623,7 +633,7 @@ class TestSubscribeOtaProgress:
         """Log callback ignores non-ERROR level messages."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from aioesphomeapi import LogLevel as ESPLogLevel
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
@@ -649,7 +659,7 @@ class TestSubscribeOtaProgress:
         """Log callback decodes bytes messages."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from aioesphomeapi import LogLevel as ESPLogLevel
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
@@ -680,7 +690,7 @@ class TestSubscribeOtaProgress:
         """Log callback ignores empty messages after stripping."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from aioesphomeapi import LogLevel as ESPLogLevel
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
@@ -698,16 +708,18 @@ class TestSubscribeOtaProgress:
         on_log(log_msg)
         connection.send_message.assert_not_called()
 
-    async def test_unsubscribe_closes_opened_session(
+    async def test_unsubscribe_releases_session_reference(
         self,
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
-        """When OTA handler opened the session, unsubscribe closes it."""
+        """Unsubscribe must RELEASE the session reference taken on subscribe —
+        never force-close. A device subscriber (subscribe_device) on the same
+        mac shares the connection; the manager closes only when the last
+        reference is released. Releasing exactly once also guards a
+        double-invoked unsub from stealing another subscriber's reference."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        # get_session returns None first (no existing session), then the opened one
-        mock_dm.get_session.return_value = None
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -715,11 +727,14 @@ class TestSubscribeOtaProgress:
         connection.subscriptions = {}
         msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
         await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+        mock_dm.async_open_session.assert_awaited_once_with("AA:BB:CC:DD:EE:FF")
 
-        # Trigger unsubscribe
+        # Trigger unsubscribe — twice, to pin the exactly-once guard.
+        connection.subscriptions[1]()
         connection.subscriptions[1]()
         await hass.async_block_till_done()
-        mock_dm.schedule_close_session.assert_called_once_with("AA:BB:CC:DD:EE:FF")
+        mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", device_conn)
+        mock_dm.schedule_close_session.assert_not_called()
 
     async def test_ignores_cleared_error_flag_log(
         self,
@@ -729,7 +744,7 @@ class TestSubscribeOtaProgress:
         """The 'cleared Error flag' log from http_request is not an actual error."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -761,7 +776,7 @@ class TestSubscribeOtaProgress:
         device_conn._unsub_logs = None
         device_conn.subscribe_logs = MagicMock()
         device_conn.unsubscribe_logs = MagicMock()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -790,7 +805,7 @@ class TestSubscribeOtaProgress:
         device_conn._unsub_logs = MagicMock()
         device_conn.subscribe_logs = MagicMock()
         device_conn.unsubscribe_logs = MagicMock()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -811,13 +826,14 @@ class TestSubscribeOtaProgress:
         config_entry: MockConfigEntry,
     ) -> None:
         """When OTA progress bumped the device's `system` log category to
-        Error and we did NOT open the session, _unsub must restore the
-        category to its stored level (or None if unconfigured) — otherwise
-        the firmware keeps emitting ERROR logs after the panel closes."""
+        Error and the session survives our release (other subscribers still
+        hold references), _unsub must restore the category to its stored
+        level (or None if unconfigured) — otherwise the firmware keeps
+        emitting ERROR logs after the panel closes."""
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
-        mock_dm.get_session.return_value = device_conn  # pre-existing session
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)  # session kept alive by others
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -852,7 +868,7 @@ class TestSubscribeOtaProgress:
         mock_dm = await setup_integration(hass, config_entry)
         mock_dm._store.devices = {"AA:BB:CC:DD:EE:FF": {"log_levels": {"system": "Warning"}}}
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -878,7 +894,7 @@ class TestSubscribeOtaProgress:
         nothing to revert."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={})
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -898,13 +914,15 @@ class TestSubscribeOtaProgress:
         config_entry: MockConfigEntry,
     ) -> None:
         """If `device_conn._client` is None (connection raced to close after
-        get_session returned), don't try to subscribe / bump — explicitly
-        send an error and bail."""
+        the open returned), don't try to subscribe / bump — release the
+        session reference the open just took, then send an error and bail.
+        Without the release, the raced-out reference would keep the dead
+        session's refcount from ever reaching zero."""
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
         device_conn._client = None  # connection vanished
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -918,6 +936,114 @@ class TestSubscribeOtaProgress:
         assert args[0] == 1
         assert args[1] == "no_session"
         device_conn.subscribe_states.assert_not_awaited()
+        mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", device_conn)
+
+    async def test_subscribe_states_failure_reverts_bump_and_releases(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """If subscribe_states raises AFTER the log-level bump, the handler
+        must revert the bump, drop the log subscription it started, release
+        the session reference, and send a curated error — otherwise the
+        device keeps streaming ERROR logs forever and the session leaks."""
+        log_svc = MagicMock()
+        mock_dm = await setup_integration(hass, config_entry)
+        device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
+        device_conn._unsub_logs = None
+        device_conn.subscribe_logs = MagicMock()
+        device_conn.unsubscribe_logs = MagicMock()
+        device_conn.subscribe_states = AsyncMock(side_effect=RuntimeError("connection is closed"))
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+
+        connection.send_result.assert_not_called()
+        connection.send_error.assert_called_once()
+        assert connection.send_error.call_args[0][0] == 1
+
+        # Bump happened, then was reverted (stored config empty → "None").
+        calls = device_conn._client.execute_service.await_args_list
+        assert [c[0][1] for c in calls] == [
+            {"category": "system", "level": "Error"},
+            {"category": "system", "level": "None"},
+        ]
+        # The log subscription we started was torn down again.
+        device_conn.unsubscribe_logs.assert_called_once()
+        # The session reference taken on subscribe was released.
+        mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", device_conn)
+        # Shared watcher state rolled back for the next subscriber.
+        assert device_conn.ota_watchers == 0
+        assert device_conn.ota_bumped_log_level is False
+        assert device_conn.ota_started_log_sub is False
+
+    async def test_two_watchers_share_one_bump_and_log_subscription(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """Two concurrent OTA watchers on the same device must share ONE
+        epp_set_log_level bump and ONE device log subscription. The first
+        unsubscribe must not revert the level or drop the log subscription
+        out from under the surviving watcher; the second (last) does both."""
+        log_svc = MagicMock()
+        mock_dm = await setup_integration(hass, config_entry)
+        device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
+        device_conn._unsub_logs = None
+        device_conn.subscribe_logs = MagicMock()
+        device_conn.unsubscribe_logs = MagicMock()
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        conn_a = MagicMock()
+        conn_a.subscriptions = {}
+        conn_b = MagicMock()
+        conn_b.subscriptions = {}
+        await call_async_handler(
+            hass,
+            websocket_subscribe_ota_progress,
+            conn_a,
+            {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"},
+        )
+        await call_async_handler(
+            hass,
+            websocket_subscribe_ota_progress,
+            conn_b,
+            {"id": 2, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"},
+        )
+
+        # One shared bump + one shared log subscription for two watchers.
+        device_conn._client.execute_service.assert_awaited_once_with(
+            log_svc, {"category": "system", "level": "Error"}, return_response=False
+        )
+        device_conn.subscribe_logs.assert_called_once()
+        assert device_conn.ota_watchers == 2
+        device_conn._client.execute_service.reset_mock()
+
+        # First unsubscribe: the other watcher still needs the bump + logs.
+        conn_a.subscriptions[1]()
+        await hass.async_block_till_done()
+        device_conn._client.execute_service.assert_not_awaited()
+        device_conn.unsubscribe_logs.assert_not_called()
+        assert device_conn.ota_watchers == 1
+
+        # Second (last) unsubscribe: revert the bump, drop the log sub.
+        conn_b.subscriptions[2]()
+        await hass.async_block_till_done()
+        device_conn._client.execute_service.assert_awaited_once_with(
+            log_svc, {"category": "system", "level": "None"}, return_response=False
+        )
+        device_conn.unsubscribe_logs.assert_called_once()
+        assert device_conn.ota_watchers == 0
+
+        # Each watcher released exactly one session reference.
+        assert mock_dm.release_session.call_count == 2
 
     async def test_first_state_post_ota_emits_success_after_initial_mismatch(
         self,
@@ -931,7 +1057,7 @@ class TestSubscribeOtaProgress:
         'updating' forever."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -962,7 +1088,7 @@ class TestSubscribeOtaProgress:
         flight, versions match) we must not emit any terminal event."""
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -986,7 +1112,7 @@ class TestSubscribeOtaProgress:
 
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -1029,7 +1155,7 @@ class TestSubscribeOtaProgress:
 
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
-        mock_dm.get_session.return_value = device_conn
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -1055,18 +1181,23 @@ class TestSubscribeOtaProgress:
 
         connection.send_message.assert_not_called()
 
-    async def test_unsubscribe_skips_log_level_revert_when_session_closing(
+    async def test_unsubscribe_skips_log_level_revert_when_release_closes_session(
         self,
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
-        """When OTA opened the session and is closing it, we cannot reach the
-        device anymore — skip the revert. The session close does the cleanup."""
+        """When this watcher held the LAST session reference, the release
+        closes the session — anything we bumped on the device side is moot,
+        so skip the revert (and the log unsubscribe)."""
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
-        mock_dm.get_session.return_value = None
+        device_conn._unsub_logs = None
+        device_conn.subscribe_logs = MagicMock()
+        device_conn.unsubscribe_logs = MagicMock()
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+        # Last reference: release_session schedules (and returns) the close.
+        mock_dm.release_session = MagicMock(return_value=MagicMock())
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -1079,4 +1210,5 @@ class TestSubscribeOtaProgress:
         connection.subscriptions[1]()
         await hass.async_block_till_done()
         device_conn._client.execute_service.assert_not_awaited()
-        mock_dm.schedule_close_session.assert_called_once_with("AA:BB:CC:DD:EE:FF")
+        device_conn.unsubscribe_logs.assert_not_called()
+        mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", device_conn)

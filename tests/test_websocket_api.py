@@ -4412,8 +4412,12 @@ class TestSubscriptionCallbacks:
         connection.subscriptions[45]()
         mock_device_conn.unsubscribe_states.assert_called_once()
 
-    async def test_subscribe_device_unsub(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
-        """subscribe_device unsub callback closes session via the deduped scheduler."""
+    async def test_subscribe_device_unsub_releases_session(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """subscribe_device unsub must RELEASE its session reference, not
+        force-close: another client subscribed to the same device shares the
+        session, and an unconditional close would tear its streams down."""
         mock_dm = await setup_integration(hass, config_entry)
         mock_conn = MagicMock()
         mock_dm.async_open_session = AsyncMock(return_value=mock_conn)
@@ -4430,7 +4434,32 @@ class TestSubscriptionCallbacks:
         connection.subscriptions[46]()
         await hass.async_block_till_done()
 
-        mock_dm.schedule_close_session.assert_called_with("AA:BB:CC:DD:EE:FF")
+        mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", mock_conn)
+        mock_dm.schedule_close_session.assert_not_called()
+
+    async def test_subscribe_device_unsub_releases_exactly_once(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """A double-invoked unsub callback must release only one reference —
+        a second decrement would steal another subscriber's reference and
+        close the session under it."""
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_conn = MagicMock()
+        mock_dm.async_open_session = AsyncMock(return_value=mock_conn)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_device
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 47, "type": "eppgrid/subscribe_device", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        await call_async_handler(hass, websocket_subscribe_device, connection, msg)
+
+        connection.subscriptions[47]()
+        connection.subscriptions[47]()
+        await hass.async_block_till_done()
+
+        assert mock_dm.release_session.call_count == 1
 
 
 class TestWebSocketDistanceOverride:

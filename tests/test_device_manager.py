@@ -6098,6 +6098,152 @@ class TestSessionLifecycle:
 
 
 # ---------------------------------------------------------------------------
+# Session refcounting tests
+# ---------------------------------------------------------------------------
+
+
+class TestSessionRefcounting:
+    """Refcounted sessions: N subscribers share one connection and only the
+    last release closes it. Force-close paths (device offline, removal,
+    shutdown) bypass the count and reset it."""
+
+    MAC = "AA:BB:CC:DD:EE:FF"
+
+    def _seed(self, manager: DeviceManager) -> None:
+        manager.devices[self.MAC] = ManagedDevice(mac=self.MAC, name="EPP", host="192.168.1.50")
+
+    @staticmethod
+    def _make_conn() -> MagicMock:
+        conn = MagicMock()
+        conn.async_connect = AsyncMock()
+        conn.async_disconnect = AsyncMock()
+        conn.connected = True
+        return conn
+
+    async def test_second_subscriber_release_closes_not_first(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """Two subscribers on the same mac: the first release must NOT close
+        the shared session (the second subscriber's streams ride on it); the
+        second release closes it — disconnect awaited exactly once, after the
+        second release."""
+        self._seed(manager)
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_cls:
+            mock_cls.side_effect = lambda *a, **kw: self._make_conn()
+
+            conn = await manager.async_open_session(self.MAC)
+            conn2 = await manager.async_open_session(self.MAC)
+            assert conn2 is conn  # shared session
+
+            # First release: session stays up.
+            assert manager.release_session(self.MAC, conn) is None
+            await hass.async_block_till_done()
+            conn.async_disconnect.assert_not_awaited()
+            assert manager.get_session(self.MAC) is conn
+
+            # Second (last) release: session closes.
+            close_task = manager.release_session(self.MAC, conn)
+            assert close_task is not None
+            await close_task
+            conn.async_disconnect.assert_awaited_once()
+            assert manager.get_session(self.MAC) is None
+
+    async def test_release_is_safe_against_double_release(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A stale second release for an already-closed session must be a
+        no-op — it must not decrement a count that now belongs to nobody nor
+        schedule a spurious close."""
+        self._seed(manager)
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_cls:
+            mock_cls.side_effect = lambda *a, **kw: self._make_conn()
+
+            conn = await manager.async_open_session(self.MAC)
+            close_task = manager.release_session(self.MAC, conn)
+            assert close_task is not None
+            await close_task
+
+            # Second release of the same (now closed) reference: no-op.
+            assert manager.release_session(self.MAC, conn) is None
+            await hass.async_block_till_done()
+            conn.async_disconnect.assert_awaited_once()
+
+    async def test_force_close_bypasses_count_and_resets(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """The device-offline transition force-closes the session regardless
+        of how many subscribers hold references, and resets the counter so a
+        later open starts fresh."""
+        self._seed(manager)
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_cls:
+            mock_cls.side_effect = lambda *a, **kw: self._make_conn()
+
+            conn = await manager.async_open_session(self.MAC)
+            await manager.async_open_session(self.MAC)  # count = 2
+
+            # Offline transition routes through schedule_close_session (pinned
+            # by test_state_changed_offline_transition_uses_schedule_close).
+            await manager.schedule_close_session(self.MAC)
+            conn.async_disconnect.assert_awaited_once()
+            assert manager.get_session(self.MAC) is None
+
+            # Counter was reset: a fresh open needs only ONE release to close.
+            conn2 = await manager.async_open_session(self.MAC)
+            assert conn2 is not conn
+            close_task = manager.release_session(self.MAC, conn2)
+            assert close_task is not None
+            await close_task
+            conn2.async_disconnect.assert_awaited_once()
+
+    async def test_stale_release_does_not_close_new_session(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A release carrying a reference to a force-closed connection must
+        not touch the replacement session another subscriber opened — the
+        old reference died with the force-close."""
+        self._seed(manager)
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_cls:
+            mock_cls.side_effect = lambda *a, **kw: self._make_conn()
+
+            conn1 = await manager.async_open_session(self.MAC)
+            await manager.schedule_close_session(self.MAC)  # force close (device offline)
+            conn2 = await manager.async_open_session(self.MAC)
+            assert conn2 is not conn1
+
+            # Stale release for conn1: must not decrement conn2's count.
+            assert manager.release_session(self.MAC, conn1) is None
+            await hass.async_block_till_done()
+            conn2.async_disconnect.assert_not_awaited()
+            assert manager.get_session(self.MAC) is conn2
+
+            # conn2's single reference still closes it.
+            close_task = manager.release_session(self.MAC, conn2)
+            assert close_task is not None
+            await close_task
+            conn2.async_disconnect.assert_awaited_once()
+
+    async def test_async_stop_clears_refcounts(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """async_stop force-closes everything; counters must not survive it."""
+        self._seed(manager)
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_cls:
+            mock_cls.side_effect = lambda *a, **kw: self._make_conn()
+            await manager.async_open_session(self.MAC)
+            await manager.async_open_session(self.MAC)
+
+        await manager.async_stop()
+        assert manager._session_refcounts == {}
+
+    async def test_device_removed_force_closes_with_subscribers(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """_on_device_removed must keep force-closing regardless of count."""
+        self._seed(manager)
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_cls:
+            mock_cls.side_effect = lambda *a, **kw: self._make_conn()
+            conn = await manager.async_open_session(self.MAC)
+            await manager.async_open_session(self.MAC)  # count = 2
+
+            await manager._on_device_removed(self.MAC)
+
+        conn.async_disconnect.assert_awaited_once()
+        assert manager._session_refcounts == {}
+
+
+# ---------------------------------------------------------------------------
 # Zone entity management tests
 # ---------------------------------------------------------------------------
 

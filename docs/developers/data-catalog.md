@@ -107,7 +107,7 @@ Broadcasts the live flashable-devices list (every ESPHome device matching the Ev
 
 ### `subscribe_device` — session lifecycle
 
-Opens the aioesphomeapi connection. Closes on unsubscribe.
+Opens the aioesphomeapi connection. Sessions are refcounted per device: every successful open (`subscribe_device` or `subscribe_ota_progress`, from any client) takes one reference via `DeviceManager.async_open_session`, every unsubscribe releases one via `DeviceManager.release_session`, and the connection only closes when the last reference is released — two panel clients on the same device share one connection and the first unsubscribe doesn't tear down the second client's streams. Force-close paths (device offline transition, device removal, host change, config-entry unload) bypass the count and reset it; stale releases against a force-closed connection are identity-checked no-ops.
 
 **Request:** `{ "type": "eppgrid/subscribe_device", "mac": str }`
 
@@ -227,7 +227,9 @@ Triggers OTA firmware update on a device via the `set_update_manifest` API actio
 
 ### `subscribe_ota_progress`
 
-Subscribes to OTA firmware update progress for a device. Opens a session if needed. Subscribes to ESPHome `UpdateState` entity changes and device log messages to forward progress, success, and error events to the frontend. Uses a shared `done` flag so only one terminal event (success or error) is sent.
+Subscribes to OTA firmware update progress for a device. Takes one refcounted session reference via `async_open_session` (shared with `subscribe_device` — see the session-lifecycle section). Subscribes to ESPHome `UpdateState` entity changes and device log messages to forward progress, success, and error events to the frontend. Uses a shared `done` flag so only one terminal event (success or error) is sent.
+
+N concurrent OTA watchers on the same device share ONE device log subscription and ONE `epp_set_log_level` bump (tracked as `ota_watchers` / `ota_started_log_sub` / `ota_bumped_log_level` on the `DeviceConnection`); the bump is reverted to the stored level — and the log subscription dropped — only when the last watcher unsubscribes, and skipped entirely when that release also closes the session.
 
 **Request:** `{ "type": "eppgrid/subscribe_ota_progress", "mac": str }`
 
@@ -236,7 +238,7 @@ Subscribes to OTA firmware update progress for a device. Opens a session if need
 - `{ "state": "success", "version": str }` — update complete, versions match
 - `{ "state": "error", "message": str }` — update failed (log error, version mismatch, or connection lost)
 
-The handler also monitors device log messages for `http_request.ota` and `http_request.update` errors, forwarding the actual error message immediately. Closes the session on unsubscribe if it was opened by this handler.
+The handler also monitors device log messages for `http_request.ota` and `http_request.update` errors, forwarding the actual error message immediately. Unsubscribe releases the session reference; the manager closes the connection when no other subscriber holds one.
 
 ### Firmware Version Guard
 

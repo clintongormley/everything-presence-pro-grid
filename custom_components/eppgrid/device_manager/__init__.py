@@ -112,6 +112,12 @@ class DeviceManager:
         self._build_flags: dict[str, dict[str, Any]] = {}
         # One connection per device, kept alive for the frontend session
         self._active_connections: dict[str, DeviceConnection] = {}
+        # Subscriber references to `_active_connections[mac]`. Incremented by
+        # every successful async_open_session, decremented by release_session;
+        # the session closes only when the LAST reference is released. Force-
+        # close paths (device offline/removed, shutdown) bypass the count and
+        # reset it — the session is dead regardless of who holds references.
+        self._session_refcounts: dict[str, int] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}
         # Serializes `_push_config_to_device` per mac. Without this, the
         # firmware_version-arrival re-spawn in `_on_state_changed` could
@@ -400,6 +406,7 @@ class DeviceManager:
                 return_exceptions=True,
             )
         self._active_connections.clear()
+        self._session_refcounts.clear()
 
     async def async_trigger_ota(self, mac: str) -> None:
         """Trigger firmware OTA update on a device.
@@ -1292,7 +1299,12 @@ class DeviceManager:
 
     async def async_open_session(self, mac: str) -> DeviceConnection | None:
         """Open a persistent connection for a frontend session.
-        Returns the connection, or None if the device is not available."""
+
+        Returns the connection, or None if the device is not available.
+        Each successful call takes one subscriber reference on the session
+        (see `_session_refcounts`); callers must pair it with exactly one
+        `release_session(mac, conn)` when they no longer need the session.
+        """
         dev = self.devices.get(mac)
         if dev is None or dev.host is None:
             return None
@@ -1314,8 +1326,15 @@ class DeviceManager:
             if mac in self._active_connections:
                 conn = self._active_connections[mac]
                 if conn.connected:
+                    self._session_refcounts[mac] = self._session_refcounts.get(mac, 0) + 1
                     return conn
-                # Stale connection — clean up
+                # Stale connection — clean up. Pop it from the active map AND
+                # drop its refcount BEFORE the disconnect await: references to
+                # the dead conn died with it, and a release_session arriving
+                # mid-replacement must identity-mismatch (no-op) rather than
+                # decrement the count that belongs to the fresh conn below.
+                self._active_connections.pop(mac, None)
+                self._session_refcounts.pop(mac, None)
                 await conn.async_disconnect()
             conn = DeviceConnection(
                 dev.host,
@@ -1330,6 +1349,7 @@ class DeviceManager:
                 await conn.async_disconnect()
                 return None
             self._active_connections[mac] = conn
+            self._session_refcounts[mac] = self._session_refcounts.get(mac, 0) + 1
             _LOGGER.info("Opened session for %s (%s)", dev.name, mac)
             # Subscribe to device logs if log levels are configured
             config = self._store.devices.get(mac)
@@ -1337,8 +1357,36 @@ class DeviceManager:
                 self._manage_log_subscription(conn, config)
             return conn
 
+    @callback
+    def release_session(self, mac: str, conn: DeviceConnection) -> asyncio.Task | None:
+        """Release one subscriber reference to the active session for `mac`.
+
+        `conn` must be the connection the caller got back from
+        `async_open_session`. When it is no longer the active session — a
+        force-close (device offline/removed, shutdown) or stale-replacement
+        already invalidated the reference — the release is a no-op: the
+        count now belongs to whoever opened the replacement session.
+
+        Returns the scheduled close task when this release was the last
+        reference (the session is now closing); None otherwise.
+        """
+        if self._active_connections.get(mac) is not conn:
+            return None
+        count = self._session_refcounts.get(mac, 0)
+        if count > 1:
+            self._session_refcounts[mac] = count - 1
+            return None
+        self._session_refcounts.pop(mac, None)
+        return self.schedule_close_session(mac)
+
     async def async_close_session(self, mac: str) -> None:
-        """Close the frontend session connection for a device.
+        """Force-close the frontend session connection for a device.
+
+        Bypasses the subscriber refcount and resets it — callers (device
+        removed, device offline, host changed, push failure, shutdown) use
+        this when the session is dead regardless of who holds references.
+        Outstanding `release_session` calls for the closed connection
+        no-op via the identity check.
 
         Acquires the per-mac session lock so a close issued concurrently
         with an in-flight open serializes after it. Without the lock, close
@@ -1349,6 +1397,7 @@ class DeviceManager:
         lock = self._session_locks.setdefault(mac, asyncio.Lock())
         async with lock:
             conn = self._active_connections.pop(mac, None)
+            self._session_refcounts.pop(mac, None)
             if conn is not None:
                 await conn.async_disconnect()
                 dev = self.devices.get(mac)
@@ -1357,7 +1406,10 @@ class DeviceManager:
 
     @callback
     def schedule_close_session(self, mac: str) -> asyncio.Task:
-        """Schedule async_close_session as a tracked task for the given mac.
+        """Schedule async_close_session (a force-close) as a tracked task.
+
+        Like async_close_session this bypasses the subscriber refcount and
+        resets it — multi-subscriber callers want `release_session` instead.
 
         Subsequent async_open_session calls for the same mac await this task
         before opening a fresh session — otherwise a quick close→reopen

@@ -549,9 +549,20 @@ async def websocket_subscribe_device(
     manager._connection_failed.discard(mac)
     connection.send_result(msg["id"])
 
+    released = False
+
     @callback
     def _unsub() -> None:
-        manager.schedule_close_session(mac)
+        # Release (not force-close) the session reference this subscriber
+        # took via async_open_session: other clients subscribed to the same
+        # device share the connection, and the manager only closes it when
+        # the last reference is released. The `released` guard keeps a
+        # double-invoked unsub from stealing someone else's reference.
+        nonlocal released
+        if released:
+            return
+        released = True
+        manager.release_session(mac, device_conn)
 
     connection.subscriptions[msg["id"]] = _unsub
 

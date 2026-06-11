@@ -75,15 +75,28 @@ async def websocket_subscribe_ota_progress(
 ) -> None:
     """Subscribe to OTA firmware update progress for a device."""
     mac = msg["mac"]
-    device_conn = manager.get_session(mac)
-    had_session = device_conn is not None
+    # Always go through async_open_session: it returns the existing session
+    # when one is active and takes one subscriber reference either way, so
+    # this watcher and any subscribe_device clients share the connection and
+    # the manager only closes it when the LAST reference is released.
+    device_conn = None
+    with contextlib.suppress(Exception):
+        device_conn = await manager.async_open_session(mac)
     if device_conn is None:
-        with contextlib.suppress(Exception):
-            device_conn = await manager.async_open_session(mac)
-    if device_conn is None or device_conn._client is None:
-        # `_client is None` means the connection raced to close between the
-        # session lookup and here; treat it the same as "no session" rather
-        # than letting subsequent execute_service calls AttributeError.
+        connection.send_error(
+            msg["id"],
+            "no_session",
+            "Device not available",
+            translation_domain=DOMAIN,
+            translation_key="device_not_available",
+        )
+        return
+    if device_conn._client is None:
+        # The connection raced to close between the open and here; treat it
+        # the same as "no session" rather than letting subsequent
+        # execute_service calls AttributeError — but release the reference
+        # the open just took, or the dead session's refcount never drains.
+        manager.release_session(mac, device_conn)
         connection.send_error(
             msg["id"],
             "no_session",
@@ -106,29 +119,33 @@ async def websocket_subscribe_ota_progress(
     # Ensure device logs are subscribed so _on_log callbacks fire
     from aioesphomeapi import LogLevel as ESPLogLevel
 
-    started_log_sub = device_conn._unsub_logs is None
-    if started_log_sub:
-        device_conn.subscribe_logs(ESPLogLevel.LOG_LEVEL_ERROR)
+    # Shared watcher state lives on the DeviceConnection: N concurrent OTA
+    # watchers (two tabs, two users) share ONE device log subscription and
+    # ONE log-level bump, reverted only when the last watcher releases.
+    device_conn.ota_watchers += 1
+    if device_conn.ota_watchers == 1:
+        if device_conn._unsub_logs is None:
+            device_conn.subscribe_logs(ESPLogLevel.LOG_LEVEL_ERROR)
+            device_conn.ota_started_log_sub = True
 
-    # Firmware silences the ESPHome logger to NONE on boot, so even ERROR
-    # messages from http_request.ota / http_request.update never leave the
-    # device — the subscribe-logs surface above reads nothing. Bump the
-    # system log level to Error here so OTA failures actually reach the
-    # frontend. Older firmware that doesn't expose this action is left
-    # alone (older firmware also doesn't silence to NONE, so it works).
-    bumped_log_level = False
-    try:
-        await device_conn.async_execute_service(
-            "epp_set_log_level",
-            {"category": _OTA_LOG_CATEGORY, "level": _OTA_LOG_LEVEL},
-        )
-        bumped_log_level = True
-    except HomeAssistantError:
-        # Older firmware doesn't expose epp_set_log_level — fine; the
-        # ESPHome OTA logger isn't silenced on those builds anyway.
-        _LOGGER.debug("Device %s does not expose epp_set_log_level", mac)
-    except Exception:
-        _LOGGER.debug("Failed to bump device log level for OTA visibility", exc_info=True)
+        # Firmware silences the ESPHome logger to NONE on boot, so even ERROR
+        # messages from http_request.ota / http_request.update never leave the
+        # device — the subscribe-logs surface above reads nothing. Bump the
+        # system log level to Error here so OTA failures actually reach the
+        # frontend. Older firmware that doesn't expose this action is left
+        # alone (older firmware also doesn't silence to NONE, so it works).
+        try:
+            await device_conn.async_execute_service(
+                "epp_set_log_level",
+                {"category": _OTA_LOG_CATEGORY, "level": _OTA_LOG_LEVEL},
+            )
+            device_conn.ota_bumped_log_level = True
+        except HomeAssistantError:
+            # Older firmware doesn't expose epp_set_log_level — fine; the
+            # ESPHome OTA logger isn't silenced on those builds anyway.
+            _LOGGER.debug("Device %s does not expose epp_set_log_level", mac)
+        except Exception:
+            _LOGGER.debug("Failed to bump device log level for OTA visibility", exc_info=True)
 
     @callback
     def _arm_timer() -> None:
@@ -267,10 +284,6 @@ async def websocket_subscribe_ota_progress(
             )
         )
 
-    await device_conn.subscribe_states(_on_state)
-    device_conn.add_log_callback(_on_log)
-    connection.send_result(msg["id"])
-
     async def _async_revert_log_level() -> None:
         # Restore the firmware's `system` category to whatever the user has
         # configured (or "None" if unconfigured). Without this, the device
@@ -284,20 +297,64 @@ async def websocket_subscribe_ota_progress(
         except Exception:
             _LOGGER.debug("Failed to revert device log level after OTA", exc_info=True)
 
+    def _release_watcher() -> None:
+        """Drop this watcher's shared state + session reference.
+
+        The LAST watcher reverts the shared log-level bump and tears down
+        the log subscription it started — unless its release also closed
+        the session (no other subscribers), in which case the teardown is
+        moot: the connection is going away with everything we bumped.
+        """
+        device_conn.ota_watchers -= 1
+        last_watcher = device_conn.ota_watchers <= 0
+        bumped = started = False
+        if last_watcher:
+            device_conn.ota_watchers = 0
+            bumped = device_conn.ota_bumped_log_level
+            started = device_conn.ota_started_log_sub
+            device_conn.ota_bumped_log_level = False
+            device_conn.ota_started_log_sub = False
+        closing = manager.release_session(mac, device_conn)
+        if not last_watcher or closing is not None:
+            return
+        if bumped:
+            hass.async_create_task(_async_revert_log_level())
+        if started:
+            device_conn.unsubscribe_logs()
+
+    try:
+        await device_conn.subscribe_states(_on_state)
+    except Exception:
+        # Connection raced to close after the bump — undo this watcher's
+        # contributions (revert the bump / drop the log sub if we're the
+        # last watcher, release the session reference) before erroring out.
+        _LOGGER.debug("Failed to subscribe to states for OTA progress on %s", mac, exc_info=True)
+        _release_watcher()
+        connection.send_error(
+            msg["id"],
+            "no_session",
+            "Device not available",
+            translation_domain=DOMAIN,
+            translation_key="device_not_available",
+        )
+        return
+    device_conn.add_log_callback(_on_log)
+    connection.send_result(msg["id"])
+
+    released = False
+
     @callback
     def _unsub() -> None:
+        nonlocal released
+        if released:
+            # Guard the shared counters against a double-invoked unsub —
+            # a second decrement would steal another watcher's reference.
+            return
+        released = True
         _cancel_timer()
         device_conn.unsubscribe_states(_on_state)
         device_conn.remove_log_callback(_on_log)
-        if not had_session:
-            # Closing the session tears down the connection — anything we
-            # bumped on the device side is moot; skip the revert.
-            manager.schedule_close_session(mac)
-            return
-        if bumped_log_level:
-            hass.async_create_task(_async_revert_log_level())
-        if started_log_sub:
-            device_conn.unsubscribe_logs()
+        _release_watcher()
 
     connection.subscriptions[msg["id"]] = _unsub
 
