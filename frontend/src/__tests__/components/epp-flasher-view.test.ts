@@ -323,6 +323,110 @@ describe("render() browser warning", () => {
 
 		expect(c.querySelector(".browser-warning")).toBeNull();
 	});
+
+	it("disables both USB action cards without Web Serial", async () => {
+		// Previously the warning rendered but the cards stayed clickable, so
+		// users reached the variant picker and hit a navigator.serial
+		// undefined error.
+		const el = createView();
+		(el as any)._hasWebSerial = false;
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const cards = el.shadowRoot!.querySelectorAll(".usb-action");
+		expect(cards.length).toBe(2);
+		for (const card of cards) {
+			expect(card.classList.contains("usb-action-disabled")).toBe(true);
+			expect(card.getAttribute("aria-disabled")).toBe("true");
+		}
+
+		let wifiConfigFired = false;
+		el.addEventListener("usb-wifi-config", () => {
+			wifiConfigFired = true;
+		});
+		(cards[0] as HTMLElement).click();
+		(cards[1] as HTMLElement).click();
+		expect((el as any)._showUsbFlash).toBe(false);
+		expect(wifiConfigFired).toBe(false);
+	});
+
+	it("keeps USB action cards enabled with Web Serial", async () => {
+		const el = createView();
+		(el as any)._hasWebSerial = true;
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const cards = el.shadowRoot!.querySelectorAll(".usb-action");
+		for (const card of cards) {
+			expect(card.classList.contains("usb-action-disabled")).toBe(false);
+		}
+		(cards[0] as HTMLElement).click();
+		expect((el as any)._showUsbFlash).toBe(true);
+	});
+});
+
+describe("OTA error popover dismissal", () => {
+	function openPopover(): { el: EppFlasherView; icon: HTMLElement } {
+		const el = createView({
+			flashableDevices: [updatableDevice],
+			otaStates: {
+				[updatableDevice.mac]: {
+					state: "error",
+					progress: null,
+					errorKey: "flasher.errors.update_failed_generic",
+				},
+			},
+		});
+		const c = renderTo((el as any).render());
+		document.body.appendChild(el);
+		const icon = c.querySelector(".ota-error-icon") as HTMLElement;
+		icon.dispatchEvent(new Event("click"));
+		return { el, icon };
+	}
+
+	it("Escape closes an open error popover", () => {
+		const { el } = openPopover();
+		expect((el as any)._errorPopoverMac).toBe(updatableDevice.mac);
+
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+		expect((el as any)._errorPopoverMac).toBeNull();
+	});
+
+	it("outside pointerdown closes an open error popover", () => {
+		const { el } = openPopover();
+		expect((el as any)._errorPopoverMac).toBe(updatableDevice.mac);
+
+		document.body.dispatchEvent(
+			new Event("pointerdown", { bubbles: true, composed: true }),
+		);
+		expect((el as any)._errorPopoverMac).toBeNull();
+	});
+
+	it("pointerdown inside the error indicator does not dismiss (toggle owns it)", () => {
+		const { el, icon } = openPopover();
+
+		icon.dispatchEvent(
+			new Event("pointerdown", { bubbles: true, composed: true }),
+		);
+		expect((el as any)._errorPopoverMac).toBe(updatableDevice.mac);
+	});
+
+	it("scroll closes an open error popover", () => {
+		const { el } = openPopover();
+
+		window.dispatchEvent(new Event("scroll"));
+		expect((el as any)._errorPopoverMac).toBeNull();
+	});
+
+	it("disconnect detaches the dismissal listeners", () => {
+		const { el } = openPopover();
+		document.body.removeChild(el);
+
+		// Re-set state manually; a leaked listener would null it again.
+		(el as any)._errorPopoverMac = updatableDevice.mac;
+		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+		expect((el as any)._errorPopoverMac).toBe(updatableDevice.mac);
+	});
 });
 
 describe("event dispatching", () => {
@@ -351,6 +455,7 @@ describe("event dispatching", () => {
 
 	it("_onUsbConnect sets _showUsbFlash to true", () => {
 		const el = createView();
+		(el as any)._hasWebSerial = true;
 		expect((el as any)._showUsbFlash).toBe(false);
 		(el as any)._onUsbConnect();
 		expect((el as any)._showUsbFlash).toBe(true);
@@ -358,6 +463,7 @@ describe("event dispatching", () => {
 
 	it("_dispatchUsbWifiConfig dispatches usb-wifi-config event", () => {
 		const el = createView();
+		(el as any)._hasWebSerial = true;
 		const events: Event[] = [];
 		el.addEventListener("usb-wifi-config", (e) => events.push(e));
 		(el as any)._dispatchUsbWifiConfig();
@@ -367,7 +473,7 @@ describe("event dispatching", () => {
 	it("@closed handler on ha-select stops propagation", () => {
 		const el = createView({
 			wifiNetworks: [{ ssid: "TestNet", rssi: -50, authRequired: true }],
-			_showWifiProvisioning: true,
+			usbFlashState: { step: "wifi_provision" },
 		});
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
@@ -500,75 +606,23 @@ describe("event dispatching", () => {
 	});
 });
 
-describe("render() WiFi provisioning — connected state", () => {
-	it("renders wifi provisioning view when _showWifiProvisioning is true", () => {
+// The old "connected confirmation" screen (driven by _wifiConnected /
+// _deviceIp / wifi-complete) was unreachable in production — real success
+// flows through usbFlashState.step ("wifi_configured" → "complete"), which
+// is covered by the state-driven tests below.
+describe("render() WiFi provisioning", () => {
+	it("renders the wifi form when usbFlashState.step is wifi_provision", () => {
 		const el = createView();
 		(el as any).usbFlashState = { step: "wifi_provision" };
-		(el as any)._wifiConnected = false;
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
 		expect(c.querySelector(".wifi-form")).not.toBeNull();
 	});
 
-	it("shows connected network and IP when _wifiConnected=true", () => {
+	it("shows scan button", () => {
 		const el = createView();
-		el.localize = Object.assign(
-			((k: string, params?: Record<string, string | number>) => {
-				if (k === "flasher.connected_to" && params)
-					return `Connected to ${params.ssid}`;
-				if (k === "flasher.ip_address" && params) return `IP: ${params.ip}`;
-				return k;
-			}) as typeof el.localize,
-			{ formatNumber: (v: number, d = 1) => v.toFixed(d), lang: "en" },
-		);
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = true;
-		(el as any)._selectedSsid = "MyNetwork";
-		(el as any)._deviceIp = "192.168.1.50";
-		const tpl = (el as any).render();
-		const c = renderTo(tpl);
-
-		expect(c.textContent).toContain("MyNetwork");
-		expect(c.textContent).toContain("192.168.1.50");
-	});
-
-	it("shows Continue button when connected", () => {
-		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = true;
-		(el as any)._selectedSsid = "MyNetwork";
-		(el as any)._deviceIp = "192.168.1.50";
-		const tpl = (el as any).render();
-		const c = renderTo(tpl);
-
-		expect(
-			c.querySelector('.confirm-actions ha-button[appearance="accent"]'),
-		).not.toBeNull();
-	});
-
-	it("dispatches wifi-complete when Continue clicked", async () => {
-		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = true;
-		(el as any)._selectedSsid = "MyNetwork";
-		(el as any)._deviceIp = "192.168.1.50";
-		document.body.appendChild(el);
-		await el.updateComplete;
-
-		const events: Event[] = [];
-		el.addEventListener("wifi-complete", (e) => events.push(e));
-
-		(el as any)._dispatchWifiComplete();
-		expect(events.length).toBe(1);
-	});
-});
-
-describe("render() WiFi provisioning — not connected state", () => {
-	it("shows scan button when not connected", () => {
-		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
@@ -579,8 +633,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("shows network dropdown when networks available", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any).wifiNetworks = [
 			{ ssid: "NetworkA", rssi: -50, authRequired: true },
 			{ ssid: "NetworkB", rssi: -70, authRequired: false },
@@ -596,8 +649,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("sorts networks by signal strength (strongest first)", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any).wifiNetworks = [
 			{ ssid: "Weak", rssi: -90, authRequired: false },
 			{ ssid: "Strong", rssi: -40, authRequired: false },
@@ -615,8 +667,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("shows wifi strength + lock iconPath for networks", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any).wifiNetworks = [
 			{ ssid: "Strong", rssi: -45, authRequired: true },
 			{ ssid: "Weak", rssi: -80, authRequired: false },
@@ -635,8 +686,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("maps RSSI to different wifi strength icon paths", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any).wifiNetworks = [
 			{ ssid: "Excellent", rssi: -40, authRequired: false },
 			{ ssid: "Good", rssi: -60, authRequired: false },
@@ -661,8 +711,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("shows manual SSID toggle", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
@@ -671,8 +720,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("shows manual SSID text input when _manualSsid=true", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._manualSsid = true;
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
@@ -684,8 +732,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("does not show manual SSID text input when _manualSsid=false", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._manualSsid = false;
 		(el as any).wifiNetworks = [
 			{ ssid: "TestNet", rssi: -50, authRequired: false },
@@ -698,8 +745,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("shows password field", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
@@ -708,8 +754,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("renders ha-input when registered, ha-textfield otherwise", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._manualSsid = true;
 
 		const fallbackContainer = renderTo((el as any).render());
@@ -734,8 +779,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("shows Configure WiFi button", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
@@ -746,8 +790,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("Configure WiFi button is disabled when no SSID selected", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._selectedSsid = "";
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
@@ -760,8 +803,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("Configure WiFi button is enabled when SSID is selected", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._selectedSsid = "MyNetwork";
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
@@ -774,8 +816,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("dispatches wifi-scan event when Scan clicked", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		document.body.appendChild(el);
 		await el.updateComplete;
 
@@ -788,8 +829,7 @@ describe("render() WiFi provisioning — not connected state", () => {
 
 	it("dispatches wifi-provision event with ssid and password", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._selectedSsid = "HomeNet";
 		(el as any)._wifiPassword = "secret123";
 		document.body.appendChild(el);
@@ -806,11 +846,28 @@ describe("render() WiFi provisioning — not connected state", () => {
 		});
 	});
 
-	it("shows scanning indicator when _wifiScanning=true", () => {
+	it("clears _wifiPassword after dispatching wifi-provision", async () => {
+		// The password used to survive in component state until the user
+		// cancelled — clear it as soon as it has been handed to the
+		// provisioning flow.
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
-		(el as any)._wifiScanning = true;
+		(el as any)._selectedSsid = "HomeNet";
+		(el as any)._wifiPassword = "secret123";
+
+		const events: Event[] = [];
+		el.addEventListener("wifi-provision", (e) => events.push(e));
+
+		(el as any)._dispatchWifiProvision();
+
+		// The event detail still carries the password…
+		expect((events[0] as CustomEvent).detail.password).toBe("secret123");
+		// …but the component no longer retains it.
+		expect((el as any)._wifiPassword).toBe("");
+	});
+
+	it("renders a static Scan label (scanning progress is a usbFlashState step)", () => {
+		const el = createView();
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
@@ -820,15 +877,14 @@ describe("render() WiFi provisioning — not connected state", () => {
 		);
 		const scanBtn = nonRaisedBtns[1] as HTMLElement;
 		expect(scanBtn).not.toBeNull();
-		expect(scanBtn.textContent?.trim()).toContain("flasher.scanning");
+		expect(scanBtn.textContent?.trim()).toContain("flasher.scan");
 	});
 });
 
 describe("WiFi provisioning DOM event handlers", () => {
 	it("wifi network select change updates _selectedSsid", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any).wifiNetworks = [
 			{ ssid: "NetworkA", rssi: -50, authRequired: false },
 		];
@@ -847,8 +903,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("manual SSID checkbox change toggles _manualSsid and clears SSID when unchecked", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._manualSsid = false;
 		(el as any)._selectedSsid = "SomeNetwork";
 		document.body.appendChild(el);
@@ -873,8 +928,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("manual SSID text input updates _selectedSsid", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._manualSsid = true;
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -891,8 +945,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("clears _wifiPassword when SSID changes via dropdown selection", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._selectedSsid = "OldNet";
 		(el as any)._wifiPassword = "oldpass";
 		(el as any).wifiNetworks = [
@@ -913,8 +966,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("clears _wifiPassword when manual SSID checkbox is toggled", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._manualSsid = false;
 		(el as any)._selectedSsid = "Whatever";
 		(el as any)._wifiPassword = "pw";
@@ -930,7 +982,6 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("clears _wifiPassword on cancel", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
 		(el as any)._wifiPassword = "secret";
 		(el as any)._dispatchCancel();
 		expect((el as any)._wifiPassword).toBe("");
@@ -938,8 +989,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("password input updates _wifiPassword", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		document.body.appendChild(el);
 		await el.updateComplete;
 
@@ -953,8 +1003,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("password field is type=password by default with show-password toggle unchecked", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
@@ -968,8 +1017,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("password field becomes type=text when _showPassword=true", () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		(el as any)._showPassword = true;
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
@@ -984,8 +1032,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 
 	it("show-password checkbox toggles _showPassword", async () => {
 		const el = createView();
-		(el as any)._showWifiProvisioning = true;
-		(el as any)._wifiConnected = false;
+		(el as any).usbFlashState = { step: "wifi_provision" };
 		document.body.appendChild(el);
 		await el.updateComplete;
 
@@ -1293,33 +1340,15 @@ describe("wifi_configured state", () => {
 		const c = renderTo(tpl);
 
 		expect(c.textContent).toContain("192.168.1.42");
+		// ha-spinner isn't registered in this environment, so the guarded
+		// helper falls back to the legacy ha-circular-progress (the ha-spinner
+		// branch is covered in ha-registered-controls.test.ts).
 		expect(c.querySelector("ha-circular-progress")).toBeTruthy();
+		expect(c.querySelector("ha-spinner")).toBeNull();
 		// Should show only a Cancel button in this transient state
 		expect(c.querySelectorAll("ha-button").length).toBe(1);
 		expect(c.querySelector("ha-button")!.textContent).toContain(
 			"flasher.cancel",
-		);
-	});
-});
-
-describe("_getManifestUrl", () => {
-	it("returns correct URL for wifi variant", () => {
-		const el = createView();
-		(el as any)._selectedVariant = "wifi";
-		(el as any).firmwareBaseUrl = "https://example.com/fw";
-		const url = (el as any)._getManifestUrl();
-		expect(url).toBe(
-			"https://example.com/fw/everything-presence-pro-wifi-ble-co2-manifest.json",
-		);
-	});
-
-	it("returns correct URL for ethernet variant", () => {
-		const el = createView();
-		(el as any)._selectedVariant = "ethernet";
-		(el as any).firmwareBaseUrl = "https://example.com/fw";
-		const url = (el as any)._getManifestUrl();
-		expect(url).toBe(
-			"https://example.com/fw/everything-presence-pro-ethernet-ble-co2-manifest.json",
 		);
 	});
 });

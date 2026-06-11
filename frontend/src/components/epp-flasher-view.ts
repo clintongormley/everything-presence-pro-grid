@@ -11,6 +11,7 @@ import {
 import { css, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { literal, html as staticHtml } from "lit/static-html.js";
+import { DocumentListenerGroup } from "../lib/document-listeners.js";
 import type { WifiNetwork } from "../lib/improv-serial.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 import type {
@@ -298,6 +299,15 @@ const flasherStyles = css`
     background: var(--secondary-background-color, #f5f5f5);
   }
 
+  .usb-action-disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .usb-action-disabled:hover {
+    background: inherit;
+  }
+
   .usb-action ha-icon {
     --mdc-icon-size: 28px;
     color: var(--primary-color, #03a9f4);
@@ -331,16 +341,6 @@ const flasherStyles = css`
     background: var(--primary-color, #03a9f4);
     color: var(--text-primary-color, #fff);
     flex-shrink: 0;
-  }
-
-  .usb-flash-iframe {
-    display: block;
-    width: 100%;
-    height: 500px;
-    border: 1px solid var(--divider-color, #e0e0e0);
-    border-radius: 12px;
-    margin: 16px 0;
-    background: var(--card-background-color, #fff);
   }
 
   .browser-warning {
@@ -535,7 +535,6 @@ export class EppFlasherView extends LitElement {
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
 
 	@state() private _selectedVariant: "wifi" | "ethernet" = "wifi";
-	@property() firmwareBaseUrl = "";
 	@property() firmwareVersion = "";
 	@property() integrationVersion = "";
 	@property({ attribute: false }) usbFlashState: UsbFlashState | null = null;
@@ -549,15 +548,12 @@ export class EppFlasherView extends LitElement {
 	@state() private _showUsbFlash = false;
 	@state() private _cancelling = false;
 
-	// WiFi provisioning state
-	@state() private _wifiScanning = false;
+	// WiFi provisioning state (the provisioning screen itself is driven by
+	// usbFlashState.step === "wifi_provision" from the controller)
 	@state() private _selectedSsid = "";
 	@state() private _manualSsid = false;
 	@state() private _wifiPassword = "";
 	@state() private _showPassword = false;
-	@state() private _wifiConnected = false;
-	@state() private _deviceIp: string | null = null;
-	@state() private _showWifiProvisioning = false;
 
 	@state() private _errorPopoverMac: string | null = null;
 
@@ -571,13 +567,65 @@ export class EppFlasherView extends LitElement {
 		);
 	}
 
+	// --- OTA error popover dismissal -------------------------------------
+	// Global listeners live only while the popover is open: Escape, a
+	// pointerdown outside the error indicator, or a scroll dismisses it
+	// (matching the settings-view tooltip behaviour).
+
+	private _closeErrorPopover = (): void => {
+		if (this._errorPopoverMac !== null) this._errorPopoverMac = null;
+		this._popoverListeners.detach();
+	};
+
+	private _onPopoverKeydown = (e: Event): void => {
+		if ((e as KeyboardEvent).key === "Escape") this._closeErrorPopover();
+	};
+
+	private _onPopoverPointerDown = (e: Event): void => {
+		// Pointerdowns inside the error indicator (icon/popover/retry) are
+		// owned by the click toggle — dismissing here too would make the
+		// subsequent toggle click re-open the popover instead of closing it.
+		const insideIndicator = e
+			.composedPath()
+			.some(
+				(el) => el instanceof HTMLElement && el.classList.contains("ota-error"),
+			);
+		if (!insideIndicator) this._closeErrorPopover();
+	};
+
+	private _popoverListeners = new DocumentListenerGroup([
+		{ target: document, type: "keydown", listener: this._onPopoverKeydown },
+		{
+			target: document,
+			type: "pointerdown",
+			listener: this._onPopoverPointerDown,
+			options: true,
+		},
+		{
+			target: window,
+			type: "scroll",
+			listener: this._closeErrorPopover,
+			options: true,
+		},
+	]);
+
+	disconnectedCallback(): void {
+		super.disconnectedCallback();
+		this._popoverListeners.detach();
+	}
+
 	private _toggleErrorPopover(e: Event, mac: string): void {
 		e.stopPropagation();
-		this._errorPopoverMac = this._errorPopoverMac === mac ? null : mac;
+		if (this._errorPopoverMac === mac) {
+			this._closeErrorPopover();
+		} else {
+			this._errorPopoverMac = mac;
+			this._popoverListeners.attach();
+		}
 	}
 
 	private _dispatchRetryOta(device: FlashableDevice): void {
-		this._errorPopoverMac = null;
+		this._closeErrorPopover();
 		this.dispatchEvent(
 			new CustomEvent("retry-ota", {
 				detail: { mac: device.mac },
@@ -640,6 +688,7 @@ export class EppFlasherView extends LitElement {
 	}
 
 	private _onUsbConnect(): void {
+		if (!this._hasWebSerial) return;
 		this._showUsbFlash = true;
 	}
 
@@ -732,18 +781,16 @@ export class EppFlasherView extends LitElement {
 	}
 
 	private _dispatchWifiProvision(): void {
+		const detail = { ssid: this._selectedSsid, password: this._wifiPassword };
+		// Don't retain the password once it's been handed to the
+		// provisioning flow — it only lived on for a re-submit convenience.
+		this._wifiPassword = "";
 		this.dispatchEvent(
 			new CustomEvent("wifi-provision", {
-				detail: { ssid: this._selectedSsid, password: this._wifiPassword },
+				detail,
 				bubbles: true,
 				composed: true,
 			}),
-		);
-	}
-
-	private _dispatchWifiComplete(): void {
-		this.dispatchEvent(
-			new CustomEvent("wifi-complete", { bubbles: true, composed: true }),
 		);
 	}
 
@@ -752,28 +799,6 @@ export class EppFlasherView extends LitElement {
 	}
 
 	private _renderWifiProvisioning() {
-		if (this._wifiConnected) {
-			return html`
-        <div class="flasher-content">
-          <ha-card>
-            <div class="card-header">${this.localize("flasher.configure_wifi")}</div>
-            <div class="card-content">
-              <div class="usb-complete">
-                <ha-icon icon="mdi:wifi-check"></ha-icon>
-                <p>${this.localize("flasher.connected_to", { ssid: this._selectedSsid })}</p>
-                ${this._deviceIp ? html`<p class="usb-ip">${this.localize("flasher.ip_address", { ip: this._deviceIp })}</p>` : nothing}
-              </div>
-              <div class="confirm-actions">
-                <ha-button appearance="accent" @click=${this._dispatchWifiComplete}>
-                  ${this.localize("flasher.continue")}
-                </ha-button>
-              </div>
-            </div>
-          </ha-card>
-        </div>
-      `;
-		}
-
 		const sortedNetworks = [...this.wifiNetworks].sort(
 			(a, b) => b.rssi - a.rssi,
 		);
@@ -868,7 +893,7 @@ export class EppFlasherView extends LitElement {
             <div class="confirm-actions">
               ${this._renderCancelButton()}
               <ha-button @click=${this._dispatchWifiScan}>
-                ${this._wifiScanning ? this.localize("flasher.scanning") : this.localize("flasher.scan")}
+                ${this.localize("flasher.scan")}
               </ha-button>
               <ha-button
                 appearance="accent"
@@ -882,6 +907,59 @@ export class EppFlasherView extends LitElement {
         </ha-card>
       </div>
     `;
+	}
+
+	/**
+	 * Compute the status badges and the trailing action for one device row.
+	 * Badges render in a fixed order (offline, online, original, ahead) and
+	 * several can apply at once (e.g. an offline original-firmware device).
+	 */
+	private _deviceRowDescriptor(device: FlashableDevice): {
+		badges: { cls: string; label: string }[];
+		action: unknown;
+	} {
+		const badges: { cls: string; label: string }[] = [];
+		const ota = this.otaStates[device.mac];
+		const isEppgrid = device.firmware_type === "eppgrid";
+
+		if (!device.available) {
+			badges.push({ cls: "firmware-badge-offline", label: "flasher.offline" });
+		}
+		if (
+			isEppgrid &&
+			device.available &&
+			!ota &&
+			!device.update_available &&
+			(device.firmware_status === "compatible" ||
+				device.firmware_status === "firmware_ahead")
+		) {
+			badges.push({ cls: "firmware-badge-online", label: "flasher.online" });
+		}
+		if (device.firmware_type === "original") {
+			badges.push({
+				cls: "firmware-badge-original",
+				label: "flasher.flash_usb",
+			});
+		}
+		if (isEppgrid && device.firmware_status === "firmware_ahead") {
+			badges.push({
+				cls: "firmware-badge-ahead",
+				label: "flasher.integration_update",
+			});
+		}
+
+		const action = ota
+			? this._renderOtaIndicator(device)
+			: isEppgrid &&
+					(device.update_available ||
+						device.firmware_status === "firmware_behind")
+				? html`<ha-button
+							appearance="accent"
+							@click=${() => this._dispatchUpdateFirmware(device)}
+						>${this.localize("flasher.update")}</ha-button>`
+				: nothing;
+
+		return { badges, action };
 	}
 
 	private _renderDeviceList() {
@@ -924,6 +1002,8 @@ export class EppFlasherView extends LitElement {
                   ${flashableDevices.map((device) => {
 										const isFaded =
 											!device.available || device.firmware_type === "original";
+										const { badges, action } =
+											this._deviceRowDescriptor(device);
 										return html`
                       <div class="device-row">
                         <div class="device-info${isFaded ? " device-info-faded" : ""}">
@@ -936,46 +1016,11 @@ export class EppFlasherView extends LitElement {
 															: ""
 													}</div>
                         </div>
-                        ${
-													!device.available
-														? html`<span class="firmware-badge firmware-badge-offline">${this.localize("flasher.offline")}</span>`
-														: nothing
-												}
-                        ${
-													device.firmware_type === "eppgrid" &&
-													device.available &&
-													!this.otaStates[device.mac] &&
-													!device.update_available &&
-													(
-														device.firmware_status === "compatible" ||
-															device.firmware_status === "firmware_ahead"
-													)
-														? html`<span class="firmware-badge firmware-badge-online">${this.localize("flasher.online")}</span>`
-														: nothing
-												}
-                        ${
-													device.firmware_type === "original"
-														? html`<span class="firmware-badge firmware-badge-original">${this.localize("flasher.flash_usb")}</span>`
-														: nothing
-												}
-                        ${
-													device.firmware_type === "eppgrid" &&
-													device.firmware_status === "firmware_ahead"
-														? html`<span class="firmware-badge firmware-badge-ahead">${this.localize("flasher.integration_update")}</span>`
-														: nothing
-												}
-                        ${
-													this.otaStates[device.mac]
-														? this._renderOtaIndicator(device)
-														: device.firmware_type === "eppgrid" &&
-																(device.update_available ||
-																	device.firmware_status === "firmware_behind")
-															? html`<ha-button
-																		appearance="accent"
-																		@click=${() => this._dispatchUpdateFirmware(device)}
-																	>${this.localize("flasher.update")}</ha-button>`
-															: nothing
-												}
+                        ${badges.map(
+													(b) =>
+														html`<span class="firmware-badge ${b.cls}">${this.localize(b.label)}</span>`,
+												)}
+                        ${action}
                       </div>
                     `;
 									})}
@@ -990,12 +1035,18 @@ export class EppFlasherView extends LitElement {
 	}
 
 	private _dispatchUsbWifiConfig(): void {
+		if (!this._hasWebSerial) return;
 		this.dispatchEvent(
 			new CustomEvent("usb-wifi-config", { bubbles: true, composed: true }),
 		);
 	}
 
 	private _renderUsbSection() {
+		// Both actions need navigator.serial — grey them out (and guard their
+		// handlers) when the browser doesn't support Web Serial, instead of
+		// letting the user walk into a runtime error.
+		const disabledCls = this._hasWebSerial ? "" : " usb-action-disabled";
+		const ariaDisabled = this._hasWebSerial ? "false" : "true";
 		return html`
       <ha-card>
         <div class="card-header">${this.localize("flasher.usb_title")}</div>
@@ -1008,14 +1059,14 @@ export class EppFlasherView extends LitElement {
 							: nothing
 					}
           <div class="usb-actions">
-            <div class="usb-action" @click=${this._onUsbConnect}>
+            <div class="usb-action${disabledCls}" aria-disabled=${ariaDisabled} @click=${this._onUsbConnect}>
               <ha-icon icon="mdi:chip"></ha-icon>
               <div class="usb-action-text">
                 <div class="usb-action-title">${this.localize("flasher.usb_flash_title")}</div>
                 <div class="usb-action-desc">${this.localize("flasher.usb_flash_desc")}</div>
               </div>
             </div>
-            <div class="usb-action" @click=${this._dispatchUsbWifiConfig}>
+            <div class="usb-action${disabledCls}" aria-disabled=${ariaDisabled} @click=${this._dispatchUsbWifiConfig}>
               <ha-icon icon="mdi:wifi-cog"></ha-icon>
               <div class="usb-action-text">
                 <div class="usb-action-title">${this.localize("flasher.usb_wifi_title")}</div>
@@ -1033,10 +1084,6 @@ export class EppFlasherView extends LitElement {
 			return this._renderLoading();
 		}
 
-		if (this._showWifiProvisioning) {
-			return this._renderWifiProvisioning();
-		}
-
 		if (this._showUsbFlash || this.usbFlashState) {
 			return this._renderUsbFlash();
 		}
@@ -1050,226 +1097,225 @@ export class EppFlasherView extends LitElement {
 			: "ethernet-ble-co2";
 	}
 
-	private _getManifestUrl(): string {
-		const variant = this._getFirmwareVariant();
-		return `${this.firmwareBaseUrl}/everything-presence-pro-${variant}-manifest.json`;
-	}
-
 	private _renderUsbFlash() {
 		const state = this.usbFlashState;
+		if (state?.step === "wifi_provision") return this._renderWifiProvisioning();
+		if (state?.step === "error") return this._renderUsbError(state);
+		if (state?.step === "wifi_configured")
+			return this._renderUsbConfigured(state);
+		if (state?.step === "complete") return this._renderUsbComplete(state);
+		if (state && state.step !== "idle") return this._renderUsbProgress(state);
+		return this._renderUsbIdle();
+	}
 
-		// WiFi provisioning
-		if (state?.step === "wifi_provision") {
-			return this._renderWifiProvisioning();
-		}
-
-		// Error state
-		if (state?.step === "error") {
-			return html`
-				<div class="flasher-content">
-					<ha-card>
-						<div class="card-content">
-							<div class="usb-error">
-								<ha-icon icon="mdi:alert-circle-outline"></ha-icon>
-								<p>${state.errorKey ? this.localize(state.errorKey, state.errorParams) : ""}</p>
-							</div>
-							<div class="confirm-actions">
-								<ha-button @click=${this._dispatchCancel}>
-									${this.localize("flasher.start_over")}
-								</ha-button>
-								${
-									state.fatal
-										? nothing
-										: html`<ha-button appearance="accent" @click=${this._dispatchUsbRetry}>
-									${this.localize("flasher.usb_retry")}
-								</ha-button>`
-								}
-							</div>
+	private _renderUsbError(state: UsbFlashState) {
+		return html`
+			<div class="flasher-content">
+				<ha-card>
+					<div class="card-content">
+						<div class="usb-error">
+							<ha-icon icon="mdi:alert-circle-outline"></ha-icon>
+							<p>${state.errorKey ? this.localize(state.errorKey, state.errorParams) : ""}</p>
 						</div>
-					</ha-card>
-				</div>
-			`;
-		}
+						<div class="confirm-actions">
+							<ha-button @click=${this._dispatchCancel}>
+								${this.localize("flasher.start_over")}
+							</ha-button>
+							${
+								state.fatal
+									? nothing
+									: html`<ha-button appearance="accent" @click=${this._dispatchUsbRetry}>
+								${this.localize("flasher.usb_retry")}
+							</ha-button>`
+							}
+						</div>
+					</div>
+				</ha-card>
+			</div>
+		`;
+	}
 
-		// WiFi configured — HA-add in progress
-		if (state?.step === "wifi_configured") {
+	/** WiFi configured — HA-add in progress. */
+	private _renderUsbConfigured(state: UsbFlashState) {
+		// ha-spinner is the Web Awesome replacement (HA 2024.11+) for the
+		// MWC-era ha-circular-progress, which is likely unregistered on
+		// HA 2026.05 (an invisible spinner). Fall back to the old element on
+		// HA versions that predate ha-spinner.
+		const spinner = customElements.get("ha-spinner")
+			? html`<ha-spinner size="small"></ha-spinner>`
+			: html`<ha-circular-progress indeterminate size="small"></ha-circular-progress>`;
+		return html`
+			<div class="flasher-content">
+				<ha-card>
+					<div class="card-content">
+						<div class="usb-complete">
+							<ha-icon icon="mdi:check-circle-outline"></ha-icon>
+							<p>${this.localize("flasher.wifi_configured")}</p>
+							${state.ip ? html`<p class="usb-ip">${this.localize("flasher.ip_address", { ip: state.ip })}</p>` : nothing}
+						</div>
+						<div class="ha-add-progress">
+							${spinner}
+							<span>
+								${
+									state.haAddAttempt !== undefined &&
+									state.haAddMaxAttempts !== undefined
+										? this.localize("flasher.ha_add.retrying", {
+												attempt: state.haAddAttempt,
+												max: state.haAddMaxAttempts,
+											})
+										: this.localize("flasher.ha_add.adding")
+								}
+							</span>
+						</div>
+						${
+							state.autoSkipped
+								? html`<div class="wifi-override-row">
+									<ha-button
+										class="wifi-override-link"
+										appearance="plain"
+										@click=${this._dispatchWifiScan}
+									>
+										${this.localize("flasher.configure_wifi_override")}
+									</ha-button>
+								</div>`
+								: nothing
+						}
+						<div class="confirm-actions">
+							${this._renderCancelButton()}
+						</div>
+					</div>
+				</ha-card>
+			</div>
+		`;
+	}
+
+	private _renderUsbComplete(state: UsbFlashState) {
+		const isEthernet = state.variant?.startsWith("ethernet");
+		if (isEthernet) {
 			return html`
 				<div class="flasher-content">
 					<ha-card>
 						<div class="card-content">
 							<div class="usb-complete">
 								<ha-icon icon="mdi:check-circle-outline"></ha-icon>
-								<p>${this.localize("flasher.wifi_configured")}</p>
-								${state.ip ? html`<p class="usb-ip">${this.localize("flasher.ip_address", { ip: state.ip })}</p>` : nothing}
+								<p>${this.localize("flasher.usb_ethernet_complete")}</p>
+								<p>${this.localize("flasher.usb_ethernet_hint")}</p>
 							</div>
-							<div class="ha-add-progress">
-								<ha-circular-progress indeterminate size="small"></ha-circular-progress>
-								<span>
-									${
-										state.haAddAttempt !== undefined &&
-										state.haAddMaxAttempts !== undefined
-											? this.localize("flasher.ha_add.retrying", {
-													attempt: state.haAddAttempt,
-													max: state.haAddMaxAttempts,
-												})
-											: this.localize("flasher.ha_add.adding")
-									}
-								</span>
+							<div class="confirm-actions">
+								<a href="/config/devices/dashboard">
+									<ha-button appearance="accent">${this.localize("flasher.go_to_devices")}</ha-button>
+								</a>
 							</div>
+						</div>
+					</ha-card>
+				</div>
+			`;
+		}
+
+		const ip = state.ip;
+		const haAdd = state.haAdd;
+		const success = haAdd?.type === "added" || haAdd?.type === "already_added";
+		const icon = success ? "mdi:check-circle-outline" : "mdi:alert-outline";
+		const haAddKey = haAdd?.type ?? "failed";
+		const reason = haAdd?.type === "failed" ? (haAdd.reason ?? "unknown") : "";
+
+		return html`
+			<div class="flasher-content">
+				<ha-card>
+					<div class="card-content">
+						<div class="usb-complete">
+							<ha-icon icon=${icon}></ha-icon>
+							<p>${this.localize("flasher.wifi_configured")}</p>
 							${
-								state.autoSkipped
-									? html`<div class="wifi-override-row">
-										<ha-button
-											class="wifi-override-link"
-											appearance="plain"
-											@click=${this._dispatchWifiScan}
-										>
-											${this.localize("flasher.configure_wifi_override")}
+								ip
+									? html`<p class="usb-ip">${this.localize("flasher.ip_address", { ip })}</p>`
+									: nothing
+							}
+							<p class="ha-add-result">
+								${this.localize(`flasher.ha_add.${haAddKey}`, { reason })}
+							</p>
+						</div>
+						<div class="confirm-actions">
+							${
+								success
+									? html`<ha-button appearance="accent" @click=${this._dispatchFlashComplete}>
+									${this.localize("flasher.go_to_config")}
+								</ha-button>`
+									: haAdd?.type === "needs_auth"
+										? html`<a href="/config/integrations/dashboard">
+										<ha-button appearance="accent">${this.localize("flasher.go_to_integrations")}</ha-button>
+									</a>`
+										: html`
+										<ha-button @click=${() => this._copyIp(ip ?? "")}>
+											${this.localize("flasher.copy_ip")}
 										</ha-button>
+										<ha-button appearance="accent" @click=${this._dispatchRetryHaAdd}>
+											${this.localize("flasher.retry_ha_add")}
+										</ha-button>
+									`
+							}
+							<ha-button @click=${this._dispatchCancel}>
+								${this.localize("flasher.flash_another")}
+							</ha-button>
+						</div>
+					</div>
+				</ha-card>
+			</div>
+		`;
+	}
+
+	/** In-progress states (connecting, flashing, wifi_check, wifi_scan, reading_ip, wifi_connecting). */
+	private _renderUsbProgress(state: UsbFlashState) {
+		const stepKeyMap: Record<string, string> = {
+			connecting: "flasher.usb_step_connecting",
+			flashing: "flasher.usb_step_flashing",
+			wifi_check: "flasher.usb_step_wifi_check",
+			wifi_scan: "flasher.usb_step_scanning",
+			wifi_provision: "flasher.usb_step_provisioning",
+			wifi_connecting: "flasher.usb_step_wifi_connecting",
+			reading_ip: "flasher.usb_step_reading_ip",
+		};
+		const stepKey = stepKeyMap[state.step] ?? state.step;
+		const stepParams =
+			state.step === "flashing" ? { version: this.firmwareVersion } : undefined;
+		// Cancel is not offered during `flashing` (risk of bricking) or
+		// during `connecting` (native picker is modal).
+		const canCancel = state.step !== "flashing" && state.step !== "connecting";
+		return html`
+			<div class="flasher-content">
+				<ha-card>
+					<div class="card-content">
+						<div class="usb-status">
+							<p>${this.localize(stepKey, stepParams)}</p>
+							${
+								state.step === "flashing" && state.progress != null
+									? html`<div class="usb-progress">
+										<div class="usb-progress-bar" style="width: ${state.progress}%"></div>
+										<span>${state.progress}%</span>
 									</div>`
 									: nothing
 							}
-							<div class="confirm-actions">
-								${this._renderCancelButton()}
-							</div>
+							${
+								state.step === "wifi_scan"
+									? html`<p class="usb-hint">${this.localize("flasher.wifi_scan_hint")}</p>`
+									: nothing
+							}
+							${
+								canCancel
+									? html`<div class="confirm-actions">
+										${this._renderCancelButton("cancel-btn")}
+									</div>`
+									: nothing
+							}
 						</div>
-					</ha-card>
-				</div>
-			`;
-		}
-
-		// Complete state
-		if (state?.step === "complete") {
-			const isEthernet = state.variant?.startsWith("ethernet");
-			if (isEthernet) {
-				return html`
-					<div class="flasher-content">
-						<ha-card>
-							<div class="card-content">
-								<div class="usb-complete">
-									<ha-icon icon="mdi:check-circle-outline"></ha-icon>
-									<p>${this.localize("flasher.usb_ethernet_complete")}</p>
-									<p>${this.localize("flasher.usb_ethernet_hint")}</p>
-								</div>
-								<div class="confirm-actions">
-									<a href="/config/devices/dashboard">
-										<ha-button appearance="accent">${this.localize("flasher.go_to_devices")}</ha-button>
-									</a>
-								</div>
-							</div>
-						</ha-card>
 					</div>
-				`;
-			}
+				</ha-card>
+			</div>
+		`;
+	}
 
-			const ip = state.ip;
-			const haAdd = state.haAdd;
-			const success =
-				haAdd?.type === "added" || haAdd?.type === "already_added";
-			const icon = success ? "mdi:check-circle-outline" : "mdi:alert-outline";
-			const haAddKey = haAdd?.type ?? "failed";
-			const reason =
-				haAdd?.type === "failed" ? (haAdd.reason ?? "unknown") : "";
-
-			return html`
-				<div class="flasher-content">
-					<ha-card>
-						<div class="card-content">
-							<div class="usb-complete">
-								<ha-icon icon=${icon}></ha-icon>
-								<p>${this.localize("flasher.wifi_configured")}</p>
-								${
-									ip
-										? html`<p class="usb-ip">${this.localize("flasher.ip_address", { ip })}</p>`
-										: nothing
-								}
-								<p class="ha-add-result">
-									${this.localize(`flasher.ha_add.${haAddKey}`, { reason })}
-								</p>
-							</div>
-							<div class="confirm-actions">
-								${
-									success
-										? html`<ha-button appearance="accent" @click=${this._dispatchFlashComplete}>
-										${this.localize("flasher.go_to_config")}
-									</ha-button>`
-										: haAdd?.type === "needs_auth"
-											? html`<a href="/config/integrations/dashboard">
-											<ha-button appearance="accent">${this.localize("flasher.go_to_integrations")}</ha-button>
-										</a>`
-											: html`
-											<ha-button @click=${() => this._copyIp(ip ?? "")}>
-												${this.localize("flasher.copy_ip")}
-											</ha-button>
-											<ha-button appearance="accent" @click=${this._dispatchRetryHaAdd}>
-												${this.localize("flasher.retry_ha_add")}
-											</ha-button>
-										`
-								}
-								<ha-button @click=${this._dispatchCancel}>
-									${this.localize("flasher.flash_another")}
-								</ha-button>
-							</div>
-						</div>
-					</ha-card>
-				</div>
-			`;
-		}
-
-		// In-progress states (connecting, flashing, wifi_check, wifi_scan, reading_ip, wifi_connecting)
-		if (state && state.step !== "idle") {
-			const stepKeyMap: Record<string, string> = {
-				connecting: "flasher.usb_step_connecting",
-				flashing: "flasher.usb_step_flashing",
-				wifi_check: "flasher.usb_step_wifi_check",
-				wifi_scan: "flasher.usb_step_scanning",
-				wifi_provision: "flasher.usb_step_provisioning",
-				wifi_connecting: "flasher.usb_step_wifi_connecting",
-				reading_ip: "flasher.usb_step_reading_ip",
-			};
-			const stepKey = stepKeyMap[state.step] ?? state.step;
-			const stepParams =
-				state.step === "flashing"
-					? { version: this.firmwareVersion }
-					: undefined;
-			// Cancel is not offered during `flashing` (risk of bricking) or
-			// during `connecting` (native picker is modal).
-			const canCancel =
-				state.step !== "flashing" && state.step !== "connecting";
-			return html`
-				<div class="flasher-content">
-					<ha-card>
-						<div class="card-content">
-							<div class="usb-status">
-								<p>${this.localize(stepKey, stepParams)}</p>
-								${
-									state.step === "flashing" && state.progress != null
-										? html`<div class="usb-progress">
-											<div class="usb-progress-bar" style="width: ${state.progress}%"></div>
-											<span>${state.progress}%</span>
-										</div>`
-										: nothing
-								}
-								${
-									state.step === "wifi_scan"
-										? html`<p class="usb-hint">${this.localize("flasher.wifi_scan_hint")}</p>`
-										: nothing
-								}
-								${
-									canCancel
-										? html`<div class="confirm-actions">
-											${this._renderCancelButton("cancel-btn")}
-										</div>`
-										: nothing
-								}
-							</div>
-						</div>
-					</ha-card>
-				</div>
-			`;
-		}
-
-		// Idle state — variant selector + flash button
+	/** Idle state — variant selector + flash button. */
+	private _renderUsbIdle() {
 		return html`
 			<div class="flasher-content">
 				${

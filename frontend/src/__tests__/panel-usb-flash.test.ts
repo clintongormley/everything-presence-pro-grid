@@ -1704,21 +1704,9 @@ describe("epp-flasher-view inline event handlers", () => {
 		expect(spy).toHaveBeenCalledWith("HomeNet", "pass123");
 	});
 
-	it("@wifi-complete calls resetUsbState, _loadDevices, switches to config tab", () => {
-		const ctrl = (panel as any)._flasherCtrl;
-		const resetSpy = vi.spyOn(ctrl, "resetUsbState");
-		const loadSpy = vi
-			.spyOn(panel as any, "_loadDevices")
-			.mockResolvedValue(undefined);
-
-		getFlasherView().dispatchEvent(
-			new CustomEvent("wifi-complete", { bubbles: true }),
-		);
-
-		expect(resetSpy).toHaveBeenCalled();
-		expect(loadSpy).toHaveBeenCalled();
-		expect((panel as any)._panelTab).toBe("config");
-	});
+	// The @wifi-complete listener was removed along with the flasher view's
+	// unreachable connected-confirmation screen — real success flows through
+	// @flash-complete (covered above).
 
 	it("@update-firmware calls flasherCtrl.startOta", () => {
 		const ctrl = (panel as any)._flasherCtrl;

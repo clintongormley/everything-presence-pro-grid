@@ -13,6 +13,8 @@ import { describe, expect, it, vi } from "vitest";
 import { renderSaveCancelBar } from "../../components/save-cancel-bar.js";
 import "../../components/epp-settings-view.js";
 import type { EppSettingsView } from "../../components/epp-settings-view.js";
+import "../../components/epp-flasher-view.js";
+import type { EppFlasherView } from "../../components/epp-flasher-view.js";
 import { initGridFromRoom } from "../../lib/grid.js";
 import { defaultLocalize } from "../../localize.js";
 
@@ -23,8 +25,10 @@ class HaSwitchStub extends HTMLElement {
 class HaButtonStub extends HTMLElement {
 	disabled = false;
 }
+class HaSpinnerStub extends HTMLElement {}
 customElements.define("ha-switch", HaSwitchStub);
 customElements.define("ha-button", HaButtonStub);
+customElements.define("ha-spinner", HaSpinnerStub);
 
 function renderTo(tpl: unknown): HTMLDivElement {
 	const container = document.createElement("div");
@@ -150,5 +154,18 @@ describe("renderSaveCancelBar renders ha-button when registered", () => {
 			(c2.querySelector("ha-button.save-btn") as HaButtonStub).disabled,
 		).toBe(true);
 		document.body.removeChild(c2);
+	});
+});
+
+describe("flasher HA-add progress spinner", () => {
+	it("renders ha-spinner (not ha-circular-progress) when registered", () => {
+		const el = document.createElement("epp-flasher-view") as EppFlasherView;
+		el.flashableDevices = [];
+		el.usbFlashState = { step: "wifi_configured", ip: "192.168.1.42" } as any;
+		const c = renderTo((el as any).render());
+
+		expect(c.querySelector("ha-spinner")).not.toBeNull();
+		expect(c.querySelector("ha-circular-progress")).toBeNull();
+		document.body.removeChild(c);
 	});
 });

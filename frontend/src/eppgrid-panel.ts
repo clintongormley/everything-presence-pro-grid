@@ -1874,7 +1874,6 @@ export class EPPGridPanel extends LitElement {
 					.localize=${this._localize}
 					.usbFlashState=${this._flasherCtrl.usbFlashState}
 					.wifiNetworks=${this._flasherCtrl.wifiNetworks}
-					.firmwareBaseUrl=${this._flasherCtrl.firmwareBaseUrl}
 					.firmwareVersion=${this._flasherCtrl.firmwareVersion}
 					.integrationVersion=${this._flasherCtrl.integrationVersion}
 					.otaStates=${this._flasherCtrl.otaStates}
@@ -1908,11 +1907,6 @@ export class EPPGridPanel extends LitElement {
 						// Update button that reappeared).
 						this._flasherCtrl.dismissOtaError(e.detail.mac);
 						this._flasherCtrl.startOta(e.detail.mac);
-					}}
-					@wifi-complete=${() => {
-						void this._flasherCtrl.resetUsbState();
-						this._loadDevices();
-						this._panelTab = "config";
 					}}
 				></epp-flasher-view>
 			</div>`;
