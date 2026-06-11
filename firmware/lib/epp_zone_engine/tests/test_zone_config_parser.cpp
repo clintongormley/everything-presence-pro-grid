@@ -128,6 +128,28 @@ TEST_CASE("non-integral trigger/renew round to nearest (matching backend half-up
   CHECK(configs[0].renew == 2);
 }
 
+TEST_CASE("half-tie trigger/renew round half-up, not to-even (pins std::lround vs rint)") {
+  // 6.5 is an exact half-way tie. std::lround(6.5) == 7 (half-up). A
+  // hypothetical rint-to-even swap would give 6 (6 is even). This assertion
+  // pins the half-up direction so that device and backend always agree.
+  // A matching tie case (_round_half_up(2.5)==3) is asserted in
+  // test_websocket_api.py::TestZoneSlotsValidator::test_round_half_up_pins_half_up_against_bankers_rounding.
+  const char *json =
+      "{"
+      "\"zone_slots\":["
+      "{\"trigger\":6.5,\"renew\":2.5,\"timeout\":10.0,\"handoff_timeout\":3.0},"
+      "null,null,null,null,null,null,null"
+      "]"
+      "}";
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = parse_from_string(json, configs);
+
+  REQUIRE(count == 1);
+  CHECK(configs[0].trigger == 7);  // lround half-up; rint-to-even would give 6
+  CHECK(configs[0].renew == 3);    // lround half-up; rint-to-even would give 2
+}
+
 TEST_CASE("null at zone_slots[0] emits no zone-0 entry") {
   // If backend guarantee fails (zone 0 missing), the parser must not
   // fabricate one. Downstream, ZoneEngine::set_zones falls back to

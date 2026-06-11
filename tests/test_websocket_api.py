@@ -1159,6 +1159,25 @@ class TestZoneSlotsValidator:
         with pytest.raises(vol.Invalid):
             _validate_zone_slots(slots)
 
+    def test_round_half_up_pins_half_up_against_bankers_rounding(self) -> None:
+        """_round_half_up(2.5) must equal 3, not 2.
+
+        Python's built-in round() uses banker's rounding: round(2.5) == 2
+        (rounds to the nearest even integer). The firmware's lroundf() always
+        rounds half-up, so 2.5 → 3. This assertion would FAIL if _round_half_up
+        were replaced with plain round(), proving the test actually pins the
+        half-up behaviour.
+        """
+        from custom_components.eppgrid.websocket_api import _round_half_up
+
+        # Tie cases: half-up must round away from zero (odd target).
+        # Python banker's round() gives 2 for 2.5 and 4 for 4.5; half-up gives 3 and 5.
+        assert _round_half_up(2.5) == 3  # banker's would give 2 (even floor)
+        assert _round_half_up(4.5) == 5  # banker's would give 4 (even floor)
+        # Non-tie cases: both strategies agree.
+        assert _round_half_up(2.4) == 2
+        assert _round_half_up(2.6) == 3
+
     def test_accepts_numeric_timing_fields(self) -> None:
         """int and float values for timing fields are both accepted.
 
@@ -1172,7 +1191,7 @@ class TestZoneSlotsValidator:
             {
                 "type": "default",
                 "trigger": 5,
-                "renew": 3.5,
+                "renew": 2.5,  # even-floor tie: banker's round(2.5)==2, half-up→3
                 "timeout": 10,
                 "handoff_timeout": 3.0,
             },
@@ -1188,7 +1207,7 @@ class TestZoneSlotsValidator:
         ] + [None] * 6
         result = _validate_zone_slots(slots)
         assert result[0]["trigger"] == 5
-        assert result[0]["renew"] == 4  # 3.5 rounds half-up, matching lroundf
+        assert result[0]["renew"] == 3  # 2.5 half-up → 3; banker's round(2.5) would give 2
         assert result[0]["timeout"] == 10.0
         assert result[1]["renew"] == 2
         assert type(result[1]["renew"]) is int
