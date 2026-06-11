@@ -26,6 +26,12 @@ namespace epp {
 // be referenced in EPPComponent::feed_targets's parameter array bounds.
 inline constexpr int NUM_TARGETS = 3;
 
+// loop() copies frame.targets[NUM_TARGETS] into WindowOutput / engine arrays
+// sized MAX_TARGETS — if the two ever diverge, the per-target loops silently
+// read or write out of bounds. Pin the equality at compile time.
+static_assert(NUM_TARGETS == MAX_TARGETS,
+              "LD2450 hardware target count must match the zone engine's MAX_TARGETS");
+
 struct ParsedTarget {
   float x = 0.0f;       // mm, sensor coordinate space (transformed)
   float y = 0.0f;       // mm

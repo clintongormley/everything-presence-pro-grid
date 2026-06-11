@@ -7,7 +7,6 @@
 #include "epp_perspective_parser.h"
 #include "esphome/core/log.h"
 
-#include <ArduinoJson.h>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
@@ -677,22 +676,24 @@ void EPPComponent::set_grid(const std::string &grid_data,
 // ---------------------------------------------------------------------------
 
 void EPPComponent::set_zones(const std::string &zones_json) {
-  // ArduinoJson v7 unified JsonDocument: it owns its memory pool internally
-  // and grows on demand. The pool sits on the JsonDocument object, so when
-  // `doc` lives on the stack the pool's first chunk does too — no hidden heap
-  // alloc for typical-size payloads (~8 zones × ~60 bytes resolved fields ≈
-  // 0.5 KB). parse_zone_configs only copies primitives (ints/floats) into
-  // ZoneConfig — see the retention-guard test in test_zone_config_parser.cpp
-  // — so the doc can safely go out of scope once we've parsed.
-  JsonDocument doc;
-  if (deserializeJson(doc, zones_json)) {
+  // parse_zones_json caps the input at ZONES_JSON_MAX BEFORE deserializing —
+  // ArduinoJson v7 grows its pool to fit the input, so an unbounded LAN
+  // payload would otherwise force a matching transient heap allocation on
+  // the 320KB-heap ESP32 (mirrors the GRID_BASE64_MAX cap in set_grid). The
+  // same helper guards the NVS boot-restore path so the two can't drift.
+  ZoneConfig configs[MAX_ZONE_SLOTS];
+  int count = 0;
+  ZonesJsonStatus status =
+      parse_zones_json(zones_json.c_str(), zones_json.size(), configs, count);
+  if (status == ZonesJsonStatus::TOO_LARGE) {
+    ESP_LOGW(TAG, "Zones JSON too large (%u bytes, max %u), rejecting",
+             (unsigned)zones_json.size(), (unsigned)ZONES_JSON_MAX);
+    return;
+  }
+  if (status != ZonesJsonStatus::OK) {
     ESP_LOGE(TAG, "Failed to parse zones JSON");
     return;
   }
-
-  ZoneConfig configs[MAX_ZONE_SLOTS];
-  int count = 0;
-  parse_zone_configs(doc, configs, count);
 
   zone_engine_.set_zones(configs, count);
   ESP_LOGI(TAG, "Configured %d zones", count);
@@ -839,24 +840,28 @@ void EPPComponent::restore_from_nvs_() {
     if (!zones_str.empty() && zones_str.back() == '\0') {
       zones_str.pop_back();
     }
-    // Parse and apply but don't re-save — call the shared parsing helper.
-    // See set_zones() for why the JsonDocument is safe on the stack and
-    // why parse_zone_configs doesn't retain pointers into the doc.
-    JsonDocument doc;
-    DeserializationError parse_err = deserializeJson(doc, zones_str);
-    if (!parse_err) {
-      ZoneConfig configs[MAX_ZONE_SLOTS];
-      int count = 0;
-      parse_zone_configs(doc, configs, count);
-
+    // Parse and apply but don't re-save — the shared parse_zones_json helper
+    // applies the same ZONES_JSON_MAX cap as set_zones(), so an oversized
+    // blob (only possible via NVS corruption or a flash written by different
+    // firmware) can't force a large transient parse allocation at boot.
+    ZoneConfig configs[MAX_ZONE_SLOTS];
+    int count = 0;
+    const char *parse_error = nullptr;
+    ZonesJsonStatus status = parse_zones_json(zones_str.c_str(), zones_str.size(),
+                                              configs, count, &parse_error);
+    if (status == ZonesJsonStatus::OK) {
       zone_engine_.set_zones(configs, count);
       last_zones_json_ = zones_str;
       has_zones_cache_ = true;  // seed idempotency cache (see set_zones)
       ESP_LOGI(TAG, "Restored %d zones from NVS", count);
+    } else if (status == ZonesJsonStatus::TOO_LARGE) {
+      ESP_LOGW(TAG, "Zones blob in NVS too large (%u bytes, max %u), skipping restore",
+               (unsigned)zones_str.size(), (unsigned)ZONES_JSON_MAX);
     } else {
       // Without this log, a corrupt blob silently drops all zones at boot.
       // The user would see no zones in HA and no clue why.
-      ESP_LOGW(TAG, "Corrupt zones JSON in NVS, skipping restore: %s", parse_err.c_str());
+      ESP_LOGW(TAG, "Corrupt zones JSON in NVS, skipping restore: %s",
+               parse_error != nullptr ? parse_error : "unknown");
     }
   }
 

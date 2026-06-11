@@ -2,10 +2,37 @@
 
 #include <ArduinoJson.h>
 
+#include <cstddef>
+#include <cstdint>
+
 #include "epp_types.h"
 #include "epp_zone_engine.h"
 
 namespace epp {
+
+/// Upper bound (bytes) on a zones JSON payload accepted from the API service
+/// or the NVS boot-restore path. Anything larger is a buggy or malicious
+/// caller and is rejected BEFORE deserializeJson is invoked, so ArduinoJson
+/// never grows its heap pool to match attacker-controlled input (a large LAN
+/// payload would otherwise force a matching transient allocation on the
+/// 320 KB-heap ESP32). Mirrors GRID_BASE64_MAX for set_grid().
+///
+/// Sizing: the HA websocket boundary caps zone names at 64 chars and types
+/// at 32 (custom_components/eppgrid/websocket_api/_validate_zone_slots);
+/// json.dumps escapes non-ASCII as 6-byte \uXXXX sequences, so the absolute
+/// worst validator-passing payload — 7 named slots with fully-escaped
+/// maximal names and types plus full timing — is ~5.7 KB. 8 KB therefore
+/// never rejects a legitimate payload (BWC) while a typical 8-zone payload
+/// stays under 1.5 KB. Both bounds are pinned by tests in
+/// tests/test_zone_config_parser.cpp.
+constexpr size_t ZONES_JSON_MAX = 8192;
+
+/// Outcome of parse_zones_json.
+enum class ZonesJsonStatus : uint8_t {
+  OK = 0,
+  TOO_LARGE = 1,    // input exceeds ZONES_JSON_MAX; nothing was parsed
+  PARSE_ERROR = 2,  // deserializeJson failed; nothing was parsed
+};
 
 /// Parse zone configs from `doc["zone_slots"]`. Writes up to MAX_ZONE_SLOTS
 /// entries into `out`, updating `count`.
@@ -57,6 +84,33 @@ inline void parse_zone_configs(const JsonDocument &doc, ZoneConfig out[], int &c
     };
     count++;
   }
+}
+
+/// Size-capped deserialize + parse, shared by set_zones() (LAN input) and
+/// restore_from_nvs_() (saved blob) in epp_component.cpp so the two paths
+/// can't drift. Rejects inputs over ZONES_JSON_MAX before deserializeJson
+/// ever runs — see the constant's rationale above.
+///
+/// The JsonDocument lives on this function's stack and is destroyed on
+/// return; parse_zone_configs copies primitives only (no pointers into the
+/// doc are retained — pinned by the retention-guard test in
+/// tests/test_zone_config_parser.cpp).
+///
+/// On PARSE_ERROR, `error` (when non-null) receives a pointer to a static
+/// ArduinoJson description string (safe to use after return).
+/// Same contract as parse_zone_configs: pass a fresh `out` and `count == 0`.
+inline ZonesJsonStatus parse_zones_json(const char *json, size_t len,
+                                        ZoneConfig out[], int &count,
+                                        const char **error = nullptr) {
+  if (len > ZONES_JSON_MAX) return ZonesJsonStatus::TOO_LARGE;
+  JsonDocument doc;
+  DeserializationError err = deserializeJson(doc, json, len);
+  if (err) {
+    if (error != nullptr) *error = err.c_str();
+    return ZonesJsonStatus::PARSE_ERROR;
+  }
+  parse_zone_configs(doc, out, count);
+  return ZonesJsonStatus::OK;
 }
 
 }  // namespace epp

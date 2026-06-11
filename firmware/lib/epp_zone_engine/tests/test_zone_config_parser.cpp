@@ -3,6 +3,9 @@
 
 #include <ArduinoJson.h>
 
+#include <cstring>
+#include <string>
+
 #include "epp_types.h"
 #include "epp_zone_engine.h"
 #include "epp_zone_config_parser.h"
@@ -281,4 +284,119 @@ TEST_CASE("negative timeout / handoff_timeout are clamped to 0") {
   REQUIRE(count == 1);
   CHECK(configs[0].timeout == doctest::Approx(0.0f));
   CHECK(configs[0].handoff_timeout == doctest::Approx(0.0f));
+}
+
+// ---------------------------------------------------------------------------
+// parse_zones_json — size-capped entry point.
+//
+// deserializeJson on an unbounded string lets a large LAN payload force a
+// matching transient heap allocation on the 320KB-heap ESP32 (ArduinoJson v7
+// grows its pool on demand). parse_zones_json applies ZONES_JSON_MAX BEFORE
+// deserializing; both set_zones() and the NVS boot-restore path in
+// epp_component.cpp go through it so the two can't drift.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("parse_zones_json rejects payloads larger than ZONES_JSON_MAX before parsing") {
+  // Valid-looking prefix padded past the cap. Content doesn't matter — the
+  // size gate must fire before the parser ever sees the bytes.
+  std::string big = "{\"zone_slots\":[]}";
+  big.append(ZONES_JSON_MAX + 1 - big.size(), ' ');
+  REQUIRE(big.size() == ZONES_JSON_MAX + 1);
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = 0;
+  CHECK(parse_zones_json(big.c_str(), big.size(), configs, count) ==
+        ZonesJsonStatus::TOO_LARGE);
+  CHECK(count == 0);
+}
+
+TEST_CASE("parse_zones_json accepts a payload of exactly ZONES_JSON_MAX bytes") {
+  // Valid JSON padded with trailing whitespace to exactly the cap — proves
+  // the boundary is inclusive (size > cap rejects, size == cap parses).
+  std::string json =
+      "{\"zone_slots\":["
+      "{\"trigger\":7,\"renew\":2,\"timeout\":20.0,\"handoff_timeout\":5.0}"
+      "]}";
+  json.append(ZONES_JSON_MAX - json.size(), ' ');
+  REQUIRE(json.size() == ZONES_JSON_MAX);
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = 0;
+  CHECK(parse_zones_json(json.c_str(), json.size(), configs, count) ==
+        ZonesJsonStatus::OK);
+  REQUIRE(count == 1);
+  CHECK(configs[0].trigger == 7);
+  CHECK(configs[0].renew == 2);
+}
+
+TEST_CASE("parse_zones_json surfaces malformed JSON as PARSE_ERROR with a message") {
+  const char *bad = "{\"zone_slots\":[";
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = 0;
+  const char *error = nullptr;
+  CHECK(parse_zones_json(bad, std::strlen(bad), configs, count, &error) ==
+        ZonesJsonStatus::PARSE_ERROR);
+  CHECK(count == 0);
+  REQUIRE(error != nullptr);
+  CHECK(std::strlen(error) > 0);
+}
+
+TEST_CASE("ZONES_JSON_MAX leaves ample headroom over a typical full payload") {
+  // Typical-worst payload the backend sends: all 8 slots fully populated
+  // with timing fields plus the frontend-only metadata fields the firmware
+  // ignores (id/name/color/type), ASCII names.
+  std::string json = "{\"zone_slots\":[";
+  for (int i = 0; i < MAX_ZONE_SLOTS; ++i) {
+    if (i > 0) json += ",";
+    json +=
+        "{\"id\":7,\"name\":\"A fairly long user-chosen zone name\","
+        "\"color\":\"#a1b2c3\",\"type\":\"sleeping_area\","
+        "\"trigger\":9,\"renew\":9,\"timeout\":86400.5,\"handoff_timeout\":86400.5}";
+  }
+  json += "]}";
+
+  // Require >= 2x headroom so typical payloads never brush the cap.
+  CHECK(json.size() * 2 <= ZONES_JSON_MAX);
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = 0;
+  CHECK(parse_zones_json(json.c_str(), json.size(), configs, count) ==
+        ZonesJsonStatus::OK);
+  CHECK(count == MAX_ZONE_SLOTS);
+}
+
+TEST_CASE("ZONES_JSON_MAX accepts the absolute worst validator-passing payload (BWC)") {
+  // The HA websocket boundary caps zone names at 64 chars and types at 32;
+  // json.dumps escapes each non-ASCII char as a 6-byte \uXXXX sequence. A
+  // payload of 7 named slots with fully-escaped maximal names/types plus
+  // full timing is the largest input a legitimate backend can produce — the
+  // firmware cap must never reject it, or those users' zones silently stop
+  // applying on push (BWC).
+  std::string name;   // 64 chars x 6 bytes escaped
+  for (int i = 0; i < 64; ++i) name += "\\u4e2d";
+  std::string type;   // 32 chars x 6 bytes escaped
+  for (int i = 0; i < 32; ++i) type += "\\u4e2d";
+
+  std::string json = "{\"zone_slots\":[";
+  // zone 0: type + timing only
+  json += "{\"type\":\"" + type + "\","
+          "\"trigger\":9,\"renew\":9,\"timeout\":-2.2250738585072014e-308,"
+          "\"handoff_timeout\":-2.2250738585072014e-308}";
+  for (int i = 1; i < MAX_ZONE_SLOTS; ++i) {
+    json += ",{\"name\":\"" + name + "\",\"color\":\"#a1b2c3\","
+            "\"type\":\"" + type + "\","
+            "\"trigger\":-2.2250738585072014e-308,\"renew\":9,"
+            "\"timeout\":-2.2250738585072014e-308,"
+            "\"handoff_timeout\":-2.2250738585072014e-308}";
+  }
+  json += "]}";
+
+  CHECK(json.size() <= ZONES_JSON_MAX);
+
+  ZoneConfig configs[MAX_ZONE_SLOTS]{};
+  int count = 0;
+  CHECK(parse_zones_json(json.c_str(), json.size(), configs, count) ==
+        ZonesJsonStatus::OK);
+  CHECK(count == MAX_ZONE_SLOTS);
 }

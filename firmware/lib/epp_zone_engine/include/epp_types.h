@@ -29,6 +29,13 @@ constexpr int MAX_ZONES = 7;  // named zones 1-7; zone 0 is implicit rest-of-roo
 constexpr int MAX_ZONE_SLOTS = 8;  // zone 0 + zones 1-7
 constexpr int MAX_MOVEMENT_CELLS = 5;  // continuity Chebyshev threshold
 
+// The zone engine indexes zone_signal / zone_target_count / zones_ arrays
+// (sized MAX_ZONE_SLOTS) by the masked cell zone id. Today that safety relies
+// on the 3-bit mask topping out at 7 — pin it so widening the mask without
+// growing the slot arrays fails at compile time instead of corrupting memory.
+static_assert((CELL_ZONE_MASK >> CELL_ZONE_SHIFT) < MAX_ZONE_SLOTS,
+              "masked cell zone id must be a valid index into MAX_ZONE_SLOTS-sized arrays");
+
 // Nominal frame count per rolling window: the LD2450 runs at ~10Hz and the
 // rolling window is fixed at 1000ms (RollingWindow::WINDOW_MS), so a
 // healthy stream produces ~10 frames per window. The signal scale (0–9)
