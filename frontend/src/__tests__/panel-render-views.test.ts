@@ -1,4 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
+import { nothing, render } from "lit";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
@@ -49,6 +50,7 @@ function createPanel(): EPPGridPanel {
 			host: null,
 			available: true,
 			configured: true,
+			firmware_status: "compatible",
 		},
 	];
 	a._selectedMac = "AA:BB:CC:DD:EE:01";
@@ -176,34 +178,61 @@ function createGrid(overrides?: Partial<Record<string, unknown>>): EppGrid {
 	return el;
 }
 
+// Shared render-to-DOM fixture: templates are rendered into a container
+// attached to <body> so custom elements upgrade and assertions can run
+// against real DOM rather than just "the template exists".
+const containers: HTMLDivElement[] = [];
+
+afterEach(() => {
+	for (const c of containers) c.remove();
+	containers.length = 0;
+});
+
+function renderTo(tpl: unknown): HTMLDivElement {
+	const c = document.createElement("div");
+	document.body.appendChild(c);
+	containers.push(c);
+	render(tpl, c);
+	return c;
+}
+
 describe("render() dispatches to correct view", () => {
 	it("renders loading state when _loading is true", () => {
 		const a = createPanel() as any;
 		a._loading = true;
-		const result = a.render();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		const loading = c.querySelector(".loading-container");
+		expect(loading).not.toBeNull();
+		expect(loading!.textContent).toContain("common.loading");
 	});
 
-	it("renders loading when devices is empty", () => {
+	it("renders the no-devices empty state when devices is empty and none selected", () => {
 		const a = createPanel() as any;
 		a._loading = false;
 		a._devices = [];
-		const result = a.render();
-		expect(result).toBeDefined();
+		a._selectedMac = "";
+		const c = renderTo(a.render());
+		const empty = c.querySelector(".empty-state");
+		expect(empty).not.toBeNull();
+		expect(empty!.textContent).toContain("flasher.no_eppgrid_devices");
 	});
 
 	it("renders wizard when _view is 'tutorial'", () => {
 		const a = createPanel() as any;
 		a._view = "tutorial";
-		const result = a.render();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		const wiz = c.querySelector("epp-wizard") as any;
+		expect(wiz).not.toBeNull();
+		expect(wiz.initialStep).toBe("guide");
 	});
 
 	it("renders settings view", () => {
 		const a = createPanel() as any;
 		a._view = "settings";
-		const result = a.render();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		const sv = c.querySelector("epp-settings-view") as any;
+		expect(sv).not.toBeNull();
+		expect(sv.openAccordions).toBe(a._openAccordions);
 	});
 
 	it("renders editor view with perspective", () => {
@@ -212,23 +241,30 @@ describe("render() dispatches to correct view", () => {
 		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
 		// Need a grid with some room cells for proper rendering
 		a._grid = initGridFromRoom(3000, 4000);
-		const result = a.render();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid).not.toBeNull();
+		expect(grid.editable).toBe(true);
+		expect(c.querySelector("epp-zone-sidebar")).not.toBeNull();
 	});
 
 	it("renders live overview", () => {
 		const a = createPanel() as any;
 		a._view = "live";
-		const result = a.render();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		expect(c.querySelector("epp-live-sidebar")).not.toBeNull();
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid).not.toBeNull();
+		expect(grid.editable).toBe(false);
 	});
 
 	it("renders delete calibration dialog", () => {
 		const a = createPanel() as any;
 		a._view = "live";
 		a._showDeleteCalibrationDialog = true;
-		const result = a.render();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		expect(c.querySelector(".template-dialog")).not.toBeNull();
+		expect(c.textContent).toContain("dialogs.delete_calibration_title");
 	});
 });
 
@@ -441,10 +477,15 @@ describe("render() preserves settings view across transient device states", () =
 });
 
 describe("_renderHeader", () => {
-	it("returns defined result", () => {
+	it("renders the device picker with the selected device", () => {
 		const a = createPanel() as any;
-		const result = a._renderHeader();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderHeader());
+		const select = c.querySelector("ha-select") as any;
+		expect(select).not.toBeNull();
+		expect(select.value).toBe("AA:BB:CC:DD:EE:01");
+		expect(select.options).toEqual([
+			{ value: "AA:BB:CC:DD:EE:01", label: "Test" },
+		]);
 	});
 });
 
@@ -452,15 +493,17 @@ describe("_renderWizard (via EppWizard)", () => {
 	it("renders guide step", () => {
 		const a = createWizard() as any;
 		a._setupStep = "guide";
-		const result = a._renderWizard();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizard());
+		expect(c.textContent).toContain("wizard.how_calibration_works");
+		expect(c.querySelector(".capture-overlay")).toBeNull();
 	});
 
 	it("renders corners step", () => {
 		const a = createWizard() as any;
 		a._setupStep = "corners";
-		const result = a._renderWizardCorners();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizardCorners());
+		expect(c.querySelector(".wizard-card")).not.toBeNull();
+		expect(c.querySelectorAll(".corner-chip").length).toBe(4);
 	});
 
 	it("renders with capture in progress", () => {
@@ -468,8 +511,11 @@ describe("_renderWizard (via EppWizard)", () => {
 		a._setupStep = "corners";
 		a._wizardCapturing = true;
 		a._wizardCaptureProgress = 0.5;
-		const result = a._renderWizard();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizard());
+		expect(c.querySelector(".capture-overlay")).not.toBeNull();
+		const fill = c.querySelector(".capture-fill") as HTMLElement;
+		expect(fill).not.toBeNull();
+		expect(fill.getAttribute("style")).toContain("width: 50%");
 	});
 
 	it("renders with capture paused", () => {
@@ -477,16 +523,18 @@ describe("_renderWizard (via EppWizard)", () => {
 		a._setupStep = "corners";
 		a._wizardCapturing = true;
 		a._wizardCapturePaused = true;
-		const result = a._renderWizard();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizard());
+		expect(c.querySelector(".capture-overlay")).not.toBeNull();
+		expect(c.textContent).toContain("wizard.paused");
 	});
 });
 
 describe("_renderWizardGuide (via EppWizard)", () => {
 	it("renders guide content", () => {
 		const a = createWizard() as any;
-		const result = a._renderWizardGuide();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizardGuide());
+		expect(c.textContent).toContain("wizard.begin_marking");
+		expect(c.querySelector("ha-checkbox")).not.toBeNull();
 	});
 });
 
@@ -494,15 +542,24 @@ describe("_renderWizardCorners (via EppWizard)", () => {
 	it("renders corner marking step with no targets", () => {
 		const a = createWizard() as any;
 		a.rawTargets = [];
-		const result = a._renderWizardCorners();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizardCorners());
+		const warning = c.querySelector(".no-target-warning") as HTMLElement;
+		expect(warning).not.toBeNull();
+		expect(warning.getAttribute("style")).toContain("visibility: visible");
+		expect(warning.textContent).toContain("wizard.no_target");
+		const mark = c.querySelector(".wizard-btn-primary") as HTMLButtonElement;
+		expect(mark.disabled).toBe(true);
 	});
 
 	it("renders with active target", () => {
 		const a = createWizard() as any;
 		a.rawTargets = [{ raw_x: 100, raw_y: 200 }];
-		const result = a._renderWizardCorners();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizardCorners());
+		const warning = c.querySelector(".no-target-warning") as HTMLElement;
+		expect(warning.getAttribute("style")).toContain("visibility: hidden");
+		const mark = c.querySelector(".wizard-btn-primary") as HTMLButtonElement;
+		expect(mark.disabled).toBe(false);
+		expect(mark.textContent).toContain("wizard.mark_corner");
 	});
 
 	it("renders with too many targets", () => {
@@ -511,8 +568,12 @@ describe("_renderWizardCorners (via EppWizard)", () => {
 			{ raw_x: 100, raw_y: 200 },
 			{ raw_x: 300, raw_y: 400 },
 		];
-		const result = a._renderWizardCorners();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizardCorners());
+		const warning = c.querySelector(".no-target-warning") as HTMLElement;
+		expect(warning.getAttribute("style")).toContain("visibility: visible");
+		expect(warning.textContent).toContain("wizard.multiple_targets");
+		const mark = c.querySelector(".wizard-btn-primary") as HTMLButtonElement;
+		expect(mark.disabled).toBe(true);
 	});
 
 	it("renders when all corners marked", () => {
@@ -523,8 +584,12 @@ describe("_renderWizardCorners (via EppWizard)", () => {
 			{ raw_x: 1000, raw_y: 3000, offset_side: 0, offset_fb: 0 },
 			{ raw_x: -1000, raw_y: 3000, offset_side: 0, offset_fb: 0 },
 		];
-		const result = a._renderWizardCorners();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizardCorners());
+		expect(c.querySelectorAll(".corner-chip.done").length).toBe(4);
+		expect(c.textContent).toContain("wizard.save_prompt");
+		const save = c.querySelector(".wizard-btn-primary") as HTMLButtonElement;
+		expect(save.textContent).toContain("common.save");
+		expect(save.disabled).toBe(false);
 	});
 
 	it("renders wizard saving state", () => {
@@ -536,8 +601,10 @@ describe("_renderWizardCorners (via EppWizard)", () => {
 			{ raw_x: -1000, raw_y: 3000, offset_side: 0, offset_fb: 0 },
 		];
 		a._wizardSaving = true;
-		const result = a._renderWizardCorners();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderWizardCorners());
+		const save = c.querySelector(".wizard-btn-primary") as HTMLButtonElement;
+		expect(save.disabled).toBe(true);
+		expect(save.textContent).toContain("common.saving");
 	});
 });
 
@@ -545,8 +612,10 @@ describe("_renderMiniSensorView (via EppWizard)", () => {
 	it("renders sensor FOV view without targets", () => {
 		const a = createWizard() as any;
 		a.rawTargets = [];
-		const result = a._renderMiniSensorView();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderMiniSensorView());
+		expect(c.querySelector(".sensor-fov-svg")).not.toBeNull();
+		expect(c.querySelectorAll(".mini-grid-target").length).toBe(0);
+		expect(c.querySelectorAll(".mini-grid-captured").length).toBe(0);
 	});
 
 	it("renders with targets on the FOV view", () => {
@@ -558,24 +627,36 @@ describe("_renderMiniSensorView (via EppWizard)", () => {
 			null,
 			null,
 		];
-		const result = a._renderMiniSensorView();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderMiniSensorView());
+		expect(c.querySelectorAll(".mini-grid-target").length).toBe(1);
+		expect(c.querySelectorAll(".mini-grid-captured").length).toBe(1);
 	});
 });
 
 describe("_renderSaveCancelButtons", () => {
-	it("renders for editor view", () => {
+	it("renders cancel and save buttons", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
-		const result = a._renderSaveCancelButtons();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderSaveCancelButtons());
+		expect(c.querySelector(".save-cancel-bar")).not.toBeNull();
+		expect(c.querySelector(".cancel-btn")?.textContent).toContain(
+			"common.cancel",
+		);
+		expect(c.querySelector(".save-btn")?.textContent).toContain("common.save");
 	});
 
-	it("renders for settings view", () => {
+	it("disables save when clean and enables it when dirty", () => {
 		const a = createPanel() as any;
-		a._view = "settings";
-		const result = a._renderSaveCancelButtons();
-		expect(result).toBeDefined();
+		a._dirty = false;
+		let c = renderTo(a._renderSaveCancelButtons());
+		expect((c.querySelector(".save-btn") as HTMLButtonElement).disabled).toBe(
+			true,
+		);
+		a._dirty = true;
+		c = renderTo(a._renderSaveCancelButtons());
+		expect((c.querySelector(".save-btn") as HTMLButtonElement).disabled).toBe(
+			false,
+		);
 	});
 });
 
@@ -584,36 +665,50 @@ describe("_renderLiveOverview", () => {
 		const a = createPanel() as any;
 		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
 		a._grid = initGridFromRoom(3000, 4000);
-		const result = a._renderLiveOverview();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderLiveOverview());
+		expect(c.querySelector("epp-grid")).not.toBeNull();
+		expect(c.querySelector("epp-live-sidebar")).not.toBeNull();
+		expect(c.querySelector("epp-wizard")).toBeNull();
 	});
 
 	it("renders live overview without perspective (uncalibrated)", () => {
 		const a = createPanel() as any;
 		a._perspective = null;
-		const result = a._renderLiveOverview();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderLiveOverview());
+		const wiz = c.querySelector("epp-wizard");
+		expect(wiz).not.toBeNull();
+		expect(wiz!.getAttribute("mode")).toBe("uncalibrated-fov");
+		expect(c.querySelector("epp-grid")).toBeNull();
 	});
 
 	it("renders with live menu open on panel", () => {
 		const a = createPanel() as any;
 		a._perspective = [1, 0, 0, 0, 1, 0, 0, 0];
 		a._showLiveMenu = true;
-		const result = a._renderLiveOverview();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderLiveOverview());
+		expect(c.querySelector(".sidebar-menu")).not.toBeNull();
+		// Zones/overlays/furniture + settings + calibration + delete +
+		// backup + restore.
+		expect(c.querySelectorAll(".sidebar-menu-item").length).toBe(8);
+		expect(c.textContent).toContain("menu.delete_calibration");
 	});
 
 	it("renders with live menu open and no perspective on panel", () => {
 		const a = createPanel() as any;
 		a._perspective = null;
 		a._showLiveMenu = true;
-		const result = a._renderLiveOverview();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderLiveOverview());
+		expect(c.querySelector(".sidebar-menu")).not.toBeNull();
+		// Editor entries and delete-calibration are hidden without a
+		// calibration: settings + calibration + backup + restore remain.
+		expect(c.querySelectorAll(".sidebar-menu-item").length).toBe(4);
+		expect(c.textContent).not.toContain("menu.furniture");
+		expect(c.textContent).not.toContain("menu.delete_calibration");
 	});
 });
 
 describe("_renderLiveGrid", () => {
-	it("renders a grid with targets", () => {
+	it("renders a grid with the panel state bound", () => {
 		const a = createPanel() as any;
 		a._grid = initGridFromRoom(3000, 4000);
 		a._targets = [
@@ -626,11 +721,16 @@ describe("_renderLiveGrid", () => {
 				signal: 5,
 			},
 		];
-		const result = a._renderLiveGrid();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid).not.toBeNull();
+		expect(grid.grid).toBe(a._grid);
+		expect(grid.roomWidth).toBe(3000);
+		expect(grid.roomDepth).toBe(4000);
+		expect(grid.maxGridPx).toBe(480);
 	});
 
-	it("renders with an active target", () => {
+	it("passes targets through to epp-grid", () => {
 		const a = createPanel() as any;
 		a._grid = initGridFromRoom(3000, 4000);
 		a._targets = [
@@ -643,15 +743,21 @@ describe("_renderLiveGrid", () => {
 				signal: 7,
 			},
 		];
-		const result = a._renderLiveGrid();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.targets).toHaveLength(1);
+		expect(grid.targets[0].status).toBe("active");
+		expect(grid.targets[0].signal).toBe(7);
 	});
 
 	it("renders with no room bounds (empty grid)", () => {
 		const a = createPanel() as any;
 		a._grid = new Uint8Array(GRID_CELL_COUNT);
-		const result = a._renderLiveGrid();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid).not.toBeNull();
+		expect(grid.grid).toBe(a._grid);
+		expect(grid.targets).toEqual([]);
 	});
 });
 
@@ -662,8 +768,7 @@ describe("_renderGridDimensions (via EppGrid)", () => {
 			roomWidth: 0,
 			perspective: null,
 		}) as any;
-		const result = a._renderGridDimensions();
-		expect(result).toBeDefined();
+		expect(a._renderGridDimensions(null)).toBe(nothing);
 	});
 });
 
@@ -672,115 +777,143 @@ describe("_renderUncalibratedFov (via EppWizard)", () => {
 		const a = createWizard({ mode: "uncalibrated-fov" }) as any;
 		a.sensorState = { occupancy: false };
 		a.rawTargets = [];
-		const result = a._renderUncalibratedFov();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderUncalibratedFov());
+		expect(c.textContent).toContain("wizard.no_presence");
+		expect(c.querySelectorAll("circle[r='5']").length).toBe(0);
 	});
 
 	it("renders FOV view with occupancy", () => {
 		const a = createWizard({ mode: "uncalibrated-fov" }) as any;
 		a.sensorState = { occupancy: true };
-		const result = a._renderUncalibratedFov();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderUncalibratedFov());
+		expect(c.textContent).toContain("live.detected");
+		expect(c.textContent).not.toContain("wizard.no_presence");
 	});
 
 	it("renders with active targets", () => {
 		const a = createWizard({ mode: "uncalibrated-fov" }) as any;
 		a.rawTargets = [{ raw_x: 500, raw_y: 1000 }];
-		const result = a._renderUncalibratedFov();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderUncalibratedFov());
+		expect(c.querySelectorAll("circle[r='5']").length).toBe(1);
 	});
 
 	it("skips targets with null raw positions", () => {
 		const a = createWizard({ mode: "uncalibrated-fov" }) as any;
 		a.rawTargets = [{ raw_x: null, raw_y: null }];
-		const result = a._renderUncalibratedFov();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderUncalibratedFov());
+		expect(c.querySelectorAll("circle[r='5']").length).toBe(0);
 	});
 
 	it("shows targets with raw positions even if status is inactive", () => {
 		const a = createWizard({ mode: "uncalibrated-fov" }) as any;
-		a.rawTargets = [{ raw_x: 500, raw_y: 1000 }];
-		const result = a._renderUncalibratedFov();
-		expect(result).toBeDefined();
+		a.rawTargets = [{ raw_x: 500, raw_y: 1000, status: "inactive" }];
+		const c = renderTo(a._renderUncalibratedFov());
+		expect(c.querySelectorAll("circle[r='5']").length).toBe(1);
 	});
 });
 
 describe("_renderSettings", () => {
-	it("renders settings page with closed accordions", () => {
+	async function renderSettings(a: any): Promise<EppSettingsView> {
+		const c = renderTo(a._renderSettings());
+		const sv = c.querySelector("epp-settings-view") as EppSettingsView;
+		expect(sv).not.toBeNull();
+		await sv.updateComplete;
+		return sv;
+	}
+
+	it("renders settings page with closed accordions", async () => {
 		const a = createPanel() as any;
 		a._view = "settings";
 		a._openAccordions = new Set();
-		const result = a._renderSettings();
-		expect(result).toBeDefined();
+		const sv = await renderSettings(a);
+		expect(sv.shadowRoot!.querySelectorAll(".accordion-header").length).toBe(5);
+		expect(sv.shadowRoot!.querySelectorAll(".accordion-body").length).toBe(0);
 	});
 
-	it("renders with open detection accordion", () => {
+	it("renders with open detection accordion", async () => {
 		const a = createPanel() as any;
 		a._view = "settings";
 		a._openAccordions = new Set(["detection"]);
-		const result = a._renderSettings();
-		expect(result).toBeDefined();
+		const sv = await renderSettings(a);
+		const body = sv.shadowRoot!.querySelector(".accordion-body");
+		expect(body).not.toBeNull();
+		expect(body!.textContent).toContain("settings.target_sensor");
 	});
 
-	it("renders with open sensitivity accordion", () => {
+	it("renders with open sensitivity accordion", async () => {
 		const a = createPanel() as any;
 		a._view = "settings";
 		a._openAccordions = new Set(["sensitivity"]);
-		const result = a._renderSettings();
-		expect(result).toBeDefined();
+		const sv = await renderSettings(a);
+		const body = sv.shadowRoot!.querySelector(".accordion-body");
+		expect(body).not.toBeNull();
+		expect(body!.textContent).toContain("settings.motion_sensor");
 	});
 
-	it("renders with open reporting accordion", () => {
+	it("renders with open reporting accordion", async () => {
 		const a = createPanel() as any;
 		a._view = "settings";
 		a._openAccordions = new Set(["reporting"]);
-		const result = a._renderSettings();
-		expect(result).toBeDefined();
+		const sv = await renderSettings(a);
+		const body = sv.shadowRoot!.querySelector(".accordion-body");
+		expect(body).not.toBeNull();
+		expect(body!.textContent).toContain("entities.room_level");
 	});
 
-	it("renders with all accordions open", () => {
+	it("renders with all accordions open", async () => {
 		const a = createPanel() as any;
 		a._view = "settings";
 		a._openAccordions = new Set(["detection", "sensitivity", "reporting"]);
-		const result = a._renderSettings();
-		expect(result).toBeDefined();
+		const sv = await renderSettings(a);
+		expect(sv.shadowRoot!.querySelectorAll(".accordion-body").length).toBe(3);
 	});
 });
 
 describe("_renderSettingsSection (via EppSettingsView)", () => {
 	it("renders detection section", () => {
 		const sv = createSettingsView() as any;
-		const result = sv.renderSettingsSection("detection");
-		expect(result).toBeDefined();
+		const c = renderTo(sv.renderSettingsSection("detection"));
+		expect(c.textContent).toContain("settings.target_sensor");
+		expect(c.querySelectorAll(".setting-range").length).toBe(3);
 	});
 
 	it("renders sensitivity section", () => {
 		const sv = createSettingsView() as any;
-		const result = sv.renderSettingsSection("sensitivity");
-		expect(result).toBeDefined();
+		const c = renderTo(sv.renderSettingsSection("sensitivity"));
+		expect(c.textContent).toContain("settings.motion_sensor");
+		// 6 sensitivity sliders + 3 environmental offset sliders.
+		expect(c.querySelectorAll(".setting-range").length).toBe(9);
 	});
 
 	it("renders reporting section", () => {
 		const sv = createSettingsView() as any;
-		const result = sv.renderSettingsSection("reporting");
-		expect(result).toBeDefined();
+		const c = renderTo(sv.renderSettingsSection("reporting"));
+		expect(c.textContent).toContain("entities.room_level");
+		// 6 room + 2 zone + 4 target + 4 environmental toggles.
+		expect(c.querySelectorAll('input[type="checkbox"]').length).toBe(16);
 	});
 
 	it("returns nothing for unknown section", () => {
 		const sv = createSettingsView() as any;
-		const result = sv.renderSettingsSection("unknown");
-		expect(result).toBeDefined();
+		expect(sv.renderSettingsSection("unknown")).toBe(nothing);
 	});
 });
 
 describe("_renderDetectionRanges (via EppSettingsView)", () => {
+	function dimmedRows(c: HTMLElement): Element[] {
+		return Array.from(c.querySelectorAll(".setting-row")).filter((r) =>
+			(r.getAttribute("style") || "").includes("pointer-events: none"),
+		);
+	}
+
 	it("renders with auto range enabled", () => {
 		const sv = createSettingsView({
 			targetAutoDistance: true,
 			staticAutoDistance: true,
 		});
-		const result = (sv as any).renderDetectionRanges();
-		expect(result).toBeDefined();
+		const c = renderTo((sv as any).renderDetectionRanges());
+		// All three distance sliders are dimmed/locked in auto mode.
+		expect(dimmedRows(c).length).toBe(3);
 	});
 
 	it("renders with auto range disabled", () => {
@@ -788,84 +921,116 @@ describe("_renderDetectionRanges (via EppSettingsView)", () => {
 			targetAutoDistance: false,
 			staticAutoDistance: false,
 		});
-		const result = (sv as any).renderDetectionRanges();
-		expect(result).toBeDefined();
+		const c = renderTo((sv as any).renderDetectionRanges());
+		expect(dimmedRows(c).length).toBe(0);
+		const ranges = c.querySelectorAll(
+			".setting-range",
+		) as NodeListOf<HTMLInputElement>;
+		// Sliders reflect the configured (non-auto) distances.
+		expect(ranges[0].value).toBe("6");
+		expect(ranges[1].value).toBe("0.3");
+		expect(ranges[2].value).toBe("16");
 	});
 
 	it("renders with grid room metrics", () => {
 		const sv = createSettingsView({ grid: initGridFromRoom(3000, 4000) });
-		const result = (sv as any).renderDetectionRanges();
-		expect(result).toBeDefined();
+		const c = renderTo((sv as any).renderDetectionRanges());
+		expect(c.textContent).toContain("settings.furthest_point");
 	});
 });
 
 describe("_renderSensitivities (via EppSettingsView)", () => {
 	it("renders sensitivity section with sensor state", () => {
 		const sv = createSettingsView();
-		const result = (sv as any).renderSensitivities();
-		expect(result).toBeDefined();
+		const c = renderTo((sv as any).renderSensitivities());
+		expect(c.textContent).toContain("settings.environmental");
+		expect(c.querySelectorAll(".setting-range").length).toBe(9);
 	});
 });
 
 describe("_renderEnvOffset (via EppSettingsView)", () => {
 	it("renders offset control with a reading", () => {
 		const sv = createSettingsView({ illuminanceOffset: 10 });
-		const result = (sv as any).renderEnvOffset(
-			"Illuminance offset",
-			150,
-			"illuminance",
-			-500,
-			500,
-			1,
-			"lux",
-			0,
-			"Adjust illuminance.",
+		const c = renderTo(
+			(sv as any).renderEnvOffset(
+				"Illuminance offset",
+				150,
+				"illuminance",
+				-500,
+				500,
+				1,
+				"lux",
+				0,
+				"Adjust illuminance.",
+			),
 		);
-		expect(result).toBeDefined();
+		// reading 150 already includes the saved offset 10: raw 140 + 10.
+		expect(c.querySelector(".setting-value")?.textContent).toBe("150");
+		expect((c.querySelector(".setting-range") as HTMLInputElement).value).toBe(
+			"10",
+		);
 	});
 
 	it("renders offset control with null reading", () => {
 		const sv = createSettingsView();
-		const result = (sv as any).renderEnvOffset(
-			"Temperature offset",
-			null,
-			"temperature",
-			-20,
-			20,
-			0.1,
-			"\u00b0C",
-			1,
-			"Adjust temperature.",
+		const c = renderTo(
+			(sv as any).renderEnvOffset(
+				"Temperature offset",
+				null,
+				"temperature",
+				-20,
+				20,
+				0.1,
+				"°C",
+				1,
+				"Adjust temperature.",
+			),
 		);
-		expect(result).toBeDefined();
+		expect(c.querySelector(".setting-value")?.textContent).toBe("—");
 	});
 
 	it("renders with no saved offset", () => {
 		const sv = createSettingsView();
-		const result = (sv as any).renderEnvOffset(
-			"Humidity offset",
-			45,
-			"humidity",
-			-50,
-			50,
-			0.1,
-			"%",
-			1,
-			"Adjust humidity.",
+		const c = renderTo(
+			(sv as any).renderEnvOffset(
+				"Humidity offset",
+				45,
+				"humidity",
+				-50,
+				50,
+				0.1,
+				"%",
+				1,
+				"Adjust humidity.",
+			),
 		);
-		expect(result).toBeDefined();
+		expect(c.querySelector(".setting-value")?.textContent).toBe("45.0");
+		expect((c.querySelector(".setting-range") as HTMLInputElement).value).toBe(
+			"0",
+		);
 	});
 });
 
 describe("_infoTip (via EppSettingsView)", () => {
-	it("returns defined result", () => {
+	it("renders an info button with the tooltip text", () => {
 		const sv = createSettingsView();
-		const result = (sv as any).infoTip("Some tip text");
-		expect(result).toBeDefined();
+		const c = renderTo((sv as any).infoTip("Some tip text"));
+		expect(c.querySelector("button.setting-info")).not.toBeNull();
+		const tip = c.querySelector(".setting-info-tooltip");
+		expect(tip).not.toBeNull();
+		expect(tip!.textContent).toBe("Some tip text");
 	});
 });
 
 describe("_renderEntities (via EppSettingsView)", () => {
+	function toggle(c: HTMLElement, key: string): HTMLInputElement {
+		const input = c.querySelector(
+			`input[data-entity-key="${key}"]`,
+		) as HTMLInputElement;
+		expect(input).not.toBeNull();
+		return input;
+	}
+
 	it("renders reporting toggles", () => {
 		const sv = createSettingsView({
 			entitiesConfig: {
@@ -873,14 +1038,20 @@ describe("_renderEntities (via EppSettingsView)", () => {
 				room_static_presence: false,
 			},
 		});
-		const result = (sv as any).renderEntities();
-		expect(result).toBeDefined();
+		const c = renderTo((sv as any).renderEntities());
+		expect(toggle(c, "room_occupancy").checked).toBe(true);
+		expect(toggle(c, "room_static_presence").checked).toBe(false);
 	});
 
 	it("renders with empty reporting config", () => {
 		const sv = createSettingsView({ entitiesConfig: {} });
-		const result = (sv as any).renderEntities();
-		expect(result).toBeDefined();
+		const c = renderTo((sv as any).renderEntities());
+		// Defaults apply: occupancy + zone presence on, the rest off.
+		expect(toggle(c, "room_occupancy").checked).toBe(true);
+		expect(toggle(c, "zone_presence").checked).toBe(true);
+		// A perspective is configured, so zone toggles are not disabled.
+		expect(toggle(c, "zone_presence").disabled).toBe(false);
+		expect(toggle(c, "target_xy").checked).toBe(false);
 	});
 });
 
@@ -890,11 +1061,13 @@ describe("_renderEditor", () => {
 		a._view = "editor";
 		a._sidebarTab = "zones";
 		a._grid = initGridFromRoom(3000, 4000);
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		expect(c.querySelector("epp-zone-sidebar")).not.toBeNull();
+		expect(c.querySelector("epp-furniture-sidebar")).toBeNull();
+		expect((c.querySelector("epp-grid") as any).editable).toBe(true);
 	});
 
-	it("renders editor with targets showing signal badges", () => {
+	it("passes fresh target objects to the grid (render purity)", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._sidebarTab = "zones";
@@ -919,8 +1092,14 @@ describe("_renderEditor", () => {
 				signal: 0,
 			},
 		];
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.targets).toHaveLength(2);
+		// Each editor target is a fresh object; the originals must never be
+		// mutated by the render path.
+		expect(grid.targets[0]).not.toBe(a._targets[0]);
+		expect(grid.targets[0].x).toBe(1500);
+		expect(a._targets[0].status).toBe("inactive");
 	});
 
 	it("renders editor view with furniture sidebar", () => {
@@ -928,8 +1107,9 @@ describe("_renderEditor", () => {
 		a._view = "editor";
 		a._sidebarTab = "furniture";
 		a._grid = initGridFromRoom(3000, 4000);
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		expect(c.querySelector("epp-furniture-sidebar")).not.toBeNull();
+		expect(c.querySelector("epp-zone-sidebar")).toBeNull();
 	});
 
 	it("renders editor with configuration backup dialog", () => {
@@ -937,8 +1117,11 @@ describe("_renderEditor", () => {
 		a._view = "editor";
 		a._showConfigurationBackup = true;
 		a._grid = initGridFromRoom(3000, 4000);
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		expect(c.querySelector("epp-grid")).not.toBeNull();
+		const dialogs = c.querySelector("epp-configuration-dialogs") as any;
+		expect(dialogs).not.toBeNull();
+		expect(dialogs.showBackup).toBe(true);
 	});
 
 	it("renders editor with configuration restore dialog", () => {
@@ -946,8 +1129,10 @@ describe("_renderEditor", () => {
 		a._view = "editor";
 		a._showConfigurationRestore = true;
 		a._grid = initGridFromRoom(3000, 4000);
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		const dialogs = c.querySelector("epp-configuration-dialogs") as any;
+		expect(dialogs).not.toBeNull();
+		expect(dialogs.showRestore).toBe(true);
 	});
 
 	it("renders editor with unsaved dialog", () => {
@@ -955,8 +1140,9 @@ describe("_renderEditor", () => {
 		a._view = "editor";
 		a._showUnsavedDialog = true;
 		a._grid = initGridFromRoom(3000, 4000);
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a.render());
+		expect(c.querySelector(".template-dialog")).not.toBeNull();
+		expect(c.textContent).toContain("dialogs.unsaved_changes");
 	});
 
 	it("renders editor with targets", () => {
@@ -989,8 +1175,10 @@ describe("_renderEditor", () => {
 				signal: 0,
 			},
 		];
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.targets).toHaveLength(3);
+		expect(grid.targets.map((t: any) => t.x)).toEqual([1500, 500, 0]);
 	});
 
 	it("renders editor with frozen bounds during painting", () => {
@@ -998,45 +1186,58 @@ describe("_renderEditor", () => {
 		a._view = "editor";
 		a._grid = initGridFromRoom(3000, 4000);
 		a._frozenBounds = { minCol: 5, maxCol: 15, minRow: 2, maxRow: 12 };
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.frozenBounds).toBe(a._frozenBounds);
 	});
 
 	it("renders editor on empty grid (no room)", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._grid = new Uint8Array(GRID_CELL_COUNT);
-		const result = a._renderEditor();
-		expect(result).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid).not.toBeNull();
+		expect(grid.grid).toBe(a._grid);
 	});
 });
 
 describe("epp-zone-sidebar renders boundary type controls", () => {
-	it("renders for default type", () => {
+	function boundarySidebar(type: string) {
 		const el = document.createElement("epp-zone-sidebar") as any;
-		el.zone0 = { type: "default" };
+		el.zone0 = { type };
 		el.activeZone = 0;
 		el.zoneConfigs = new Array(7).fill(null);
-		const result = el.render();
-		expect(result).toBeDefined();
+		return el;
+	}
+
+	it("renders for default type", () => {
+		const el = boundarySidebar("default");
+		const c = renderTo(el.render());
+		const select = c.querySelector(".sensitivity-select") as HTMLSelectElement;
+		expect(select).not.toBeNull();
+		expect(select.dataset.value).toBe("default");
+		// Non-custom types lock the threshold controls.
+		const trigger = c.querySelector('input[type="range"]') as HTMLInputElement;
+		expect(trigger.disabled).toBe(true);
 	});
 
 	it("renders for custom type", () => {
-		const el = document.createElement("epp-zone-sidebar") as any;
-		el.zone0 = { type: "custom" };
-		el.activeZone = 0;
-		el.zoneConfigs = new Array(7).fill(null);
-		const result = el.render();
-		expect(result).toBeDefined();
+		const el = boundarySidebar("custom");
+		const c = renderTo(el.render());
+		const select = c.querySelector(".sensitivity-select") as HTMLSelectElement;
+		expect(select.dataset.value).toBe("custom");
+		const trigger = c.querySelector('input[type="range"]') as HTMLInputElement;
+		expect(trigger.disabled).toBe(false);
 	});
 
 	it("renders for transit type", () => {
-		const el = document.createElement("epp-zone-sidebar") as any;
-		el.zone0 = { type: "transit" };
-		el.activeZone = 0;
-		el.zoneConfigs = new Array(7).fill(null);
-		const result = el.render();
-		expect(result).toBeDefined();
+		const el = boundarySidebar("transit");
+		const c = renderTo(el.render());
+		const select = c.querySelector(".sensitivity-select") as HTMLSelectElement;
+		expect(select.dataset.value).toBe("transit");
+		const trigger = c.querySelector('input[type="range"]') as HTMLInputElement;
+		expect(trigger.disabled).toBe(true);
 	});
 });
 
@@ -1048,8 +1249,15 @@ describe("epp-zone-sidebar renders zone type controls", () => {
 			...new Array(6).fill(null),
 		];
 		el.activeZone = 1;
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		const name = c.querySelector(".zone-name-input") as HTMLInputElement;
+		expect(name.value).toBe("Zone 1");
+		const select = c.querySelector(".sensitivity-select") as HTMLSelectElement;
+		expect(select.dataset.value).toBe("default");
+		const trigger = c.querySelector(
+			'.zone-settings-row input[type="range"]',
+		) as HTMLInputElement;
+		expect(trigger.disabled).toBe(true);
 	});
 
 	it("renders for custom zone with explicit thresholds", () => {
@@ -1067,8 +1275,19 @@ describe("epp-zone-sidebar renders zone type controls", () => {
 			...new Array(6).fill(null),
 		];
 		el.activeZone = 1;
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		const ranges = c.querySelectorAll(
+			'.zone-settings-row input[type="range"]',
+		) as NodeListOf<HTMLInputElement>;
+		expect(ranges).toHaveLength(2);
+		expect(ranges[0].value).toBe("7"); // trigger
+		expect(ranges[0].disabled).toBe(false);
+		expect(ranges[1].value).toBe("4"); // renew
+		const numbers = c.querySelectorAll(
+			'.zone-settings-row input[type="number"]',
+		) as NodeListOf<HTMLInputElement>;
+		expect(numbers[0].value).toBe("15"); // timeout
+		expect(numbers[1].value).toBe("5"); // handoff timeout
 	});
 });
 
@@ -1076,8 +1295,10 @@ describe("epp-zone-sidebar renders zone sidebar", () => {
 	it("renders with no zones configured", () => {
 		const el = document.createElement("epp-zone-sidebar") as any;
 		el.zoneConfigs = new Array(7).fill(null);
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		// Only the room row, plus the add-zone button.
+		expect(c.querySelectorAll(".zone-item").length).toBe(1);
+		expect(c.querySelector(".add-zone-btn")).not.toBeNull();
 	});
 
 	it("renders with zones configured", () => {
@@ -1094,16 +1315,30 @@ describe("epp-zone-sidebar renders zone sidebar", () => {
 			type: "default",
 		};
 		el.activeZone = 1;
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		expect(c.querySelectorAll(".zone-item").length).toBe(3);
+		const names = Array.from(
+			c.querySelectorAll(".zone-name-input"),
+		) as HTMLInputElement[];
+		expect(names.map((n) => n.value)).toEqual(["Kitchen", "Living"]);
+		// The active zone-item is the Kitchen row (slot 1).
+		const active = c.querySelector(".zone-item.active");
+		expect(active).not.toBeNull();
+		expect(
+			(active!.querySelector(".zone-name-input") as HTMLInputElement).value,
+		).toBe("Kitchen");
 	});
 
 	it("renders with active boundary zone", () => {
 		const el = document.createElement("epp-zone-sidebar") as any;
 		el.zoneConfigs = new Array(7).fill(null);
 		el.activeZone = 0;
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		const active = c.querySelector(".zone-item.active");
+		expect(active).not.toBeNull();
+		expect(active!.textContent).toContain("sidebar.room");
+		// The boundary row expands its type controls when selected.
+		expect(active!.querySelector(".sensitivity-select")).not.toBeNull();
 	});
 
 	it("renders with zone occupancy glow", () => {
@@ -1121,8 +1356,11 @@ describe("epp-zone-sidebar renders zone sidebar", () => {
 				},
 			],
 		]);
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		// Active + occupied zone renders the color picker with a glow.
+		const picker = c.querySelector(".zone-color-picker") as HTMLElement;
+		expect(picker).not.toBeNull();
+		expect(picker.getAttribute("style")).toContain("box-shadow");
 	});
 
 	it("renders with all zones full (no add button)", () => {
@@ -1135,20 +1373,24 @@ describe("epp-zone-sidebar renders zone sidebar", () => {
 				type: "default",
 			};
 		}
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		expect(c.querySelectorAll(".zone-item").length).toBe(8);
+		expect(c.querySelector(".add-zone-btn")).toBeNull();
 	});
 });
 
 describe("epp-live-sidebar via panel", () => {
 	it("renders live sidebar with basic sensors", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		expect(c.textContent).toContain("live.presence");
+		// Occupancy, static, motion, target presence and mmwave rows.
+		expect(c.querySelectorAll(".live-sensor-row").length).toBe(5);
 	});
 
 	it("renders with zone occupancy", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
+		el.hasPerspective = true;
 		el.zoneConfigs = new Array(7).fill(null);
 		el.zoneConfigs[0] = {
 			name: "Kitchen",
@@ -1160,8 +1402,15 @@ describe("epp-live-sidebar via panel", () => {
 			target_counts: { 1: 2 },
 			frame_count: 50,
 		};
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		const rows = Array.from(c.querySelectorAll(".live-sensor-row"));
+		const kitchen = rows.find((r) => r.textContent?.includes("Kitchen"));
+		expect(kitchen).toBeTruthy();
+		expect(
+			kitchen!
+				.querySelector(".live-sensor-state")!
+				.classList.contains("detected"),
+		).toBe(true);
 	});
 
 	it("renders with no env sensors", () => {
@@ -1176,22 +1425,26 @@ describe("epp-live-sidebar via panel", () => {
 			humidity: null,
 			co2: null,
 		};
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		expect(c.querySelectorAll(".live-sensor-value").length).toBe(0);
+		expect(c.textContent).not.toContain("live.environment");
 	});
 
 	it("renders with expanded sensor info", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
 		el._expandedSensorInfo = "occupancy";
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		const info = c.querySelector(".live-sensor-info-text");
+		expect(info).not.toBeNull();
+		expect(info!.textContent).toContain("info.occupancy");
 	});
 
 	it("renders without configured zones (still shows rest-of-room)", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
+		el.hasPerspective = true;
 		el.zoneConfigs = new Array(7).fill(null);
-		const result = el.render();
-		expect(result).toBeDefined();
+		const c = renderTo(el.render());
+		expect(c.textContent).toContain("sidebar.rest_of_room");
 	});
 });
 
@@ -1212,8 +1465,10 @@ describe("epp-furniture-sidebar renders via component", () => {
 
 	it("renders furniture catalog", () => {
 		const el = createFurnSidebar();
-		const result = (el as any)._renderFurnitureSidebar();
-		expect(result).toBeDefined();
+		const c = renderTo((el as any)._renderFurnitureSidebar());
+		expect(c.querySelector(".furn-search")).not.toBeNull();
+		expect(c.querySelectorAll(".furn-sticker").length).toBeGreaterThan(1);
+		expect(c.querySelector(".furn-selected-info")).toBeNull();
 	});
 
 	it("renders with selected furniture", () => {
@@ -1234,8 +1489,15 @@ describe("epp-furniture-sidebar renders via component", () => {
 			],
 			selectedFurnitureId: "f1",
 		});
-		const result = (el as any)._renderFurnitureSidebar();
-		expect(result).toBeDefined();
+		const c = renderTo((el as any)._renderFurnitureSidebar());
+		expect(c.querySelector(".furn-selected-info")).not.toBeNull();
+		const dims = c.querySelectorAll(
+			'.furn-dims input[type="number"]',
+		) as NodeListOf<HTMLInputElement>;
+		expect(dims).toHaveLength(3);
+		expect(dims[0].value).toBe("80"); // width cm
+		expect(dims[1].value).toBe("80"); // height cm
+		expect(dims[2].value).toBe("45"); // rotation
 	});
 
 	it("renders with custom icon picker open", () => {
@@ -1243,8 +1505,13 @@ describe("epp-furniture-sidebar renders via component", () => {
 			showCustomIconPicker: true,
 			customIconValue: "mdi:lamp",
 		});
-		const result = (el as any)._renderFurnitureSidebar();
-		expect(result).toBeDefined();
+		const c = renderTo((el as any)._renderFurnitureSidebar());
+		expect(c.querySelector(".template-dialog")).not.toBeNull();
+		expect(c.querySelector("ha-icon-picker")).not.toBeNull();
+		const add = c.querySelector(
+			".template-dialog .wizard-btn-primary",
+		) as HTMLButtonElement;
+		expect(add.disabled).toBe(false);
 	});
 
 	it("renders with empty custom icon value", () => {
@@ -1252,7 +1519,10 @@ describe("epp-furniture-sidebar renders via component", () => {
 			showCustomIconPicker: true,
 			customIconValue: "",
 		});
-		const result = (el as any)._renderFurnitureSidebar();
-		expect(result).toBeDefined();
+		const c = renderTo((el as any)._renderFurnitureSidebar());
+		const add = c.querySelector(
+			".template-dialog .wizard-btn-primary",
+		) as HTMLButtonElement;
+		expect(add.disabled).toBe(true);
 	});
 });

@@ -3,7 +3,7 @@
  */
 
 import { render } from "lit";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
@@ -11,6 +11,7 @@ import "../components/epp-zone-sidebar.js";
 import "../components/epp-settings-view.js";
 import "../components/epp-wizard.js";
 import type { EppSettingsView } from "../components/epp-settings-view.js";
+import { TARGET_COLORS } from "../constants.js";
 import {
 	CELL_ROOM_BIT,
 	cellSetZone,
@@ -127,11 +128,28 @@ function createSettingsView(
 	return el;
 }
 
-function _renderTo(tpl: any) {
+// Shared render-to-DOM fixture; containers are detached after each test.
+const containers: HTMLDivElement[] = [];
+
+afterEach(() => {
+	for (const c of containers) c.remove();
+	containers.length = 0;
+});
+
+function renderTo(tpl: any) {
 	const c = document.createElement("div");
 	document.body.appendChild(c);
+	containers.push(c);
 	render(tpl, c);
 	return c;
+}
+
+/** Dispatch a bubbling click and assert the handler stopped propagation. */
+function expectClickStopsPropagation(el: Element): void {
+	const event = new MouseEvent("click", { bubbles: true });
+	const spy = vi.spyOn(event, "stopPropagation");
+	el.dispatchEvent(event);
+	expect(spy).toHaveBeenCalled();
 }
 
 /** Set up callbacks and subscribe to targets via DeviceController */
@@ -323,20 +341,18 @@ describe("wizard corner offset edge cases (via EppWizard)", () => {
 		el._wizardOffsetFb = "";
 		el._smoothBuffer = [];
 
-		const tpl = el._renderWizardCorners();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
+		const c = renderTo(el._renderWizardCorners());
 
 		const offsets = c.querySelectorAll(
 			".offset-input",
 		) as NodeListOf<HTMLInputElement>;
-		if (offsets.length >= 2) {
-			offsets[0].value = "50";
-			offsets[0].dispatchEvent(new Event("input"));
-			// Corner is null so no change
-		}
-		document.body.removeChild(c);
+		expect(offsets.length).toBe(2);
+		offsets[0].value = "50";
+		offsets[0].dispatchEvent(new Event("input"));
+		// The keystroke is kept in wizard state, but the null corner is left
+		// untouched (no offset to attach it to yet).
+		expect(el._wizardOffsetSide).toBe("50");
+		expect(el._wizardCorners[0]).toBeNull();
 	});
 });
 
@@ -344,7 +360,7 @@ describe("wizard corner offset edge cases (via EppWizard)", () => {
 // _renderEditor: branches for target rendering in editor
 // =========================================================
 describe("_renderEditor target rendering branches", () => {
-	it("renders pending target with reduced opacity", () => {
+	it("overlays engine status onto a fresh target object (pending)", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._targets = [
@@ -356,11 +372,17 @@ describe("_renderEditor target rendering branches", () => {
 			},
 		];
 
-		const tpl = a._renderEditor();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.targets).toHaveLength(1);
+		// Render purity: the grid receives a fresh object and the panel's
+		// own target is never mutated.
+		expect(grid.targets[0]).not.toBe(a._targets[0]);
+		expect(a._targets[0].status).toBe("pending");
+		expect(grid.targets[0].x).toBe(1500);
 	});
 
-	it("renders signal label for an active target", () => {
+	it("passes the signal through for an active target", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._targets = [
@@ -372,11 +394,14 @@ describe("_renderEditor target rendering branches", () => {
 			},
 		];
 
-		const tpl = a._renderEditor();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.targets).toHaveLength(1);
+		expect(grid.targets[0].signal).toBe(7);
+		expect(grid.editable).toBe(true);
 	});
 
-	it("does not render signal label when pending", () => {
+	it("binds the editor occupancy from the local zone engine", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._targets = [
@@ -388,8 +413,12 @@ describe("_renderEditor target rendering branches", () => {
 			},
 		];
 
-		const tpl = a._renderEditor();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		// The editor grid uses the engine-replica occupancy, not the backend
+		// zone-state map bound on the live view.
+		expect(grid.occupancy).not.toBe(a._zoneState.occupancy);
+		expect(grid.occupancy).toBeTypeOf("object");
 	});
 });
 
@@ -397,7 +426,7 @@ describe("_renderEditor target rendering branches", () => {
 // _renderLiveGrid: target with no grid position (returns null)
 // =========================================================
 describe("_renderLiveGrid target branches", () => {
-	it("skips targets where mapTargetToGridCell returns null", () => {
+	it("skips targets where mapTargetToGridCell returns null", async () => {
 		const a = createPanel() as any;
 		a._roomWidth = 0; // Will cause mapTargetToGridCell to return null
 		a._roomDepth = 0;
@@ -410,11 +439,14 @@ describe("_renderLiveGrid target branches", () => {
 			},
 		];
 
-		const tpl = a._renderLiveGrid();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		await grid.updateComplete;
+		// The target can't be mapped to a grid cell, so no dot renders.
+		expect(grid.shadowRoot.querySelectorAll(".target-dot").length).toBe(0);
 	});
 
-	it("uses TARGET_COLORS with fallback for > 3 targets", () => {
+	it("renders a colored dot per active target", async () => {
 		const a = createPanel() as any;
 		a._targets = [
 			{
@@ -437,8 +469,16 @@ describe("_renderLiveGrid target branches", () => {
 			},
 		];
 
-		const tpl = a._renderLiveGrid();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		await grid.updateComplete;
+		const dots = grid.shadowRoot.querySelectorAll(
+			".target-dot",
+		) as NodeListOf<HTMLElement>;
+		expect(dots.length).toBe(3);
+		dots.forEach((dot, i) => {
+			expect(dot.getAttribute("style")).toContain(TARGET_COLORS[i]);
+		});
 	});
 });
 
@@ -465,21 +505,28 @@ describe("_addZone fallback branch", () => {
 });
 
 // =========================================================
-// _renderSaveCancelButtons: settings vs editor save handler
+// _renderSaveCancelButtons: editor-only save bar wiring
 // =========================================================
-describe("_renderSaveCancelButtons save handler branch", () => {
-	it("uses _saveSettings handler when in settings view", () => {
-		const a = createPanel() as any;
-		a._view = "settings";
-		const tpl = a._renderSaveCancelButtons();
-		expect(tpl).toBeDefined();
-	});
-
-	it("uses _applyLayout handler when in editor view", () => {
+describe("_renderSaveCancelButtons handlers", () => {
+	it("save button triggers the editor applyLayout flow", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
-		const tpl = a._renderSaveCancelButtons();
-		expect(tpl).toBeDefined();
+		a._dirty = true;
+		const applySpy = vi
+			.spyOn(a, "_applyLayout")
+			.mockResolvedValue(undefined as never);
+		const c = renderTo(a._renderSaveCancelButtons());
+		(c.querySelector(".save-btn") as HTMLButtonElement).click();
+		expect(applySpy).toHaveBeenCalledTimes(1);
+	});
+
+	it("cancel button triggers _cancelEditor", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		const cancelSpy = vi.spyOn(a, "_cancelEditor").mockImplementation(() => {});
+		const c = renderTo(a._renderSaveCancelButtons());
+		(c.querySelector(".cancel-btn") as HTMLButtonElement).click();
+		expect(cancelSpy).toHaveBeenCalledTimes(1);
 	});
 });
 
@@ -487,7 +534,7 @@ describe("_renderSaveCancelButtons save handler branch", () => {
 // _renderDetectionRanges: autoRange branches
 // =========================================================
 describe("_renderDetectionRanges auto range edge cases", () => {
-	it("target auto with zero autoRange", () => {
+	it("target auto with zero autoRange falls back to the 6m cap", () => {
 		const sv = createSettingsView({
 			targetAutoDistance: true,
 			roomWidth: 0,
@@ -495,11 +542,16 @@ describe("_renderDetectionRanges auto range edge cases", () => {
 			perspective: null,
 			grid: new Uint8Array(GRID_CELL_COUNT),
 		});
-		const tpl = (sv as any).renderDetectionRanges();
-		expect(tpl).toBeDefined();
+		const c = renderTo((sv as any).renderDetectionRanges());
+		const ranges = c.querySelectorAll(
+			".setting-range",
+		) as NodeListOf<HTMLInputElement>;
+		expect(ranges[0].value).toBe("6");
+		// No room metrics → no furthest-point hint.
+		expect(c.textContent).not.toContain("settings.furthest_point");
 	});
 
-	it("static auto with zero autoRange", () => {
+	it("static auto with zero autoRange falls back to the 16m cap", () => {
 		const sv = createSettingsView({
 			staticAutoDistance: true,
 			roomWidth: 0,
@@ -507,8 +559,12 @@ describe("_renderDetectionRanges auto range edge cases", () => {
 			perspective: null,
 			grid: new Uint8Array(GRID_CELL_COUNT),
 		});
-		const tpl = (sv as any).renderDetectionRanges();
-		expect(tpl).toBeDefined();
+		const c = renderTo((sv as any).renderDetectionRanges());
+		const ranges = c.querySelectorAll(
+			".setting-range",
+		) as NodeListOf<HTMLInputElement>;
+		expect(ranges[1].value).toBe("0.3"); // static min pinned in auto mode
+		expect(ranges[2].value).toBe("16"); // static max fallback
 	});
 });
 
@@ -518,8 +574,15 @@ describe("_renderDetectionRanges auto range edge cases", () => {
 describe("_renderEntities fallback branches", () => {
 	it("uses fallback values when reporting config is empty", () => {
 		const sv = createSettingsView({ entitiesConfig: {} });
-		const tpl = (sv as any).renderEntities();
-		expect(tpl).toBeDefined();
+		const c = renderTo((sv as any).renderEntities());
+		const checked = (key: string) =>
+			(c.querySelector(`input[data-entity-key="${key}"]`) as HTMLInputElement)
+				.checked;
+		// Defaults: occupancy + zone presence on, everything else off.
+		expect(checked("room_occupancy")).toBe(true);
+		expect(checked("zone_presence")).toBe(true);
+		expect(checked("room_static_presence")).toBe(false);
+		expect(checked("target_xy")).toBe(false);
 	});
 });
 
@@ -539,12 +602,18 @@ describe("epp-live-sidebar env sensor branches", () => {
 			humidity: null,
 			co2: null,
 		};
-		const tpl = el.render();
-		expect(tpl).toBeDefined();
+		const c = renderTo(el.render());
+		// Exactly one environment row (illuminance); the null sensors are
+		// skipped.
+		const values = c.querySelectorAll(".live-sensor-value");
+		expect(values.length).toBe(1);
+		expect(c.textContent).toContain("entities.illuminance");
+		expect(c.textContent).not.toContain("entities.temperature");
 	});
 
-	it("renders zone with target count = 1 (singular)", () => {
+	it("renders occupied zone row with target count", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
+		el.hasPerspective = true;
 		el.zoneConfigs = new Array(7).fill(null);
 		el.zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "default" };
 		el.zoneState = {
@@ -552,8 +621,13 @@ describe("epp-live-sidebar env sensor branches", () => {
 			target_counts: { 1: 1 },
 			frame_count: 10,
 		};
-		const tpl = el.render();
-		expect(tpl).toBeDefined();
+		const c = renderTo(el.render());
+		const rows = Array.from(c.querySelectorAll(".live-sensor-row"));
+		const z1 = rows.find((r) => r.textContent?.includes("Z1"));
+		expect(z1).toBeTruthy();
+		expect(
+			z1!.querySelector(".live-sensor-state")!.classList.contains("detected"),
+		).toBe(true);
 	});
 });
 
@@ -583,8 +657,11 @@ describe("_renderZoneSidebar boundary occupancy glow", () => {
 			],
 		]);
 		el.localize = (k: string) => k;
-		const tpl = el._renderZoneSidebar();
-		expect(tpl).toBeDefined();
+		const c = renderTo(el._renderZoneSidebar());
+		// The room (boundary) dot glows when zone 0 is occupied.
+		const dot = c.querySelector(".zone-color-dot") as HTMLElement;
+		expect(dot).not.toBeNull();
+		expect(dot.getAttribute("style")).toContain("box-shadow: 0 0 6px 2px #999");
 	});
 });
 
@@ -613,38 +690,21 @@ describe("stopPropagation handlers coverage", () => {
 
 	it("boundary type select click calls stopPropagation", () => {
 		const s = createSidebar({ zone0: { type: "custom" } });
-		const tpl = (s as any)._renderBoundaryTypeControls();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
+		const c = renderTo((s as any)._renderBoundaryTypeControls());
 
-		// Click on the sensitivity-select to fire @click handler
 		const select = c.querySelector(".sensitivity-select") as HTMLElement;
-		if (select) {
-			select.click();
-		}
+		expect(select).not.toBeNull();
+		expectClickStopsPropagation(select);
 
-		// Click on range inputs to fire their @click handlers
+		// Trigger + renew sliders.
 		const ranges = c.querySelectorAll('input[type="range"]');
-		ranges.forEach((r: any) => {
-			(r as HTMLElement).click();
-		});
+		expect(ranges.length).toBe(2);
+		for (const r of ranges) expectClickStopsPropagation(r);
 
-		// Click on number inputs
+		// Timeout + handoff-timeout number inputs.
 		const numbers = c.querySelectorAll('input[type="number"]');
-		numbers.forEach((n: any) => {
-			(n as HTMLElement).click();
-		});
-
-		// Click on checkbox
-		const checkboxes = c.querySelectorAll(
-			'.toggle-switch input[type="checkbox"]',
-		);
-		checkboxes.forEach((cb: any) => {
-			(cb as HTMLElement).click();
-		});
-
-		document.body.removeChild(c);
+		expect(numbers.length).toBe(2);
+		for (const n of numbers) expectClickStopsPropagation(n);
 	});
 
 	it("zone type controls click calls stopPropagation", () => {
@@ -658,32 +718,19 @@ describe("stopPropagation handlers coverage", () => {
 			timeout: 10,
 			handoff_timeout: 3,
 		};
-		const tpl = (s as any)._renderZoneTypeControls(zone, 0);
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
+		const c = renderTo((s as any)._renderZoneTypeControls(zone, 0));
 
 		const select = c.querySelector(".sensitivity-select") as HTMLElement;
-		if (select) select.click();
+		expect(select).not.toBeNull();
+		expectClickStopsPropagation(select);
 
 		const ranges = c.querySelectorAll('input[type="range"]');
-		ranges.forEach((r: any) => {
-			(r as HTMLElement).click();
-		});
+		expect(ranges.length).toBe(2);
+		for (const r of ranges) expectClickStopsPropagation(r);
 
 		const numbers = c.querySelectorAll('input[type="number"]');
-		numbers.forEach((n: any) => {
-			(n as HTMLElement).click();
-		});
-
-		const checkboxes = c.querySelectorAll(
-			'.toggle-switch input[type="checkbox"]',
-		);
-		checkboxes.forEach((cb: any) => {
-			(cb as HTMLElement).click();
-		});
-
-		document.body.removeChild(c);
+		expect(numbers.length).toBe(2);
+		for (const n of numbers) expectClickStopsPropagation(n);
 	});
 });
 
@@ -706,16 +753,14 @@ describe("_infoTip DOM click handler", () => {
 			configurable: true,
 		});
 
-		const tpl = sv.infoTip("Test tip");
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
+		const c = renderTo(sv.infoTip("Test tip"));
 
-		const infoSpan = c.querySelector(".setting-info") as HTMLElement;
-		if (infoSpan) {
-			infoSpan.click();
-		}
-		document.body.removeChild(c);
+		const infoBtn = c.querySelector(".setting-info") as HTMLElement;
+		expect(infoBtn).not.toBeNull();
+		const tip = c.querySelector(".setting-info-tooltip") as HTMLElement;
+		expect(tip.style.display).not.toBe("block");
+		infoBtn.click();
+		expect(tip.style.display).toBe("block");
 	});
 });
 
@@ -796,8 +841,16 @@ describe("_onFurnitureDrag edge case branches", () => {
 		Object.defineProperty(a, "shadowRoot", {
 			value: {
 				querySelector: (sel: string) => {
-					if (sel === ".grid")
-						return { firstElementChild: { offsetWidth: 28 } };
+					if (sel === "epp-grid") {
+						return {
+							shadowRoot: {
+								querySelector: (s: string) =>
+									s === ".grid"
+										? { firstElementChild: { offsetWidth: 28 } }
+										: null,
+							},
+						};
+					}
 					return null;
 				},
 				querySelectorAll: () => [],
@@ -805,8 +858,12 @@ describe("_onFurnitureDrag edge case branches", () => {
 			configurable: true,
 		});
 
-		// item?.width ?? 0 and item?.height ?? 0 -> 0 (branch covered)
+		// item?.width ?? 0 and item?.height ?? 0 -> 0 (branch covered): the
+		// drag is a no-op on the furniture list but still marks the layout
+		// dirty (updateFurniture runs unconditionally).
 		a._onFurnitureDrag({ clientX: 520, clientY: 310 });
+		expect(a._furniture).toEqual([]);
+		expect(a._dirty).toBe(true);
 	});
 
 	it("handles resize when item not found (null lockAspect)", () => {
@@ -828,8 +885,16 @@ describe("_onFurnitureDrag edge case branches", () => {
 		Object.defineProperty(a, "shadowRoot", {
 			value: {
 				querySelector: (sel: string) => {
-					if (sel === ".grid")
-						return { firstElementChild: { offsetWidth: 28 } };
+					if (sel === "epp-grid") {
+						return {
+							shadowRoot: {
+								querySelector: (s: string) =>
+									s === ".grid"
+										? { firstElementChild: { offsetWidth: 28 } }
+										: null,
+							},
+						};
+					}
 					return null;
 				},
 				querySelectorAll: () => [],
@@ -837,8 +902,11 @@ describe("_onFurnitureDrag edge case branches", () => {
 			configurable: true,
 		});
 
-		// item?.lockAspect ?? false -> false (branch covered)
+		// item?.lockAspect ?? false -> false (branch covered): the resize is
+		// a no-op on the furniture list but still marks the layout dirty.
 		a._onFurnitureDrag({ clientX: 520, clientY: 310 });
+		expect(a._furniture).toEqual([]);
+		expect(a._dirty).toBe(true);
 	});
 
 	it("handles rotate with null centerX/centerY/startAngle", () => {
@@ -976,19 +1044,16 @@ describe("corner chip click with null offsets (via EppWizard)", () => {
 		el._wizardOffsetFb = "";
 		el._smoothBuffer = [];
 
-		const tpl = el._renderWizardCorners();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
+		const c = renderTo(el._renderWizardCorners());
 
 		const chips = c.querySelectorAll(".corner-chip");
-		if (chips.length > 0) {
-			(chips[0] as HTMLElement).click();
-			// offset_side and offset_fb are 0 -> empty strings
-			expect(el._wizardOffsetSide).toBe("");
-			expect(el._wizardOffsetFb).toBe("");
-		}
-		document.body.removeChild(c);
+		expect(chips.length).toBe(4);
+		(chips[0] as HTMLElement).click();
+		// offset_side and offset_fb are 0 -> empty strings
+		expect(el._wizardOffsetSide).toBe("");
+		expect(el._wizardOffsetFb).toBe("");
+		// Re-marking clears the previously captured corner.
+		expect(el._wizardCorners[0]).toBeNull();
 	});
 });
 
@@ -996,21 +1061,17 @@ describe("corner chip click with null offsets (via EppWizard)", () => {
 // _renderSaveCancelButtons branches
 // =========================================================
 describe("save cancel buttons: saving state branch", () => {
-	it("save button shows Saving when _saving is true", () => {
+	it("save button shows Saving and is disabled when _saving is true", () => {
 		const a = createPanel() as any;
 		a._saving = true;
 		a._dirty = true;
 		a._view = "editor";
-		const tpl = a._renderSaveCancelButtons();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
+		const c = renderTo(a._renderSaveCancelButtons());
 
-		const saveBtn = c.querySelector(".wizard-btn-primary");
-		if (saveBtn) {
-			expect(saveBtn.textContent).toContain("Saving");
-		}
-		document.body.removeChild(c);
+		const saveBtn = c.querySelector(".save-btn") as HTMLButtonElement;
+		expect(saveBtn).not.toBeNull();
+		expect(saveBtn.textContent).toContain("Saving");
+		expect(saveBtn.disabled).toBe(true);
 	});
 });
 
@@ -1018,8 +1079,9 @@ describe("save cancel buttons: saving state branch", () => {
 // epp-live-sidebar: zone with target_counts singular/plural
 // =========================================================
 describe("epp-live-sidebar target count branches", () => {
-	it("renders zone with 0 targets", () => {
+	it("renders unoccupied zone row with 0 targets as clear", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
+		el.hasPerspective = true;
 		el.zoneConfigs = new Array(7).fill(null);
 		el.zoneConfigs[0] = { name: "Z1", color: ZONE_COLORS[0], type: "default" };
 		el.zoneState = {
@@ -1027,8 +1089,14 @@ describe("epp-live-sidebar target count branches", () => {
 			target_counts: { 1: 0 },
 			frame_count: 10,
 		};
-		const tpl = el.render();
-		expect(tpl).toBeDefined();
+		const c = renderTo(el.render());
+		const rows = Array.from(c.querySelectorAll(".live-sensor-row"));
+		const z1 = rows.find((r) => r.textContent?.includes("Z1"));
+		expect(z1).toBeTruthy();
+		expect(
+			z1!.querySelector(".live-sensor-state")!.classList.contains("detected"),
+		).toBe(false);
+		expect(z1!.textContent).toContain("live.clear");
 	});
 });
 
@@ -1036,7 +1104,7 @@ describe("epp-live-sidebar target count branches", () => {
 // _renderEditor: branches for target rendering with signal and pending
 // =========================================================
 describe("editor target signal display branches", () => {
-	it("signal > 0 and not pending shows signal label", () => {
+	it("passes a zero signal through to the grid unchanged", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
 		a._targets = [
@@ -1047,8 +1115,10 @@ describe("editor target signal display branches", () => {
 				signal: 0,
 			},
 		];
-		const tpl = a._renderEditor();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.targets).toHaveLength(1);
+		expect(grid.targets[0].signal).toBe(0);
 	});
 });
 
@@ -1056,22 +1126,28 @@ describe("editor target signal display branches", () => {
 // _renderUncalibratedFov: target color fallback
 // =========================================================
 describe("uncalibrated FOV target color (via EppWizard)", () => {
-	it("uses fallback color for target index >= 3", () => {
+	it("uses fallback color for target index >= TARGET_COLORS.length", () => {
 		const el = document.createElement("epp-wizard") as any;
 		el.hass = { callWS: vi.fn().mockResolvedValue({}) };
 		el.selectedMac = "";
-		el.rawTargets = [
-			{ raw_x: 100, raw_y: 200 },
-			{ raw_x: 200, raw_y: 300 },
-			{ raw_x: 300, raw_y: 400 },
-		];
+		// One more target than there are palette entries.
+		el.rawTargets = Array.from(
+			{ length: TARGET_COLORS.length + 1 },
+			(_, i) => ({ raw_x: 100 * (i + 1), raw_y: 200 * (i + 1) }),
+		);
 		el.sensorState = { occupancy: false };
 		el.devices = [];
 		el.localize = (k: string) => k;
 		el.mode = "uncalibrated-fov";
 
-		const tpl = el._renderUncalibratedFov();
-		expect(tpl).toBeDefined();
+		const c = renderTo(el._renderUncalibratedFov());
+		const dots = c.querySelectorAll("circle[r='5']");
+		expect(dots.length).toBe(TARGET_COLORS.length + 1);
+		// Indexed colors for the palette, then the index-0 fallback.
+		expect(dots[0].getAttribute("fill")).toBe(TARGET_COLORS[0]);
+		expect(dots[TARGET_COLORS.length].getAttribute("fill")).toBe(
+			TARGET_COLORS[0],
+		);
 	});
 });
 
@@ -1079,7 +1155,7 @@ describe("uncalibrated FOV target color (via EppWizard)", () => {
 // _renderLiveGrid: hit count signal check
 // =========================================================
 describe("live grid hit count and signal", () => {
-	it("shows signal label when signal > 0", () => {
+	it("shows signal label when signal > 0", async () => {
 		const a = createPanel() as any;
 		a._targets = [
 			{
@@ -1089,11 +1165,18 @@ describe("live grid hit count and signal", () => {
 				signal: 7,
 			},
 		];
-		const tpl = a._renderLiveGrid();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		await grid.updateComplete;
+		const overlay = grid.shadowRoot.querySelector(
+			".targets-overlay",
+		) as HTMLElement;
+		expect(overlay.querySelectorAll(".target-dot").length).toBe(1);
+		// The hit-count badge renders alongside the dot.
+		expect(overlay.textContent?.trim()).toBe("7");
 	});
 
-	it("no signal label when signal is 0", () => {
+	it("no signal label when signal is 0", async () => {
 		const a = createPanel() as any;
 		a._targets = [
 			{
@@ -1103,8 +1186,14 @@ describe("live grid hit count and signal", () => {
 				signal: 0,
 			},
 		];
-		const tpl = a._renderLiveGrid();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		await grid.updateComplete;
+		const overlay = grid.shadowRoot.querySelector(
+			".targets-overlay",
+		) as HTMLElement;
+		expect(overlay.querySelectorAll(".target-dot").length).toBe(1);
+		expect(overlay.textContent?.trim()).toBe("");
 	});
 });
 
@@ -1143,8 +1232,16 @@ describe("zone sidebar occupancy glow branch", () => {
 		]);
 		el.localize = (k: string) => k;
 
-		const tpl = el._renderZoneSidebar();
-		expect(tpl).toBeDefined();
+		const c = renderTo(el._renderZoneSidebar());
+		// Zone 1 isn't selected, so it renders the plain dot — glowing with
+		// its zone color because the local engine reports it occupied.
+		const dots = c.querySelectorAll(".zone-color-dot");
+		expect(dots.length).toBe(2); // room dot + zone dot
+		expect(dots[1].getAttribute("style")).toContain(
+			`box-shadow: 0 0 6px 2px ${ZONE_COLORS[0]}`,
+		);
+		// The room dot does not glow.
+		expect(dots[0].getAttribute("style")).not.toContain("box-shadow");
 	});
 
 	it("boundary dot shows glow when boundary zone occupied", () => {
@@ -1169,8 +1266,9 @@ describe("zone sidebar occupancy glow branch", () => {
 			],
 		]);
 		el.localize = (k: string) => k;
-		const tpl = el._renderZoneSidebar();
-		expect(tpl).toBeDefined();
+		const c = renderTo(el._renderZoneSidebar());
+		const dot = c.querySelector(".zone-color-dot") as HTMLElement;
+		expect(dot.getAttribute("style")).toContain("box-shadow: 0 0 6px 2px #999");
 	});
 });
 
@@ -1227,13 +1325,12 @@ describe("_onFurniturePointerDown onUp callback", () => {
 		a._onFurniturePointerDown(mockEvent, "f1", "move");
 
 		expect(a._dragState).not.toBeNull();
+		expect(onUp).toBeInstanceOf(Function);
 
 		// Call onUp to trigger cleanup
-		if (onUp) {
-			(onUp as Function)();
-			expect(a._dragState).toBeNull();
-			expect(removeSpy).toHaveBeenCalled();
-		}
+		(onUp as unknown as () => void)();
+		expect(a._dragState).toBeNull();
+		expect(removeSpy).toHaveBeenCalled();
 
 		addSpy.mockRestore();
 		removeSpy.mockRestore();
@@ -1449,8 +1546,11 @@ describe("_renderBackendDebugLog render branches", () => {
 		const a = createPanel() as any;
 		a._showBackendDebugLog = false;
 
-		const tpl = a._renderBackendDebugLog();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderBackendDebugLog());
+		// Collapsed: header toggle only — no log container or action buttons.
+		expect(c.querySelector("button.live-section-header")).not.toBeNull();
+		expect(c.querySelector("#backend-debug-log-scroll")).toBeNull();
+		expect(c.querySelectorAll("button.debug-log-btn").length).toBe(0);
 	});
 
 	it("renders empty container with placeholder when expanded and no lines", () => {
@@ -1563,8 +1663,10 @@ describe("_renderDebugLog render branches", () => {
 		const a = createPanel() as any;
 		a._showDebugLog = false;
 
-		const tpl = a._renderDebugLog();
-		expect(tpl).toBeDefined();
+		const c = renderTo(a._renderDebugLog());
+		expect(c.querySelector("button.live-section-header")).not.toBeNull();
+		expect(c.querySelector("#debug-log-scroll")).toBeNull();
+		expect(c.querySelectorAll("button.debug-log-btn").length).toBe(0);
 	});
 
 	it("renders empty container with placeholder when expanded", () => {
