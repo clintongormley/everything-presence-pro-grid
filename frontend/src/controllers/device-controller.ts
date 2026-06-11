@@ -99,6 +99,14 @@ export class DeviceController implements ReactiveController {
 	// triggers resubscribe instead of silently dropping the request (same
 	// pattern as flasher-controller).
 	private _wantDeviceListSub = false;
+	// True while the host is disconnected. The generation tokens can't
+	// catch a *queued* reopen/config-load (the different-mac
+	// `await inFlight.promise` paths): the queued continuation runs
+	// openDeviceSession, which mints itself a fresh, current token — the
+	// bumps that happened while it waited are invisible to it. Checked
+	// after the queue awaits so a controller torn down mid-queue doesn't
+	// open a session nothing will ever close.
+	private _disposed = false;
 
 	constructor(host: ReactiveControllerHost) {
 		this._host = host;
@@ -106,8 +114,13 @@ export class DeviceController implements ReactiveController {
 	}
 
 	// --- ReactiveController lifecycle ---
-	hostConnected(): void {}
+	hostConnected(): void {
+		// HA re-attaches the same panel element on suspend/restore, so the
+		// disposed flag is intent, not a one-way latch.
+		this._disposed = false;
+	}
 	hostDisconnected(): void {
+		this._disposed = true;
 		this.unsubscribeDeviceList();
 		this.closeDeviceSession();
 	}
@@ -344,6 +357,9 @@ export class DeviceController implements ReactiveController {
 		if (inFlight) {
 			if (inFlight.mac === mac) return inFlight.promise;
 			await inFlight.promise.catch(() => {});
+			// The host may have disconnected while we were queued; bail
+			// before fetching/opening anything on the dead controller.
+			if (this._disposed) return null;
 		}
 		const entry: { mac: string; promise: Promise<any> } = {
 			mac,
@@ -407,6 +423,9 @@ export class DeviceController implements ReactiveController {
 			// subscribe / closeDeviceSession sequence doesn't race with
 			// ours, then proceed with a fresh reopen for the new mac.
 			await inFlight.promise.catch(() => {});
+			// The host may have disconnected while we were queued; bail
+			// before opening a session on the dead controller.
+			if (this._disposed) return;
 		}
 		const entry: { mac: string; promise: Promise<void> } = {
 			mac,

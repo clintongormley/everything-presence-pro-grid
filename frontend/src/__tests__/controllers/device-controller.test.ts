@@ -1730,6 +1730,105 @@ describe("DeviceController", () => {
 			expect(targetSubs).toHaveLength(0);
 		});
 
+		it("does not open a session when the host disconnects while a different-mac reopen is queued", async () => {
+			// reopenSession("bb") queues behind an in-flight reopen for "aa"
+			// (`await inFlight.promise`); hostDisconnected lands while it
+			// waits. A generation check can't catch this: the queued
+			// continuation runs openDeviceSession, which mints itself a
+			// fresh, current token — the bumps that happened while it was
+			// queued are invisible to it. Without a disposed flag it opens a
+			// brand-new session on the dead controller that nothing will
+			// ever close.
+			let resolveAa!: (unsub: () => void) => void;
+			const subscribeMock = vi.fn().mockImplementation((_cb: any, msg: any) => {
+				if (msg.type === "eppgrid/subscribe_device" && msg.mac === "aa") {
+					return new Promise<() => void>((resolve) => {
+						resolveAa = resolve;
+					});
+				}
+				return Promise.resolve(vi.fn());
+			});
+			ctrl.hass = {
+				callWS: vi.fn().mockResolvedValue({}),
+				connection: { subscribeMessage: subscribeMock },
+			};
+
+			const p1 = ctrl.reopenSession("aa");
+			const p2 = ctrl.reopenSession("bb"); // queued behind "aa"
+			ctrl.hostDisconnected();
+			resolveAa(vi.fn());
+			await Promise.all([p1, p2]);
+
+			const deviceSubMacs = subscribeMock.mock.calls
+				.filter((c: any[]) => c[1]?.type === "eppgrid/subscribe_device")
+				.map((c: any[]) => c[1].mac);
+			expect(deviceSubMacs).not.toContain("bb");
+			expect(ctrl.hasDeviceSession).toBe(false);
+		});
+
+		it("does not open a session when the host disconnects while a different-mac config load is queued", async () => {
+			// Same race via loadDeviceConfig's queue await: the queued "bb"
+			// load resumes after hostDisconnected, snapshots a token that is
+			// current by construction, and would reopen a session on the
+			// dead controller.
+			let resolveConfigAa!: (v: any) => void;
+			const callWS = vi.fn().mockImplementation((req: any) => {
+				if (req.type === "eppgrid/get_config" && req.mac === "aa") {
+					return new Promise((resolve) => {
+						resolveConfigAa = resolve;
+					});
+				}
+				return Promise.resolve({ config: {} });
+			});
+			const subscribeMock = vi.fn().mockResolvedValue(vi.fn());
+			ctrl.hass = { callWS, connection: { subscribeMessage: subscribeMock } };
+
+			const p1 = ctrl.loadDeviceConfig("aa");
+			const p2 = ctrl.loadDeviceConfig("bb"); // queued behind "aa"
+			ctrl.hostDisconnected();
+			resolveConfigAa({ config: {} });
+			await Promise.all([p1, p2]);
+
+			const deviceSubs = subscribeMock.mock.calls.filter(
+				(c: any[]) => c[1]?.type === "eppgrid/subscribe_device",
+			);
+			expect(deviceSubs).toHaveLength(0);
+			expect(ctrl.hasDeviceSession).toBe(false);
+		});
+
+		it("a queued reopen proceeds when the host reconnects before the queue releases", async () => {
+			// The disposed flag must be an intent flag, not a one-way latch:
+			// HA re-attaches the same panel element on suspend/restore, so a
+			// hostDisconnected→hostConnected cycle while a reopen is queued
+			// must let the queued continuation open its session normally.
+			let resolveAa!: (unsub: () => void) => void;
+			const subscribeMock = vi.fn().mockImplementation((_cb: any, msg: any) => {
+				if (msg.type === "eppgrid/subscribe_device" && msg.mac === "aa") {
+					return new Promise<() => void>((resolve) => {
+						resolveAa = resolve;
+					});
+				}
+				return Promise.resolve(vi.fn());
+			});
+			ctrl.hass = {
+				callWS: vi.fn().mockResolvedValue({}),
+				connection: { subscribeMessage: subscribeMock },
+			};
+
+			const p1 = ctrl.reopenSession("aa");
+			const p2 = ctrl.reopenSession("bb"); // queued behind "aa"
+			ctrl.hostDisconnected();
+			ctrl.hostConnected();
+			resolveAa(vi.fn());
+			await Promise.all([p1, p2]);
+
+			const deviceSubMacs = subscribeMock.mock.calls
+				.filter((c: any[]) => c[1]?.type === "eppgrid/subscribe_device")
+				.map((c: any[]) => c[1].mac);
+			expect(deviceSubMacs).toContain("bb");
+			expect(ctrl.hasDeviceSession).toBe(true);
+		});
+
 		it("does not reopen the session when the host disconnects while loadDeviceConfig's fetch is in flight", async () => {
 			// hostDisconnected lands while get_config is pending. Resuming the
 			// pipeline afterwards would open a brand-new session (fresh token)
