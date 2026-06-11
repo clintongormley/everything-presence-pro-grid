@@ -161,13 +161,73 @@ FURNITURE_SCHEMA: vol.All = vol.All([_FURNITURE_ITEM_SCHEMA], _bounded_furniture
 # Per-slot length / format caps for `_validate_zone_slots`. Bound here so a
 # malicious client can't flood storage with megabyte-long zone names or types.
 _ZONE_NAME_MAX = 64
-_ZONE_TYPE_MAX = 32
 _ZONE_COLOR_RE = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+# Accepted zone-type vocabulary. Includes the live frontend enum
+# (Zone0Config["type"]) plus the two legacy pre-0.95 aliases that
+# _expand_zone_slot maps to modern types. Stored configs written before this
+# validator ran may still carry the legacy values, so they must pass.
+# The firmware ignores `type` entirely — timing values drive behaviour.
+_ZONE_TYPE_VOCAB: frozenset[str] = frozenset(
+    {
+        # Live frontend vocabulary (Zone0Config["type"] union in zone-defaults.ts)
+        "default",
+        "bed",
+        "seating",
+        "transit",
+        "custom",
+        # Legacy pre-0.95 — rest→bed, thoroughfare→transit (see _LEGACY_ZONE_TYPE_MAP)
+        "rest",
+        "thoroughfare",
+    }
+)
+
+# Timing-field schema factories — bounds match the frontend slider/input ranges
+# in frontend/src/components/epp-zone-sidebar.ts (trigger/renew: range 1-9;
+# timeout: number 0-3600; handoff_timeout: number 0-300). Lower bounds are
+# inclusive-0 for timeout/handoff so legacy stored values of 0 still pass.
+_TRIGGER_RENEW_SCHEMA: vol.All = finite_float(min=1, max=9)
+_TIMEOUT_SCHEMA: vol.All = finite_float(min=0, max=3600)
+_HANDOFF_TIMEOUT_SCHEMA: vol.All = finite_float(min=0, max=300)
+
+_TIMING_SCHEMAS: dict[str, vol.All] = {
+    "trigger": _TRIGGER_RENEW_SCHEMA,
+    "renew": _TRIGGER_RENEW_SCHEMA,
+    "timeout": _TIMEOUT_SCHEMA,
+    "handoff_timeout": _HANDOFF_TIMEOUT_SCHEMA,
+}
 
 # Wire-level vocabulary for the firmware's `epp_set_log_level` action — must
 # match the string-comparison branches in firmware/common/everything-presence-pro-base.yaml.
 _OTA_LOG_CATEGORY = "system"
 _OTA_LOG_LEVEL = "Error"
+
+
+# Known keys per slot type. Slot 0 has no name/color; named slots require them.
+# PREVENT_EXTRA is enforced manually below; voluptuous Schema would require
+# two separate Schema objects (zone0 vs named) and then re-assemble the list,
+# losing position-aware error messages. The manual approach is cleaner here.
+_SLOT0_KNOWN_KEYS: frozenset[str] = frozenset({"type"} | set(_TIMING_FIELDS))
+_NAMED_SLOT_KNOWN_KEYS: frozenset[str] = frozenset({"name", "color", "type"} | set(_TIMING_FIELDS))
+
+
+def _validate_slot_timing(slot: dict, index: int) -> None:
+    """Validate timing fields on one slot dict, normalising in place.
+
+    Two-stage check: a strict type gate first (str/bool must NOT slip through
+    `vol.Coerce(float)` — "5" coerces fine and `bool ⊂ int`), then the bounded
+    finite-float schema from _TIMING_SCHEMAS. Coerced values are written back
+    so storage holds plain floats.
+    """
+    for field, schema in _TIMING_SCHEMAS.items():
+        if field not in slot:
+            continue
+        if not isinstance(slot[field], (int, float)) or isinstance(slot[field], bool):
+            raise vol.Invalid(f"zone_slots[{index}] '{field}' must be numeric when present")
+        try:
+            slot[field] = schema(slot[field])
+        except vol.Invalid as exc:
+            raise vol.Invalid(f"zone_slots[{index}] '{field}': {exc}") from exc
 
 
 def _validate_zone_slots(value: Any) -> list:
@@ -177,29 +237,39 @@ def _validate_zone_slots(value: Any) -> list:
     reaches storage / firmware pushes / entity renaming:
 
     - Must be a list of exactly NUM_ZONE_SLOTS entries.
-    - Slot 0 (zone 0, "rest of room") must be a dict with a string `type`.
+    - Slot 0 (zone 0, "rest of room") must be a dict with a `type` from
+      _ZONE_TYPE_VOCAB; no unknown keys (PREVENT_EXTRA).
     - Slots 1-7 (named zones) must be `None` OR a dict with required string
-      keys `name`, `color`, and `type`.
-    - Optional timing fields (trigger / renew / timeout / handoff_timeout),
-      when present on any slot, must be numeric (int or float).
+      keys `name`, `color`, and `type`; no unknown keys.
+    - Optional timing fields (trigger/renew: 1..9; timeout: 0..3600;
+      handoff_timeout: 0..300), when present, must be finite numbers within
+      the frontend slider/input bounds.
     """
     if not isinstance(value, list) or len(value) != NUM_ZONE_SLOTS:
         raise vol.Invalid(f"zone_slots must be a list of length {NUM_ZONE_SLOTS}")
+
+    # --- Slot 0 ---
     zone0 = value[0]
     if not isinstance(zone0, dict):
         raise vol.Invalid("zone_slots[0] (zone 0) must be a dict")
+    unknown0 = set(zone0) - _SLOT0_KNOWN_KEYS
+    if unknown0:
+        raise vol.Invalid(f"zone_slots[0] has unknown keys: {sorted(unknown0)}")
     if "type" not in zone0 or not isinstance(zone0["type"], str):
         raise vol.Invalid("zone_slots[0] must have string 'type'")
-    if len(zone0["type"]) > _ZONE_TYPE_MAX:
-        raise vol.Invalid(f"zone_slots[0] 'type' must be ≤ {_ZONE_TYPE_MAX} chars")
-    for field in _TIMING_FIELDS:
-        if field in zone0 and (not isinstance(zone0[field], (int, float)) or isinstance(zone0[field], bool)):
-            raise vol.Invalid(f"zone_slots[0] '{field}' must be numeric when present")
+    if zone0["type"] not in _ZONE_TYPE_VOCAB:
+        raise vol.Invalid(f"zone_slots[0] 'type' must be one of {sorted(_ZONE_TYPE_VOCAB)!r}, got {zone0['type']!r}")
+    _validate_slot_timing(zone0, 0)
+
+    # --- Slots 1-7 (named zones) ---
     for i, slot in enumerate(value[1:], start=1):
         if slot is None:
             continue
         if not isinstance(slot, dict):
             raise vol.Invalid(f"zone_slots[{i}] must be null or a dict")
+        unknown_n = set(slot) - _NAMED_SLOT_KNOWN_KEYS
+        if unknown_n:
+            raise vol.Invalid(f"zone_slots[{i}] has unknown keys: {sorted(unknown_n)}")
         if "name" not in slot or not isinstance(slot["name"], str):
             raise vol.Invalid(f"zone_slots[{i}] must have string 'name'")
         if len(slot["name"]) > _ZONE_NAME_MAX:
@@ -210,11 +280,12 @@ def _validate_zone_slots(value: Any) -> list:
             raise vol.Invalid(f"zone_slots[{i}] 'color' must match {_ZONE_COLOR_RE.pattern}")
         if "type" not in slot or not isinstance(slot["type"], str):
             raise vol.Invalid(f"zone_slots[{i}] must have string 'type'")
-        if len(slot["type"]) > _ZONE_TYPE_MAX:
-            raise vol.Invalid(f"zone_slots[{i}] 'type' must be ≤ {_ZONE_TYPE_MAX} chars")
-        for field in _TIMING_FIELDS:
-            if field in slot and (not isinstance(slot[field], (int, float)) or isinstance(slot[field], bool)):
-                raise vol.Invalid(f"zone_slots[{i}] '{field}' must be numeric when present")
+        if slot["type"] not in _ZONE_TYPE_VOCAB:
+            raise vol.Invalid(
+                f"zone_slots[{i}] 'type' must be one of {sorted(_ZONE_TYPE_VOCAB)!r}, got {slot['type']!r}"
+            )
+        _validate_slot_timing(slot, i)
+
     return value
 
 

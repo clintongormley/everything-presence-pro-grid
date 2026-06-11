@@ -946,6 +946,143 @@ class TestZoneSlotsValidator:
         with pytest.raises(vol.Invalid):
             _validate_zone_slots(slots)
 
+    def test_rejects_unknown_keys_in_slot_0(self) -> None:
+        """Unknown keys in slot 0 dict must be rejected (PREVENT_EXTRA)."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        slots = [{"type": "default", "junk_key": "bad"}] + [None] * 7
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots(slots)
+
+    def test_rejects_unknown_keys_in_named_slot(self) -> None:
+        """Unknown keys in a named slot dict must be rejected (PREVENT_EXTRA)."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        slots = [
+            {"type": "default"},
+            {"name": "Office", "color": "#ff0000", "type": "default", "junk_key": "bad"},
+        ] + [None] * 6
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots(slots)
+
+    def test_rejects_trigger_out_of_range(self) -> None:
+        """trigger must be 1..9 when present."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        # above max
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "trigger": 10}] + [None] * 7)
+        # below min
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "trigger": 0}] + [None] * 7)
+
+    def test_rejects_renew_out_of_range(self) -> None:
+        """renew must be 1..9 when present."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "renew": 10}] + [None] * 7)
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "renew": 0}] + [None] * 7)
+
+    def test_rejects_timeout_out_of_range(self) -> None:
+        """timeout must be 0..3600 when present."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "timeout": 3601}] + [None] * 7)
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "timeout": -1}] + [None] * 7)
+
+    def test_rejects_handoff_timeout_out_of_range(self) -> None:
+        """handoff_timeout must be 0..300 when present."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "handoff_timeout": 301}] + [None] * 7)
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "handoff_timeout": -1}] + [None] * 7)
+
+    def test_rejects_infinite_timing_field(self) -> None:
+        """Timing fields must be finite numbers — NaN and Inf rejected."""
+        import math
+
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "timeout": math.inf}] + [None] * 7)
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "default", "timeout": float("nan")}] + [None] * 7)
+
+    def test_accepts_valid_timing_bounds(self) -> None:
+        """Timing fields at boundary values must be accepted."""
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        # min boundaries
+        slots = [
+            {"type": "custom", "trigger": 1, "renew": 1, "timeout": 0.0, "handoff_timeout": 0.0},
+        ] + [None] * 7
+        result = _validate_zone_slots(slots)
+        assert result[0]["trigger"] == 1.0
+        assert result[0]["timeout"] == 0.0
+
+        # max boundaries
+        slots = [
+            {"type": "custom", "trigger": 9, "renew": 9, "timeout": 3600.0, "handoff_timeout": 300.0},
+        ] + [None] * 7
+        result = _validate_zone_slots(slots)
+        assert result[0]["trigger"] == 9.0
+        assert result[0]["timeout"] == 3600.0
+
+    def test_rejects_unknown_type_value(self) -> None:
+        """type must be from the known vocabulary; arbitrary strings are rejected."""
+        import voluptuous as vol
+
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        # Completely unknown type
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "sleeping_area"}] + [None] * 7)
+        # Even a short unknown type is rejected
+        with pytest.raises(vol.Invalid):
+            _validate_zone_slots([{"type": "kitchen"}] + [None] * 7)
+
+    def test_accepts_legacy_type_values(self) -> None:
+        """Pre-0.95 types 'rest' and 'thoroughfare' must still be accepted (BWC)."""
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        # v1.0.0-era stored config: legacy types, no extra keys
+        slots_rest = [{"type": "rest"}] + [None] * 7
+        assert _validate_zone_slots(slots_rest) == slots_rest
+
+        slots_thoroughfare = [
+            {"type": "default"},
+            {"name": "Hallway", "color": "#aabbcc", "type": "thoroughfare"},
+        ] + [None] * 6
+        assert _validate_zone_slots(slots_thoroughfare) == slots_thoroughfare
+
+    def test_accepts_all_live_type_values(self) -> None:
+        """All current frontend type values must be accepted."""
+        from custom_components.eppgrid.websocket_api import _validate_zone_slots
+
+        for zone_type in ("default", "bed", "seating", "transit", "custom"):
+            slots = [{"type": zone_type}] + [None] * 7
+            assert _validate_zone_slots(slots) == slots
+
     def test_rejects_bool_as_numeric_timing(self) -> None:
         """bool must NOT slip through the numeric-timing-field check.
 
