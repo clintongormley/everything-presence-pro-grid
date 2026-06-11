@@ -905,9 +905,10 @@ describe("_renderFurnitureOverlay DOM events", () => {
 // =========================================================
 // Template load dialog: load and delete button clicks
 // =========================================================
-describe("_renderConfigurationRestoreDialog DOM events", () => {
-	it("load button calls _loadConfiguration", async () => {
+describe("configuration dialog events via _renderGlobalDialogs", () => {
+	it("configuration-load event calls _loadConfiguration", async () => {
 		const a = createPanel() as any;
+		a._showConfigurationRestore = true;
 		a._gridCtrl.configurations = [
 			{
 				name: "T1",
@@ -932,25 +933,26 @@ describe("_renderConfigurationRestoreDialog DOM events", () => {
 				roomDepth: 6000,
 			},
 		];
-		const tpl = a._renderConfigurationRestoreDialog();
+		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 
-		const card = c.querySelector(".configuration-card") as HTMLElement;
-		expect(card).not.toBeNull();
-		card.click();
+		const dialogs = c.querySelector("epp-configuration-dialogs") as HTMLElement;
+		expect(dialogs).not.toBeNull();
+		dialogs.dispatchEvent(
+			new CustomEvent("configuration-load", { detail: "T1" }),
+		);
 		// Async loadConfiguration -> applyLayout chain; wait for it.
 		// For a valid config (no early return or thrown error), loadConfiguration
 		// sets _dirty=true synchronously before its WS push.
-		// Room dims are NOT restored from the template when the device already
-		// has a calibrated grid (currentHasRoom=true); they stay at 3000/4000.
 		await vi.waitFor(() => {
 			expect(a._dirty).toBe(true);
 		});
 		document.body.removeChild(c);
 	});
 
-	it("delete button calls _deleteConfiguration", async () => {
+	it("configuration-delete event calls _deleteConfiguration", async () => {
 		const a = createPanel() as any;
+		a._showConfigurationRestore = true;
 		a._gridCtrl.configurations = [
 			{
 				name: "T1",
@@ -967,14 +969,14 @@ describe("_renderConfigurationRestoreDialog DOM events", () => {
 				return Promise.resolve({ configurations: {} });
 			return Promise.resolve({});
 		});
-		const tpl = a._renderConfigurationRestoreDialog();
+		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 
-		const deleteBtn = c.querySelector(
-			".configuration-card-delete",
-		) as HTMLElement;
-		expect(deleteBtn).not.toBeNull();
-		deleteBtn.click();
+		const dialogs = c.querySelector("epp-configuration-dialogs") as HTMLElement;
+		expect(dialogs).not.toBeNull();
+		dialogs.dispatchEvent(
+			new CustomEvent("configuration-delete", { detail: "T1" }),
+		);
 		// Wait for async _deleteConfiguration to complete
 		await vi.waitFor(() => {
 			expect(a._gridCtrl.configurations.length).toBe(0);
@@ -986,9 +988,10 @@ describe("_renderConfigurationRestoreDialog DOM events", () => {
 // =========================================================
 // _renderTemplateSaveDialog: save button click
 // =========================================================
-describe("_renderConfigurationBackupDialog DOM events", () => {
-	it("save button calls _saveConfiguration", async () => {
+describe("configuration-save event via _renderGlobalDialogs", () => {
+	it("calls _saveConfiguration and closes the backup dialog", async () => {
 		const a = createPanel() as any;
+		a._showConfigurationBackup = true;
 		a._configurationName = "Test";
 		a.hass.callWS = vi.fn().mockImplementation((msg: any) => {
 			if (msg.type === "eppgrid/save_configuration") return Promise.resolve({});
@@ -996,16 +999,15 @@ describe("_renderConfigurationBackupDialog DOM events", () => {
 				return Promise.resolve({ configurations: {} });
 			return Promise.resolve({});
 		});
-		const tpl = a._renderConfigurationBackupDialog();
+		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 
-		const primaryBtn = c.querySelector(".wizard-btn-primary") as HTMLElement;
-		if (primaryBtn) {
-			primaryBtn.click();
-			await vi.waitFor(() => {
-				expect(a._showConfigurationBackup).toBe(false);
-			});
-		}
+		const dialogs = c.querySelector("epp-configuration-dialogs") as HTMLElement;
+		expect(dialogs).not.toBeNull();
+		dialogs.dispatchEvent(new CustomEvent("configuration-save"));
+		await vi.waitFor(() => {
+			expect(a._showConfigurationBackup).toBe(false);
+		});
 		document.body.removeChild(c);
 	});
 });
@@ -1118,22 +1120,26 @@ describe("_renderWizard capture overlay branches (via EppWizard)", () => {
 // _renderGlobalDialogs: template and unsaved dialogs
 // =========================================================
 describe("_renderGlobalDialogs branch coverage", () => {
-	it("renders template save dialog", () => {
+	it("renders the configuration dialogs component for backup", () => {
 		const a = createPanel() as any;
 		a._showConfigurationBackup = true;
 		a._configurationName = "test";
 		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
-		expect(c.querySelectorAll(".template-dialog").length).toBeGreaterThan(0);
+		const dialogs = c.querySelector("epp-configuration-dialogs") as any;
+		expect(dialogs).not.toBeNull();
+		expect(dialogs.showBackup).toBe(true);
 		document.body.removeChild(c);
 	});
 
-	it("renders template load dialog", () => {
+	it("renders the configuration dialogs component for restore", () => {
 		const a = createPanel() as any;
 		a._showConfigurationRestore = true;
 		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
-		expect(c.querySelectorAll(".template-dialog").length).toBeGreaterThan(0);
+		const dialogs = c.querySelector("epp-configuration-dialogs") as any;
+		expect(dialogs).not.toBeNull();
+		expect(dialogs.showRestore).toBe(true);
 		document.body.removeChild(c);
 	});
 
@@ -1160,6 +1166,7 @@ describe("_renderGlobalDialogs branch coverage", () => {
 		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 		expect(c.querySelectorAll(".template-dialog").length).toBe(0);
+		expect(c.querySelector("epp-configuration-dialogs")).toBeNull();
 		document.body.removeChild(c);
 	});
 });
@@ -1359,24 +1366,6 @@ describe("settings slider input handlers", () => {
 			staticMax.dispatchEvent(new Event("input"));
 			// Value should be clamped to staticMinDistance + 0.1
 			expect(sv.staticMaxDistance).toBeGreaterThanOrEqual(sv.staticMinDistance);
-		}
-	});
-});
-
-describe("template delete button", () => {
-	it("delete button calls _deleteTemplate", () => {
-		const a = createPanel() as any;
-		a._showConfigurationRestore = true;
-		a._savedTemplates = [{ name: "test-tmpl", data: {} }];
-		a._deleteTemplate = vi.fn();
-		const tpl = a._renderConfigurationRestoreDialog();
-		const c = document.createElement("div");
-		render(tpl, c);
-
-		const removeBtn = c.querySelector(".sidebar-remove-btn") as HTMLElement;
-		if (removeBtn) {
-			removeBtn.click();
-			expect(a._deleteTemplate).toHaveBeenCalledWith("test-tmpl");
 		}
 	});
 });

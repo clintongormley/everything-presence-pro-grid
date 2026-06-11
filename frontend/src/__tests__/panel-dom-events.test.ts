@@ -1156,45 +1156,39 @@ describe("_renderUncalibratedFov DOM events (via EppWizard)", () => {
 	});
 });
 
-describe("_renderConfigurationBackupDialog DOM events", () => {
-	it("configuration name input and save", () => {
+describe("configuration dialog component events", () => {
+	it("configuration-name-change and backup-cancel update panel state", () => {
 		const a = createPanel() as any;
-		const tpl = a._renderConfigurationBackupDialog();
+		a._showConfigurationBackup = true;
+		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 
-		const input = c.querySelector(
-			".configuration-name-input",
-		) as HTMLInputElement;
-		if (input) {
-			input.value = "My Template";
-			input.dispatchEvent(new Event("input"));
-			expect(a._configurationName).toBe("My Template");
-		}
+		const dialogs = c.querySelector("epp-configuration-dialogs") as HTMLElement;
+		expect(dialogs).not.toBeNull();
+		dialogs.dispatchEvent(
+			new CustomEvent("configuration-name-change", { detail: "My Template" }),
+		);
+		expect(a._configurationName).toBe("My Template");
 
-		const cancel = c.querySelector(".wizard-btn-back") as HTMLElement;
-		if (cancel) {
-			cancel.click();
-			expect(a._showConfigurationBackup).toBe(false);
-		}
+		dialogs.dispatchEvent(new CustomEvent("backup-cancel"));
+		expect(a._showConfigurationBackup).toBe(false);
 	});
-});
 
-describe("_renderConfigurationRestoreDialog DOM events", () => {
-	it("close button works", () => {
+	it("restore-close clears the restore flag", () => {
 		const a = createPanel() as any;
 		a._showConfigurationRestore = true;
-		const tpl = a._renderConfigurationRestoreDialog();
+		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 
-		const closeBtn = c.querySelector(".wizard-btn-back") as HTMLElement;
-		if (closeBtn) {
-			closeBtn.click();
-			expect(a._showConfigurationRestore).toBe(false);
-		}
+		const dialogs = c.querySelector("epp-configuration-dialogs") as HTMLElement;
+		expect(dialogs).not.toBeNull();
+		dialogs.dispatchEvent(new CustomEvent("restore-close"));
+		expect(a._showConfigurationRestore).toBe(false);
 	});
 
-	it("load and delete buttons with configurations", () => {
+	it("configuration-load calls _loadConfiguration with the name", () => {
 		const a = createPanel() as any;
+		a._showConfigurationRestore = true;
 		a._gridCtrl.configurations = [
 			{
 				name: "T1",
@@ -1204,13 +1198,17 @@ describe("_renderConfigurationRestoreDialog DOM events", () => {
 				roomDepth: 4000,
 			},
 		];
+		const spy = vi.spyOn(a, "_loadConfiguration").mockResolvedValue(undefined);
 
-		const tpl = a._renderConfigurationRestoreDialog();
+		const tpl = a._renderGlobalDialogs();
 		const c = renderTo(tpl);
 
-		const card = c.querySelector(".configuration-card") as HTMLElement;
-		expect(card).not.toBeNull();
-		card.click();
+		const dialogs = c.querySelector("epp-configuration-dialogs") as HTMLElement;
+		expect(dialogs).not.toBeNull();
+		dialogs.dispatchEvent(
+			new CustomEvent("configuration-load", { detail: "T1" }),
+		);
+		expect(spy).toHaveBeenCalledWith("T1");
 	});
 });
 

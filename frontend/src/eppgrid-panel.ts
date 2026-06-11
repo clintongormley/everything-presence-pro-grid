@@ -1,6 +1,7 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
 import { property, state } from "lit/decorators.js";
 
+import "./components/epp-configuration-dialogs.js";
 import "./components/epp-flasher-view.js";
 import "./components/epp-furniture-overlay.js";
 import "./components/epp-furniture-sidebar.js";
@@ -24,7 +25,6 @@ import { NavigationGuardController } from "./controllers/navigation-guard.js";
 import { TargetController } from "./controllers/target-controller.js";
 import type { PaintAction } from "./lib/cell-painting.js";
 import { parseConfig } from "./lib/config-serialization.js";
-import { renderConfigurationThumbnail } from "./lib/configuration-thumbnail.js";
 import {
 	mapTargetToGridCell,
 	mapTargetToPercent,
@@ -57,7 +57,6 @@ import {
 	boundsToRoomMm,
 	computeMaxRangeMm,
 	computeSensorFov,
-	getGridRoomMetrics,
 	getSensorRoomPosition,
 	getVisibleRoomBounds,
 	type SensorFov,
@@ -1331,53 +1330,6 @@ export class EPPGridPanel extends LitElement {
 		return value;
 	}
 
-	// Configuration card metrics cache — keyed by configuration object reference.
-	// Invalidated when perspective or max-range changes (FOV inputs).
-	// fetchConfigurations returns fresh objects each call, so stale entries drop
-	// naturally via WeakMap GC when the old array is replaced.
-	private _configurationMetricsCache = new WeakMap<
-		object,
-		{
-			perspective: number[] | null;
-			maxRangeMm: number;
-			widthM: number;
-			depthM: number;
-		}
-	>();
-
-	private _getConfigurationMetrics(t: {
-		grid: number[];
-		roomWidth: number;
-		roomDepth: number;
-	}): { widthM: number; depthM: number } {
-		const perspective = this._perspective;
-		const maxRangeMm = this._computeMaxRangeMm();
-		const cached = this._configurationMetricsCache.get(t);
-		if (
-			cached &&
-			cached.perspective === perspective &&
-			cached.maxRangeMm === maxRangeMm
-		) {
-			return { widthM: cached.widthM, depthM: cached.depthM };
-		}
-		const metrics = getGridRoomMetrics(
-			new Uint8Array(t.grid),
-			t.roomWidth,
-			perspective,
-			this._getSensorFov(),
-			maxRangeMm,
-		);
-		const widthM = metrics ? metrics.widthM : t.roomWidth / 1000;
-		const depthM = metrics ? metrics.depthM : t.roomDepth / 1000;
-		this._configurationMetricsCache.set(t, {
-			perspective,
-			maxRangeMm,
-			widthM,
-			depthM,
-		});
-		return { widthM, depthM };
-	}
-
 	/**
 	 * Max range for the editor grid.  When auto-distance is on the firmware
 	 * is widened to MAX_RANGE during editing (_pushWidenedDistanceOverride),
@@ -1630,8 +1582,34 @@ export class EPPGridPanel extends LitElement {
 
 	private _renderGlobalDialogs() {
 		return html`
-      ${this._showConfigurationBackup ? this._renderConfigurationBackupDialog() : nothing}
-      ${this._showConfigurationRestore ? this._renderConfigurationRestoreDialog() : nothing}
+      ${
+				this._showConfigurationBackup || this._showConfigurationRestore
+					? html`<epp-configuration-dialogs
+            .localize=${this._localize}
+            .showBackup=${this._showConfigurationBackup}
+            .showRestore=${this._showConfigurationRestore}
+            .configurations=${this._getConfigurations()}
+            .configurationName=${this._configurationName}
+            .perspective=${this._perspective}
+            .maxRangeMm=${this._computeMaxRangeMm()}
+            .sensorFov=${this._getSensorFov()}
+            @configuration-name-change=${(e: CustomEvent<string>) => {
+							this._configurationName = e.detail;
+						}}
+            @configuration-save=${() => this._saveConfiguration()}
+            @configuration-load=${(e: CustomEvent<string>) =>
+							this._loadConfiguration(e.detail)}
+            @configuration-delete=${(e: CustomEvent<string>) =>
+							this._deleteConfiguration(e.detail)}
+            @backup-cancel=${() => {
+							this._showConfigurationBackup = false;
+						}}
+            @restore-close=${() => {
+							this._showConfigurationRestore = false;
+						}}
+          ></epp-configuration-dialogs>`
+					: nothing
+			}
       ${
 				this._showUnsavedDialog
 					? html`
@@ -2831,122 +2809,6 @@ export class EPPGridPanel extends LitElement {
 						}
             </div>
             ${this._renderSaveCancelButtons()}
-          </div>
-        </div>
-      </div>
-    `;
-	}
-
-	private _renderConfigurationBackupDialog() {
-		return html`
-      <div class="template-dialog">
-        <div class="template-dialog-card">
-          <h3>${this._localize("dialogs.backup_configuration")}</h3>
-          <input
-            type="text"
-            class="configuration-name-input"
-            placeholder="${this._localize("dialogs.configuration_name")}"
-            .value=${this._configurationName}
-            @input=${(e: Event) => {
-							this._configurationName = (e.target as HTMLInputElement).value;
-						}}
-          />
-          <div class="template-dialog-actions">
-            <button
-              class="wizard-btn wizard-btn-back"
-              @click=${() => {
-								this._showConfigurationBackup = false;
-							}}
-            >${this._localize("common.cancel")}</button>
-            <button
-              class="wizard-btn wizard-btn-primary"
-              ?disabled=${!this._configurationName.trim()}
-              @click=${() => this._saveConfiguration()}
-            >${this._localize("common.save")}</button>
-          </div>
-        </div>
-      </div>
-    `;
-	}
-
-	private _renderConfigurationRestoreDialog() {
-		// Only show configurations whose zone array fits the current slot
-		// schema (length = 8). Older or malformed entries are filtered out
-		// because loading them would fail.
-		const configurations = this._getConfigurations().filter(
-			(t: { zones?: unknown }) =>
-				Array.isArray(t.zones) && t.zones.length === 8,
-		);
-		return html`
-      <div class="template-dialog">
-        <div class="template-dialog-card">
-          <h3>${this._localize("dialogs.restore_configuration")}</h3>
-          ${
-						configurations.length === 0
-							? html`<p class="overlay-help">${this._localize("dialogs.no_configurations")}</p>`
-							: html`<div class="configuration-card-grid">
-                  ${configurations.map(
-										(t) => html`
-                    <div class="configuration-card"
-                      role="button"
-                      tabindex="0"
-                      @click=${() => this._loadConfiguration(t.name)}
-                      @keydown=${(e: KeyboardEvent) => {
-												if (e.key === "Enter" || e.key === " ") {
-													e.preventDefault();
-													this._loadConfiguration(t.name);
-												}
-											}}
-                    >
-                      <button class="configuration-card-delete"
-                        type="button"
-                        aria-label="${this._localize("common.delete")}"
-                        @click=${(e: Event) => {
-													e.stopPropagation();
-													this._deleteConfiguration(t.name);
-												}}
-                        @keydown=${(e: KeyboardEvent) => {
-													e.stopPropagation();
-												}}
-                      >
-                        <ha-icon icon="mdi:close"></ha-icon>
-                      </button>
-                      <div class="configuration-card-thumbnail">
-                        ${renderConfigurationThumbnail(
-													t.grid,
-													// New schema: zones is length-8 with slot 0 =
-													// Zone0Config and slots 1-7 = named zones. The
-													// thumbnail only uses the named zones (for cell
-													// colouring, indexed by zoneId-1), so strip slot 0.
-													(t.zones?.slice(1) as (ZoneConfig | null)[]) ??
-														new Array(7).fill(null),
-													t.roomWidth,
-													t.roomDepth,
-													t.furniture ?? [],
-												)}
-                      </div>
-                      <div class="configuration-card-info">
-                        <div class="configuration-card-name">${t.name}</div>
-                        <div class="configuration-card-size">${(() => {
-													// Same FOV-aware metrics the live footer uses; cached
-													// per template to avoid re-scanning the grid every render.
-													const { widthM, depthM } =
-														this._getConfigurationMetrics(t);
-													return `${this._localize.formatNumber(widthM, 1)}m × ${this._localize.formatNumber(depthM, 1)}m`;
-												})()}</div>
-                      </div>
-                    </div>
-                  `,
-									)}
-                </div>`
-					}
-          <div class="template-dialog-actions">
-            <button
-              class="wizard-btn wizard-btn-back"
-              @click=${() => {
-								this._showConfigurationRestore = false;
-							}}
-            >${this._localize("common.close")}</button>
           </div>
         </div>
       </div>

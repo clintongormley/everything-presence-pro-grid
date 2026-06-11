@@ -1010,109 +1010,44 @@ describe("_deleteConfiguration", () => {
 	});
 });
 
-describe("_renderConfigurationRestoreDialog", () => {
-	it("renders configuration cards with SVG thumbnails", () => {
-		const grid = new Array(GRID_CELL_COUNT).fill(0);
-		grid[0] = CELL_ROOM_BIT;
-		grid[1] = CELL_ROOM_BIT;
-		grid[GRID_COLS] = CELL_ROOM_BIT;
-		grid[GRID_COLS + 1] = CELL_ROOM_BIT;
-
-		const a = createPanel() as any;
-		a._gridCtrl.configurations = [
-			{
-				name: "Test Room",
-				grid,
-				zones: [
-					VALID_ZONES[0],
-					{ name: "Z1", color: "#E69F00", type: "default" },
-					null,
-					null,
-					null,
-					null,
-					null,
-					null,
-				],
-				roomWidth: 600,
-				roomDepth: 600,
-				furniture: [],
-			},
-		];
-
-		const tpl = a._renderConfigurationRestoreDialog();
+describe("configuration dialogs wiring (_renderGlobalDialogs)", () => {
+	function renderDialogs(a: any): {
+		c: HTMLDivElement;
+		dialogs: HTMLElement;
+	} {
+		const tpl = a._renderGlobalDialogs();
 		const c = document.createElement("div");
 		document.body.appendChild(c);
 		render(tpl, c);
+		const dialogs = c.querySelector("epp-configuration-dialogs") as HTMLElement;
+		expect(dialogs).not.toBeNull();
+		return { c, dialogs };
+	}
 
-		const card = c.querySelector(".configuration-card");
-		expect(card).not.toBeNull();
-
-		const svgEl = c.querySelector(".configuration-card-thumbnail svg");
-		expect(svgEl).not.toBeNull();
-
-		const name = c.querySelector(".configuration-card-name");
-		expect(name?.textContent).toBe("Test Room");
-
-		document.body.removeChild(c);
-	});
-
-	it("configuration-card-size reflects painted-cell bounding box, not stored roomWidth", () => {
-		// Configuration stores a small roomWidth from calibration (600mm), but the
-		// painted grid extends further. The card label should match what the
-		// footer shows (getGridRoomMetrics on the painted cells), so the user
-		// sees the dimensions of the visible layout, not the calibration-time
-		// room size.
-		const grid = new Array(GRID_CELL_COUNT).fill(0);
-		// Paint a 3-col × 2-row block at the top-left corner (0.9m × 0.6m).
-		for (let row = 0; row < 2; row++) {
-			for (let col = 0; col < 3; col++) {
-				grid[row * GRID_COLS + col] = CELL_ROOM_BIT;
-			}
-		}
-
+	it("forwards the controller's configurations to the component", () => {
 		const a = createPanel() as any;
+		a._showConfigurationRestore = true;
 		a._gridCtrl.configurations = [
 			{
-				name: "Mismatch",
-				grid,
+				name: "T1",
+				grid: [],
 				zones: VALID_ZONES,
-				roomWidth: 600, // calibration-time value
-				roomDepth: 600,
-				furniture: [],
+				roomWidth: 3000,
+				roomDepth: 4000,
 			},
 		];
-
-		const tpl = a._renderConfigurationRestoreDialog();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
-
-		const size = c.querySelector(".configuration-card-size");
-		// Painted box: 3 cols × 300mm = 0.9m, 2 rows × 300mm = 0.6m.
-		expect(size?.textContent).toBe("0.9m × 0.6m");
-
+		const { c, dialogs } = renderDialogs(a);
+		expect((dialogs as any).configurations).toBe(a._gridCtrl.configurations);
+		expect((dialogs as any).showRestore).toBe(true);
+		expect((dialogs as any).showBackup).toBe(false);
 		document.body.removeChild(c);
 	});
 
-	it("renders no-configurations message when cache is empty", () => {
-		const a = createPanel() as any;
-		a._gridCtrl.configurations = [];
-
-		const tpl = a._renderConfigurationRestoreDialog();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
-
-		const help = c.querySelector(".overlay-help");
-		expect(help).not.toBeNull();
-
-		document.body.removeChild(c);
-	});
-
-	it("clicking card triggers load", async () => {
+	it("configuration-load event triggers _loadConfiguration", async () => {
 		const grid = new Array(GRID_CELL_COUNT).fill(0);
 		grid[0] = CELL_ROOM_BIT;
 		const a = createPanel() as any;
+		a._showConfigurationRestore = true;
 		a._gridCtrl.configurations = [
 			{
 				name: "Clickable",
@@ -1123,60 +1058,23 @@ describe("_renderConfigurationRestoreDialog", () => {
 				furniture: [],
 			},
 		];
-
-		const tpl = a._renderConfigurationRestoreDialog();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
-
-		const card = c.querySelector(".configuration-card") as HTMLElement;
-		expect(card).not.toBeNull();
-		card.click();
+		const { c, dialogs } = renderDialogs(a);
+		dialogs.dispatchEvent(
+			new CustomEvent("configuration-load", { detail: "Clickable" }),
+		);
 		// Wait for the async _loadConfiguration -> applyLayout chain to settle.
 		await vi.waitFor(() => {
 			expect(a._showConfigurationRestore).toBe(false);
 			expect(a._roomWidth).toBe(3000);
 		});
-
 		document.body.removeChild(c);
 	});
 
-	it("Enter key on card triggers load", async () => {
+	it("configuration-delete event triggers _deleteConfiguration without loading", async () => {
 		const grid = new Array(GRID_CELL_COUNT).fill(0);
 		grid[0] = CELL_ROOM_BIT;
 		const a = createPanel() as any;
-		a._gridCtrl.configurations = [
-			{
-				name: "Keyboard",
-				grid,
-				zones: VALID_ZONES,
-				roomWidth: 4000,
-				roomDepth: 5000,
-				furniture: [],
-			},
-		];
-
-		const tpl = a._renderConfigurationRestoreDialog();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
-
-		const card = c.querySelector(".configuration-card") as HTMLElement;
-		expect(card).not.toBeNull();
-		card.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter" }));
-
-		await vi.waitFor(() => {
-			expect(a._showConfigurationRestore).toBe(false);
-			expect(a._roomWidth).toBe(4000);
-		});
-
-		document.body.removeChild(c);
-	});
-
-	it("clicking delete button removes configuration without loading", async () => {
-		const grid = new Array(GRID_CELL_COUNT).fill(0);
-		grid[0] = CELL_ROOM_BIT;
-		const a = createPanel() as any;
+		a._showConfigurationRestore = true;
 		a._gridCtrl.configurations = [
 			{
 				name: "Keep",
@@ -1195,7 +1093,6 @@ describe("_renderConfigurationRestoreDialog", () => {
 				furniture: [],
 			},
 		];
-
 		a.hass.callWS
 			.mockResolvedValueOnce({}) // delete_configuration
 			.mockResolvedValueOnce({
@@ -1211,18 +1108,10 @@ describe("_renderConfigurationRestoreDialog", () => {
 			});
 
 		const origWidth = a._roomWidth;
-		const tpl = a._renderConfigurationRestoreDialog();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
-
-		const deleteBtn = c.querySelector(
-			".configuration-card-delete",
-		) as HTMLElement;
-		expect(deleteBtn).not.toBeNull();
-		deleteBtn.click();
-
-		// Wait for async delete to complete
+		const { c, dialogs } = renderDialogs(a);
+		dialogs.dispatchEvent(
+			new CustomEvent("configuration-delete", { detail: "Keep" }),
+		);
 		await vi.waitFor(() => {
 			expect(a.hass.callWS).toHaveBeenCalledWith(
 				expect.objectContaining({
@@ -1231,44 +1120,51 @@ describe("_renderConfigurationRestoreDialog", () => {
 				}),
 			);
 		});
-
 		expect(a._roomWidth).toBe(origWidth);
-
 		document.body.removeChild(c);
 	});
 
-	it("Space key on delete button stops propagation", () => {
-		const grid = new Array(GRID_CELL_COUNT).fill(0);
-		grid[0] = CELL_ROOM_BIT;
+	it("configuration-save event triggers _saveConfiguration", async () => {
 		const a = createPanel() as any;
-		a._gridCtrl.configurations = [
-			{
-				name: "T1",
-				grid,
-				zones: VALID_ZONES,
-				roomWidth: 3000,
-				roomDepth: 4000,
-				furniture: [],
-			},
-		];
+		a._showConfigurationBackup = true;
+		a._configurationName = "My layout";
+		a.hass.callWS
+			.mockResolvedValueOnce({}) // save_configuration
+			.mockResolvedValueOnce({ configurations: {} }); // list_configurations
 
-		const tpl = a._renderConfigurationRestoreDialog();
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
+		const { c, dialogs } = renderDialogs(a);
+		dialogs.dispatchEvent(new CustomEvent("configuration-save"));
+		await vi.waitFor(() => {
+			expect(a.hass.callWS).toHaveBeenCalledWith(
+				expect.objectContaining({
+					type: "eppgrid/save_configuration",
+					name: "My layout",
+				}),
+			);
+		});
+		document.body.removeChild(c);
+	});
 
-		const deleteBtn = c.querySelector(
-			".configuration-card-delete",
-		) as HTMLElement;
-		expect(deleteBtn).not.toBeNull();
-		const cardKeydownSpy = vi.fn();
-		const card = c.querySelector(".configuration-card") as HTMLElement;
-		card.addEventListener("keydown", cardKeydownSpy);
-		deleteBtn.dispatchEvent(
-			new KeyboardEvent("keydown", { key: " ", bubbles: true }),
+	it("configuration-name-change event updates _configurationName", () => {
+		const a = createPanel() as any;
+		a._showConfigurationBackup = true;
+		const { c, dialogs } = renderDialogs(a);
+		dialogs.dispatchEvent(
+			new CustomEvent("configuration-name-change", { detail: "Renamed" }),
 		);
-		expect(cardKeydownSpy).not.toHaveBeenCalled();
+		expect(a._configurationName).toBe("Renamed");
+		document.body.removeChild(c);
+	});
 
+	it("backup-cancel and restore-close events clear the show flags", () => {
+		const a = createPanel() as any;
+		a._showConfigurationBackup = true;
+		a._showConfigurationRestore = true;
+		const { c, dialogs } = renderDialogs(a);
+		dialogs.dispatchEvent(new CustomEvent("backup-cancel"));
+		expect(a._showConfigurationBackup).toBe(false);
+		dialogs.dispatchEvent(new CustomEvent("restore-close"));
+		expect(a._showConfigurationRestore).toBe(false);
 		document.body.removeChild(c);
 	});
 });

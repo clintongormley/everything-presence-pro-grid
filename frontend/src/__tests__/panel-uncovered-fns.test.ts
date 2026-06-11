@@ -420,39 +420,6 @@ describe("_renderProtocolBanner update firmware button", () => {
 });
 
 // ---------------------------------------------------------
-// _renderConfigurationRestoreDialog: delete configuration button (line 1429)
-// ---------------------------------------------------------
-describe("_renderConfigurationRestoreDialog delete configuration button", () => {
-	it("@click calls _deleteConfiguration with configuration name", () => {
-		const a = createPanel() as any;
-		// Seed a configuration into localStorage
-		const templates = [
-			{
-				name: "MyTemplate",
-				roomWidth: 3000,
-				roomDepth: 4000,
-				grid: "",
-				zones: new Array(8).fill(null),
-				furniture: [],
-			},
-		];
-		vi.spyOn(a, "_getConfigurations").mockReturnValue(templates);
-		const spy = vi
-			.spyOn(a, "_deleteConfiguration")
-			.mockImplementation(() => {});
-
-		const tpl = a._renderConfigurationRestoreDialog();
-		const c = renderTo(tpl);
-		const deleteBtn = c.querySelector(
-			".configuration-card-delete",
-		) as HTMLElement;
-		expect(deleteBtn).not.toBeNull();
-		deleteBtn.click();
-		expect(spy).toHaveBeenCalledWith("MyTemplate");
-	});
-});
-
-// ---------------------------------------------------------
 // _renderFurnitureOverlay inline handlers (lines 1694, 1697, 1701)
 // ---------------------------------------------------------
 describe("_renderFurnitureOverlay inline event handlers", () => {

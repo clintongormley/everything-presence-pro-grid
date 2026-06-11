@@ -1011,34 +1011,6 @@ describe("_renderEditor", () => {
 	});
 });
 
-describe("_renderConfigurationBackupDialog", () => {
-	it("renders save dialog", () => {
-		const a = createPanel() as any;
-		a._configurationName = "Test";
-		const result = a._renderConfigurationBackupDialog();
-		expect(result).toBeDefined();
-	});
-});
-
-describe("_renderConfigurationRestoreDialog", () => {
-	it("renders restore dialog with no configurations", () => {
-		const a = createPanel() as any;
-		a._gridCtrl.configurations = [];
-		const result = a._renderConfigurationRestoreDialog();
-		expect(result).toBeDefined();
-	});
-
-	it("renders restore dialog with configurations", () => {
-		const a = createPanel() as any;
-		a._gridCtrl.configurations = [
-			{ name: "T1", grid: [], zones: [], roomWidth: 3000, roomDepth: 4000 },
-			{ name: "T2", grid: [], zones: [], roomWidth: 5000, roomDepth: 6000 },
-		];
-		const result = a._renderConfigurationRestoreDialog();
-		expect(result).toBeDefined();
-	});
-});
-
 describe("epp-zone-sidebar renders boundary type controls", () => {
 	it("renders for default type", () => {
 		const el = document.createElement("epp-zone-sidebar") as any;
