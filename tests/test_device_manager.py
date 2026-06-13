@@ -2319,6 +2319,44 @@ class TestAsyncTriggerOta:
         # Bailed before contacting the device — no manifest was pushed.
         mock_conn.async_execute_service.assert_not_awaited()
 
+    async def test_in_progress_check_precedes_manifest_check(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A second concurrent trigger must reject with ota_in_progress BEFORE
+        probing the manifest — otherwise we waste a HEAD round-trip on a call
+        we'll reject anyway, and a manifest result could mask the in-progress
+        error."""
+        from homeassistant.exceptions import HomeAssistantError
+
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {"ethernet_enabled": False}
+        mock_conn = self._make_mock_conn()
+
+        connect_started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_connect() -> None:
+            connect_started.set()
+            await release.wait()
+
+        mock_conn.async_connect.side_effect = slow_connect
+
+        session = _fake_head_session(status=200)
+        with (
+            patch("custom_components.eppgrid.device_manager.async_get_clientsession", return_value=session),
+            patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn),
+        ):
+            first = asyncio.create_task(manager.async_trigger_ota("AA:BB:CC:DD:EE:FF"))
+            await connect_started.wait()
+            assert session.head.call_count == 1  # first caller probed once
+
+            with pytest.raises(HomeAssistantError) as excinfo:
+                await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+            assert excinfo.value.translation_key == "ota_in_progress"
+            # Rejected before any manifest probe — no second HEAD.
+            assert session.head.call_count == 1
+
+            release.set()
+            await first
+
     async def test_proceeds_when_manifest_check_unreachable(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """A connectivity failure reaching the CDN *from the HA host* must NOT
         block the OTA: the device fetches the manifest itself over its own

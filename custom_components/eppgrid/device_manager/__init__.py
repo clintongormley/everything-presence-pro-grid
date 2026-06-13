@@ -595,6 +595,19 @@ class DeviceManager:
             )
         manifest_url = f"{OTA_MANIFEST_BASE_URL}/{variant}.json"
 
+        # Reject a duplicate OTA before any network I/O: a concurrent trigger
+        # for this mac must fail-fast with ota_in_progress, not waste a manifest
+        # probe (or let a manifest result mask the in-progress state). We only
+        # check `locked()` here; the manifest HEAD below runs OUTSIDE the held
+        # lock so a slow probe never blocks an unrelated OTA.
+        lock = self._ota_locks.setdefault(mac, asyncio.Lock())
+        if lock.locked():
+            raise HomeAssistantError(
+                f"OTA already in progress for {mac}",
+                translation_domain=_DOMAIN,
+                translation_key="ota_in_progress",
+            )
+
         # Pre-flight: confirm the pinned-version manifest actually exists before
         # handing its URL to the device. If the release hasn't been published
         # yet (a 404), the device fetches nothing, never reflashes, and the
@@ -623,13 +636,6 @@ class DeviceManager:
                 manifest_url,
             )
 
-        lock = self._ota_locks.setdefault(mac, asyncio.Lock())
-        if lock.locked():
-            raise HomeAssistantError(
-                f"OTA already in progress for {mac}",
-                translation_domain=_DOMAIN,
-                translation_key="ota_in_progress",
-            )
         async with lock:
             # Prefer the live session if one exists — opening a second connection
             # would race against the device's per-API-client connection cap.
