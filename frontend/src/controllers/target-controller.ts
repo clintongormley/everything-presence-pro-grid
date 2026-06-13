@@ -2,6 +2,8 @@ import type { ReactiveController } from "lit";
 import { DEBUG_LOG_MAX } from "../constants.js";
 import { mapTargetToGridCell } from "../lib/coordinates.js";
 import { cellIsInside, cellZone, GRID_COLS, GRID_ROWS } from "../lib/grid.js";
+import { OverlayTracker } from "../lib/overlay-tracker.js";
+import { applyPerspective } from "../lib/perspective.js";
 import { resolveZoneParams, type ZoneConfig } from "../lib/zone-defaults.js";
 import {
 	createZoneEngineState,
@@ -45,6 +47,20 @@ export class TargetController implements ReactiveController {
 
 	private _zoneEngineState: ZoneEngineState = createZoneEngineState();
 
+	// Mirror of the firmware component's raw-frame sticky entry-overlay tracker
+	// (epp_component.cpp Stage 2b). On-device this is driven by RAW radar frames
+	// at 10 Hz; here it's fed from the raw-target stream (handleRawTargetData),
+	// falling back to median positions when no raw frame arrived this cycle (the
+	// raw stream is unavailable in some editor states — a frontend-only
+	// degradation the on-device component never hits). Its per-slot flags feed
+	// each engine target's `onOverlay`.
+	private _overlayTracker = new OverlayTracker();
+
+	// True when a raw frame fed the tracker since the last engine tick. The raw
+	// stream is authoritative (matches the component); the median fallback only
+	// runs when no raw frame arrived. Reset after each engine tick.
+	private _rawFedThisCycle = false;
+
 	get zoneEngineState(): ZoneEngineState {
 		return this._zoneEngineState;
 	}
@@ -66,6 +82,8 @@ export class TargetController implements ReactiveController {
 	resetZoneEngineState(): void {
 		this._zoneEngineState = createZoneEngineState();
 		this._editorEngineResult = null;
+		this._overlayTracker.reset();
+		this._rawFedThisCycle = false;
 	}
 
 	/**
@@ -76,6 +94,11 @@ export class TargetController implements ReactiveController {
 	 */
 	resetEngineForGridChange(): void {
 		resetForGridChange(this._zoneEngineState);
+		// The tracker's latched flags are cell-based and OLD-grid-relative, so a
+		// grid edit invalidates them — reset alongside the engine's overlay
+		// sticky (firmware set_grid clears target_overlay_sticky_).
+		this._overlayTracker.reset();
+		this._rawFedThisCycle = false;
 	}
 
 	/**
@@ -85,6 +108,9 @@ export class TargetController implements ReactiveController {
 	 */
 	resetEngineForZoneConfigChange(): void {
 		resetForZoneConfigChange(this._zoneEngineState);
+		// firmware set_zones also clears target_overlay_sticky_ — mirror it.
+		this._overlayTracker.reset();
+		this._rawFedThisCycle = false;
 	}
 
 	/**
@@ -164,9 +190,27 @@ export class TargetController implements ReactiveController {
 				}
 			}
 		} else if (this.host._view === "editor") {
+			// Feed the overlay tracker from the MEDIAN positions only when the
+			// raw stream didn't already feed it this cycle (raw is authoritative
+			// and matches the component). The median path is a frontend-only
+			// fallback for editor states where the raw stream isn't flowing.
+			if (!this._rawFedThisCycle) {
+				this._overlayTracker.update(
+					this.host._targets.map((t) => ({
+						active: t.status === "active",
+						x: t.x,
+						y: t.y,
+					})),
+					this.host._grid,
+					this.host._roomWidth,
+					this.host._roomDepth,
+				);
+			}
 			// Tick the local engine once per target frame and cache the result
 			// for _renderEditor — renders between frames reuse the cache.
 			this.runLocalZoneEngine();
+			// Next cycle decides raw-vs-median afresh.
+			this._rawFedThisCycle = false;
 		}
 	}
 
@@ -176,6 +220,31 @@ export class TargetController implements ReactiveController {
 	handleRawTargetData(rawTargets: RawTarget[]): void {
 		if (this.host._view === "settings") return;
 		this.host._rawTargets = rawTargets;
+		// Feed the overlay tracker from the RAW stream — the authoritative path,
+		// mirroring the firmware component (epp_component.cpp Stage 2b runs on
+		// raw frames). Raw coords are sensor-space; apply the client-side
+		// perspective to reach the room-space mm frame the tracker maps from
+		// (the component applies transform_.apply(fx, fy) before xy_to_cell).
+		const h = this.host._perspective;
+		const targets = rawTargets.map((t) => {
+			if (t.raw_x == null || t.raw_y == null) {
+				return { active: false, x: null, y: null };
+			}
+			if (h) {
+				const p = applyPerspective(h, t.raw_x, t.raw_y);
+				return { active: true, x: p.x, y: p.y };
+			}
+			// No perspective yet (pre-calibration) — can't reach room space;
+			// treat as not-tracking so a stale flag isn't set from raw space.
+			return { active: false, x: null, y: null };
+		});
+		this._overlayTracker.update(
+			targets,
+			this.host._grid,
+			this.host._roomWidth,
+			this.host._roomDepth,
+		);
+		this._rawFedThisCycle = true;
 	}
 
 	// =====================================================================
@@ -190,8 +259,14 @@ export class TargetController implements ReactiveController {
 		const ss = this.host._sensorState;
 		const slots = this.host._zoneConfigs;
 		const z0 = resolveZoneParams(slots[0]);
+		// Attach each target's sticky entry-overlay flag (index-aligned) from the
+		// tracker, mirroring the firmware feeding zone_input.targets[i].on_overlay.
+		const overlayFlags = this._overlayTracker.onOverlay;
 		const result = runLocalZoneEngine(this._zoneEngineState, {
-			targets: this.host._targets,
+			targets: this.host._targets.map((t, i) => ({
+				...t,
+				onOverlay: overlayFlags[i] ?? false,
+			})),
 			grid: this.host._grid,
 			roomWidth: this.host._roomWidth,
 			roomDepth: this.host._roomDepth,

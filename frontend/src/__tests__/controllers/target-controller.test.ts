@@ -57,6 +57,9 @@ function mockHost() {
 		_grid: new Uint8Array(GRID_CELL_COUNT),
 		_roomWidth: 6000,
 		_roomDepth: 6000,
+		// Identity perspective: raw sensor coords pass straight through to
+		// room-space mm, so a raw target at (x,y) lands in cell (x/300, y/300).
+		_perspective: [1, 0, 0, 0, 1, 0, 0, 0] as number[] | null,
 
 		// Sensor timeouts forwarded to runLocalZoneEngine (panel defaults).
 		_staticTimeout: 30,
@@ -532,6 +535,131 @@ describe("TargetController", () => {
 			const newRaw = [{ raw_x: 30, raw_y: 40 }] as any;
 			ctrl.handleRawTargetData(newRaw);
 			expect(host._rawTargets).toBe(newRaw);
+		});
+	});
+
+	// -------------------------------------------------------------------------
+	// Overlay-tracker wiring (raw stream → onOverlay → engine)
+	// -------------------------------------------------------------------------
+	describe("overlay tracker wiring", () => {
+		// Zone 1 spanning cols 8-11, row 1; cell (9,1) is an entry overlay.
+		// roomWidth 6000 → roomStartCol 0, so a raw/median (x,y) maps to
+		// cell (floor(x/300), floor(y/300)) under the identity perspective.
+		const ENTRY_COL = 9;
+		const ENTRY_ROW = 1;
+		// Centre of cell (9,1): x∈[2700,3000), y∈[300,600).
+		const ENTRY_X = 2850;
+		const ENTRY_Y = 450;
+		// A plain room cell in the same zone, two cols away.
+		const PLAIN_X = 2250; // cell (7,1)
+
+		beforeEach(() => {
+			host._view = "editor";
+			const grid = new Uint8Array(GRID_CELL_COUNT);
+			for (let c = 6; c <= 11; c++) {
+				grid[ENTRY_ROW * GRID_COLS + c] = cellSetZone(CELL_ROOM_BIT, 1);
+			}
+			const eidx = ENTRY_ROW * GRID_COLS + ENTRY_COL;
+			grid[eidx] = cellSetOverlay(grid[eidx], CELL_OVERLAY_ENTRY);
+			host._grid = grid;
+			// Zone 1 with a high trigger so only the overlay instant-entry path
+			// (threshold → 1) can confirm a low-signal first appearance.
+			host._zoneConfigs = [
+				host._zoneConfigs[0],
+				{
+					type: "custom",
+					trigger: 8,
+					renew: 8,
+					timeout: 10,
+					handoff_timeout: 3,
+				},
+				null,
+				null,
+				null,
+				null,
+				null,
+				null,
+			] as any[];
+		});
+
+		it("a raw frame on the entry cell sets onOverlay, confirming the zone", () => {
+			// Raw frame lands on the entry cell → tracker sets the sticky flag.
+			ctrl.handleRawTargetData([{ raw_x: ENTRY_X, raw_y: ENTRY_Y }] as any);
+			// Median frame: a low-signal target on a PLAIN cell. Without the raw
+			// touch this would be gated; the raw onOverlay forces instant entry.
+			ctrl.handleTargetData(
+				makeTargetData({
+					targets: [
+						{ x: PLAIN_X, y: ENTRY_Y, status: "active", signal: 1 },
+					] as any,
+				}),
+			);
+			expect(ctrl.editorEngineResult?.occupancy[1]).toBe(true);
+		});
+
+		it("without a raw overlay touch a low-signal target is gated", () => {
+			// No raw frame; median fallback feeds the plain cell → no overlay.
+			ctrl.handleTargetData(
+				makeTargetData({
+					targets: [
+						{ x: PLAIN_X, y: ENTRY_Y, status: "active", signal: 1 },
+					] as any,
+				}),
+			);
+			expect(ctrl.editorEngineResult?.occupancy[1]).toBe(false);
+		});
+
+		it("slot reuse resets the sticky overlay flag", () => {
+			// Target A touches the entry cell via raw, confirming the zone.
+			ctrl.handleRawTargetData([{ raw_x: ENTRY_X, raw_y: ENTRY_Y }] as any);
+			ctrl.handleTargetData(
+				makeTargetData({
+					targets: [
+						{ x: ENTRY_X, y: ENTRY_Y, status: "active", signal: 1 },
+					] as any,
+				}),
+			);
+			expect(ctrl.editorEngineResult?.occupancy[1]).toBe(true);
+
+			// Target A disappears (inactive raw frame) — flag latched.
+			ctrl.handleRawTargetData([{ raw_x: null, raw_y: null }] as any);
+			ctrl.handleTargetData(makeTargetData({ targets: [] as any }));
+
+			// Slot reused by a brand-new target B appearing mid-room on a PLAIN
+			// cell: inactive→active resets the stale flag, so B is gated.
+			ctrl.handleRawTargetData([{ raw_x: PLAIN_X, raw_y: ENTRY_Y }] as any);
+			ctrl.handleTargetData(
+				makeTargetData({
+					// Fresh engine state would be ideal, but the zone is still
+					// occupied from A; assert B's onOverlay didn't leak by checking
+					// the tracker flag directly.
+					targets: [
+						{ x: PLAIN_X, y: ENTRY_Y, status: "active", signal: 1 },
+					] as any,
+				}),
+			);
+			// The tracker's slot-0 flag must be cleared (B on a plain cell).
+			expect((ctrl as any)._overlayTracker.onOverlay[0]).toBe(false);
+		});
+
+		it("falls back to median positions when no raw frame arrives", () => {
+			// No raw stream: a median frame on the ENTRY cell still arms onOverlay
+			// (frontend-only degradation path).
+			ctrl.handleTargetData(
+				makeTargetData({
+					targets: [
+						{ x: ENTRY_X, y: ENTRY_Y, status: "active", signal: 1 },
+					] as any,
+				}),
+			);
+			expect(ctrl.editorEngineResult?.occupancy[1]).toBe(true);
+		});
+
+		it("resetEngineForGridChange clears the tracker flags", () => {
+			ctrl.handleRawTargetData([{ raw_x: ENTRY_X, raw_y: ENTRY_Y }] as any);
+			expect((ctrl as any)._overlayTracker.onOverlay[0]).toBe(true);
+			ctrl.resetEngineForGridChange();
+			expect((ctrl as any)._overlayTracker.onOverlay[0]).toBe(false);
 		});
 	});
 
