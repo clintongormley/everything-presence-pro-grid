@@ -13,7 +13,6 @@ import type { EppWizard } from "./components/epp-wizard.js";
 import { renderSaveCancelBar } from "./components/save-cancel-bar.js";
 import "./components/epp-overlay-sidebar.js";
 import "./components/epp-zone-sidebar.js";
-import { EPP_LOGO } from "./constants.js";
 import { DeviceController } from "./controllers/device-controller.js";
 import { FlasherController } from "./controllers/flasher-controller.js";
 import {
@@ -78,6 +77,67 @@ import type { DeviceInfo, RawTarget, Target } from "./types.js";
 
 // ZoneSlots / INITIAL_ZONE_SLOTS moved to lib/zone-defaults.ts so the
 // controllers can import them without a circular type dep on this module.
+
+// Everything Presence Pro Grid logo, inlined from custom_components/eppgrid/
+// brand/icon.svg so it ships in the bundle (no extra static path / request).
+// Sized via the .epp-logo CSS rule; viewBox preserved for crisp scaling.
+const EPP_LOGO = html`
+	<svg
+		class="epp-logo"
+		viewBox="0 0 256 256"
+		role="img"
+		aria-label="Everything Presence Pro Grid"
+	>
+		<rect width="256" height="256" rx="48" fill="#0f172a" />
+		<g stroke="#4d6d9f" stroke-width="3">
+			<path
+				d="M32 32v192M64 32v192M96 32v192M128 32v192M160 32v192M192 32v192M224 32v192"
+			/>
+			<path
+				d="M32 32h192M32 64h192M32 96h192M32 128h192M32 160h192M32 192h192M32 224h192"
+			/>
+		</g>
+		<path
+			d="M 128 48 L 32 195.5 A 176 176 0 0 0 224 195.5 Z"
+			fill="#0ea5e9"
+			fill-opacity="0.32"
+			stroke="#7dd3fc"
+			stroke-width="3.5"
+			stroke-linejoin="round"
+		/>
+		<g
+			fill="none"
+			stroke="#7dd3fc"
+			stroke-width="2.5"
+			stroke-linecap="round"
+			stroke-dasharray="0 6"
+			opacity="0.85"
+		>
+			<path d="M 96 97.17 A 58.67 58.67 0 0 0 160 97.17" />
+			<path d="M 64 146.34 A 117.33 117.33 0 0 0 192 146.34" />
+		</g>
+		<circle cx="128" cy="160" r="12" fill="#fb923c" />
+		<circle
+			cx="128"
+			cy="160"
+			r="22"
+			fill="none"
+			stroke="#fb923c"
+			stroke-width="3"
+			opacity="0.6"
+		/>
+		<circle cx="128" cy="48" r="12" fill="#f8fafc" />
+		<circle
+			cx="128"
+			cy="48"
+			r="20"
+			fill="none"
+			stroke="#f8fafc"
+			stroke-width="2.5"
+			opacity="0.55"
+		/>
+	</svg>
+`;
 
 type SensorState = {
 	occupancy: boolean;

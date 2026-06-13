@@ -222,17 +222,20 @@ describe("tab-bar logo", () => {
 		const c = renderPanel((a) => {
 			a._panelTab = "config";
 		});
-		const tabBar = c.querySelector(".tab-bar") as HTMLElement;
-		const logo = tabBar.querySelector("svg.epp-logo") as Element;
-		const configTab = Array.from(tabBar.querySelectorAll("button.tab")).find(
+		const tabBar = c.querySelector(".tab-bar");
+		expect(tabBar).not.toBeNull();
+		const logo = tabBar?.querySelector("svg.epp-logo");
+		expect(logo).not.toBeNull();
+		const configTab = Array.from(
+			tabBar?.querySelectorAll("button.tab") ?? [],
+		).find(
 			(b) =>
 				b.textContent?.trim() === setupLocalize()("tabs.device_configuration"),
-		) as Element;
-		expect(logo).not.toBeNull();
-		expect(configTab).not.toBeNull();
+		);
+		expect(configTab).not.toBeUndefined();
 		// DOCUMENT_POSITION_FOLLOWING => configTab comes after logo in DOM order.
 		expect(
-			logo.compareDocumentPosition(configTab) &
+			(logo as Element).compareDocumentPosition(configTab as Element) &
 				Node.DOCUMENT_POSITION_FOLLOWING,
 		).toBeTruthy();
 	});
@@ -241,8 +244,9 @@ describe("tab-bar logo", () => {
 		const c = renderPanel((a) => {
 			a._panelTab = "config";
 		});
-		const logo = c.querySelector(".tab-bar svg.epp-logo") as Element;
-		expect(logo.getAttribute("role")).toBe("img");
-		expect(logo.getAttribute("aria-label")).toBeTruthy();
+		const logo = c.querySelector(".tab-bar svg.epp-logo");
+		expect(logo).not.toBeNull();
+		expect(logo?.getAttribute("role")).toBe("img");
+		expect(logo?.getAttribute("aria-label")).toBeTruthy();
 	});
 });
