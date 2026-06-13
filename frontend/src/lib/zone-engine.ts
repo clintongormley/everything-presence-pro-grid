@@ -217,20 +217,97 @@ function getOrCreateZoneState(state: ZoneEngineState, zid: number): ZoneState {
 	return st;
 }
 
+/**
+ * Per-tick mutable context threaded through the firmware-named step functions.
+ * The firmware (epp_zone_engine.cpp) keeps these as either member state (the
+ * `state` object here) or function-local arrays inside `ZoneEngine::tick`; this
+ * struct is the TS equivalent of those tick-locals, so each step helper reads
+ * and writes the same fields the firmware step does.
+ */
+interface TickContext {
+	state: ZoneEngineState;
+	params: ZoneEngineParams;
+	now: number;
+	zoneConfirmed: Map<number, boolean>;
+	targetSignal: Map<number, number>;
+	targetZonePrev: (number | null)[];
+	targetZoneCurr: (number | null)[];
+	// Mirror of firmware target_active[]: sensor is tracking AND produced
+	// frames this window. Pending targets echoed by the backend (x/y non-null
+	// but signal=0) correspond to firmware tw.active=false.
+	targetActive: boolean[];
+	occupancy: Record<number, boolean>;
+}
+
+/**
+ * runLocalZoneEngine — TS mirror of `epp::ZoneEngine::tick`
+ * (firmware/lib/epp_zone_engine/src/epp_zone_engine.cpp). The body is split
+ * into per-step helpers named after the firmware's Step comments so future
+ * parity audits diff structurally. Firmware step → TS helper map:
+ *
+ *   Step 1   (cpp ~216-444): per-target evaluation       → stepPerTargetEval
+ *   Step 1b  (cpp ~447-485): per-target transition log    → (firmware logging
+ *                                                            only; no TS mirror)
+ *   Step 2   (cpp ~488-509): handoff detection            → stepHandoffDetection
+ *   Step 2b  (cpp ~512-548): overlay exit handoff         → stepOverlayExitHandoff
+ *   Step 3   (cpp ~551-590): per-zone state machine       → stepZoneStateMachine
+ *            (cpp set_zones reset of stale zones folded in here in TS)
+ *   Step 4   (cpp ~596-651): per-target results           → stepTargetResults
+ *   Step 5   (cpp ~654-665): cleanup confirmed bits        → stepCleanupConfirmed
+ *   Step 5b  (cpp ~668-715): sensor presence state machine → stepSensorPresence
+ *   Step 5c  (cpp ~718-747): force-clear pending zones     → stepForceClear
+ *   Step 5d  (cpp ~766-796): compute occupancy + mmwave    → stepComputeOccupancy
+ *
+ * This is a PURE structural refactor: thresholds, ordering and conditions are
+ * unchanged. The parity suites (panel-zone-engine-parity.test.ts and
+ * test_parity.cpp) are the oracle.
+ */
 export function runLocalZoneEngine(
 	state: ZoneEngineState,
 	params: ZoneEngineParams,
 ): ZoneEngineResult {
-	const now = params.now ?? Date.now() / 1000;
+	const ctx: TickContext = {
+		state,
+		params,
+		now: params.now ?? Date.now() / 1000,
+		zoneConfirmed: new Map(),
+		targetSignal: new Map(),
+		targetZonePrev: [null, null, null],
+		targetZoneCurr: [null, null, null],
+		targetActive: [false, false, false],
+		occupancy: {},
+	};
 
-	const zoneConfirmed: Map<number, boolean> = new Map();
-	const targetSignal: Map<number, number> = new Map();
-	const targetZonePrev: (number | null)[] = [null, null, null];
-	const targetZoneCurr: (number | null)[] = [null, null, null];
-	// Mirror of firmware target_active[]: sensor is tracking AND produced
-	// frames this window. Pending targets echoed by the backend (x/y non-null
-	// but signal=0) correspond to firmware tw.active=false.
-	const targetActive: boolean[] = [false, false, false];
+	stepPerTargetEval(ctx);
+	stepHandoffDetection(ctx);
+	stepOverlayExitHandoff(ctx);
+	stepZoneStateMachine(ctx);
+	const targetResults = stepTargetResults(ctx);
+	stepCleanupConfirmed(ctx);
+	stepSensorPresence(ctx);
+	stepForceClear(ctx);
+	const { sensorOccupancy, mmwave } = stepComputeOccupancy(ctx);
+
+	return {
+		occupancy: ctx.occupancy,
+		targets: targetResults,
+		staticState: state.staticState,
+		motionState: state.motionState,
+		sensorOccupancy,
+		mmwave,
+	};
+}
+
+/**
+ * Step 1 — Per-target evaluation. Mirror of firmware epp_zone_engine.cpp
+ * ~216-444 (Python lines 510-604). For each target slot: clear tracking when
+ * gone, map to a grid cell, apply dismiss/stuck/suppress gates, then run the
+ * confirm logic (instant entry, gating, renew) against the zone thresholds.
+ */
+function stepPerTargetEval(ctx: TickContext): void {
+	const { state, params, now } = ctx;
+	const { zoneConfirmed, targetSignal, targetZonePrev, targetZoneCurr } = ctx;
+	const targetActive = ctx.targetActive;
 
 	for (let i = 0; i < MAX_TARGETS; i++) {
 		const t = i < params.targets.length ? params.targets[i] : null;
@@ -441,8 +518,17 @@ export function runLocalZoneEngine(
 			}
 		}
 	}
+}
 
-	// Handoff detection
+/**
+ * Step 2 — Handoff detection. Mirror of firmware epp_zone_engine.cpp ~488-509
+ * (Python lines 606-632). When a target moves between zones, drop its bit from
+ * the source zone; if that emptied an OCCUPIED zone, accelerate its pending
+ * timeout to handoff_timeout.
+ */
+function stepHandoffDetection(ctx: TickContext): void {
+	const { state, params, now, targetZonePrev, targetZoneCurr } = ctx;
+
 	for (let i = 0; i < MAX_TARGETS; i++) {
 		const prevZid = targetZonePrev[i];
 		const currZid = targetZoneCurr[i];
@@ -472,13 +558,19 @@ export function runLocalZoneEngine(
 			srcSt.pendingSince = now - (timeout - handoffTimeout);
 		}
 	}
+}
 
-	// Overlay exit handoff: when the target disappears or leaves the room from
-	// an overlay cell, accelerate the source zone's pending timeout to the
-	// configured handoff_timeout. Iterates MAX_TARGETS (not just the current
-	// targets list) and reads state.lastZone/lastOnOverlay so the handoff
-	// fires even when the backend's target list shrinks. Mirrors firmware
-	// Step 2b (epp_zone_engine.cpp:431-456).
+/**
+ * Step 2b — Overlay exit handoff. Mirror of firmware epp_zone_engine.cpp
+ * ~512-548. When the target disappears or leaves the room from an overlay
+ * cell, accelerate the source zone's pending timeout to the configured
+ * handoff_timeout. Iterates MAX_TARGETS (not just the current targets list)
+ * and reads state.lastZone/lastOnOverlay so the handoff fires even when the
+ * backend's target list shrinks.
+ */
+function stepOverlayExitHandoff(ctx: TickContext): void {
+	const { state, params, now, targetZoneCurr } = ctx;
+
 	for (let i = 0; i < MAX_TARGETS; i++) {
 		const t = i < params.targets.length ? params.targets[i] : null;
 		const isGone = !t || t.x == null || t.y == null;
@@ -525,9 +617,18 @@ export function runLocalZoneEngine(
 			}
 		}
 	}
+}
 
-	// State machine per zone
-	const occupancy: Record<number, boolean> = {};
+/**
+ * Step 3 — Per-zone state machine. Mirror of firmware epp_zone_engine.cpp
+ * ~551-590 (Python lines 635-659). Advances each configured zone's
+ * CLEAR/OCCUPIED/PENDING_CLEAR state from the per-tick `zoneConfirmed` map and
+ * writes `ctx.occupancy`. The trailing stale-zone purge folds in firmware
+ * set_zones' reset of any zone whose grid cells or config disappeared.
+ */
+function stepZoneStateMachine(ctx: TickContext): void {
+	const { state, params, now, zoneConfirmed } = ctx;
+	const occupancy = ctx.occupancy;
 	const allZoneIds = new Set<number>();
 	for (let i = 0; i < params.grid.length; i++) {
 		if (cellIsInside(params.grid[i])) allZoneIds.add(cellZone(params.grid[i]));
@@ -584,13 +685,21 @@ export function runLocalZoneEngine(
 			state.localZoneState.delete(zid);
 		}
 	}
+}
 
-	// Build per-target status (mirrors firmware Step 4). This runs BEFORE
-	// Step-5 cleanup and Step-5c force-clear, exactly like the firmware: on
-	// a force-clear tick the target must still publish its pending status —
-	// the cleared zone only affects the NEXT tick's results.
-	// Only status is needed — position for pending display is handled
-	// by targetPrevXY in the rendering layer.
+/**
+ * Step 4 — Per-target results. Mirror of firmware epp_zone_engine.cpp ~596-651
+ * (Python lines 661-701). Builds the per-target active/pending/inactive status.
+ * Runs BEFORE Step-5 cleanup and Step-5c force-clear, exactly like the
+ * firmware: on a force-clear tick the target must still publish its pending
+ * status — the cleared zone only affects the NEXT tick's results. Only status
+ * is needed; position for pending display is handled by targetPrevXY in the
+ * rendering layer.
+ */
+function stepTargetResults(
+	ctx: TickContext,
+): { status: "active" | "pending" | "inactive" }[] {
+	const { state, params, targetSignal, targetZoneCurr, targetActive } = ctx;
 	const targetResults: { status: "active" | "pending" | "inactive" }[] = [];
 	for (let i = 0; i < MAX_TARGETS && i < params.targets.length; i++) {
 		const sig = targetSignal.get(i) ?? 0;
@@ -614,10 +723,18 @@ export function runLocalZoneEngine(
 			targetResults.push({ status: isPending ? "pending" : "inactive" });
 		}
 	}
+	return targetResults;
+}
 
-	// Clean up stale confirmed targets in non-pending zones (mirrors firmware
-	// Step 5). Iterates ALL slots: an absent/inactive slot must release its
-	// confirmation bits exactly like firmware `!window.targets[i].active`.
+/**
+ * Step 5 — Cleanup. Mirror of firmware epp_zone_engine.cpp ~654-665 (Python
+ * lines 703-710). Removes inactive targets from confirmed_targets of
+ * non-PENDING zones. Iterates ALL slots: an absent/inactive slot must release
+ * its confirmation bits exactly like firmware `!window.targets[i].active`.
+ */
+function stepCleanupConfirmed(ctx: TickContext): void {
+	const { state, targetActive } = ctx;
+
 	for (let i = 0; i < MAX_TARGETS; i++) {
 		if (!targetActive[i]) {
 			for (const st of state.localZoneState.values()) {
@@ -627,8 +744,16 @@ export function runLocalZoneEngine(
 			}
 		}
 	}
+}
 
-	// Sensor presence state machine
+/**
+ * Step 5b — Sensor presence state machine. Mirror of firmware
+ * epp_zone_engine.cpp ~668-715. Advances the static and motion PIR presence
+ * states (ACTIVE/PENDING/INACTIVE) from the per-tick sensor inputs.
+ */
+function stepSensorPresence(ctx: TickContext): void {
+	const { state, params, now } = ctx;
+
 	const staticOn = params.staticPresence ?? false;
 	const motionOn = params.motionPresence ?? false;
 	const staticTimeout = params.staticTimeout ?? 10;
@@ -667,10 +792,19 @@ export function runLocalZoneEngine(
 			state.motionPendingSince = null;
 		}
 	}
+}
 
-	// Force-clear: when both sensors inactive and no zones OCCUPIED, clear pending zones
-	// Only applies when sensors have been active at some point (prevents force-clear
-	// on sensor-free deployments where sensors are always default-inactive)
+/**
+ * Step 5c — Force-clear pending zones when all sensors inactive. Mirror of
+ * firmware epp_zone_engine.cpp ~718-747. Only applies once sensors have been
+ * seen as active (prevents force-clear on sensor-free deployments where
+ * sensors are always default-inactive). When both sensors are inactive and no
+ * zone is OCCUPIED, every PENDING zone is cleared.
+ */
+function stepForceClear(ctx: TickContext): void {
+	const { state } = ctx;
+	const occupancy = ctx.occupancy;
+
 	if (
 		state.sensorsEverActive &&
 		state.staticState === "inactive" &&
@@ -694,15 +828,27 @@ export function runLocalZoneEngine(
 			}
 		}
 	}
+}
 
-	// Compute sensor occupancy
+/**
+ * Step 5d — Compute occupancy + mmwave. Mirror of firmware
+ * epp_zone_engine.cpp ~766-796. sensorOccupancy is true when any sensor is
+ * active/pending OR any zone is occupied/pending. mmwave combines static
+ * presence + the target tracker (ignores motion/PIR): on when static is
+ * active/pending OR any zone is OCCUPIED (not PENDING_CLEAR).
+ */
+function stepComputeOccupancy(ctx: TickContext): {
+	sensorOccupancy: boolean;
+	mmwave: boolean;
+} {
+	const { state } = ctx;
+	const occupancy = ctx.occupancy;
+
 	const sensorOccupancy =
 		state.staticState !== "inactive" ||
 		state.motionState !== "inactive" ||
 		Object.values(occupancy).some((v) => v);
 
-	// mmwave: combines static presence + target tracker, ignores motion (PIR).
-	// On when static is active/pending OR any zone is OCCUPIED (not PENDING_CLEAR).
 	let mmwave = state.staticState !== "inactive";
 	if (!mmwave) {
 		for (const [, st] of state.localZoneState) {
@@ -713,12 +859,5 @@ export function runLocalZoneEngine(
 		}
 	}
 
-	return {
-		occupancy,
-		targets: targetResults,
-		staticState: state.staticState,
-		motionState: state.motionState,
-		sensorOccupancy,
-		mmwave,
-	};
+	return { sensorOccupancy, mmwave };
 }
