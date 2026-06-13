@@ -78,6 +78,26 @@ def _redact_mac_fragments_in_keys(states: dict[str, str], fragments: list[str]) 
     return {_redact_mac_fragments_in_text(k, fragments): v for k, v in states.items()}
 
 
+def _redact_mac_fragments_deep(value: Any, fragments: list[str]) -> Any:
+    """Recursively redact MAC hex fragments from every string in ``value``.
+
+    Walks nested dicts/lists and redacts fragments in string *values* (not
+    keys — keys here are structural, e.g. "calibration"/"zones"; user-typed
+    names live in the values: saved-config names, zone names, furniture
+    labels). A user who names a config/zone/area after their device's last-6
+    hex would otherwise leak that fragment when pasting diagnostics publicly.
+    """
+    if not fragments:
+        return value
+    if isinstance(value, str):
+        return _redact_mac_fragments_in_text(value, fragments)
+    if isinstance(value, dict):
+        return {k: _redact_mac_fragments_deep(v, fragments) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_redact_mac_fragments_deep(v, fragments) for v in value]
+    return value
+
+
 async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigEntry) -> dict[str, Any]:
     """Return diagnostics for a config entry."""
     from homeassistant.util import slugify
@@ -124,17 +144,37 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
             states[f"{domain}.{object_id}"] = state.state
         entity_states[mac] = states
 
-    # Also redact MAC fragments from the devices[].name field — a device whose
-    # stored name was never overridden still carries the default name which
-    # embeds the MAC hex digits.
+    # Union of every known device's MAC fragments — used to scrub name-keyed
+    # structures (top-level `configurations`) that aren't tied to a single
+    # device, so a config named after ANY device's hex suffix is covered.
+    all_fragments: list[str] = []
+    for mac in manager.devices:
+        all_fragments.extend(_mac_hex_fragments(mac))
+
+    # Also redact MAC fragments from the devices[].name and devices[].area
+    # fields — a device whose stored name was never overridden still carries
+    # the default name which embeds the MAC hex digits, and a user could name
+    # an area after the same fragment.
     devices_list = manager.list_devices()
     for dev_entry in devices_list:
         mac = dev_entry.get("mac", "")
         if not isinstance(mac, str):
             continue
         fragments = _mac_hex_fragments(mac)
-        if fragments and isinstance(dev_entry.get("name"), str):
+        if not fragments:
+            continue
+        if isinstance(dev_entry.get("name"), str):
             dev_entry["name"] = _redact_mac_fragments_in_text(dev_entry["name"], fragments)
+        if isinstance(dev_entry.get("area"), str):
+            dev_entry["area"] = _redact_mac_fragments_in_text(dev_entry["area"], fragments)
+
+    # Scrub user-typed strings nested in saved configs (config names, zone
+    # names, furniture labels). `stored_configs` is per-device, so use that
+    # device's fragments; `configurations` is shared, so use the union.
+    stored_configs = {
+        mac: _redact_mac_fragments_deep(cfg, _mac_hex_fragments(mac)) for mac, cfg in manager.store.devices.items()
+    }
+    configurations = _redact_mac_fragments_deep(dict(manager.store.configurations), all_fragments)
 
     try:
         integration_version = async_get_loaded_integration(hass, DOMAIN).version or "unknown"
@@ -145,8 +185,8 @@ async def async_get_config_entry_diagnostics(hass: HomeAssistant, entry: ConfigE
         "integration_version": integration_version,
         "firmware_version": FIRMWARE_VERSION,
         "devices": devices_list,
-        "stored_configs": _reindex_by_mac(dict(manager.store.devices), mac_to_index),
-        "configurations": dict(manager.store.configurations),
+        "stored_configs": _reindex_by_mac(stored_configs, mac_to_index),
+        "configurations": configurations,
         "entity_states": _reindex_by_mac(entity_states, mac_to_index),
     }
     return async_redact_data(payload, _REDACT_FIELDS)

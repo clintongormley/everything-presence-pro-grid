@@ -856,6 +856,11 @@ export class EPPGridPanel extends LitElement {
 			};
 			this._zoneState = createInitialZoneState();
 			this._targetCtrl.resetZoneEngineState();
+			// Clear the UI hide-map too: it's keyed by cell index and would
+			// otherwise carry across a device/session switch, briefly hiding a
+			// target sitting on a previously-dismissed cell on the new device
+			// (mirrors the engine's dismissedCells reset).
+			this._dismissedTargets = new Map();
 		};
 		await this._deviceCtrl.subscribeDeviceList();
 		this._devices = this._deviceCtrl.devices;
@@ -2758,10 +2763,15 @@ export class EPPGridPanel extends LitElement {
 	 */
 	_zoneEngineGridChanged(): void {
 		this._targetCtrl.resetEngineForGridChange();
+		// Symmetry with the engine's dismissedCells reset — drop the UI
+		// hide-map so a grid change can't keep hiding a target on a cell
+		// index that no longer maps to the same physical location.
+		this._dismissedTargets = new Map();
 	}
 
 	_zoneEngineZoneConfigChanged(): void {
 		this._targetCtrl.resetEngineForZoneConfigChange();
+		this._dismissedTargets = new Map();
 	}
 
 	/**

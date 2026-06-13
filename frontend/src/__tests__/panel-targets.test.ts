@@ -296,6 +296,20 @@ describe("onSessionClosed (env sensor preservation)", () => {
 		expect(a._sensorState.humidity).toBe(50);
 		expect(a._sensorState.co2).toBe(400);
 	});
+
+	it("clears _dismissedTargets so the hide-map can't carry across a session switch", async () => {
+		// The dismissed-targets map is keyed by cell index; left intact across a
+		// device/session switch it could briefly hide a target sitting on a
+		// previously-dismissed cell on the new device.
+		const el = createPanel();
+		const a = el as any;
+		await a._subscribeDevices();
+		a._dismissedTargets = new Map([[0, 42]]);
+
+		a._deviceCtrl.onSessionClosed();
+
+		expect(a._dismissedTargets.size).toBe(0);
+	});
 });
 
 describe("_closeDeviceSession", () => {

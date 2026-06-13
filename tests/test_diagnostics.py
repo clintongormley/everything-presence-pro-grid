@@ -251,6 +251,63 @@ class TestDiagnosticDump:
             f"MAC fragment 'ddeeff' leaked in diagnostics dump for renamed device:\n{serialized}"
         )
 
+    async def test_user_named_config_and_zone_with_mac_fragment_redacted(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry, manager: DeviceManager, store: EPPGridStore
+    ) -> None:
+        """A user who names a saved config, zone, or area after the device's
+        last-6 hex (e.g. 'ddeeff') would leak the MAC fragment when pasting
+        diagnostics into a public issue. The scrub must reach user-typed
+        string values nested in stored_configs and configurations, not just
+        the auto-generated entity_id keys and device names."""
+        import json
+
+        mac = "AA:BB:CC:DD:EE:FF"  # fragment "ddeeff"
+        manager.devices[mac] = ManagedDevice(mac=mac, name="Office", host="192.168.1.100")
+
+        # Per-device stored config with a user-typed zone name embedding the fragment.
+        store.devices[mac] = {
+            "zones": [{"name": "ddeeff corner"}],
+            "settings": {"timeout": 10},
+        }
+        # Name-keyed saved configuration whose value carries the fragment.
+        store.configurations["living room"] = {"label": "Living ddeeff", "grid_bytes": [0] * 400}
+        # A non-fragment config name + value must pass through untouched.
+        store.configurations["bedroom"] = {"grid_bytes": [1, 2, 3]}
+
+        result = await async_get_config_entry_diagnostics(hass, config_entry)
+
+        serialized = json.dumps(result).lower()
+        assert "ddeeff" not in serialized, f"MAC fragment leaked in user-named fields:\n{serialized}"
+
+        # The user-typed zone name was scrubbed.
+        assert result["stored_configs"]["device_0"]["zones"][0]["name"] == "redacted corner"
+        # The fragment-bearing config value was scrubbed; non-string data preserved.
+        assert result["configurations"]["living room"]["label"] == "Living redacted"
+        assert result["configurations"]["living room"]["grid_bytes"] == [0] * 400
+        # Non-fragment config passes through unchanged.
+        assert result["configurations"]["bedroom"]["grid_bytes"] == [1, 2, 3]
+
+    async def test_user_named_area_with_mac_fragment_redacted(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry, manager: DeviceManager
+    ) -> None:
+        """devices_list[].area is a user-typed string that can also leak the
+        MAC fragment if a user names an area after the hex suffix."""
+        import json
+
+        mac = "AA:BB:CC:DD:EE:FF"
+        manager.devices[mac] = ManagedDevice(mac=mac, name="Office", host="192.168.1.100")
+
+        with patch.object(
+            manager,
+            "list_devices",
+            return_value=[{"mac": mac, "name": "Office", "area": "ddeeff den"}],
+        ):
+            result = await async_get_config_entry_diagnostics(hass, config_entry)
+
+        serialized = json.dumps(result).lower()
+        assert "ddeeff" not in serialized
+        assert result["devices"][0]["area"] == "redacted den"
+
     async def test_integration_version_uses_loader(
         self, hass: HomeAssistant, config_entry: MockConfigEntry, manager: DeviceManager
     ) -> None:
