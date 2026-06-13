@@ -29,6 +29,7 @@ from . import FINITE_FLOAT_SCHEMA
 from . import FURNITURE_SCHEMA
 from . import MAC_SCHEMA
 from . import NAME_SCHEMA
+from . import _connection_is_closed
 from . import _get_manager
 from . import _require_known_device
 from . import _require_manager
@@ -586,6 +587,15 @@ async def websocket_subscribe_device(
         manager.release_session(mac, device_conn)
 
     connection.subscriptions[msg["id"]] = _unsub
+    if _connection_is_closed(connection):
+        # The WS connection closed while we were awaiting async_open_session:
+        # HA's async_handle_close already ran (iterating + clearing the
+        # subscriptions it had at close time) and will NOT cancel this
+        # background task, so the unsub we just registered will never be
+        # invoked. Release the refcount the open took, now — otherwise it
+        # leaks (the ESP32 API slot stays held until a force-close). The
+        # `released` guard makes this safe vs. a later unsub.
+        _unsub()
 
 
 # -- target stream subscriptions (raw + grid) --

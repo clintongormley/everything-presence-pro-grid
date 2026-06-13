@@ -3822,6 +3822,41 @@ class TestWebSocketSubscriptions:
             translation_key="device_not_available",
         )
 
+    async def test_subscribe_device_releases_session_when_connection_closes_during_open(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """If the WS connection drops DURING `await async_open_session`, HA's
+        `async_handle_close` runs and clears `connection.subscriptions` — so the
+        unsub we register after the await will never fire. The handler must
+        detect the cleared dict and release the refcount the open took, or the
+        ESP32 API slot leaks until a force-close.
+        """
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_conn = MagicMock()
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+
+        async def _open(mac: str) -> MagicMock:
+            # Simulate HA's async_handle_close landing mid-await: it clears the
+            # subscriptions dict and swaps send_message for the closed-error
+            # stub (and does NOT cancel this background task).
+            connection.subscriptions.clear()
+            connection.send_message = connection._connect_closed_error
+            return mock_conn
+
+        mock_dm.async_open_session = AsyncMock(side_effect=_open)
+        mock_dm.release_session = MagicMock(return_value=None)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_device
+
+        msg = {"id": 20, "type": "eppgrid/subscribe_device", "mac": "AA:BB:CC:DD:EE:FF"}
+        await call_async_handler(hass, websocket_subscribe_device, connection, msg)
+
+        # The refcount the open took must be released immediately, since the
+        # unsub can never be invoked from the cleared subscriptions dict.
+        mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", mock_conn)
+
     async def test_subscribe_raw_targets_no_session(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """subscribe_raw_targets returns error without active session."""
         await setup_integration(hass, config_entry)

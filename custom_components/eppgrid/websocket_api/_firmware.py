@@ -18,6 +18,7 @@ from . import _LOGGER
 from . import _OTA_LOG_CATEGORY
 from . import _OTA_LOG_LEVEL
 from . import MAC_SCHEMA
+from . import _connection_is_closed
 from . import _require_known_device
 from . import _require_manager
 from . import _send_exception
@@ -353,6 +354,15 @@ async def websocket_subscribe_ota_progress(
         _release_watcher()
 
     connection.subscriptions[msg["id"]] = _unsub
+    if _connection_is_closed(connection):
+        # The WS connection closed while we were awaiting (session open, log
+        # bump, subscribe_states): HA's async_handle_close already ran and
+        # will NOT cancel this background task, so the unsub we just
+        # registered will never be invoked. Tear down this watcher's shared
+        # state and release the refcount the open took, now — otherwise it
+        # leaks. `_unsub` routes through the `released`-guarded
+        # `_release_watcher`, so it's safe vs. a later call.
+        _unsub()
 
 
 # -- dismiss_target (ephemeral, firmware-only) --

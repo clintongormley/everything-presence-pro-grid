@@ -182,6 +182,42 @@ class TestSubscribeOtaProgress:
         connection.send_result.assert_called_once_with(1)
         assert 1 in connection.subscriptions
 
+    async def test_releases_session_when_connection_closes_during_open(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """If the WS connection drops while the handler is awaiting (session
+        open / log bump / subscribe_states), HA's async_handle_close clears
+        `connection.subscriptions` — the unsub we register afterward will never
+        fire. The handler must release the refcount the open took, or the
+        device's API slot leaks until a force-close.
+        """
+        mock_dm = await setup_integration(hass, config_entry)
+        device_conn = make_mock_device_conn()
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+
+        async def _open(mac: str) -> object:
+            # Simulate HA's async_handle_close landing mid-await: clear the
+            # subscriptions dict and swap send_message for the closed-error
+            # stub (HA does NOT cancel this background task).
+            connection.subscriptions.clear()
+            connection.send_message = connection._connect_closed_error
+            return device_conn
+
+        mock_dm.async_open_session = AsyncMock(side_effect=_open)
+        mock_dm.release_session = MagicMock(return_value=None)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+
+        # The refcount the open took must be released exactly once, via the
+        # `released`-guarded _release_watcher → release_session path.
+        mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", device_conn)
+
     async def test_bumps_device_log_level_to_error_on_subscribe(
         self,
         hass: HomeAssistant,

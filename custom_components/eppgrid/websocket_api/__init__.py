@@ -328,6 +328,19 @@ def _send_no_session(connection: websocket_api.ActiveConnection, msg_id: int) ->
     )
 
 
+def _connection_is_closed(connection: websocket_api.ActiveConnection) -> bool:
+    """True when HA has already torn down this WS connection.
+
+    `async_handle_close` swaps `send_message` for `_connect_closed_error`
+    (and clears `subscriptions`) as it shuts a connection down. For an
+    `@async_response` handler that was awaiting when the close landed, that
+    swap is the reliable post-close signal: the background task is NOT
+    cancelled, so on resume the handler must detect it and undo any session
+    refcount it took, since the unsub it registers will never be invoked.
+    """
+    return getattr(connection, "send_message", None) == getattr(connection, "_connect_closed_error", object())
+
+
 def _send_not_loaded(connection: websocket_api.ActiveConnection, msg_id: int) -> None:
     """Send the standard 'Integration not loaded' error via translation key."""
     connection.send_error(
