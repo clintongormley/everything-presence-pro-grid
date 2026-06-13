@@ -31,6 +31,12 @@ vi.mock("../../lib/improv-serial.js", () => ({
 	buildWifiCommand: vi.fn().mockReturnValue(new Uint8Array([4, 5, 6])),
 	buildGetInfoCommand: vi.fn().mockReturnValue(new Uint8Array([3, 3, 0])),
 	parseScanResults: vi.fn().mockReturnValue(null),
+	releaseReader: vi.fn((reader?: { releaseLock?: () => void }) => {
+		// Mirror the real helper: swallow releaseLock errors internally.
+		try {
+			reader?.releaseLock?.();
+		} catch {}
+	}),
 	TYPE_CURRENT_STATE: 0x01,
 	TYPE_ERROR_STATE: 0x02,
 	TYPE_RPC_RESULT: 0x04,

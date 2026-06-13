@@ -1,4 +1,4 @@
-import type { WifiNetwork } from "../lib/improv-serial.js";
+import { releaseReader, type WifiNetwork } from "../lib/improv-serial.js";
 import {
 	detectIpAddress,
 	flashFirmware,
@@ -86,9 +86,7 @@ export class UsbFlashFlow {
 	// until the page reloads. Returns the close promise so callers that
 	// need the port fully released (resetUsbState) can await it.
 	tearDownSerialPort(): Promise<void> {
-		try {
-			this._serialReader?.releaseLock();
-		} catch {}
+		if (this._serialReader) releaseReader(this._serialReader);
 		try {
 			this._serialWriter?.releaseLock();
 		} catch {}
@@ -286,9 +284,7 @@ export class UsbFlashFlow {
 					try {
 						info.writer.releaseLock();
 					} catch {}
-					try {
-						info.reader.releaseLock();
-					} catch {}
+					releaseReader(info.reader);
 				}
 			} catch {
 				// Fall through to scan flow — runWifiScan has its own handshake-with-retry.
@@ -304,9 +300,7 @@ export class UsbFlashFlow {
 				// so `runWifiScan` can re-acquire them if the user clicks the
 				// "Configure WiFi" override. Keep the port itself open and attached
 				// to serialPort for that override path.
-				try {
-					skipReader.releaseLock();
-				} catch {}
+				releaseReader(skipReader);
 				try {
 					skipWriter.releaseLock();
 				} catch {}
@@ -415,9 +409,7 @@ export class UsbFlashFlow {
 		}
 
 		// Release any old reader/writer locks before getting fresh ones
-		try {
-			this._serialReader?.releaseLock();
-		} catch {}
+		if (this._serialReader) releaseReader(this._serialReader);
 		try {
 			this._serialWriter?.releaseLock();
 		} catch {}
@@ -438,7 +430,7 @@ export class UsbFlashFlow {
 			const ip = await detectIpAddress(reader, writer, 60000);
 			if (host.opId !== myOp) return;
 
-			reader.releaseLock();
+			releaseReader(reader);
 			writer.releaseLock();
 
 			this._serialReader = null;
@@ -451,9 +443,7 @@ export class UsbFlashFlow {
 
 			await this._addToHa(ip);
 		} catch (err: any) {
-			try {
-				this._serialReader?.releaseLock();
-			} catch {}
+			if (this._serialReader) releaseReader(this._serialReader);
 			try {
 				this._serialWriter?.releaseLock();
 			} catch {}
@@ -553,9 +543,7 @@ export class UsbFlashFlow {
 		const state = this._host.usbFlashState;
 		const lastStep = state?.lastStep;
 		const variant = state?.variant;
-		try {
-			this._serialReader?.releaseLock();
-		} catch {}
+		if (this._serialReader) releaseReader(this._serialReader);
 		try {
 			this._serialWriter?.releaseLock();
 		} catch {}
@@ -601,9 +589,7 @@ export class UsbFlashFlow {
 		try {
 			host.updateUsbState({ step: "wifi_scan" });
 			// Release old locks before re-scanning
-			try {
-				this._serialReader?.releaseLock();
-			} catch {}
+			if (this._serialReader) releaseReader(this._serialReader);
 			try {
 				this._serialWriter?.releaseLock();
 			} catch {}
@@ -612,9 +598,7 @@ export class UsbFlashFlow {
 			if (host.opId !== myOp) {
 				// Cancelled or superseded while the scan was in flight — release
 				// the fresh locks and bail out so we don't resurrect the flow.
-				try {
-					result.reader.releaseLock();
-				} catch {}
+				releaseReader(result.reader);
 				try {
 					result.writer.releaseLock();
 				} catch {}

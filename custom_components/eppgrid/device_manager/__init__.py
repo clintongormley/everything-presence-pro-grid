@@ -239,16 +239,9 @@ class DeviceManager:
     # `_`-prefixed members of the manager.
 
     @callback
-    def request_push(self, mac: str, delay: float | None = None) -> None:
-        """Request a debounced config push for `mac` — see `_request_push`.
-
-        ``delay`` overrides the default debounce window
-        (``_PUSH_DEBOUNCE_DEFAULT``); omit to use the default.
-        """
-        if delay is None:
-            self._request_push(mac)
-        else:
-            self._request_push(mac, delay)
+    def request_push(self, mac: str) -> None:
+        """Request a debounced config push for `mac` — see `_request_push`."""
+        self._request_push(mac)
 
     @callback
     def fire_device_list_changed(self) -> None:
@@ -256,17 +249,10 @@ class DeviceManager:
         self._fire_device_list_changed()
 
     @callback
-    def schedule_entity_update_clear(self, mac: str, delay: float | None = None) -> None:
+    def schedule_entity_update_clear(self, mac: str) -> None:
         """Arm the entity-registry-update reload guard for `mac` — see
-        ``_schedule_entity_update_clear``.
-
-        ``delay`` overrides the default clear window
-        (``_ENTITY_UPDATE_CLEAR_DEFAULT``); omit to use the default.
-        """
-        if delay is None:
-            self._schedule_entity_update_clear(mac)
-        else:
-            self._schedule_entity_update_clear(mac, delay)
+        ``_schedule_entity_update_clear``."""
+        self._schedule_entity_update_clear(mac)
 
     @callback
     def set_connection_failed(self, mac: str, failed: bool) -> None:

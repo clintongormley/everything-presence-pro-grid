@@ -1673,10 +1673,10 @@ class TestDeviceManager:
         self, hass: HomeAssistant, manager: DeviceManager
     ) -> None:
         """The public schedule_entity_update_clear wrapper (the surface WS
-        handlers call) arms the entity-update guard set, schedules the clear
-        timer with the default delay when none is given, and forwards an
-        explicit delay. This is the contract the websocket-API tests rely on
-        when they assert only that the call was made."""
+        handlers call) arms the entity-update guard set and schedules the clear
+        timer with the default delay. The private method forwards an explicit
+        delay. This is the contract the websocket-API tests rely on when they
+        assert only that the call was made."""
         from custom_components.eppgrid.device_manager import _ENTITY_UPDATE_CLEAR_DEFAULT
 
         mac = "AA:BB:CC:DD:EE:FF"
@@ -1688,7 +1688,7 @@ class TestDeviceManager:
             assert mac in manager._entity_update_clear_cancels
             assert mock_later.call_args[0][1] == _ENTITY_UPDATE_CLEAR_DEFAULT
 
-            manager.schedule_entity_update_clear(mac, 5.0)
+            manager._schedule_entity_update_clear(mac, 5.0)
 
             assert mac in manager._entity_update_macs
             assert mock_later.call_args[0][1] == 5.0

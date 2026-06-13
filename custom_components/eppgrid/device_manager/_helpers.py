@@ -16,6 +16,16 @@ from ..const import EPP_MANUFACTURER
 from ..const import EPP_MODEL
 from ..const import NUM_ZONE_SLOTS
 from ..const import STATIC_ON_DELAY_MAX
+from ..zone_name_translations import ZONE_NAMES
+
+# Every locale's "Zone"/"Zona"/... prefix (the text before the `{name}`
+# placeholder in each `zone_with_name` template). Built once at import time so
+# _resolve_zone_name doesn't rebuild it on every call. Used to strip a stale
+# prefix saved under one locale before re-prefixing under another.
+_ZONE_NAME_PREFIXES: frozenset[str] = frozenset(
+    loc_table.get("zone_with_name", ZONE_NAMES["en"]["zone_with_name"]).split("{name}")[0].rstrip()
+    for loc_table in ZONE_NAMES.values()
+)
 
 # Mirror of frontend ZONE_TYPE_DEFAULTS — test_zone_type_defaults_match_frontend
 # asserts the two agree. Non-custom zones store only `type`; the backend
@@ -128,8 +138,6 @@ def _resolve_zone_name(
     `target_count=True` selects the '... Target Count' variant.
     Falls back to English when the requested language is absent.
     """
-    from ..zone_name_translations import ZONE_NAMES
-
     base_lang = language.split("-")[0]
     table = ZONE_NAMES.get(language) or ZONE_NAMES.get(base_lang) or ZONE_NAMES["en"]
     en = ZONE_NAMES["en"]
@@ -141,11 +149,7 @@ def _resolve_zone_name(
     # an es session and is now viewing under en — still want "Zone Cocina",
     # not "Zone Zona Cocina").
     if zone_name:
-        prefixes = {
-            loc_table.get("zone_with_name", en["zone_with_name"]).split("{name}")[0].rstrip()
-            for loc_table in ZONE_NAMES.values()
-        }
-        for prefix in prefixes:
+        for prefix in _ZONE_NAME_PREFIXES:
             if prefix and zone_name.startswith(prefix + " "):
                 zone_name = zone_name.removeprefix(prefix + " ")
                 break

@@ -248,7 +248,6 @@ export class DeviceController implements ReactiveController {
 		// connection swap landing while subscribeMessage() is in flight
 		// still triggers a resubscribe.
 		this._wantDeviceListSub = true;
-		this._deviceListGen++;
 		safeUnsub(this._unsubDeviceList);
 		this._unsubDeviceList = undefined;
 		if (!this._hass) return;
