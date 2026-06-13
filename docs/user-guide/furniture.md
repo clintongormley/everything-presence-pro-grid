@@ -25,6 +25,8 @@ Click a furniture item on the grid to select it. Handles appear for every operat
 - **Rotate:** drag the circular handle on the rotation stem that extends above the item.
 - **Delete:** click the red **×** button at the top right of the selected item.
 
+Touch works too: select, move, resize, and rotate by dragging with a finger. The editor is usable on a tablet.
+
 !!! tip
     Place the door stickers (`door-left-swing`, `door-right-swing`, `sliding-door`) exactly where you've drawn Entry/Exit [overlays](overlays.md). The doorway icons make it easy to see why the hatched overlay cells are there.
 

@@ -364,7 +364,7 @@ Marks a single target slot as dismissed at a given grid cell so the firmware's g
 
 **Request:** `{ "type": "eppgrid/dismiss_target", "mac": str, "target_index": 0..2, "cell_index": -1..GRID_CELL_COUNT-1 }`
 
-`cell_index = -1` means "any cell" (clears the dismiss flag for that target). Read-only from an authorisation perspective — open to any authenticated user.
+`cell_index = -1` means "any cell" (clears the dismiss flag for that target).
 
 Errors: `device_not_found` for an unknown MAC (standard `_require_known_device` check), `no_session` / `no_active_session` when no live session exists (including known-but-offline devices), `dismiss_failed` when the firmware service call fails.
 

@@ -57,7 +57,7 @@ Frontend ↔ device relay. Each module is a small group of related WS commands; 
 - **`_firmware.py`** — `update_firmware` (OTA), `subscribe_ota_progress`, `dismiss_target`.
 - **`_flasher.py`** — `list_flashable_devices`, `subscribe_flashable_devices`, `add_esphome_device`, `delete_esphome_device` (USB / Wi-Fi flasher support).
 
-State-mutating commands carry `@websocket_api.require_admin`; read-only `list_*` / `subscribe_*` / `get_config` / `dismiss_target` are open to any authenticated user.
+Every command carries `@websocket_api.require_admin` — the panel is admin-only, so both state-mutating and read-only (`list_*` / `subscribe_*` / `get_config` / `dismiss_target`) commands are gated to administrators.
 
 For the flow of data through these files at runtime, see [Architecture](architecture.md).
 
@@ -68,7 +68,7 @@ TypeScript/Lit panel. Mounted in HA via `panel_custom`, admin-only.
 Top-level files:
 
 - **`index.ts`** — module entry point. Re-exports `EPPGridPanel`.
-- **`eppgrid-panel.ts`** — top-level `<eppgrid-panel>` custom element. Tab bar (Device Configuration / Flash Firmware), global state, event routing, view + setup-step management, Lit reactive controllers.
+- **`eppgrid-panel.ts`** — top-level `<eppgrid-panel>` custom element. Tab bar (Device Configuration / Flash Firmware), global state, event routing, view + setup-step management, Lit reactive controllers. The USB/Wi-Fi flash flow and the unsaved-changes navigation guard have been extracted into their own controllers (see `controllers/usb-flash-flow.ts` and `controllers/navigation-guard.ts`).
 - **`panel-mount-guard.ts`** — re-mount guard for HA frontend rebuilds (panel can disappear and reappear without an unmount notification).
 - **`localize.ts`** — `IntlMessageFormat` translation factory. LRU-capped formatter cache.
 - **`types.ts`, `constants.ts`, `styles.ts`** — shared types, SVG / catalog / threshold constants, HA theme tokens and reusable CSS fragments.
@@ -83,6 +83,8 @@ Lit components for the visual surfaces.
 - `epp-flasher-view.ts` — USB flash + Wi-Fi provisioning UI.
 - `epp-settings-view.ts` — device settings (accordions for ranges, reporting, env offsets, LED/relay, log levels, entity toggles).
 - `epp-zone-sidebar.ts`, `epp-overlay-sidebar.ts`, `epp-furniture-sidebar.ts`, `epp-furniture-overlay.ts`, `epp-live-sidebar.ts` — editor-mode sidebars and furniture overlay.
+- `epp-configuration-dialogs.ts` — saved-configuration backup (name) and restore (pick + apply) dialogs.
+- `save-cancel-bar.ts` — shared Save/Cancel button bar (one copy for the editor sidebar and the settings view; renders `ha-button` when registered, falls back to themed buttons otherwise).
 
 ### `controllers/`
 
@@ -92,6 +94,8 @@ Lit reactive controllers. Each owns a slice of cross-cutting state.
 - `grid-state-controller.ts` — mutable grid state (cells, room boundary, overlays, furniture), saved-configurations apply / save.
 - `target-controller.ts` — target / sensor / zone state, frontend zone-engine mirror, debug logs.
 - `flasher-controller.ts` — serial port + USB flash state machine.
+- `usb-flash-flow.ts` — the USB/Wi-Fi flash flow itself (detect → flash → Improv Wi-Fi provision → register in HA), extracted from the panel. Drives `FlasherController` via a structural `UsbFlashHost` contract; the host wires the "delete original-firmware config entry?" confirmation hook.
+- `navigation-guard.ts` — unsaved-changes navigation guard `ReactiveController`. Refcounted module-level `history.pushState`/`replaceState` wrapper plus a per-instance dirty-guard, ordering-safe under the mount guard's duplicate-panel cleanup.
 - `panel-host.ts` — typed `PanelHost` interface declaring every panel `_field` / `_method` the controllers touch (replaces the previous `Record<string, any>` shape so `tsc` catches typos).
 
 ### `lib/`
@@ -116,6 +120,8 @@ Pure-logic modules — no Lit, no HA, testable in isolation.
 - `safe-unsub.ts` — wrapper around HA WebSocket unsubscribe callbacks that swallows the "stale subscription" error from already-torn-down connections.
 - `improv-serial.ts` — Improv Serial protocol implementation.
 - `usb-flash-service.ts` — `esptool.js` orchestration + manifest fetch.
+- `overlay-tracker.ts` — per-slot sticky entry-overlay tracker, the TS mirror of the firmware component's raw-frame Stage 2b. Feeds `target.onOverlay` into the frontend zone-engine so previews match firmware entry-overlay confirmation.
+- `document-listeners.ts` — `DocumentListenerGroup` helper: attach/detach lifecycle for transient document/window listeners (Escape / outside-click / scroll / resize) used by popovers, tooltips, and overlays. Both calls idempotent.
 
 ### Tests
 

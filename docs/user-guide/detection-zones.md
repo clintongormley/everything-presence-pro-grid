@@ -35,6 +35,8 @@ Once calibration is done and the room boundary looks right, add your first named
 
 ![Mid-drag painting a zone — cells being added to a new 'Wash basins' zone.](../images/detection-zones/painting.png "Mid-drag painting a zone — cells being added to a new 'Wash basins' zone.")
 
+Touch works too: paint by dragging a finger on the grid. The editor is usable on a tablet.
+
 ## Renaming, recolouring, deleting
 
 - **Rename** — click the zone name field in the sidebar and edit inline. The new name takes effect immediately.
