@@ -331,6 +331,20 @@ function validateScenario(name: string, s: FixtureScenario): void {
 		if (!Array.isArray(tick.targets)) {
 			fail(`tick ${i}: missing "targets" array`);
 		}
+		// Mirror of the C++ window builder's REQUIRE(t.contains("frames"/"x"/"y")):
+		// buildFixtureTargets reads frames/x/y off every target, so a missing
+		// field would silently produce NaN coordinates instead of failing.
+		tick.targets?.forEach((t, j) => {
+			if (typeof t.frames !== "number") {
+				fail(`tick ${i} target ${j}: missing numeric "frames"`);
+			}
+			if (typeof t.x !== "number") {
+				fail(`tick ${i} target ${j}: missing numeric "x"`);
+			}
+			if (typeof t.y !== "number") {
+				fail(`tick ${i} target ${j}: missing numeric "y"`);
+			}
+		});
 	});
 	s.expected.forEach((exp, i) => {
 		if (typeof exp.zone_occupancy !== "object" || exp.zone_occupancy === null) {
@@ -340,11 +354,53 @@ function validateScenario(name: string, s: FixtureScenario): void {
 			if (!["active", "pending", "inactive"].includes(t.status)) {
 				fail(`expected ${i} target ${j}: invalid "status"`);
 			}
+			// x and y are read as a pair in both harnesses — one without the
+			// other would read undefined; require both or neither.
+			if ((t.x === undefined) !== (t.y === undefined)) {
+				fail(`expected ${i} target ${j}: "x" and "y" must be given together`);
+			}
 		});
 	});
 }
 
+/**
+ * Structural guards for the shared grid/zones config — mirror of the
+ * REQUIRE(grid_config.contains("room_cells"/"zone_cells")) guards in the C++
+ * build_grid()/build_zones(). The config is shared across every scenario, so
+ * this is checked once at collection time; a malformed grid would otherwise
+ * silently build an empty room (no rooms, no zones) and quietly mis-test.
+ */
+function validateFixtureConfig(f: ParityFixtures): void {
+	if (!f.grid || typeof f.grid !== "object") {
+		throw new Error('parity fixture: missing "grid" object');
+	}
+	if (!Array.isArray(f.grid.room_cells)) {
+		throw new Error('parity fixture grid: missing "room_cells" array');
+	}
+	if (
+		typeof f.grid.zone_cells !== "object" ||
+		f.grid.zone_cells === null ||
+		Array.isArray(f.grid.zone_cells)
+	) {
+		throw new Error('parity fixture grid: missing "zone_cells" object');
+	}
+	if (typeof f.zones !== "object" || f.zones === null) {
+		throw new Error('parity fixture: missing "zones" object');
+	}
+	// Mirror of build_zones()'s REQUIRE on each zone's threshold keys.
+	for (const [zid, cfg] of Object.entries(f.zones)) {
+		for (const key of ["trigger", "renew", "timeout", "handoff_timeout"]) {
+			if (typeof (cfg as Record<string, unknown>)[key] !== "number") {
+				throw new Error(
+					`parity fixture zone "${zid}": missing numeric "${key}"`,
+				);
+			}
+		}
+	}
+}
+
 describe("Shared-fixture parity (parity_scenarios.json drives both engines)", () => {
+	validateFixtureConfig(fixtures);
 	const scenarioEntries = Object.entries(fixtures.scenarios);
 	const geometry = fixtureRoomGeometry(fixtures.grid);
 	const grid = buildFixtureGrid(fixtures.grid);

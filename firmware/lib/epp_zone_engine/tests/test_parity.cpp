@@ -36,6 +36,11 @@ static json load_fixtures() {
 static Grid build_grid(const json& grid_config) {
     Grid grid(0.0f, 0.0f, GRID_COLS, GRID_ROWS, GRID_CELL_SIZE_MM);
 
+    // Missing-key access on a const json is UB under -DNDEBUG (silent garbage,
+    // nlohmann's asserts compiled out) — fail loudly instead.
+    REQUIRE(grid_config.contains("room_cells"));
+    REQUIRE(grid_config.contains("zone_cells"));
+
     for (auto& cell : grid_config["room_cells"]) {
         int col = cell[0].get<int>();
         int row = cell[1].get<int>();
@@ -101,6 +106,10 @@ static WindowOutput build_window(const json& tick_data) {
     auto& targets_arr = tick_data["targets"];
     for (int i = 0; i < static_cast<int>(targets_arr.size()) && i < MAX_TARGETS; ++i) {
         auto& t = targets_arr[i];
+        // Guard each per-target key (UB on a const json under -DNDEBUG).
+        REQUIRE(t.contains("frames"));
+        REQUIRE(t.contains("x"));
+        REQUIRE(t.contains("y"));
         int fc = t["frames"].get<int>();
         wo.targets[i].median_x = t["x"].get<float>();
         wo.targets[i].median_y = t["y"].get<float>();
@@ -247,6 +256,10 @@ static void run_scenario(const std::string& name, const json& scenario,
                 }
 
                 if (exp_t.contains("x")) {
+                    // x and y are checked as a pair — a fixture that gives one
+                    // without the other would read a missing key (UB under
+                    // -DNDEBUG), so require both.
+                    REQUIRE(exp_t.contains("y"));
                     CHECK(result.targets[j].x ==
                           doctest::Approx(exp_t["x"].get<float>()));
                     CHECK(result.targets[j].y ==
