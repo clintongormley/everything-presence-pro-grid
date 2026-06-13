@@ -392,6 +392,7 @@
 		"cancelled_ip_hint": "El dispositivo es accesible en {ip} — debería aparecer en la detección de Home Assistant pronto.",
 		"errors": {
 			"start_failed": "No se ha podido iniciar la actualización. ¿El dispositivo está en línea?",
+			"firmware_not_published": "Esta versión del firmware aún no está disponible para descargar. Probablemente la versión todavía se está publicando; inténtalo de nuevo en unos momentos.",
 			"connect_failed": "No se ha podido conectar al dispositivo",
 			"connection_lost": "Se perdió la conexión durante la actualización",
 			"update_timeout": "La actualización ha agotado el tiempo de espera",

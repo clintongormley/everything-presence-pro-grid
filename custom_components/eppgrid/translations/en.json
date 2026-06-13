@@ -35,6 +35,7 @@
     "ota_unsupported": { "message": "Device does not support OTA update" },
     "ota_in_progress": { "message": "OTA update already in progress for this device" },
     "ota_trigger_failed": { "message": "Could not contact device {mac}: {error}" },
+    "firmware_not_published": { "message": "Firmware {version} isn't available to download yet. The release is probably still being published — please try again shortly." },
     "build_flags_unavailable": { "message": "Device build flags not yet available" },
     "config_entry_not_found": { "message": "Config entry not found" },
     "only_esphome_can_be_deleted": { "message": "Only ESPHome config entries can be deleted by this command" },
@@ -53,7 +54,7 @@
         "step": {
           "confirm": {
             "title": "Update {device_name} firmware",
-            "description": "The Everything Presence Pro Grid integration expects firmware **{required_version}** but **{device_name}** is running **{current_version}**. Click **Submit** to install the required firmware over the air now. The device will reboot once flashing completes — this usually takes about a minute. Some integration features may not work correctly until the firmware is updated."
+            "description": "The Everything Presence Pro Grid integration expects firmware **{required_version}** but **{device_name}** is running **{current_version}**. Click **Submit** to install the required firmware over the air now. The device will reboot once flashing completes — this usually takes a minute or two. Some integration features may not work correctly until the firmware is updated."
           },
           "failed": {
             "title": "Update failed",
@@ -61,7 +62,7 @@
           }
         },
         "progress": {
-          "installing": "Installing firmware **{required_version}** on **{device_name}**. The device will download the firmware over the air, reboot, and reconnect. This usually takes about a minute."
+          "installing": "Installing firmware **{required_version}** on **{device_name}**. The device will download the firmware over the air, reboot, and reconnect. This usually takes a minute or two."
         }
       }
     },

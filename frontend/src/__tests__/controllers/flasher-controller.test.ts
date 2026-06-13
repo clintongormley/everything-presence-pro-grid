@@ -782,6 +782,27 @@ describe("FlasherController", () => {
 			});
 		});
 
+		it("maps firmware_not_published WS error to its specific error key", async () => {
+			// The backend bails out fast (no 180s spin) when the pinned-version
+			// firmware manifest isn't published yet, raising a HomeAssistantError
+			// whose translation_key the WS layer forwards as `error.translation_key`.
+			// Surface the accurate "still being published" copy instead of the
+			// generic "is the device online?" message.
+			hass.callWS = vi.fn().mockRejectedValue({
+				code: "update_failed",
+				message: "Firmware 1.1.0 is not available to download yet",
+				translation_key: "firmware_not_published",
+			});
+
+			await ctrl.startOta("AA:BB:CC:DD:EE:01");
+
+			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toEqual({
+				state: "error",
+				progress: null,
+				errorKey: "flasher.errors.firmware_not_published",
+			});
+		});
+
 		it("sets error when subscription fails after update_firmware succeeds", async () => {
 			hass.connection.subscribeMessage = vi
 				.fn()

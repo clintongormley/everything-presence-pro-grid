@@ -392,6 +392,7 @@
 		"cancelled_ip_hint": "Device reachable at {ip} — it should appear in Home Assistant discovery shortly.",
 		"errors": {
 			"start_failed": "Failed to start update. Is the device online?",
+			"firmware_not_published": "This firmware version isn't available to download yet. The release is probably still being published — please try again shortly.",
 			"connect_failed": "Failed to connect to device",
 			"connection_lost": "Connection lost during update",
 			"update_timeout": "Update timed out",

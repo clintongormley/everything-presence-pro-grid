@@ -23,6 +23,7 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
 
 from ..const import FIRMWARE_VERSION
@@ -593,6 +594,34 @@ class DeviceManager:
                 translation_placeholders={"network": network},
             )
         manifest_url = f"{OTA_MANIFEST_BASE_URL}/{variant}.json"
+
+        # Pre-flight: confirm the pinned-version manifest actually exists before
+        # handing its URL to the device. If the release hasn't been published
+        # yet (a 404), the device fetches nothing, never reflashes, and the
+        # caller's completion poll spins the full timeout before surfacing a
+        # misleading "OTA failed mid-flash" error. A quick HEAD lets us bail out
+        # immediately with an accurate message. Fail OPEN on connectivity errors
+        # reaching the CDN from the HA host — the device fetches over its own
+        # network path, so a transient blip on our side must not ground a
+        # legitimate update.
+        from aiohttp import ClientError
+        from aiohttp import ClientTimeout
+
+        session = async_get_clientsession(self._hass)
+        try:
+            async with session.head(manifest_url, allow_redirects=True, timeout=ClientTimeout(total=10)) as resp:
+                if resp.status != 200:
+                    raise HomeAssistantError(
+                        f"Firmware {FIRMWARE_VERSION} is not available to download yet ({manifest_url})",
+                        translation_domain=_DOMAIN,
+                        translation_key="firmware_not_published",
+                        translation_placeholders={"version": FIRMWARE_VERSION},
+                    )
+        except (ClientError, TimeoutError):
+            _LOGGER.warning(
+                "Could not reach %s to verify firmware availability; proceeding with OTA anyway",
+                manifest_url,
+            )
 
         lock = self._ota_locks.setdefault(mac, asyncio.Lock())
         if lock.locked():

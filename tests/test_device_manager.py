@@ -2010,12 +2010,40 @@ class TestDeviceManager:
 # ---------------------------------------------------------------------------
 
 
+def _fake_head_session(*, status: int = 200, error: Exception | None = None) -> MagicMock:
+    """Build a fake aiohttp ClientSession whose ``.head()`` yields a response
+    with ``status`` (or raises ``error`` on context-enter).
+
+    The OTA pre-flight manifest check HEADs the pinned-version manifest URL
+    via ``async_get_clientsession``; patching that to return one of these lets
+    tests drive the 200 / 404 / unreachable branches without real sockets.
+    """
+    resp = MagicMock()
+    resp.status = status
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(side_effect=error) if error is not None else AsyncMock(return_value=resp)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    session = MagicMock()
+    session.head = MagicMock(return_value=cm)
+    return session
+
+
 class TestAsyncTriggerOta:
     """Tests for DeviceManager.async_trigger_ota — manifest URL/variant logic.
 
     Covers the temp-conn fallback path (no live session). The
     session-reuse path is covered by ``TestAsyncTriggerOtaSessionReuse``.
     """
+
+    @pytest.fixture(autouse=True)
+    def _manifest_published(self):
+        """Make the pre-flight manifest HEAD return 200 by default so the
+        manifest-URL/variant tests exercise the device path, not the check."""
+        with patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(status=200),
+        ):
+            yield
 
     def _setup_device(self, manager: DeviceManager, *, host: str | None = "192.168.1.50") -> None:
         manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(mac="AA:BB:CC:DD:EE:FF", name="EPP", host=host)
@@ -2262,6 +2290,56 @@ class TestAsyncTriggerOta:
             # Second call should succeed after first failed
             mock_conn.async_execute_service.side_effect = None
             await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+    async def test_raises_firmware_not_published_when_manifest_missing(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """If the pinned-version manifest 404s (the release hasn't been
+        published to GitHub Pages yet), bail out immediately with a clear
+        message instead of pushing an OTA the device can't fetch — which
+        would otherwise silently stall until the 3-min completion poll times
+        out with a misleading 'OTA failed mid-flash' error."""
+        from homeassistant.exceptions import HomeAssistantError
+
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {"ethernet_enabled": False}
+        mock_conn = self._make_mock_conn()
+
+        with (
+            patch(
+                "custom_components.eppgrid.device_manager.async_get_clientsession",
+                return_value=_fake_head_session(status=404),
+            ),
+            patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn),
+            pytest.raises(HomeAssistantError) as excinfo,
+        ):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        assert excinfo.value.translation_key == "firmware_not_published"
+        # Bailed before contacting the device — no manifest was pushed.
+        mock_conn.async_execute_service.assert_not_awaited()
+
+    async def test_proceeds_when_manifest_check_unreachable(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A connectivity failure reaching the CDN *from the HA host* must NOT
+        block the OTA: the device fetches the manifest itself over its own
+        network path, so we fail open and let it try rather than inventing a
+        new failure mode that grounds legitimate updates on a transient blip."""
+        from aiohttp import ClientError
+
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {"ethernet_enabled": False}
+        mock_conn = self._make_mock_conn()
+
+        with (
+            patch(
+                "custom_components.eppgrid.device_manager.async_get_clientsession",
+                return_value=_fake_head_session(error=ClientError("boom")),
+            ),
+            patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn),
+        ):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        mock_conn.async_execute_service.assert_awaited_once()
 
 
 # ---------------------------------------------------------------------------
@@ -8187,6 +8265,16 @@ def test_zone_type_defaults_match_frontend():
 
 class TestAsyncTriggerOtaSessionReuse:
     """Tests for DeviceManager.async_trigger_ota — session reuse + temp-conn fallback."""
+
+    @pytest.fixture(autouse=True)
+    def _manifest_published(self):
+        """Pre-flight manifest HEAD returns 200 so these session-path tests
+        reach the OTA trigger rather than bailing on the availability check."""
+        with patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(status=200),
+        ):
+            yield
 
     async def test_async_trigger_ota_reuses_active_session(
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager

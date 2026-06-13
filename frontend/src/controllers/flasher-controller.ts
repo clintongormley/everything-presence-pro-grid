@@ -132,12 +132,20 @@ export class FlasherController implements ReactiveController {
 				type: "eppgrid/update_firmware",
 				mac,
 			});
-		} catch {
+		} catch (err) {
 			if (this._otaGen !== token) return;
+			// The backend forwards a `translation_key` on its HomeAssistantError
+			// (see _send_exception). Surface the specific copy for the known
+			// fast-fail cases; otherwise fall back to the generic message.
+			const key = (err as { translation_key?: string } | null)?.translation_key;
+			const errorKey =
+				key === "firmware_not_published"
+					? "flasher.errors.firmware_not_published"
+					: "flasher.errors.start_failed";
 			this._setOtaState(mac, {
 				state: "error",
 				progress: null,
-				errorKey: "flasher.errors.start_failed",
+				errorKey,
 			});
 			this._host.requestUpdate();
 			return;
