@@ -1474,21 +1474,27 @@ export class EppSettingsView extends LitElement {
 
 	/**
 	 * Emit a `save` event with the full settings payload to be sent to
-	 * `eppgrid/set_settings`. The shape here MUST stay in sync with
-	 * `_buildSettingsPayload()` on `eppgrid-panel.ts` — that helper reads the same
-	 * fields from panel state for the backup-configuration flow. Adding a new
-	 * settings field requires updating all THREE places: this method,
-	 * `_buildSettingsPayload()`, AND `SETTINGS_DEFAULTS` in
-	 * `lib/settings-defaults.ts`.
+	 * `eppgrid/set_settings`.
+	 *
+	 * The bulk of the payload is driven by `SETTINGS_FIELD_MAP` — iterating the
+	 * map guarantees every registered field is included, so a new field added to
+	 * the map automatically flows through here. Only the five auto-distance fields
+	 * and the two merge-object fields (`entities`, `log_levels`) are handled
+	 * explicitly because they require logic beyond a plain override-or-saved read.
+	 *
+	 * Adding a new settings field requires updating ONLY `SETTINGS_DEFAULTS` in
+	 * `lib/settings-defaults.ts` (plus the map entry). The drift regression test in
+	 * `epp-settings-view.test.ts` enforces that every map key appears in the
+	 * emitted payload.
 	 */
 	private _emitSave() {
 		const o = this._overrides;
-		const entities = { ...this.entitiesConfig, ...(o.entities || {}) };
 
 		const targetAuto = o.targetAutoDistance ?? this.targetAutoDistance;
 		const staticAuto = o.staticAutoDistance ?? this.staticAutoDistance;
 
-		// When auto is on, compute distances from room geometry
+		// When auto is on, compute distances from room geometry instead of using
+		// the stored manual values which may be stale.
 		let targetMaxDist = o.targetMaxDistance ?? this.targetMaxDistance;
 		let staticMinDist = o.staticMinDistance ?? this.staticMinDistance;
 		let staticMaxDist = o.staticMaxDistance ?? this.staticMaxDistance;
@@ -1504,39 +1510,38 @@ export class EppSettingsView extends LitElement {
 			}
 		}
 
+		// Pre-computed values for the five fields that need special treatment.
+		// All other map fields fall through to the generic override-or-saved read.
+		const EXPLICIT: Record<string, unknown> = {
+			target_auto_distance: targetAuto,
+			target_max_distance: targetMaxDist,
+			static_auto_distance: staticAuto,
+			static_min_distance: staticMinDist,
+			static_max_distance: staticMaxDist,
+			// Merge: saved base + live overrides (never replace wholesale)
+			entities: { ...this.entitiesConfig, ...(o.entities || {}) },
+			log_levels: { ...this.logLevels, ...(o.logLevels || {}) },
+		};
+
+		// Build the payload from SETTINGS_FIELD_MAP so a new field added to the
+		// map is automatically included here without any manual edits.
+		const detail: Record<string, unknown> = {};
+		for (const [key, prop] of SETTINGS_FIELD_MAP) {
+			if (key in EXPLICIT) {
+				detail[key] = EXPLICIT[key];
+			} else {
+				// prop is "_camelCase"; the settings-view exposes the same name
+				// without the leading underscore as a public reactive property.
+				const publicProp = prop.slice(1); // "_motionTimeout" → "motionTimeout"
+				detail[key] =
+					o[publicProp] ??
+					(this as unknown as Record<string, unknown>)[publicProp];
+			}
+		}
+
 		this.dispatchEvent(
 			new CustomEvent("save", {
-				detail: {
-					target_auto_distance: targetAuto,
-					target_max_distance: targetMaxDist,
-					stuck_target_timeout: o.stuckTargetTimeout ?? this.stuckTargetTimeout,
-					static_auto_distance: staticAuto,
-					static_min_distance: staticMinDist,
-					static_max_distance: staticMaxDist,
-					motion_timeout: o.motionTimeout ?? this.motionTimeout,
-					static_timeout: o.staticTimeout ?? this.staticTimeout,
-					static_trigger_threshold:
-						o.staticTriggerThreshold ?? this.staticTriggerThreshold,
-					static_renew_threshold:
-						o.staticRenewThreshold ?? this.staticRenewThreshold,
-					static_on_delay: o.staticOnDelay ?? this.staticOnDelay,
-					temperature_offset: o.temperatureOffset ?? this.temperatureOffset,
-					humidity_offset: o.humidityOffset ?? this.humidityOffset,
-					illuminance_offset: o.illuminanceOffset ?? this.illuminanceOffset,
-					entities,
-					log_levels: {
-						...this.logLevels,
-						...(o.logLevels || {}),
-					},
-					led_mode: o.ledMode ?? this.ledMode,
-					led_brightness: o.ledBrightness ?? this.ledBrightness,
-					led_presence_color: o.ledPresenceColor ?? this.ledPresenceColor,
-					relay_trigger_mode: o.relayTriggerMode ?? this.relayTriggerMode,
-					relay_contact_mode: o.relayContactMode ?? this.relayContactMode,
-					target_update_rate_ms:
-						o.targetUpdateRateMs ?? this.targetUpdateRateMs,
-					zone_update_rate_ms: o.zoneUpdateRateMs ?? this.zoneUpdateRateMs,
-				},
+				detail,
 				bubbles: true,
 				composed: true,
 			}),

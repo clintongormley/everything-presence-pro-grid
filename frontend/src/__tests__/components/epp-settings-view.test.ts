@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-settings-view.js";
 import type { EppSettingsView } from "../../components/epp-settings-view.js";
 import { GRID_CELL_COUNT, initGridFromRoom } from "../../lib/grid.js";
+import { SETTINGS_FIELD_MAP } from "../../lib/settings-defaults.js";
 import { setupLocalize } from "../../localize.js";
 
 function renderTo(tpl: any): HTMLDivElement {
@@ -1127,6 +1128,62 @@ describe("save event payload", () => {
 		expect(payload).not.toBeNull();
 		expect(payload.relay_trigger_mode).toBe("motion");
 		expect(payload.relay_contact_mode).toBe("nc");
+	});
+});
+
+// =============================================================================
+// _emitSave payload single-sourcing — every SETTINGS_FIELD_MAP key must appear
+// in the save event detail so a field added to the map but not to _emitSave
+// fails this test immediately.
+// =============================================================================
+describe("_emitSave payload single-sourcing (SETTINGS_FIELD_MAP drift guard)", () => {
+	it("emitted save payload contains every SETTINGS_FIELD_MAP key", () => {
+		const sv = createView({
+			dirty: true,
+			targetAutoDistance: false,
+			staticAutoDistance: false,
+		});
+
+		let payload: Record<string, unknown> | null = null;
+		sv.addEventListener("save", ((e: CustomEvent) => {
+			payload = e.detail;
+		}) as EventListener);
+
+		(sv as any)._emitSave();
+
+		expect(payload).not.toBeNull();
+		const mapKeys = SETTINGS_FIELD_MAP.map(([key]) => key);
+		for (const key of mapKeys) {
+			expect(
+				Object.hasOwn(payload!, key),
+				`save payload missing SETTINGS_FIELD_MAP key: "${key}"`,
+			).toBe(true);
+		}
+	});
+
+	it("emitted save payload contains no extra keys beyond SETTINGS_FIELD_MAP", () => {
+		const sv = createView({
+			dirty: true,
+			targetAutoDistance: false,
+			staticAutoDistance: false,
+		});
+
+		let payload: Record<string, unknown> | null = null;
+		sv.addEventListener("save", ((e: CustomEvent) => {
+			payload = e.detail;
+		}) as EventListener);
+
+		(sv as any)._emitSave();
+
+		expect(payload).not.toBeNull();
+		const mapKeys = new Set(SETTINGS_FIELD_MAP.map(([key]) => key));
+		const extraKeys = Object.keys(payload!).filter(
+			(k) => !mapKeys.has(k as any),
+		);
+		expect(
+			extraKeys,
+			`save payload has extra keys not in SETTINGS_FIELD_MAP: ${extraKeys.join(", ")}`,
+		).toHaveLength(0);
 	});
 });
 
