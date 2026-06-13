@@ -54,6 +54,11 @@ export interface ZoneEngineParams {
 		y: number | null;
 		signal: number;
 		status: string;
+		// Sticky raw-frame entry-overlay flag from the OverlayTracker (mirror of
+		// the firmware component's `zone_input.targets[i].on_overlay`). The
+		// engine ORs this with "current median cell is entry overlay" — see the
+		// lastOnOverlay assignment below and firmware epp_zone_engine.cpp:300.
+		onOverlay?: boolean;
 	}[];
 	grid: Uint8Array;
 	roomWidth: number;
@@ -183,27 +188,6 @@ export function resetForZoneConfigChange(state: ZoneEngineState): void {
 	state.staticPendingSince = null;
 	state.motionPendingSince = null;
 	state.sensorsEverActive = false;
-}
-
-/** True if any cell in the 3×3 around (row,col) is an entry overlay in the same zone. */
-function hasEntryOverlayNear(
-	grid: Uint8Array,
-	row: number,
-	col: number,
-	zoneId: number,
-): boolean {
-	for (let dr = -1; dr <= 1; dr++) {
-		for (let dc = -1; dc <= 1; dc++) {
-			const nr = row + dr;
-			const nc = col + dc;
-			if (nr < 0 || nr >= GRID_ROWS || nc < 0 || nc >= GRID_COLS) continue;
-			const nv = grid[nr * GRID_COLS + nc];
-			if (cellOverlay(nv) === CELL_OVERLAY_ENTRY && cellZone(nv) === zoneId) {
-				return true;
-			}
-		}
-	}
-	return false;
 }
 
 /**
@@ -347,9 +331,14 @@ export function runLocalZoneEngine(
 		// ticks. Used by overlay-exit handoff regardless of how the next tick's
 		// target list looks.
 		state.lastZone[i] = zid;
+		// Mirror firmware epp_zone_engine.cpp:300 exactly:
+		//   target_overlay_sticky_[i] = tw.on_overlay || (overlay == ENTRY)
+		// The raw-frame sticky flag (t.onOverlay, from the OverlayTracker /
+		// firmware component) is ORed with "current median cell is an entry
+		// overlay". The firmware does NOT scan a 3×3 neighbourhood — that scan
+		// was a TS-only divergence (Task 7.2, item 10) and is now removed.
 		state.lastOnOverlay[i] =
-			overlay === CELL_OVERLAY_ENTRY ||
-			hasEntryOverlayNear(params.grid, row, col, zid);
+			(t.onOverlay ?? false) || overlay === CELL_OVERLAY_ENTRY;
 
 		const prev = state.targetPrev[i];
 		if (prev !== null) {
@@ -411,9 +400,10 @@ export function runLocalZoneEngine(
 		const effectiveRenew = hasInterference ? 9 : renew;
 
 		let baseTrigger = isClear ? trigger : effectiveRenew;
-		const onEntryOverlay =
-			overlay === CELL_OVERLAY_ENTRY ||
-			hasEntryOverlayNear(params.grid, row, col, zid);
+		// Mirror firmware epp_zone_engine.cpp:379 — read the engine's sticky
+		// overlay bit (just assigned to state.lastOnOverlay[i] above), not a
+		// freshly recomputed value, so the gating and exit-handoff paths agree.
+		const onEntryOverlay = state.lastOnOverlay[i];
 		const needsGating = !onEntryOverlay && !continuous;
 		// Instant entry suppressed when target cell carries interference —
 		// overlay on a neighbour must not negate the raised threshold.

@@ -77,10 +77,12 @@ Each scenario runs on a **fresh engine** (no state carries across scenarios).
                                         // timeout math — no wall clock anywhere)
       "targets": [                      // 0–3 targets, index = target slot
         { "x": 2850, "y": 450,          // position in mm, grid space (see above)
-          "frames": 5 }                 // frames active in the rolling window;
+          "frames": 5,                  // frames active in the rolling window;
                                         // signal = min(frames, 9);
                                         // frames = 0 ⇒ sensor NOT tracking
                                         // (C++: active=false; TS: x/y null)
+          "on_overlay": true }          // optional — explicit raw-frame
+                                        // entry-overlay override (see below)
       ],
       "sensors": {                      // optional — static/motion presence
         "static_on": true,              // inputs for this tick. Absent fields
@@ -104,6 +106,41 @@ Each scenario runs on a **fresh engine** (no state carries across scenarios).
   ]
 }
 ```
+
+### Entry-overlay tracking (`on_overlay`)
+
+The firmware **component** (`epp_component.cpp` Stage 2b) decides whether a
+target is "on an entry overlay" from the **raw** radar frames at 10 Hz, not
+from the windowed/median position the zone engine sees. It keeps a sticky
+per-slot flag, fed to the engine as `on_overlay`:
+
+- an `inactive→active` transition (LD2450 slot reuse = a brand-new target)
+  **resets** the flag to false;
+- while active and on a **room** cell, the flag is set to *(cell is an entry
+  overlay)* — true on an entry cell, cleared on any other room cell;
+- while active but **outside** the room, the flag is **latched** (kept);
+- while **inactive**, the flag is **latched** (the engine still reads it).
+
+The engine then ORs this flag with *(current median cell is an entry overlay)*
+(`epp_zone_engine.cpp:300`); the result drives instant entry (bypassing
+gating). The 3×3 neighbourhood scan the TS port used historically is **gone** —
+both engines now match the component's raw-frame sticky behaviour.
+
+Both harnesses **simulate** this stage over the fixture's MEDIAN positions
+(the fixture carries no raw frames): each tick updates the sticky flag from the
+median cell, with the slot-reuse reset. The TS side does this via
+`frontend/src/lib/overlay-tracker.ts` (the host-tested mirror of the
+component), the C++ side inline in `run_scenario`.
+
+The optional per-target **`on_overlay`** field is an explicit override applied
+**after** the median-driven simulation (override wins). Use it to express a
+**raw** frame touching an entry cell that the MEDIAN position never visits —
+the only way to test the raw-vs-median divergence the component exists to
+handle. Example: `test_raw_overlay_touch_bypasses_gating` confirms instant
+entry from a raw touch the median misses; `test_overlay_neighbourhood_does_not_bypass_gating`
+confirms a target merely *adjacent* to an entry cell is still gated (no 3×3
+scan); `test_stale_overlay_touch_cleared_on_slot_reuse` confirms the flag is
+reset when the slot is reused.
 
 ### `known_divergence` (temporary — Task 7.2)
 

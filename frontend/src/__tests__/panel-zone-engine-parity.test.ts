@@ -47,6 +47,7 @@ import {
 	GRID_COLS,
 	roomStartCol,
 } from "../lib/grid.js";
+import { OverlayTracker } from "../lib/overlay-tracker.js";
 import type { ZoneConfig } from "../lib/zone-defaults.js";
 import {
 	createZoneEngineState,
@@ -60,7 +61,11 @@ import {
 
 interface FixtureTick {
 	t: number;
-	targets: { x: number; y: number; frames: number }[];
+	// `on_overlay` per target: an explicit raw-frame entry-overlay override
+	// expressing a RAW touch the MEDIAN position never visits (the component
+	// tracks raw frames; this harness only sees medians). Mirrors the C++
+	// harness's optional per-target on_overlay field.
+	targets: { x: number; y: number; frames: number; on_overlay?: boolean }[];
 	sensors?: {
 		static_on?: boolean;
 		motion_on?: boolean;
@@ -269,6 +274,40 @@ function buildFixtureTargets(
 }
 
 /**
+ * Mirror of test_parity.cpp run_scenario()'s "Simulate component raw-frame
+ * overlay tracking" block (epp_component.cpp Stage 2b). The fixture carries no
+ * raw frames, so this feeds the OverlayTracker the MEDIAN positions each tick
+ * (sticky, with slot-reuse reset) and then lets an explicit per-target
+ * `on_overlay` override win — exactly as the C++ harness does. Keep this thin
+ * mirror in lockstep with the C++ block and the component.
+ */
+function applyFixtureOverlay(
+	targets: ZoneEngineParams["targets"],
+	tick: FixtureTick,
+	tracker: OverlayTracker,
+	grid: Uint8Array,
+	roomWidth: number,
+	roomDepth: number,
+): void {
+	tracker.update(
+		targets.map((t) => ({
+			active: t.status === "active",
+			x: t.x,
+			y: t.y,
+		})),
+		grid,
+		roomWidth,
+		roomDepth,
+	);
+	const flags = tracker.onOverlay;
+	for (let i = 0; i < targets.length; i++) {
+		// Tracker first, then explicit override wins (C++ harness order).
+		const override = tick.targets[i]?.on_overlay;
+		targets[i].onOverlay = override ?? flags[i] ?? false;
+	}
+}
+
+/**
  * Structural guards — mirror of the REQUIRE guards in test_parity.cpp
  * run_scenario(). Called at collection time so a malformed scenario fails the
  * whole suite loudly (even for known-divergence scenarios, which `it.fails`
@@ -330,9 +369,21 @@ describe("Shared-fixture parity (parity_scenarios.json drives both engines)", ()
 
 		itFn(title, () => {
 			const state = createZoneEngineState();
+			// Fresh per scenario — mirrors the C++ harness's per-scenario
+			// target_on_overlay/target_prev_active reset.
+			const overlayTracker = new OverlayTracker();
 			scenario.ticks.forEach((tick, i) => {
+				const targets = buildFixtureTargets(tick, geometry.xOffsetMm);
+				applyFixtureOverlay(
+					targets,
+					tick,
+					overlayTracker,
+					grid,
+					geometry.roomWidth,
+					geometry.roomDepth,
+				);
 				const result = runLocalZoneEngine(state, {
-					targets: buildFixtureTargets(tick, geometry.xOffsetMm),
+					targets,
 					grid,
 					roomWidth: geometry.roomWidth,
 					roomDepth: geometry.roomDepth,

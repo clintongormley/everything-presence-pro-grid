@@ -162,7 +162,10 @@ static void run_scenario(const std::string& name, const json& scenario,
     REQUIRE(ticks.size() == expected_arr.size());
 
     // Track per-target overlay flag (sticky), simulating component behaviour
+    // (epp_component.cpp Stage 2b — keep this simulation AND the TS harness's
+    // mirror in lockstep with the component).
     bool target_on_overlay[MAX_TARGETS]{};
+    bool target_prev_active[MAX_TARGETS]{};
 
     for (int i = 0; i < static_cast<int>(ticks.size()); ++i) {
         REQUIRE(ticks[i].contains("t"));
@@ -171,12 +174,29 @@ static void run_scenario(const std::string& name, const json& scenario,
         WindowOutput wo = build_window(ticks[i]);
 
         // Simulate component raw-frame overlay tracking
+        auto& targets_arr = ticks[i]["targets"];
         for (int ti = 0; ti < MAX_TARGETS; ++ti) {
-            if (wo.targets[ti].active) {
+            bool active = wo.targets[ti].active;
+            // Slot-reuse guard (mirrors the component): inactive→active
+            // means a brand-new target — the previous occupant's sticky
+            // overlay-touch must not leak into it.
+            if (active && !target_prev_active[ti]) {
+                target_on_overlay[ti] = false;
+            }
+            if (active) {
                 int cell = grid.xy_to_cell(wo.targets[ti].median_x, wo.targets[ti].median_y);
                 if (cell != -1 && grid.cell_is_room(cell)) {
                     target_on_overlay[ti] = (grid.cell_overlay(cell) == CELL_OVERLAY_ENTRY);
                 }
+            }
+            target_prev_active[ti] = active;
+            // Optional explicit per-target on_overlay override: expresses a
+            // RAW frame having touched an entry cell the MEDIAN position
+            // never visits (the component tracks raw frames; this harness
+            // only sees medians).
+            if (ti < static_cast<int>(targets_arr.size()) &&
+                targets_arr[ti].contains("on_overlay")) {
+                target_on_overlay[ti] = targets_arr[ti]["on_overlay"].get<bool>();
             }
             wo.targets[ti].on_overlay = target_on_overlay[ti];
         }

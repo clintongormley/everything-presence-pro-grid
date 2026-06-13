@@ -458,6 +458,52 @@
         }
       ]
     },
+    "test_overlay_neighbourhood_does_not_bypass_gating": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2850, "y": 750, "frames": 3}]},
+        {"t": 101.0, "targets": [{"x": 2850, "y": 750, "frames": 3}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"1": false}
+        },
+        {
+          "zone_occupancy": {"1": false}
+        }
+      ]
+    },
+    "test_raw_overlay_touch_bypasses_gating": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2850, "y": 750, "frames": 2, "on_overlay": true}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"1": true}
+        }
+      ]
+    },
+    "test_stale_overlay_touch_cleared_on_slot_reuse": {
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},
+        {"t": 101.0, "targets": []},
+        {"t": 103.0, "targets": []},
+        {"t": 103.5, "targets": [{"x": 2850, "y": 750, "frames": 3}]}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"1": true}
+        },
+        {
+          "zone_occupancy": {"1": true}
+        },
+        {
+          "zone_occupancy": {"1": false}
+        },
+        {
+          "zone_occupancy": {"1": false}
+        }
+      ]
+    },
     "test_stuck_target_auto_dismissed": {
       "stuck_target_timeout": 5.0,
       "ticks": [
