@@ -208,3 +208,41 @@ describe("tab-bar help link", () => {
 		);
 	});
 });
+
+describe("tab-bar logo", () => {
+	it("renders the EPP Grid logo svg inside the tab bar", () => {
+		const c = renderPanel((a) => {
+			a._panelTab = "config";
+		});
+		const logo = c.querySelector(".tab-bar svg.epp-logo");
+		expect(logo).not.toBeNull();
+	});
+
+	it("places the logo before the Device Configuration tab", () => {
+		const c = renderPanel((a) => {
+			a._panelTab = "config";
+		});
+		const tabBar = c.querySelector(".tab-bar") as HTMLElement;
+		const logo = tabBar.querySelector("svg.epp-logo") as Element;
+		const configTab = Array.from(tabBar.querySelectorAll("button.tab")).find(
+			(b) =>
+				b.textContent?.trim() === setupLocalize()("tabs.device_configuration"),
+		) as Element;
+		expect(logo).not.toBeNull();
+		expect(configTab).not.toBeNull();
+		// DOCUMENT_POSITION_FOLLOWING => configTab comes after logo in DOM order.
+		expect(
+			logo.compareDocumentPosition(configTab) &
+				Node.DOCUMENT_POSITION_FOLLOWING,
+		).toBeTruthy();
+	});
+
+	it("gives the logo an accessible label", () => {
+		const c = renderPanel((a) => {
+			a._panelTab = "config";
+		});
+		const logo = c.querySelector(".tab-bar svg.epp-logo") as Element;
+		expect(logo.getAttribute("role")).toBe("img");
+		expect(logo.getAttribute("aria-label")).toBeTruthy();
+	});
+});

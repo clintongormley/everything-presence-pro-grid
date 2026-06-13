@@ -13,6 +13,7 @@ import type { EppWizard } from "./components/epp-wizard.js";
 import { renderSaveCancelBar } from "./components/save-cancel-bar.js";
 import "./components/epp-overlay-sidebar.js";
 import "./components/epp-zone-sidebar.js";
+import { EPP_LOGO } from "./constants.js";
 import { DeviceController } from "./controllers/device-controller.js";
 import { FlasherController } from "./controllers/flasher-controller.js";
 import {
@@ -1486,6 +1487,14 @@ export class EPPGridPanel extends LitElement {
       flex-shrink: 0;
     }
 
+    .epp-logo {
+      align-self: center;
+      width: 40px;
+      height: 40px;
+      margin-right: 12px;
+      flex-shrink: 0;
+    }
+
     .tab {
       padding: 12px 20px;
       border: none;
@@ -1652,6 +1661,7 @@ export class EPPGridPanel extends LitElement {
 	private _renderTabBar() {
 		return html`
 			<div class="tab-bar">
+				${EPP_LOGO}
 				<button class="tab ${this._panelTab === "config" ? "active" : ""}"
 					@click=${() => {
 						void this._flasherCtrl.resetUsbState();
