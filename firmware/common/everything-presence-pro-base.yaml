@@ -1,7 +1,7 @@
 esphome:
   project:
     name: EverythingSmartTechnology.Everything Presence Pro
-    version: "1.0.0"
+    version: "1.1.0"
   on_boot:
     - priority: 200
       then:
