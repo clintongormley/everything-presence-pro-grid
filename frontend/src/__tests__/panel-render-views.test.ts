@@ -901,9 +901,10 @@ describe("_renderSettingsSection (via EppSettingsView)", () => {
 
 describe("_renderDetectionRanges (via EppSettingsView)", () => {
 	function dimmedRows(c: HTMLElement): Element[] {
-		return Array.from(c.querySelectorAll(".setting-row")).filter((r) =>
-			(r.getAttribute("style") || "").includes("pointer-events: none"),
-		);
+		// Disabled rows are greyed out via the .row-disabled class (the row's
+		// controls get pointer-events: none in CSS, while the info tip stays
+		// interactive).
+		return Array.from(c.querySelectorAll(".setting-row.row-disabled"));
 	}
 
 	it("renders with auto range enabled", () => {
@@ -1012,13 +1013,12 @@ describe("_renderEnvOffset (via EppSettingsView)", () => {
 });
 
 describe("_infoTip (via EppSettingsView)", () => {
-	it("renders an info button with the tooltip text", () => {
+	it("delegates to a shared epp-info-tip carrying the tip text", () => {
 		const sv = createSettingsView();
 		const c = renderTo((sv as any).infoTip("Some tip text"));
-		expect(c.querySelector("button.setting-info")).not.toBeNull();
-		const tip = c.querySelector(".setting-info-tooltip");
+		const tip = c.querySelector("epp-info-tip") as any;
 		expect(tip).not.toBeNull();
-		expect(tip!.textContent).toBe("Some tip text");
+		expect(tip.text).toBe("Some tip text");
 	});
 });
 
@@ -1430,13 +1430,13 @@ describe("epp-live-sidebar via panel", () => {
 		expect(c.textContent).not.toContain("live.environment");
 	});
 
-	it("renders with expanded sensor info", () => {
+	it("attaches an info tip carrying each sensor's info text", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
-		el._expandedSensorInfo = "occupancy";
 		const c = renderTo(el.render());
-		const info = c.querySelector(".live-sensor-info-text");
-		expect(info).not.toBeNull();
-		expect(info!.textContent).toContain("info.occupancy");
+		const tips = Array.from(c.querySelectorAll("epp-info-tip"));
+		expect(tips.length).toBeGreaterThan(0);
+		const occupancyTip = tips.find((t) => (t as any).text === "info.occupancy");
+		expect(occupancyTip).toBeTruthy();
 	});
 
 	it("renders without configured zones (still shows rest-of-room)", () => {

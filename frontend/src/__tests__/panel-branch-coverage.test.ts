@@ -735,32 +735,21 @@ describe("stopPropagation handlers coverage", () => {
 });
 
 // =========================================================
-// _infoTip click handler
+// _infoTip — delegates to the shared <epp-info-tip>; click/toggle behavior
+// is covered in epp-info-tip.test.ts.
 // =========================================================
-describe("_infoTip DOM click handler", () => {
-	it("click toggles tooltip display", () => {
+describe("_infoTip DOM rendering", () => {
+	it("renders an epp-info-tip with the tip text", () => {
 		const sv = createSettingsView() as any;
+		const tpl = sv.infoTip("Test tip");
+		const c = document.createElement("div");
+		document.body.appendChild(c);
+		render(tpl, c);
 
-		// Create mock shadowRoot that will be used by the handler
-		const tooltips: HTMLElement[] = [];
-		Object.defineProperty(sv, "shadowRoot", {
-			value: {
-				querySelectorAll: (sel: string) => {
-					if (sel === ".setting-info-tooltip") return tooltips;
-					return [];
-				},
-			},
-			configurable: true,
-		});
-
-		const c = renderTo(sv.infoTip("Test tip"));
-
-		const infoBtn = c.querySelector(".setting-info") as HTMLElement;
-		expect(infoBtn).not.toBeNull();
-		const tip = c.querySelector(".setting-info-tooltip") as HTMLElement;
-		expect(tip.style.display).not.toBe("block");
-		infoBtn.click();
-		expect(tip.style.display).toBe("block");
+		const tip = c.querySelector("epp-info-tip") as any;
+		expect(tip).not.toBeNull();
+		expect(tip.text).toBe("Test tip");
+		document.body.removeChild(c);
 	});
 });
 

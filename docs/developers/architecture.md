@@ -101,7 +101,8 @@ everything-presence-pro-grid/
 │   │   │   ├── epp-zone-sidebar.ts       # Zone list + type controls
 │   │   │   ├── epp-overlay-sidebar.ts    # Entry/interference/suppress paint controls
 │   │   │   ├── epp-furniture-sidebar.ts  # Furniture catalog
-│   │   │   └── epp-furniture-overlay.ts  # Furniture drag/resize/rotate
+│   │   │   ├── epp-furniture-overlay.ts  # Furniture drag/resize/rotate
+│   │   │   └── epp-info-tip.ts           # Shared (?) help tooltip
 │   │   └── lib/
 │   │       ├── zone-engine.ts            # Pure-function zone state machine (firmware mirror)
 │   │       ├── perspective.ts            # Homography math
@@ -340,6 +341,8 @@ sidebars.
 - `<epp-overlay-sidebar>` — entry-point / interference / suppress paint controls
 - `<epp-furniture-sidebar>` — sticker catalog, custom icons
 - `<epp-furniture-overlay>` — drag, resize, rotate furniture items
+- `<epp-info-tip>` — shared `(?)` help affordance: click-toggled, fixed-position
+  tooltip (one open at a time; stays clickable even inside disabled rows)
 
 **State flow:** Controllers own cross-cutting state (device, grid, targets,
 flasher). Components receive data as properties and fire `CustomEvent`s for

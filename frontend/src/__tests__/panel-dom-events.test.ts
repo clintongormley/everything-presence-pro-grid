@@ -207,18 +207,14 @@ describe("live overview DOM events (panel inline)", () => {
 });
 
 describe("epp-live-sidebar DOM events", () => {
-	it("sensor info buttons toggle", () => {
+	it("sensor rows render shared info tips (toggle behavior covered in epp-info-tip.test.ts)", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
 		const tpl = el.render();
 		const c = renderTo(tpl);
 
-		const infoBtns = c.querySelectorAll(".live-sensor-info-btn");
-		if (infoBtns.length > 0) {
-			(infoBtns[0] as HTMLElement).click();
-			expect(el._expandedSensorInfo).not.toBeNull();
-			(infoBtns[0] as HTMLElement).click();
-			expect(el._expandedSensorInfo).toBeNull();
-		}
+		const tips = c.querySelectorAll("epp-info-tip");
+		expect(tips.length).toBeGreaterThanOrEqual(5);
+		expect((tips[0] as any).text).toBe("info.occupancy");
 	});
 
 	it("detection zones link fires view-change event", () => {

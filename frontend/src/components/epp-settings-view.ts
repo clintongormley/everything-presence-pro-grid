@@ -1,7 +1,6 @@
 import { css, html, LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import { STATIC_ON_DELAY_MAX } from "../lib/config-serialization.js";
-import { DocumentListenerGroup } from "../lib/document-listeners.js";
 import {
 	autoDetectionRange,
 	getGridRoomMetrics,
@@ -12,6 +11,7 @@ import {
 } from "../lib/settings-defaults.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 import { buttonStyles, settingStyles, toggleStyles } from "../styles.js";
+import "./epp-info-tip.js";
 import { renderSaveCancelBar } from "./save-cancel-bar.js";
 
 /** Option shape consumed by ha-select's `.options` property. */
@@ -136,9 +136,11 @@ const accordionStyles = css`
   }
 `;
 
-const tooltipStyles = css`
+// Styles for the row's trailing controls: the reset (restart) button
+// (class "setting-info"), the shared <epp-info-tip>, and the disabled-row
+// grey-out. The tooltip itself now lives in epp-info-tip.ts.
+const settingControlStyles = css`
   .setting-info {
-    position: relative;
     display: inline-flex;
     align-items: center;
     flex-shrink: 0;
@@ -157,23 +159,17 @@ const tooltipStyles = css`
   .setting-info ha-icon {
     --mdc-icon-size: 18px;
     color: var(--primary-text-color, #212121);
-    cursor: default;
   }
 
-  .setting-info .setting-info-tooltip {
-    display: none;
-    position: fixed;
-    background: var(--card-background-color, #fff);
-    border: 1px solid var(--divider-color, #e0e0e0);
-    border-radius: 8px;
-    padding: 10px 12px;
-    font-size: 12px;
-    color: var(--primary-text-color, #212121);
-    box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-    white-space: normal;
-    width: 240px;
-    z-index: 9999;
-    line-height: 1.4;
+  epp-info-tip {
+    margin-left: 8px;
+  }
+
+  /* Grey out a disabled row's controls but keep the info tip usable — the
+     documentation must stay available even when the option it documents is
+     disabled. */
+  .setting-row.row-disabled > :not(epp-info-tip) {
+    opacity: 0.5;
     pointer-events: none;
   }
 `;
@@ -373,15 +369,13 @@ export class EppSettingsView extends LitElement {
 	}
 
 	// Tooltip lifecycle (open/close + outside-click/Escape/scroll/resize) is
-	// owned by infoTip() and tied to disconnectedCallback() lower in the file —
-	// the previous window-level _dismissTooltips listener has been removed in
-	// favour of that per-tooltip approach.
+	// owned by the shared <epp-info-tip> component rendered by infoTip().
 	static styles = [
 		accordionStyles,
 		buttonStyles,
 		settingStyles,
 		toggleStyles,
-		tooltipStyles,
+		settingControlStyles,
 		css`
       :host {
         display: block;
@@ -415,11 +409,6 @@ export class EppSettingsView extends LitElement {
 	];
 
 	render() {
-		// Reset the tooltip counter at the start of each render so infoTip()
-		// produces a stable, position-based ID on every re-render. render() is
-		// deterministic (same accordion config + state → same call order), so
-		// the same tooltip slot always gets the same id.
-		this._tipIdCounter = 0;
 		const sections: { id: string; label: string; icon: string }[] = [
 			{
 				id: "reporting",
@@ -662,99 +651,8 @@ export class EppSettingsView extends LitElement {
 		><ha-icon icon="mdi:restart"></ha-icon></button>`;
 	}
 
-	// Per-render tooltip ID counter. Reset at the top of render() (see
-	// below); infoTip() is deterministic within a render pass, so each call
-	// gets a stable position-based ID (1, 2, 3, …) reproduced on every
-	// re-render. Avoids DOM churn / unstable aria-describedby targets without
-	// the duplicate-ID risk of keying by tip text (some texts are reused in
-	// multiple places, e.g. info.target_auto_range in both detection rows).
-	private _tipIdCounter = 0;
-	private _openTooltip: HTMLElement | null = null;
-	private _openTooltipBtn: HTMLElement | null = null;
-
-	private _closeOpenTooltip(): void {
-		if (this._openTooltip) {
-			this._openTooltip.style.display = "none";
-			this._openTooltip = null;
-			this._openTooltipBtn = null;
-		}
-		this._tooltipListeners.detach();
-	}
-
-	private _onTooltipKeydown = (e: Event): void => {
-		if ((e as KeyboardEvent).key === "Escape") this._closeOpenTooltip();
-	};
-
-	private _onTooltipViewportChange = (): void => {
-		this._closeOpenTooltip();
-	};
-
-	private _onTooltipPointerDown = (e: Event): void => {
-		const path = e.composedPath();
-		if (this._openTooltipBtn && path.includes(this._openTooltipBtn)) return;
-		this._closeOpenTooltip();
-	};
-
-	// Dismissal listeners live only while a tooltip is open. (Field ordering
-	// relative to the handlers is enforced by DocumentListenerGroup itself —
-	// see its class doc.)
-	private _tooltipListeners = new DocumentListenerGroup([
-		{ target: document, type: "keydown", listener: this._onTooltipKeydown },
-		{
-			target: document,
-			type: "pointerdown",
-			listener: this._onTooltipPointerDown,
-			options: true,
-		},
-		{
-			target: window,
-			type: "scroll",
-			listener: this._onTooltipViewportChange,
-			options: true,
-		},
-		{ target: window, type: "resize", listener: this._onTooltipViewportChange },
-	]);
-
-	disconnectedCallback(): void {
-		super.disconnectedCallback();
-		this._closeOpenTooltip();
-	}
-
 	infoTip(text: string) {
-		const tipId = `epp-tip-${++this._tipIdCounter}`;
-		return html`<button
-			type="button"
-			class="setting-info"
-			aria-label=${this.localize("settings.show_info")}
-			aria-describedby=${tipId}
-			title=${this.localize("settings.show_info")}
-			@click=${(e: Event) => {
-				e.stopPropagation();
-				const icon = e.currentTarget as HTMLElement;
-				const tip = icon.querySelector(".setting-info-tooltip") as HTMLElement;
-				if (!tip) return;
-				const wasOpen = tip.style.display === "block";
-				// Close any other open tooltips
-				this.shadowRoot!.querySelectorAll(".setting-info-tooltip").forEach(
-					(t) => {
-						(t as HTMLElement).style.display = "none";
-					},
-				);
-				if (wasOpen) {
-					this._openTooltip = null;
-					this._openTooltipBtn = null;
-					this._tooltipListeners.detach();
-					return;
-				}
-				const rect = icon.getBoundingClientRect();
-				tip.style.display = "block";
-				tip.style.left = `${Math.max(8, Math.min(rect.right - 240, window.innerWidth - 256))}px`;
-				tip.style.top = `${rect.bottom + 6}px`;
-				this._openTooltip = tip;
-				this._openTooltipBtn = icon;
-				this._tooltipListeners.attach();
-			}}
-		><ha-icon icon="mdi:help-circle-outline"></ha-icon><span id=${tipId} class="setting-info-tooltip" role="tooltip">${text}</span></button>`;
+		return html`<epp-info-tip .text=${text} .localize=${this.localize}></epp-info-tip>`;
 	}
 
 	renderDetectionRanges() {
@@ -767,7 +665,6 @@ export class EppSettingsView extends LitElement {
 		const staticMaxVal = this.staticAutoDistance
 			? staticMaxAutoVal
 			: this.staticMaxDistance;
-		const autoStyle = "opacity: 0.5; pointer-events: none;";
 		return html`
       <div class="settings-section">
         ${metrics ? html`<p style="font-size: 13px; color: var(--secondary-text-color, #757575); margin: 0 0 12px;">${this.localize("settings.furthest_point")} <span style="font-weight: 700; color: var(--error-color, #db4437);">${this.localize.formatNumber(metrics.furthestM, 1)}m</span></p>` : nothing}
@@ -789,7 +686,7 @@ export class EppSettingsView extends LitElement {
 						})}
             ${this.infoTip(this.localize("info.target_auto_range"))}
           </div>
-          <div class="setting-row" style="${this.targetAutoDistance ? autoStyle : ""}">
+          <div class="setting-row${this.targetAutoDistance ? " row-disabled" : ""}">
             <label>${this.localize("settings.max_distance")}</label>
             <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(targetVal)} min="0.5" max="6" step="0.1"
               @input=${(e: Event) => {
@@ -822,7 +719,7 @@ export class EppSettingsView extends LitElement {
 						})}
             ${this.infoTip(this.localize("info.target_auto_range"))}
           </div>
-          <div class="setting-row" style="${this.staticAutoDistance ? autoStyle : ""}">
+          <div class="setting-row${this.staticAutoDistance ? " row-disabled" : ""}">
             <label>${this.localize("settings.min_distance")}</label>
             <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(this.staticAutoDistance ? 0.3 : this.staticMinDistance)} min="0.3" max="16" step="0.1"
               @input=${(e: Event) => {
@@ -840,7 +737,7 @@ export class EppSettingsView extends LitElement {
 							}} /><span class="setting-value">${this.localize.formatNumber(this.staticAutoDistance ? 0.3 : this.staticMinDistance, 1)}</span><span class="setting-unit">m</span></span>
             ${this.resetBtn(0.3, "staticMinDistance")}${this.infoTip(this.localize("info.static_min_distance"))}
           </div>
-          <div class="setting-row" style="${this.staticAutoDistance ? autoStyle : ""}">
+          <div class="setting-row${this.staticAutoDistance ? " row-disabled" : ""}">
             <label>${this.localize("settings.max_distance")}</label>
             <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(staticMaxVal)} min="2.4" max="16" step="0.1"
               @input=${(e: Event) => {

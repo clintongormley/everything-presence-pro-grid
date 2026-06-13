@@ -1,7 +1,7 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-settings-view.js";
-import type { EppSettingsView } from "../../components/epp-settings-view.js";
+import { EppSettingsView } from "../../components/epp-settings-view.js";
 import { GRID_CELL_COUNT, initGridFromRoom } from "../../lib/grid.js";
 import { SETTINGS_FIELD_MAP } from "../../lib/settings-defaults.js";
 import { setupLocalize } from "../../localize.js";
@@ -806,35 +806,68 @@ describe("presence delay (static on-delay) slider", () => {
 });
 
 describe("infoTip", () => {
-	it("returns a defined template", () => {
+	it("renders a shared epp-info-tip carrying the text and localize fn", () => {
 		const sv = createView();
-		const result = (sv as any).infoTip("Some tip text");
-		expect(result).toBeDefined();
+		const c = renderTo((sv as any).infoTip("Some tip text"));
+		const tip = c.querySelector("epp-info-tip") as any;
+		expect(tip).not.toBeNull();
+		expect(tip.text).toBe("Some tip text");
+		expect(tip.localize).toBe(sv.localize);
+		document.body.removeChild(c);
+	});
+});
+
+describe("info tips (shared epp-info-tip)", () => {
+	it("renders an epp-info-tip per documented option in detection ranges", () => {
+		const sv = createView();
+		const c = renderTo((sv as any).renderDetectionRanges());
+		// Target auto + target max, static auto + static min + static max.
+		const tips = c.querySelectorAll("epp-info-tip");
+		expect(tips.length).toBe(5);
+		expect((tips[1] as any).text).toBe("info.target_max_distance");
+		expect((tips[0] as any).localize).toBe(sv.localize);
+		document.body.removeChild(c);
 	});
 
-	it("click toggles tooltip display", () => {
-		const sv = createView() as any;
-		const tooltips: HTMLElement[] = [];
-		Object.defineProperty(sv, "shadowRoot", {
-			value: {
-				querySelectorAll: (sel: string) => {
-					if (sel === ".setting-info-tooltip") return tooltips;
-					return [];
-				},
-			},
-			configurable: true,
+	it("marks auto-driven rows disabled via class, not inline pointer-events", () => {
+		const sv = createView({
+			targetAutoDistance: true,
+			staticAutoDistance: true,
 		});
-
-		const tpl = sv.infoTip("Test tip");
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		render(tpl, c);
-
-		const infoSpan = c.querySelector(".setting-info") as HTMLElement;
-		if (infoSpan) {
-			infoSpan.click();
+		const c = renderTo((sv as any).renderDetectionRanges());
+		const rows = c.querySelectorAll(".setting-row");
+		// Rows: target auto, target max, static auto, static min, static max
+		for (const idx of [1, 3, 4]) {
+			const row = rows[idx] as HTMLElement;
+			expect(row.classList.contains("row-disabled")).toBe(true);
+			expect(row.getAttribute("style") ?? "").not.toContain("pointer-events");
+			const hasTipChild = Array.from(row.children).some(
+				(ch) => ch.tagName.toLowerCase() === "epp-info-tip",
+			);
+			expect(hasTipChild).toBe(true);
 		}
 		document.body.removeChild(c);
+	});
+
+	it("does not mark rows disabled when auto is off", () => {
+		const sv = createView({
+			targetAutoDistance: false,
+			staticAutoDistance: false,
+		});
+		const c = renderTo((sv as any).renderDetectionRanges());
+		for (const row of c.querySelectorAll(".setting-row")) {
+			expect(row.classList.contains("row-disabled")).toBe(false);
+		}
+		document.body.removeChild(c);
+	});
+
+	it("stylesheet greys out disabled-row children except the info tip", () => {
+		const cssText = (EppSettingsView as any).styles
+			.map((s: { cssText?: string }) => s.cssText ?? String(s))
+			.join("\n");
+		expect(cssText).toMatch(
+			/\.setting-row\.row-disabled\s*>\s*:not\(epp-info-tip\)\s*{[^}]*pointer-events:\s*none/,
+		);
 	});
 });
 
@@ -1823,141 +1856,8 @@ describe("_setText edge case", () => {
 	});
 });
 
-describe("infoTip tooltip toggle branches", () => {
-	it("does nothing when no .setting-info-tooltip inside icon", () => {
-		const sv = createView();
-		const tpl = sv.infoTip("tip text");
-		const c = renderTo(tpl);
-
-		// Remove the tooltip span so tip == null
-		const tooltip = c.querySelector(".setting-info-tooltip");
-		if (tooltip) tooltip.remove();
-
-		const infoSpan = c.querySelector(".setting-info") as HTMLElement;
-		// Should not throw when tip is null
-		expect(() => infoSpan?.click()).not.toThrow();
-		document.body.removeChild(c);
-	});
-
-	it("closes tooltip if already open (wasOpen branch)", () => {
-		const sv = createView();
-		const tpl = sv.infoTip("tip text");
-		const c = renderTo(tpl);
-
-		const infoSpan = c.querySelector(".setting-info") as HTMLElement;
-		const tooltip = c.querySelector(".setting-info-tooltip") as HTMLElement;
-
-		// Mock shadowRoot to return the tooltip
-		Object.defineProperty(sv, "shadowRoot", {
-			value: {
-				querySelectorAll: () => [tooltip],
-			},
-			configurable: true,
-		});
-
-		// First click: open the tooltip
-		if (tooltip) tooltip.style.display = "block";
-		// Second click: should close (wasOpen == true → return early)
-		infoSpan?.click();
-		// tooltip should be hidden by the close-all loop
-		expect(tooltip?.style.display).toBe("none");
-		document.body.removeChild(c);
-	});
-});
-
-describe("infoTip a11y and listener cleanup", () => {
-	function mountAttached(sv: any): {
-		container: HTMLDivElement;
-		btn: HTMLElement;
-		tooltip: HTMLElement;
-	} {
-		const c = document.createElement("div");
-		document.body.appendChild(c);
-		c.appendChild(sv);
-		// Force render so shadowRoot mounts; infoTip output is normally inside render(),
-		// so test with a single tip rendered into a host DIV inside shadow.
-		// Easiest: render the infoTip template into an attached container and
-		// mock shadowRoot to reach it.
-		const tipHost = document.createElement("div");
-		document.body.appendChild(tipHost);
-		render(sv.infoTip("aria tip text"), tipHost);
-		const btn = tipHost.querySelector(".setting-info") as HTMLElement;
-		const tooltip = tipHost.querySelector(
-			".setting-info-tooltip",
-		) as HTMLElement;
-		Object.defineProperty(sv, "shadowRoot", {
-			value: { querySelectorAll: () => [tooltip] },
-			configurable: true,
-		});
-		return { container: c, btn, tooltip };
-	}
-
-	it("button has aria-describedby pointing to the tooltip element id", () => {
-		const sv = createView() as any;
-		const { container, btn, tooltip } = mountAttached(sv);
-		const describedBy = btn.getAttribute("aria-describedby");
-		expect(describedBy).toBeTruthy();
-		expect(tooltip.id).toBe(describedBy);
-		document.body.removeChild(container);
-	});
-
-	it("Escape key closes an open tooltip", () => {
-		const sv = createView() as any;
-		const { container, btn, tooltip } = mountAttached(sv);
-		btn.click();
-		expect(tooltip.style.display).toBe("block");
-		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-		expect(tooltip.style.display).toBe("none");
-		document.body.removeChild(container);
-	});
-
-	it("scroll closes an open tooltip", () => {
-		const sv = createView() as any;
-		const { container, btn, tooltip } = mountAttached(sv);
-		btn.click();
-		expect(tooltip.style.display).toBe("block");
-		window.dispatchEvent(new Event("scroll"));
-		expect(tooltip.style.display).toBe("none");
-		document.body.removeChild(container);
-	});
-
-	it("resize closes an open tooltip", () => {
-		const sv = createView() as any;
-		const { container, btn, tooltip } = mountAttached(sv);
-		btn.click();
-		expect(tooltip.style.display).toBe("block");
-		window.dispatchEvent(new Event("resize"));
-		expect(tooltip.style.display).toBe("none");
-		document.body.removeChild(container);
-	});
-
-	it("outside pointerdown closes an open tooltip", () => {
-		const sv = createView() as any;
-		const { container, btn, tooltip } = mountAttached(sv);
-		btn.click();
-		expect(tooltip.style.display).toBe("block");
-		document.body.dispatchEvent(
-			new PointerEvent("pointerdown", { bubbles: true, composed: true }),
-		);
-		expect(tooltip.style.display).toBe("none");
-		document.body.removeChild(container);
-	});
-
-	it("disconnectedCallback removes document/window listeners (no leak)", () => {
-		const sv = createView() as any;
-		const { container, btn, tooltip } = mountAttached(sv);
-		btn.click();
-		expect(tooltip.style.display).toBe("block");
-		// Detach and reset — listeners should be gone.
-		sv.disconnectedCallback();
-		// Re-display the tooltip and dispatch Escape; since listener was removed,
-		// the tooltip should remain visible.
-		tooltip.style.display = "block";
-		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-		expect(tooltip.style.display).toBe("block");
-		document.body.removeChild(container);
-	});
-});
+// Tooltip toggle, a11y and listener-cleanup behavior moved to the shared
+// <epp-info-tip> component; see epp-info-tip.test.ts for that coverage.
 
 describe("target auto range toggle (checked=true branch)", () => {
 	it("target auto toggle turning ON does not fire targetMaxDistance change", () => {
@@ -2763,7 +2663,7 @@ describe("relay section", () => {
 		const c = renderTo(tpl);
 
 		const rows = c.querySelectorAll(".setting-row");
-		const triggerInfoBtn = rows[0].querySelector(".setting-info");
+		const triggerInfoBtn = rows[0].querySelector("epp-info-tip");
 		expect(triggerInfoBtn).not.toBeNull();
 		document.body.removeChild(c);
 	});
@@ -2777,7 +2677,7 @@ describe("relay section", () => {
 		const c = renderTo(tpl);
 
 		const rows = c.querySelectorAll(".setting-row");
-		const contactInfoBtn = rows[1].querySelector(".setting-info");
+		const contactInfoBtn = rows[1].querySelector("epp-info-tip");
 		expect(contactInfoBtn).not.toBeNull();
 		document.body.removeChild(c);
 	});

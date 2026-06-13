@@ -198,30 +198,40 @@ describe("epp-live-sidebar element", () => {
 		document.body.removeChild(c);
 	});
 
-	it("toggles sensor info expansion on button click", () => {
+	it("renders a shared epp-info-tip per presence sensor", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
-		expect(el._expandedSensorInfo).toBeNull();
-
 		const tpl = el.render();
 		const c = renderTo(tpl);
 
-		const infoBtns = c.querySelectorAll(".live-sensor-info-btn");
-		expect(infoBtns.length).toBeGreaterThanOrEqual(5);
+		const tips = c.querySelectorAll("epp-info-tip");
+		expect(tips.length).toBeGreaterThanOrEqual(5);
+		expect((tips[0] as any).text).toBe("info.occupancy");
+		expect((tips[0] as any).localize).toBe(el.localize);
 
-		// Click first info button — should expand
-		(infoBtns[0] as HTMLElement).click();
-		expect(el._expandedSensorInfo).toBe("occupancy");
-
-		// Click same button again — should collapse
-		// Need to re-render since the template binds to the element's state
-		const tpl2 = el.render();
-		const c2 = renderTo(tpl2);
-		const infoBtns2 = c2.querySelectorAll(".live-sensor-info-btn");
-		(infoBtns2[0] as HTMLElement).click();
-		expect(el._expandedSensorInfo).toBeNull();
+		// The old inline expansion is gone — info opens in a tooltip instead.
+		expect(c.querySelector(".live-sensor-info-btn")).toBeNull();
+		expect(c.querySelector(".live-sensor-info-text")).toBeNull();
 
 		document.body.removeChild(c);
-		document.body.removeChild(c2);
+	});
+
+	it("renders an epp-info-tip per zone row when perspective is set", () => {
+		const el = document.createElement("epp-live-sidebar") as any;
+		el.hasPerspective = true;
+		el.zoneConfigs = [
+			{ name: "Sofa", color: "#ff0000", cells: [] },
+			...new Array(6).fill(null),
+		];
+		el.zoneState = { occupancy: {}, target_counts: {}, frame_count: 0 };
+		const tpl = el.render();
+		const c = renderTo(tpl);
+
+		// 5 presence sensors + rest-of-room + 1 configured zone.
+		const tips = c.querySelectorAll("epp-info-tip");
+		expect(tips.length).toBe(7);
+		expect((tips[5] as any).text).toBe("info.rest_of_room_occupancy");
+
+		document.body.removeChild(c);
 	});
 
 	it("shows static as detected when static_state is 'A' (active)", () => {

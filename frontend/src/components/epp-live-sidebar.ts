@@ -1,8 +1,9 @@
 import { css, html, LitElement, nothing } from "lit";
-import { property, state } from "lit/decorators.js";
+import { property } from "lit/decorators.js";
 import { MAX_ZONES } from "../lib/grid.js";
 import type { ZoneConfig } from "../lib/zone-defaults.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
+import "./epp-info-tip.js";
 
 export interface SensorState {
 	occupancy: boolean;
@@ -52,8 +53,6 @@ export class EppLiveSidebar extends LitElement {
 	@property({ attribute: false }) hasPerspective = false;
 
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
-
-	@state() private _expandedSensorInfo: string | null = null;
 
 	static styles = css`
     :host {
@@ -130,34 +129,13 @@ export class EppLiveSidebar extends LitElement {
       margin-left: auto;
     }
 
-    .live-sensor-info-btn {
-      background: none;
-      border: none;
-      color: var(--secondary-text-color, #aaa);
-      cursor: pointer;
-      padding: 2px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-    }
-
-    .live-sensor-info-btn:hover {
-      color: var(--primary-color, #03a9f4);
-    }
-
-    .live-sensor-info-text {
-      font-size: 12px;
-      color: var(--secondary-text-color, #757575);
-      padding: 2px 12px 8px 30px;
-      line-height: 1.4;
-    }
-
   `;
 
 	/**
 	 * One row shared by the presence and zone sections. Zone rows carry a
 	 * `color` key (null = rest-of-room white dot) and style the dot inline;
-	 * presence rows omit it and use the on/off class dot.
+	 * presence rows omit it and use the on/off class dot. The label, state
+	 * badge, and shared <epp-info-tip> are defined once here.
 	 */
 	private _renderRow(s: {
 		id: string;
@@ -184,22 +162,8 @@ export class EppLiveSidebar extends LitElement {
 				${dot}
 				<span class="live-sensor-label">${s.label}</span>
 				<span class="live-sensor-state ${s.on ? "detected" : ""}">${s.on ? this.localize("live.detected") : this.localize("live.clear")}</span>
-				<button class="live-sensor-info-btn"
-					type="button"
-					aria-label=${this.localize("live.show_info")}
-					@click=${() => {
-						this._expandedSensorInfo =
-							this._expandedSensorInfo === s.id ? null : s.id;
-					}}
-				>
-					<ha-icon icon="mdi:information-outline" style="--mdc-icon-size: 16px;"></ha-icon>
-				</button>
+				<epp-info-tip .text=${s.info} .localize=${this.localize}></epp-info-tip>
 			</div>
-			${
-				this._expandedSensorInfo === s.id
-					? html`<div class="live-sensor-info-text">${s.info}</div>`
-					: nothing
-			}
 		`;
 	}
 

@@ -1096,17 +1096,6 @@ describe("render delete calibration dialog inline handler", () => {
 // epp-live-sidebar inline handlers
 // ========================
 describe("epp-live-sidebar inline handlers", () => {
-	it("sensor info toggle expands/collapses", () => {
-		const el = document.createElement("epp-live-sidebar") as any;
-		const id = "occupancy";
-		// Replicate handler logic
-		el._expandedSensorInfo = el._expandedSensorInfo === id ? null : id;
-		expect(el._expandedSensorInfo).toBe("occupancy");
-
-		el._expandedSensorInfo = el._expandedSensorInfo === id ? null : id;
-		expect(el._expandedSensorInfo).toBeNull();
-	});
-
 	it("detection zones link fires view-change event", () => {
 		const el = document.createElement("epp-live-sidebar") as any;
 		let detail: any = null;
@@ -1122,14 +1111,6 @@ describe("epp-live-sidebar inline handlers", () => {
 		);
 		expect(detail.view).toBe("editor");
 		expect(detail.sidebarTab).toBe("zones");
-	});
-
-	it("zone sensor info toggle", () => {
-		const el = document.createElement("epp-live-sidebar") as any;
-		const id = "zone_1";
-		// Replicate handler logic
-		el._expandedSensorInfo = el._expandedSensorInfo === id ? null : id;
-		expect(el._expandedSensorInfo).toBe("zone_1");
 	});
 
 	it("add zones button navigates via view-change event", () => {
@@ -1332,35 +1313,6 @@ describe("cell mousedown handler", () => {
 			a._onCellMouseDown(insideIdx);
 			expect(a._dirty).toBe(true);
 		}
-	});
-});
-
-// ========================
-// _infoTip click handler
-// ========================
-describe("_infoTip click handler logic", () => {
-	it("toggles tooltip visibility", () => {
-		const _a = createPanel() as any;
-		// The handler at line 4092 checks wasOpen and toggles display
-		// Simulating the logic:
-		const tip = { style: { display: "none" } };
-		const wasOpen = tip.style.display === "block";
-
-		// Close any other open tooltips first (line 4099-4103)
-		// Then if not wasOpen, show this one
-		if (!wasOpen) {
-			tip.style.display = "block";
-		}
-
-		expect(tip.style.display).toBe("block");
-
-		// Toggle again
-		const wasOpen2 = tip.style.display === "block";
-		if (wasOpen2) {
-			tip.style.display = "none";
-		}
-
-		expect(tip.style.display).toBe("none");
 	});
 });
 
