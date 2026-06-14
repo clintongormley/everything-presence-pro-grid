@@ -3011,7 +3011,7 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 			color: var(--secondary-text-color, #757575);
 		}
 
-	`,e([ge({attribute:!1})],Us.prototype,"overlayMode",void 0),e([ge({attribute:!1})],Us.prototype,"localize",void 0),customElements.get("epp-overlay-sidebar")||customElements.define("epp-overlay-sidebar",Us);class zs extends le{constructor(){super(...arguments),this.value="#000000",this.presets=[],this.usedColors=[],this.occupiedGlow=!1,this.localize=Bi,this._open=!1,this._toggle=()=>{this._open?(this._open=!1,this._detachDismiss()):(this._open=!0,this._attachDismiss())},this._close=()=>{this._open=!1,this._detachDismiss()},this._onOutside=e=>{e.composedPath().includes(this)||this._close()},this._onKeydown=e=>{"Escape"===e.key&&this._close()}}disconnectedCallback(){super.disconnectedCallback(),this._detachDismiss()}get _normValue(){return this.value.toLowerCase()}_isPresetValue(){return this.presets.some(e=>e.toLowerCase()===this._normValue)}render(){const e=this.occupiedGlow?`box-shadow: 0 0 6px 2px ${this.value};`:"";return $`
+	`,e([ge({attribute:!1})],Us.prototype,"overlayMode",void 0),e([ge({attribute:!1})],Us.prototype,"localize",void 0),customElements.get("epp-overlay-sidebar")||customElements.define("epp-overlay-sidebar",Us);class zs extends le{constructor(){super(...arguments),this.value="#000000",this.presets=[],this.usedColors=[],this.occupiedGlow=!1,this.localize=Bi,this._open=!1,this._toggle=()=>{this._open?(this._open=!1,this._detachDismiss()):(this._open=!0,this._attachDismiss())},this._close=()=>{this._open=!1,this._detachDismiss()},this._onOutside=e=>{e.composedPath().includes(this)||this._close()},this._onKeydown=e=>{"Escape"===e.key&&(this._close(),this._focusTrigger())}}disconnectedCallback(){super.disconnectedCallback(),this._detachDismiss()}get _normValue(){return this.value.toLowerCase()}_isPresetValue(){return this.presets.some(e=>e.toLowerCase()===this._normValue)}render(){const e=this.occupiedGlow?`box-shadow: 0 0 6px 2px ${this.value};`:"";return $`
 			<button
 				class="trigger"
 				type="button"
@@ -3025,13 +3025,13 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 		`}_renderPopover(){const e=new Set(this.usedColors.map(e=>e.toLowerCase())),t=!this._isPresetValue();return $`
 			<div class="popover" role="dialog">
 				<div class="grid">
-					${this.presets.map((t,i)=>{const s=t.toLowerCase()===this._normValue,r=e.has(t.toLowerCase());return $`<button
+					${this.presets.map((t,i)=>{const s=t.toLowerCase()===this._normValue,r=e.has(t.toLowerCase()),o=this.localize("color.preset",{n:i+1}),n=r?`${o}, ${this.localize("color.in_use")}`:o;return $`<button
 							class="swatch preset ${s?"selected":""} ${r?"in-use":""}"
 							type="button"
 							data-color=${t}
 							style="background: ${t};"
 							title=${r?this.localize("color.in_use"):J}
-							aria-label=${this.localize("color.preset",{n:i+1})}
+							aria-label=${n}
 							aria-pressed=${s?"true":"false"}
 					@click=${()=>this._select(t)}
 						></button>`})}
@@ -3050,7 +3050,7 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 					</label>
 				</div>
 			</div>
-		`}_select(e){this._open=!1,this._detachDismiss(),this.dispatchEvent(new CustomEvent("value-changed",{detail:{value:e},bubbles:!0,composed:!0}))}_attachDismiss(){document.addEventListener("pointerdown",this._onOutside,!0),document.addEventListener("keydown",this._onKeydown,!0),window.addEventListener("scroll",this._close,!0),window.addEventListener("resize",this._close,!0)}_detachDismiss(){document.removeEventListener("pointerdown",this._onOutside,!0),document.removeEventListener("keydown",this._onKeydown,!0),window.removeEventListener("scroll",this._close,!0),window.removeEventListener("resize",this._close,!0)}updated(){if(!this._open)return;const e=this.shadowRoot?.querySelector(".popover"),t=this.shadowRoot?.querySelector(".trigger");if(!e||!t)return;const i=t.getBoundingClientRect();e.style.left=`${i.left}px`,e.style.top=`${i.bottom+6}px`}}zs.styles=n`
+		`}_focusTrigger(){this.shadowRoot?.querySelector(".trigger")?.focus()}_select(e){this._open=!1,this._detachDismiss(),this.dispatchEvent(new CustomEvent("value-changed",{detail:{value:e},bubbles:!0,composed:!0})),this._focusTrigger()}_attachDismiss(){document.addEventListener("pointerdown",this._onOutside,!0),document.addEventListener("keydown",this._onKeydown,!0),window.addEventListener("scroll",this._close,!0),window.addEventListener("resize",this._close,!0)}_detachDismiss(){document.removeEventListener("pointerdown",this._onOutside,!0),document.removeEventListener("keydown",this._onKeydown,!0),window.removeEventListener("scroll",this._close,!0),window.removeEventListener("resize",this._close,!0)}updated(){if(!this._open)return;const e=this.shadowRoot?.querySelector(".popover"),t=this.shadowRoot?.querySelector(".trigger");if(!e||!t)return;const i=t.getBoundingClientRect();e.style.left=`${i.left}px`,e.style.top=`${i.bottom+6}px`}}zs.styles=n`
 		:host { display: inline-flex; }
 		.trigger {
 			width: 16px;

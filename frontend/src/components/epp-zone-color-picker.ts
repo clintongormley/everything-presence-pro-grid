@@ -137,6 +137,10 @@ export class EppZoneColorPicker extends LitElement {
 					${this.presets.map((color, i) => {
 						const isSel = color.toLowerCase() === this._normValue;
 						const isUsed = used.has(color.toLowerCase());
+						const presetLabel = this.localize("color.preset", { n: i + 1 });
+						const ariaLabel = isUsed
+							? `${presetLabel}, ${this.localize("color.in_use")}`
+							: presetLabel;
 						return html`<button
 							class="swatch preset ${isSel ? "selected" : ""} ${
 								isUsed ? "in-use" : ""
@@ -145,7 +149,7 @@ export class EppZoneColorPicker extends LitElement {
 							data-color=${color}
 							style="background: ${color};"
 							title=${isUsed ? this.localize("color.in_use") : nothing}
-							aria-label=${this.localize("color.preset", { n: i + 1 })}
+							aria-label=${ariaLabel}
 							aria-pressed=${isSel ? "true" : "false"}
 					@click=${() => this._select(color)}
 						></button>`;
@@ -179,6 +183,10 @@ export class EppZoneColorPicker extends LitElement {
 		}
 	};
 
+	private _focusTrigger(): void {
+		(this.shadowRoot?.querySelector(".trigger") as HTMLElement | null)?.focus();
+	}
+
 	private _select(color: string): void {
 		// Close first so a value-changed listener sees the popover already closed.
 		this._open = false;
@@ -190,6 +198,8 @@ export class EppZoneColorPicker extends LitElement {
 				composed: true,
 			}),
 		);
+		// Return focus so a keyboard user who picked a swatch lands on the trigger.
+		this._focusTrigger();
 	}
 
 	private _close = (): void => {
@@ -205,7 +215,10 @@ export class EppZoneColorPicker extends LitElement {
 	};
 
 	private _onKeydown = (e: KeyboardEvent): void => {
-		if (e.key === "Escape") this._close();
+		if (e.key === "Escape") {
+			this._close();
+			this._focusTrigger();
+		}
 	};
 
 	private _attachDismiss(): void {

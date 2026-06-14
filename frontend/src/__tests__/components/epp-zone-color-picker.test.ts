@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-zone-color-picker.js";
 import type { EppZoneColorPicker } from "../../components/epp-zone-color-picker.js";
 import { ZONE_PRESET_COLORS } from "../../lib/zone-defaults.js";
@@ -92,6 +92,23 @@ describe("epp-zone-color-picker — render", () => {
 		const glyph = el.shadowRoot!.querySelector(".swatch.custom .custom-glyph");
 		expect(glyph).not.toBeNull();
 		expect(glyph!.textContent!.trim()).toBe("✎");
+	});
+
+	it("renders an occupancy glow on the trigger when occupiedGlow is set", async () => {
+		const el = await fixture({ occupiedGlow: true, value: "#B8E7FF" });
+		const trigger = el.shadowRoot!.querySelector(".trigger") as HTMLElement;
+		expect(trigger.getAttribute("style")!).toContain("box-shadow");
+	});
+
+	it("includes the in-use hint in the aria-label of a used preset", async () => {
+		const el = await fixture({ usedColors: ["#CFDB70"] });
+		openPopover(el);
+		await el.updateComplete;
+		const used = el.shadowRoot!.querySelector(
+			'.swatch.preset[data-color="#CFDB70"]',
+		) as HTMLElement;
+		// default localize returns the key, so the in-use key appears in the label
+		expect(used.getAttribute("aria-label")).toContain("color.in_use");
 	});
 });
 
@@ -197,5 +214,35 @@ describe("epp-zone-color-picker — dismissal", () => {
 		trigger.click();
 		await el.updateComplete;
 		expect(el.shadowRoot!.querySelector(".popover")).not.toBeNull();
+	});
+});
+
+describe("epp-zone-color-picker — focus return", () => {
+	it("returns focus to the trigger when closed via Escape", async () => {
+		const el = await fixture();
+		const trigger = el.shadowRoot!.querySelector(".trigger") as HTMLElement;
+		const focusSpy = vi.spyOn(trigger, "focus");
+		trigger.click();
+		await el.updateComplete;
+		document.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+		);
+		await el.updateComplete;
+		expect(focusSpy).toHaveBeenCalled();
+	});
+
+	it("returns focus to the trigger after a keyboard selection", async () => {
+		const el = await fixture({ value: "#B8E7FF" });
+		const trigger = el.shadowRoot!.querySelector(".trigger") as HTMLElement;
+		const focusSpy = vi.spyOn(trigger, "focus");
+		trigger.click();
+		await el.updateComplete;
+		(
+			el.shadowRoot!.querySelector(
+				'.swatch.preset[data-color="#F06292"]',
+			) as HTMLElement
+		).click();
+		await el.updateComplete;
+		expect(focusSpy).toHaveBeenCalled();
 	});
 });
