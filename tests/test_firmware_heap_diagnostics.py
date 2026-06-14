@@ -105,6 +105,53 @@ def test_loop_time_sensor_present():
     assert loop_time.get("entity_category") == "diagnostic"
 
 
+def test_free_heap_sensor_has_explicit_state_class():
+    """Heap Free must pin state_class so long-term statistics survive any ESPHome version.
+
+    The `debug` platform only began defaulting `state_class: measurement` on its
+    heap sensors in ESPHome 2026.4.0 (PR #15486). Builds compiled with an older
+    ESPHome (e.g. 2026.3.x, which our unpinned CI / local dev can produce) ship
+    the sensor with no state_class, so HA drops long-term statistics with
+    "no longer has a state class". Setting it ourselves makes it deterministic.
+    """
+    doc = _load_base_yaml()
+    debug_sensor = _find_debug_sensor(doc["sensor"])
+    assert debug_sensor is not None, "no `platform: debug` sensor block found"
+    free = debug_sensor.get("free")
+    assert isinstance(free, dict)
+    assert free.get("state_class") == "measurement", (
+        "Heap Free must set `state_class: measurement` explicitly — do not rely "
+        "on the ESPHome debug-platform default, which is absent before 2026.4.0."
+    )
+
+
+def test_largest_free_block_sensor_has_explicit_state_class():
+    """Heap Largest Block must pin state_class (see test_free_heap_sensor_has_explicit_state_class)."""
+    doc = _load_base_yaml()
+    debug_sensor = _find_debug_sensor(doc["sensor"])
+    assert debug_sensor is not None, "no `platform: debug` sensor block found"
+    block = debug_sensor.get("block")
+    assert isinstance(block, dict)
+    assert block.get("state_class") == "measurement", (
+        "Heap Largest Block must set `state_class: measurement` explicitly — the "
+        "ESPHome debug-platform default is absent before 2026.4.0, which silently "
+        "stops HA long-term statistics for builds compiled with an older ESPHome."
+    )
+
+
+def test_loop_time_sensor_has_explicit_state_class():
+    """Loop Time must pin state_class (see test_free_heap_sensor_has_explicit_state_class)."""
+    doc = _load_base_yaml()
+    debug_sensor = _find_debug_sensor(doc["sensor"])
+    assert debug_sensor is not None, "no `platform: debug` sensor block found"
+    loop_time = debug_sensor.get("loop_time")
+    assert isinstance(loop_time, dict)
+    assert loop_time.get("state_class") == "measurement", (
+        "Loop Time must set `state_class: measurement` explicitly — do not rely "
+        "on the ESPHome debug-platform default, which is absent before 2026.4.0."
+    )
+
+
 def test_uptime_sensor_present():
     """Uptime distinguishes a reboot from a network blip.
 

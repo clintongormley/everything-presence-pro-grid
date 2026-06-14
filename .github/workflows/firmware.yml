@@ -36,6 +36,6 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - name: Install ESPHome
-        run: pip install esphome
+        run: pip install -r firmware/requirements.txt
       - name: Compile firmware
         run: esphome compile firmware/variants/${{ matrix.variant }}.yaml

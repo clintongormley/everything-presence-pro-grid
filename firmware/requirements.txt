@@ -1,0 +1,13 @@
+# Pinned ESPHome toolchain for reproducible firmware builds.
+#
+# CI (firmware.yml, firmware-release.yml) and local dev MUST build with this
+# exact version so the same git commit always produces the same firmware.
+# A bare `pip install esphome` floats to latest and silently changes built-in
+# platform metadata between releases (e.g. the debug-sensor state_class default
+# added in 2026.4.0 — see tests/test_firmware_heap_diagnostics.py).
+#
+# When bumping: read the ESPHome changelog for breaking changes, bump
+# esphome.min_version in firmware/common/everything-presence-pro-base.yaml to
+# match (kept consistent by tests/test_firmware_esphome_pin.py), test-build and
+# flash, then treat it as a firmware version bump + release.
+esphome==2026.5.3

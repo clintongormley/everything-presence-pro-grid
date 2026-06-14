@@ -1,4 +1,12 @@
 esphome:
+  # Floor for DIY adopters who build from package_import_url with their own
+  # ESPHome — the CI pin (firmware/requirements.txt) can't reach them. Set to
+  # the build pin as policy: we declare the version we actually validate against,
+  # not the lowest that merely compiles. The state_class fix itself needs no
+  # floor (it's set explicitly below), so this is deliberately conservative.
+  # Kept consistent with the pin (min_version <= pin) by
+  # tests/test_firmware_esphome_pin.py.
+  min_version: "2026.5.3"
   project:
     name: EverythingSmartTechnology.Everything Presence Pro
     version: "1.1.0"
@@ -624,18 +632,25 @@ debug:
 
 sensor:
   - platform: debug
+    # state_class is set explicitly: ESPHome's debug platform only began
+    # defaulting state_class on these heap sensors in 2026.4.0 (PR #15486).
+    # Builds compiled with an older ESPHome ship them with no state_class, so
+    # HA silently drops long-term statistics ("no longer has a state class").
     free:
       name: "Heap Free"
       id: heap_free
       entity_category: diagnostic
+      state_class: measurement
     block:
       name: "Heap Largest Block"
       id: heap_largest_block
       entity_category: diagnostic
+      state_class: measurement
     loop_time:
       name: "Loop Time"
       id: loop_time
       entity_category: diagnostic
+      state_class: measurement
 
   - platform: template
     name: "Heap Min Free"

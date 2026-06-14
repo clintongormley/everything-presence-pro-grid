@@ -7,7 +7,7 @@ Everything Presence Pro Grid is four subsystems (Python integration, TypeScript/
 - **Python 3.13+** — matches the integration's `requires-python` floor.
 - **Node.js** (LTS) and `npm` — for the frontend build and tests.
 - **CMake** and a C++17 compiler — for the zone engine library tests (only needed if you touch firmware).
-- **ESPHome CLI** — for firmware compile, if you're building firmware locally. `pip install esphome` works.
+- **ESPHome CLI** — for firmware compile, if you're building firmware locally. Install the pinned toolchain with `pip install -r firmware/requirements.txt` so local builds match CI/OTA (a bare `pip install esphome` floats to latest and can silently change firmware metadata between releases).
 - **`lcov`** (optional) — used by the pre-push hook for C++ coverage on firmware changes. `brew install lcov` on macOS. Without it, the hook skips C++ coverage but still runs C++ tests. (`epp_component_helpers/` is header-only, so coverage is implicit in its host tests; lcov only measures `epp_zone_engine/`'s `src/`.)
 
 A locally-running Home Assistant is helpful but not required for running the test suite — the Python tests use `pytest-homeassistant-custom-component`, which provides fixtures that don't need a real HA instance.

@@ -29,7 +29,7 @@ jobs:
         run: .github/scripts/validate-release.sh "${{ steps.version.outputs.version }}"
 
       - name: Install ESPHome
-        run: pip install esphome
+        run: pip install -r firmware/requirements.txt
       - name: Compile firmware
         run: esphome compile firmware/variants/${{ matrix.variant }}.yaml
       - name: Collect artifacts
