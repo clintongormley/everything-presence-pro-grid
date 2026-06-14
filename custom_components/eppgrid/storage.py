@@ -36,12 +36,12 @@ class _MigratingStore(Store[dict[str, Any]]):
         if old_major_version < 2:
             old_data.setdefault("device_groups", [])
         if old_major_version < 3:
-            for device in old_data.get("devices", {}).values():
-                settings = device.get("settings") if isinstance(device, dict) else None
-                if isinstance(settings, dict):
-                    settings.setdefault("assisted_clear_timeout", 0)
-            for config in old_data.get("configurations", {}).values():
-                settings = config.get("settings") if isinstance(config, dict) else None
+            # Stamp existing device AND saved-configuration settings dicts alike.
+            for owner in (
+                *old_data.get("devices", {}).values(),
+                *old_data.get("configurations", {}).values(),
+            ):
+                settings = owner.get("settings") if isinstance(owner, dict) else None
                 if isinstance(settings, dict):
                     settings.setdefault("assisted_clear_timeout", 0)
         return old_data
