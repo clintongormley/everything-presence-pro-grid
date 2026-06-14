@@ -373,6 +373,14 @@ api:
         - lambda: |-
             ESP_LOGI("epp", "epp_set_stuck_target_timeout: timeout=%.1fs", timeout);
             id(epp_component).set_stuck_target_timeout(timeout);
+    - action: epp_set_assisted_clear
+      variables:
+        enabled: bool
+        timeout: float
+      then:
+        - lambda: |-
+            ESP_LOGI("epp", "epp_set_assisted_clear: enabled=%s timeout=%.1f", enabled ? "true" : "false", timeout);
+            id(epp_component).set_assisted_clear(enabled, timeout);
     - action: epp_set_tracking
       variables:
         max_range: float

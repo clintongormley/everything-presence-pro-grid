@@ -100,6 +100,7 @@ class EPPComponent : public esphome::Component {
   void set_static_timeout(float timeout) { static_timeout_ = timeout; }
   void set_motion_timeout(float timeout) { motion_timeout_ = timeout; }
   void set_stuck_target_timeout(float seconds) { zone_engine_.set_stuck_target_timeout(seconds); }
+  void set_assisted_clear(bool enabled, float timeout) { zone_engine_.set_assisted_clear(enabled, timeout); }
 
   void set_relay(const std::string &trigger_mode, const std::string &contact_mode);
   void set_relay_switch(esphome::switch_::Switch *sw) { relay_switch_ = sw; }
