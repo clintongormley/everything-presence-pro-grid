@@ -75,4 +75,22 @@ describe("epp-zone-color-picker — render", () => {
 		// hex→rgb inconsistently under happy-dom.
 		expect(custom.getAttribute("style")!.toLowerCase()).toContain("#123456");
 	});
+
+	it("shows a + glyph on the custom swatch when the value is a preset", async () => {
+		const el = await fixture({ value: "#B8E7FF" });
+		openPopover(el);
+		await el.updateComplete;
+		const glyph = el.shadowRoot!.querySelector(".swatch.custom .custom-glyph");
+		expect(glyph).not.toBeNull();
+		expect(glyph!.textContent!.trim()).toBe("+");
+	});
+
+	it("shows an edit glyph on the custom swatch when the value is a custom colour", async () => {
+		const el = await fixture({ value: "#123456" });
+		openPopover(el);
+		await el.updateComplete;
+		const glyph = el.shadowRoot!.querySelector(".swatch.custom .custom-glyph");
+		expect(glyph).not.toBeNull();
+		expect(glyph!.textContent!.trim()).toBe("✎");
+	});
 });

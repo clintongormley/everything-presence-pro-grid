@@ -72,6 +72,19 @@ export class EppZoneColorPicker extends LitElement {
 				red, orange, yellow, lime, cyan, blue, magenta, red
 			);
 		}
+		.custom-glyph {
+			position: absolute;
+			inset: 0;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			color: #fff;
+			font-size: 15px;
+			font-weight: 700;
+			line-height: 1;
+			text-shadow: 0 0 3px rgba(0, 0, 0, 0.7);
+			pointer-events: none;
+		}
 		.custom-input {
 			position: absolute;
 			width: 1px;
@@ -133,6 +146,7 @@ export class EppZoneColorPicker extends LitElement {
 						style=${customSelected ? `background: ${this.value};` : ""}
 						title=${this.localize("color.custom")}
 					>
+						<span class="custom-glyph">${customSelected ? "✎" : "+"}</span>
 						<input
 							class="custom-input"
 							type="color"
