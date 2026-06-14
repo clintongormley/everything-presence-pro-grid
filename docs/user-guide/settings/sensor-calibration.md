@@ -49,6 +49,8 @@ See [How detection works → Auto-dismiss for stuck targets](../how-detection-wo
 
 The zone engine can drop *pending* zones early once the room reads empty — both the motion and static sensors are inactive and no zone is currently *occupied*. This stops a long *pending* state (a Bed zone holds it for ten minutes) from keeping **Occupancy** and **mmWave Presence** `on` after everyone has left. See [How detection works → Sensor-assisted clear](../how-detection-works.md#sensor-assisted-clear).
 
+![Sensor-assisted clear.](../../images/settings/sensor-calibration/sensor-assisted-clear.png "Sensor-assisted clear.")
+
 | Control | Default | Notes |
 | --- | --- | --- |
 | **Enabled** | On | Turn off to rely only on each zone's own [Presence timeout](../how-detection-works.md#the-zone-state-machine) to clear it. |
