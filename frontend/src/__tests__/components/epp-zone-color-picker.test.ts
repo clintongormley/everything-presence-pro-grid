@@ -134,3 +134,47 @@ describe("epp-zone-color-picker — selection events", () => {
 		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
 	});
 });
+
+describe("epp-zone-color-picker — dismissal", () => {
+	async function opened(): Promise<EppZoneColorPicker> {
+		const el = await fixture();
+		(el.shadowRoot!.querySelector(".trigger") as HTMLElement).click();
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).not.toBeNull();
+		return el;
+	}
+
+	it("closes on an outside pointerdown", async () => {
+		const el = await opened();
+		document.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
+	});
+
+	it("closes on Escape", async () => {
+		const el = await opened();
+		document.dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+		);
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
+	});
+
+	it("closes on scroll", async () => {
+		const el = await opened();
+		window.dispatchEvent(new Event("scroll"));
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
+	});
+
+	it("does not re-fire or throw on a stray pointerdown after removal", async () => {
+		const el = await opened();
+		let fired = false;
+		el.addEventListener("value-changed", () => {
+			fired = true;
+		});
+		el.remove();
+		document.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+		expect(fired).toBe(false);
+	});
+});

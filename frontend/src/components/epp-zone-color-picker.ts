@@ -17,6 +17,11 @@ export class EppZoneColorPicker extends LitElement {
 
 	@state() private _open = false;
 
+	disconnectedCallback(): void {
+		super.disconnectedCallback();
+		this._detachDismiss();
+	}
+
 	static styles = css`
 		:host { display: inline-flex; }
 		.trigger {
@@ -162,12 +167,19 @@ export class EppZoneColorPicker extends LitElement {
 	}
 
 	private _toggle = (): void => {
-		this._open = !this._open;
+		if (this._open) {
+			this._open = false;
+			this._detachDismiss();
+		} else {
+			this._open = true;
+			this._attachDismiss();
+		}
 	};
 
 	private _select(color: string): void {
 		// Close first so a value-changed listener sees the popover already closed.
 		this._open = false;
+		this._detachDismiss();
 		this.dispatchEvent(
 			new CustomEvent("value-changed", {
 				detail: { value: color },
@@ -175,6 +187,50 @@ export class EppZoneColorPicker extends LitElement {
 				composed: true,
 			}),
 		);
+	}
+
+	private _close = (): void => {
+		this._open = false;
+		this._detachDismiss();
+	};
+
+	private _onOutside = (e: Event): void => {
+		// Clicks on our own trigger/popover are in our composed path — ignore so
+		// the trigger's own click can toggle without racing this closed.
+		if (e.composedPath().includes(this)) return;
+		this._close();
+	};
+
+	private _onKeydown = (e: KeyboardEvent): void => {
+		if (e.key === "Escape") this._close();
+	};
+
+	private _attachDismiss(): void {
+		document.addEventListener("pointerdown", this._onOutside, true);
+		document.addEventListener("keydown", this._onKeydown, true);
+		window.addEventListener("scroll", this._close, true);
+		window.addEventListener("resize", this._close, true);
+	}
+
+	private _detachDismiss(): void {
+		document.removeEventListener("pointerdown", this._onOutside, true);
+		document.removeEventListener("keydown", this._onKeydown, true);
+		window.removeEventListener("scroll", this._close, true);
+		window.removeEventListener("resize", this._close, true);
+	}
+
+	updated(): void {
+		if (!this._open) return;
+		const popover = this.shadowRoot?.querySelector(
+			".popover",
+		) as HTMLElement | null;
+		const trigger = this.shadowRoot?.querySelector(
+			".trigger",
+		) as HTMLElement | null;
+		if (!popover || !trigger) return;
+		const r = trigger.getBoundingClientRect();
+		popover.style.left = `${r.left}px`;
+		popover.style.top = `${r.bottom + 6}px`;
 	}
 }
 
