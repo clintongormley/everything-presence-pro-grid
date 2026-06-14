@@ -40,10 +40,10 @@ Touch works too: paint by dragging a finger on the grid. The editor is usable on
 ## Renaming, recolouring, deleting
 
 - **Rename** — click the zone name field in the sidebar and edit inline. The new name takes effect immediately.
-- **Recolour** — click the colour swatch next to the zone name to open a colour picker. Pick something that stands out against your other zones; the live overview uses it to shade the zone.
+- **Recolour** — click the colour dot next to the zone name to open the colour picker. Pick one of the preset swatches, or choose **Custom colour** for any shade. A small marker flags presets already used by another zone, so it's easy to keep each zone distinct. The live overview uses the colour to shade the zone.
 - **Delete** — click the **×** button on the zone's sidebar row. The zone disappears and any cells it held fall back into the Room zone.
 
-![Changing the colour of a detection zone.](../images/detection-zones/colours.png "Changing the colour of a detection zone.")
+![Choosing a zone colour from the preset swatches, with the custom-colour fallback.](../images/detection-zones/colours.png "Choosing a zone colour from the preset swatches.")
 
 ## Per-zone settings
 
