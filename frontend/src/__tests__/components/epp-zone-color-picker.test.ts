@@ -222,6 +222,32 @@ describe("epp-zone-color-picker — dismissal", () => {
 		await el.updateComplete;
 		expect(el.shadowRoot!.querySelector(".popover")).not.toBeNull();
 	});
+
+	it("returns focus to the trigger when scroll dismisses while focus is inside", async () => {
+		const el = await opened();
+		const swatch = el.shadowRoot!.querySelector(
+			".swatch.preset",
+		) as HTMLElement;
+		swatch.focus();
+		const focusSpy = vi.spyOn(
+			el.shadowRoot!.querySelector(".trigger") as HTMLElement,
+			"focus",
+		);
+		window.dispatchEvent(new Event("scroll"));
+		await el.updateComplete;
+		expect(focusSpy).toHaveBeenCalled();
+	});
+
+	it("does not steal focus when scroll dismisses and focus is elsewhere", async () => {
+		const el = await opened(); // opened by click — focus not inside the popover
+		const focusSpy = vi.spyOn(
+			el.shadowRoot!.querySelector(".trigger") as HTMLElement,
+			"focus",
+		);
+		window.dispatchEvent(new Event("scroll"));
+		await el.updateComplete;
+		expect(focusSpy).not.toHaveBeenCalled();
+	});
 });
 
 describe("epp-zone-color-picker — focus return", () => {

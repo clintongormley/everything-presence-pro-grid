@@ -229,6 +229,23 @@ export class EppZoneColorPicker extends LitElement {
 		}
 	};
 
+	// Scroll/resize can yank the popover out from under a keyboard user mid-
+	// interaction. If focus is currently inside us, return it to the trigger so
+	// they don't land on <body>; if the popover was opened by mouse (focus
+	// elsewhere), leave focus where it is.
+	private _envClose = (): void => {
+		const hadFocus = this._containsFocus();
+		this._close();
+		if (hadFocus) this._focusTrigger();
+	};
+
+	private _containsFocus(): boolean {
+		// When focus is on an element inside a shadow root, document.activeElement
+		// resolves to the host (shadow-DOM focus encapsulation), so the host being
+		// the active element means focus is somewhere within us.
+		return document.activeElement === this;
+	}
+
 	// Global dismiss listeners, active only while the popover is open. Declared
 	// after the handler fields it references (DocumentListenerGroup throws if a
 	// listener is undefined at construction). Capture phase so an inner
@@ -246,8 +263,8 @@ export class EppZoneColorPicker extends LitElement {
 			listener: this._onKeydown,
 			options: true,
 		},
-		{ target: window, type: "scroll", listener: this._close, options: true },
-		{ target: window, type: "resize", listener: this._close, options: true },
+		{ target: window, type: "scroll", listener: this._envClose, options: true },
+		{ target: window, type: "resize", listener: this._envClose, options: true },
 	]);
 
 	updated(): void {
