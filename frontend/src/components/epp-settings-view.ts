@@ -787,7 +787,7 @@ export class EppSettingsView extends LitElement {
 		return html`
       <div class="setting-row${d.disabled ? " row-disabled" : ""}">
         <label>${this.localize(d.label)}</label>
-        <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(d.value)} min=${d.min} max=${d.max} step=${d.step ?? 1} @input=${(
+        <span class="setting-input-unit"><input type="range" class="setting-range" ?disabled=${d.disabled ?? false} .value=${String(d.value)} min=${d.min} max=${d.max} step=${d.step ?? 1} @input=${(
 					e: Event,
 				) => {
 					const el = e.target as HTMLInputElement;
