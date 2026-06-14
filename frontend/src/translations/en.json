@@ -193,6 +193,12 @@
 		"seconds_suffix": "s",
 		"remove_zone": "Remove zone"
 	},
+	"color": {
+		"choose": "Choose colour",
+		"custom": "Custom colour…",
+		"in_use": "Used by another zone",
+		"preset": "Colour {n}"
+	},
 	"overlays": {
 		"entry_exit": "Entry / Exit",
 		"interference": "Interference",
