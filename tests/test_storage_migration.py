@@ -9,9 +9,9 @@ from custom_components.eppgrid.storage import STORAGE_VERSION
 from custom_components.eppgrid.storage import EPPGridStore
 
 
-def test_storage_version_is_two() -> None:
-    """Bumped to v2 to add device_groups."""
-    assert STORAGE_VERSION == 2
+def test_storage_version_is_three() -> None:
+    """Bumped to v3 to stamp assisted_clear_timeout for pre-existing installs."""
+    assert STORAGE_VERSION == 3
 
 
 async def test_migration_from_v1_adds_empty_device_groups(hass: HomeAssistant, hass_storage: dict) -> None:
@@ -42,6 +42,57 @@ async def test_fresh_store_has_empty_device_groups(hass: HomeAssistant) -> None:
     store = EPPGridStore(hass)
     await store.async_load()
     assert store.device_groups == []
+
+
+async def test_migration_v2_to_v3_stamps_assisted_clear_timeout(hass: HomeAssistant, hass_storage: dict) -> None:
+    """v2 -> v3 stamps assisted_clear_timeout=0 into existing settings dicts.
+
+    Pre-existing installs predate the sensor-assisted-clear timeout and must
+    keep clearing immediately. Devices/configs that already have a settings
+    dict get a 0 stamped in; a device with no settings dict (never configured)
+    is treated as new and left alone so it picks up the 5s default.
+    """
+    hass_storage[DOMAIN] = {
+        "version": 2,
+        "key": DOMAIN,
+        "data": {
+            "devices": {
+                "AA:BB:CC:DD:EE:FF": {"settings": {"motion_timeout": 5}},
+                "11:22:33:44:55:66": {},  # no settings -> treated as new, untouched
+            },
+            "configurations": {"my-config": {"settings": {"static_timeout": 30}}},
+            "device_groups": [],
+        },
+    }
+    store = EPPGridStore(hass)
+    await store.async_load()
+
+    # Existing device settings get the immediate-clear stamp.
+    assert store.devices["AA:BB:CC:DD:EE:FF"]["settings"]["assisted_clear_timeout"] == 0
+    # Settings-less device is left untouched (no settings dict created).
+    assert "settings" not in store.devices["11:22:33:44:55:66"]
+    # Saved configurations get the stamp too.
+    assert store.configurations["my-config"]["settings"]["assisted_clear_timeout"] == 0
+
+
+async def test_migration_v2_to_v3_does_not_overwrite_existing_value(hass: HomeAssistant, hass_storage: dict) -> None:
+    """Migration uses setdefault semantics: an existing value is preserved."""
+    hass_storage[DOMAIN] = {
+        "version": 2,
+        "key": DOMAIN,
+        "data": {
+            "devices": {
+                "AA:BB:CC:DD:EE:FF": {"settings": {"assisted_clear_timeout": 7}},
+            },
+            "configurations": {"my-config": {"settings": {"assisted_clear_timeout": 3}}},
+            "device_groups": [],
+        },
+    }
+    store = EPPGridStore(hass)
+    await store.async_load()
+
+    assert store.devices["AA:BB:CC:DD:EE:FF"]["settings"]["assisted_clear_timeout"] == 7
+    assert store.configurations["my-config"]["settings"]["assisted_clear_timeout"] == 3
 
 
 async def test_save_round_trip_persists_device_groups(hass: HomeAssistant) -> None:

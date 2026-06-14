@@ -12,7 +12,7 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-STORAGE_VERSION = 2
+STORAGE_VERSION = 3
 STORAGE_KEY = DOMAIN
 
 
@@ -28,9 +28,22 @@ class _MigratingStore(Store[dict[str, Any]]):
         """Migrate stored data forward.
 
         v1 -> v2: add `device_groups` list (empty default).
+        v2 -> v3: stamp `assisted_clear_timeout: 0` into existing device and
+            saved-configuration settings so installs that predate the
+            sensor-assisted-clear timeout keep clearing immediately. New
+            installs (no settings dict) pick up the 5 s default instead.
         """
         if old_major_version < 2:
             old_data.setdefault("device_groups", [])
+        if old_major_version < 3:
+            for device in old_data.get("devices", {}).values():
+                settings = device.get("settings")
+                if isinstance(settings, dict):
+                    settings.setdefault("assisted_clear_timeout", 0)
+            for config in old_data.get("configurations", {}).values():
+                settings = config.get("settings") if isinstance(config, dict) else None
+                if isinstance(settings, dict):
+                    settings.setdefault("assisted_clear_timeout", 0)
         return old_data
 
 
