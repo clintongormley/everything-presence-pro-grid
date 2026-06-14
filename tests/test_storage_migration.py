@@ -37,6 +37,30 @@ async def test_migration_from_v1_adds_empty_device_groups(hass: HomeAssistant, h
     assert store.device_groups == []
 
 
+async def test_migration_v1_to_v3_runs_both_migrations(hass: HomeAssistant, hass_storage: dict) -> None:
+    """A v1 dict migrates straight through to v3, running both migration blocks.
+
+    A pre-existing v1 install that skips v2 must still pick up the device_groups
+    list (v1->v2) AND the assisted_clear_timeout stamp on existing settings
+    dicts (v2->v3) in a single load.
+    """
+    hass_storage[DOMAIN] = {
+        "version": 1,
+        "key": DOMAIN,
+        "data": {
+            "devices": {"AA:BB:CC:DD:EE:FF": {"settings": {"motion_timeout": 5}}},
+            "configurations": {},
+        },
+    }
+    store = EPPGridStore(hass)
+    await store.async_load()
+
+    # v1 -> v2 ran: device_groups added.
+    assert store.device_groups == []
+    # v2 -> v3 ran: existing settings dict got the immediate-clear stamp.
+    assert store.devices["AA:BB:CC:DD:EE:FF"]["settings"]["assisted_clear_timeout"] == 0
+
+
 async def test_fresh_store_has_empty_device_groups(hass: HomeAssistant) -> None:
     """A fresh store (no data on disk) initializes device_groups=[]."""
     store = EPPGridStore(hass)
@@ -69,10 +93,13 @@ async def test_migration_v2_to_v3_stamps_assisted_clear_timeout(hass: HomeAssist
 
     # Existing device settings get the immediate-clear stamp.
     assert store.devices["AA:BB:CC:DD:EE:FF"]["settings"]["assisted_clear_timeout"] == 0
+    # Migration stamps the timeout only -- it must NOT stamp assisted_clear_enabled.
+    assert "assisted_clear_enabled" not in store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
     # Settings-less device is left untouched (no settings dict created).
     assert "settings" not in store.devices["11:22:33:44:55:66"]
     # Saved configurations get the stamp too.
     assert store.configurations["my-config"]["settings"]["assisted_clear_timeout"] == 0
+    assert "assisted_clear_enabled" not in store.configurations["my-config"]["settings"]
 
 
 async def test_migration_v2_to_v3_does_not_overwrite_existing_value(hass: HomeAssistant, hass_storage: dict) -> None:
