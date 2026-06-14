@@ -46,6 +46,8 @@ export interface ZoneEngineState {
 	staticPendingSince: number | null;
 	motionPendingSince: number | null;
 	sensorsEverActive: boolean;
+	// Grace-timer start for sensor-assisted clear; null = no timer running.
+	assistedClearSince: number | null;
 }
 
 export interface ZoneEngineParams {
@@ -76,6 +78,10 @@ export interface ZoneEngineParams {
 	// Stuck-target auto-dismiss timeout in seconds; 0 (default) disables.
 	// Mirrors firmware set_stuck_target_timeout.
 	stuckTargetTimeout?: number;
+	// Sensor-assisted clear config. Mirrors firmware set_assisted_clear.
+	// enabled defaults true; timeout (seconds) defaults 0 (immediate).
+	assistedClearEnabled?: boolean;
+	assistedClearTimeout?: number;
 	now?: number; // seconds (defaults to Date.now() / 1000)
 }
 
@@ -105,6 +111,7 @@ export function createZoneEngineState(): ZoneEngineState {
 		staticPendingSince: null,
 		motionPendingSince: null,
 		sensorsEverActive: false,
+		assistedClearSince: null,
 	};
 }
 
@@ -802,29 +809,40 @@ function stepSensorPresence(ctx: TickContext): void {
  * zone is OCCUPIED, every PENDING zone is cleared.
  */
 function stepForceClear(ctx: TickContext): void {
-	const { state } = ctx;
+	const { state, params, now } = ctx;
 	const occupancy = ctx.occupancy;
 
-	if (
+	const enabled = params.assistedClearEnabled ?? true;
+	const timeout = params.assistedClearTimeout ?? 0;
+
+	let emptyCondition =
 		state.sensorsEverActive &&
 		state.staticState === "inactive" &&
-		state.motionState === "inactive"
-	) {
-		let anyOccupied = false;
+		state.motionState === "inactive";
+	if (emptyCondition) {
 		for (const [, st] of state.localZoneState) {
 			if (st.occupied && st.pendingSince === null) {
-				anyOccupied = true;
+				emptyCondition = false; // re-occupied zone blocks + resets timer
 				break;
 			}
 		}
-		if (!anyOccupied) {
-			for (const [zid, st] of state.localZoneState) {
-				if (st.occupied && st.pendingSince !== null) {
-					st.occupied = false;
-					st.pendingSince = null;
-					st.confirmedTargets.clear();
-					occupancy[zid] = false;
-				}
+	}
+
+	if (!enabled || !emptyCondition) {
+		state.assistedClearSince = null; // cancel grace timer
+		return;
+	}
+
+	if (state.assistedClearSince === null) {
+		state.assistedClearSince = now;
+	}
+	if (now - state.assistedClearSince >= timeout) {
+		for (const [zid, st] of state.localZoneState) {
+			if (st.occupied && st.pendingSince !== null) {
+				st.occupied = false;
+				st.pendingSince = null;
+				st.confirmedTargets.clear();
+				occupancy[zid] = false;
 			}
 		}
 	}
