@@ -3,6 +3,7 @@ import {
 	getZoneThresholds,
 	resolveZoneParams,
 	ZONE_COLORS,
+	ZONE_PRESET_COLORS,
 	ZONE_TYPE_DEFAULTS,
 	type Zone0Config,
 	type ZoneConfig,
@@ -298,5 +299,24 @@ describe("resolveZoneParams", () => {
 	it("preserves the original zone type in the return value", () => {
 		const z0: Zone0Config = { type: "default" };
 		expect(resolveZoneParams(z0).type).toBe("default");
+	});
+});
+
+describe("ZONE_PRESET_COLORS", () => {
+	it("contains 13 valid hex colours", () => {
+		expect(ZONE_PRESET_COLORS).toHaveLength(13);
+		for (const c of ZONE_PRESET_COLORS) {
+			expect(c).toMatch(/^#[0-9a-fA-F]{6}$/);
+		}
+	});
+
+	it("is a superset of the auto-assignment palette (the 7 pales come first)", () => {
+		expect(ZONE_PRESET_COLORS.slice(0, ZONE_COLORS.length)).toEqual(
+			ZONE_COLORS,
+		);
+	});
+
+	it("has no duplicate entries", () => {
+		expect(new Set(ZONE_PRESET_COLORS).size).toBe(ZONE_PRESET_COLORS.length);
 	});
 });
