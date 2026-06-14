@@ -99,6 +99,7 @@ everything-presence-pro-grid/
 │   │   │   ├── epp-grid.ts               # Shared grid renderer (live + editor)
 │   │   │   ├── epp-live-sidebar.ts       # Sensor/zone status display
 │   │   │   ├── epp-zone-sidebar.ts       # Zone list + type controls
+│   │   │   ├── epp-zone-color-picker.ts  # Zone colour popover (preset swatches + custom fallback)
 │   │   │   ├── epp-overlay-sidebar.ts    # Entry/interference/suppress paint controls
 │   │   │   ├── epp-furniture-sidebar.ts  # Furniture catalog
 │   │   │   ├── epp-furniture-overlay.ts  # Furniture drag/resize/rotate
