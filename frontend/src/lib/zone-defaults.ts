@@ -78,10 +78,11 @@ export const ZONE_COLORS = [
 ];
 
 // Quick-pick presets shown in the zone colour popover: the 7 colour-blind
-// pales (ZONE_COLORS) plus a row of richer tones for more expressive choice.
-// Superset of ZONE_COLORS so the auto-assigned default always appears as a
-// selectable preset. Rendered 5-per-row; with the custom swatch that is 14
-// cells. Auto-assignment and validation still use ZONE_COLORS only.
+// pales (ZONE_COLORS) plus a row of richer tones (Material Design 300/400
+// series) for more expressive choice. Superset of ZONE_COLORS so the
+// auto-assigned default always appears as a selectable preset. 13 presets +
+// 1 custom swatch = 14 cells at 5-per-row. Auto-assignment and validation
+// still use ZONE_COLORS only.
 export const ZONE_PRESET_COLORS = [
 	...ZONE_COLORS,
 	"#4FC3F7", // brighter blue
