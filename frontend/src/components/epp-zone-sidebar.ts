@@ -2,10 +2,12 @@ import { css, html, LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
 import {
 	resolveZoneParams,
+	ZONE_PRESET_COLORS,
 	ZONE_TYPE_KEYS,
 	type Zone0Config,
 	type ZoneConfig,
 } from "../lib/zone-defaults.js";
+import "./epp-zone-color-picker.js";
 import type { ZoneState } from "../lib/zone-engine.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 import { sidebarRowStyles, toggleStyles } from "../styles.js";
@@ -46,6 +48,13 @@ export class EppZoneSidebar extends LitElement {
 			this._flushPendingName,
 			EppZoneSidebar.NAME_DEBOUNCE_MS,
 		);
+	}
+
+	// Colours in use by the OTHER named zones, for the in-use marker.
+	private _usedColorsExcept(index: number): string[] {
+		return this.zoneConfigs
+			.filter((z, i): z is ZoneConfig => z !== null && i !== index)
+			.map((z) => z.color);
 	}
 
 	disconnectedCallback(): void {
@@ -90,16 +99,6 @@ export class EppZoneSidebar extends LitElement {
 				background: var(--card-background-color, #fff);
 				color: var(--primary-text-color, #212121);
 				cursor: pointer;
-				flex-shrink: 0;
-			}
-
-			.zone-color-picker {
-				width: 24px;
-				height: 24px;
-				border: none;
-				padding: 0;
-				cursor: pointer;
-				border-radius: 4px;
 				flex-shrink: 0;
 			}
 
@@ -268,20 +267,19 @@ export class EppZoneSidebar extends LitElement {
 								${
 									this.activeZone === slot
 										? html`
-											<input
-												type="color"
-												class="zone-color-picker"
-												style="width: 16px; height: 16px; border-radius: 50%;${this.localZoneState.get(slot)?.occupied ? ` box-shadow: 0 0 6px 2px ${zone.color};` : ""}"
+											<epp-zone-color-picker
 												.value=${zone.color}
-												@input=${(e: Event) => {
-													const val = (e.target as HTMLInputElement).value;
+												.presets=${ZONE_PRESET_COLORS}
+												.usedColors=${this._usedColorsExcept(i)}
+												.occupiedGlow=${this.localZoneState.get(slot)?.occupied ?? false}
+												.localize=${this.localize}
+												@value-changed=${(e: CustomEvent) => {
+													e.stopPropagation();
 													this.dispatchEvent(
 														new CustomEvent("zone-config-change", {
 															detail: {
 																index: i,
-																updates: {
-																	color: val,
-																},
+																updates: { color: e.detail.value },
 															},
 															bubbles: true,
 															composed: true,
@@ -289,7 +287,7 @@ export class EppZoneSidebar extends LitElement {
 													);
 												}}
 												@click=${(e: Event) => e.stopPropagation()}
-											/>
+											></epp-zone-color-picker>
 										`
 										: html`
 											<div

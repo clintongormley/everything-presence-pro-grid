@@ -1361,10 +1361,10 @@ describe("epp-zone-sidebar renders zone sidebar", () => {
 			],
 		]);
 		const c = renderTo(el.render());
-		// Active + occupied zone renders the color picker with a glow.
-		const picker = c.querySelector(".zone-color-picker") as HTMLElement;
+		// Active + occupied zone renders the color picker with the glow on.
+		const picker = c.querySelector("epp-zone-color-picker") as any;
 		expect(picker).not.toBeNull();
-		expect(picker.getAttribute("style")).toContain("box-shadow");
+		expect(picker.occupiedGlow).toBe(true);
 	});
 
 	it("renders with all zones full (no add button)", () => {

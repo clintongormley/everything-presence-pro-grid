@@ -1047,9 +1047,7 @@ describe("stopPropagation handlers in zone sidebar", () => {
 		const tpl = el._renderZoneSidebar();
 		const c = renderTo(tpl);
 
-		const colorPicker = c.querySelector(
-			".zone-color-picker",
-		) as HTMLInputElement;
+		const colorPicker = c.querySelector("epp-zone-color-picker") as HTMLElement;
 		expect(colorPicker).not.toBeNull();
 		const event = new MouseEvent("click", { bubbles: true });
 		const stopSpy = vi.spyOn(event, "stopPropagation");

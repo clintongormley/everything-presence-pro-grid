@@ -1,6 +1,7 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-zone-sidebar.js";
+import "../../components/epp-zone-color-picker.js";
 import type { EppZoneSidebar } from "../../components/epp-zone-sidebar.js";
 import { ZONE_COLORS, ZONE_TYPE_DEFAULTS } from "../../lib/zone-defaults.js";
 
@@ -151,7 +152,7 @@ describe("epp-zone-sidebar element", () => {
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
-		const colorPicker = c.querySelector(".zone-color-picker");
+		const colorPicker = c.querySelector("epp-zone-color-picker");
 		expect(colorPicker).not.toBeNull();
 
 		document.body.removeChild(c);
@@ -421,7 +422,7 @@ describe("epp-zone-sidebar events", () => {
 		}
 	});
 
-	it("fires zone-config-change on color picker input", () => {
+	it("fires zone-config-change when the colour picker emits value-changed", () => {
 		const el = createSidebar({ activeZone: 1 });
 		(el as any).zoneConfigs = [
 			{ name: "Z1", color: "#ff0000", type: "default" },
@@ -438,11 +439,14 @@ describe("epp-zone-sidebar events", () => {
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
-		const colorPicker = c.querySelector(
-			".zone-color-picker",
-		) as HTMLInputElement;
-		colorPicker.value = "#00ff00";
-		colorPicker.dispatchEvent(new Event("input", { bubbles: true }));
+		const picker = c.querySelector("epp-zone-color-picker") as HTMLElement;
+		picker.dispatchEvent(
+			new CustomEvent("value-changed", {
+				detail: { value: "#00ff00" },
+				bubbles: true,
+				composed: true,
+			}),
+		);
 
 		expect(handler).toHaveBeenCalledTimes(1);
 		expect(handler.mock.calls[0][0].detail.updates.color).toBe("#00ff00");

@@ -993,18 +993,20 @@ describe("_renderZoneSidebar DOM events", () => {
 			events.push(e as CustomEvent),
 		);
 
-		const colorPicker = c.querySelector(
-			".zone-color-picker",
-		) as HTMLInputElement;
-		if (colorPicker) {
-			colorPicker.value = "#00ff00";
-			colorPicker.dispatchEvent(new Event("input", { bubbles: true }));
-			expect(
-				events.some(
-					(e) => e.detail.index === 0 && e.detail.updates.color === "#00ff00",
-				),
-			).toBe(true);
-		}
+		const colorPicker = c.querySelector("epp-zone-color-picker") as HTMLElement;
+		expect(colorPicker).not.toBeNull();
+		colorPicker.dispatchEvent(
+			new CustomEvent("value-changed", {
+				detail: { value: "#00ff00" },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+		expect(
+			events.some(
+				(e) => e.detail.index === 0 && e.detail.updates.color === "#00ff00",
+			),
+		).toBe(true);
 	});
 });
 
