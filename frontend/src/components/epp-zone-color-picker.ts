@@ -2,6 +2,9 @@ import { css, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 
+// Vertical gap (px) between the trigger dot and the popover below it.
+const POPOVER_GAP_PX = 6;
+
 /**
  * Zone colour picker: a trigger dot that opens a popover of preset swatches
  * plus a custom native-picker fallback. Emits `value-changed` with the chosen
@@ -228,9 +231,11 @@ export class EppZoneColorPicker extends LitElement {
 			".trigger",
 		) as HTMLElement | null;
 		if (!popover || !trigger) return;
+		// Anchor the fixed popover under the trigger. Deliberate read (rect) then
+		// write (inline styles); writes don't touch reactive state, so no loop.
 		const r = trigger.getBoundingClientRect();
 		popover.style.left = `${r.left}px`;
-		popover.style.top = `${r.bottom + 6}px`;
+		popover.style.top = `${r.bottom + POPOVER_GAP_PX}px`;
 	}
 }
 

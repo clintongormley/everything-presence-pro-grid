@@ -177,4 +177,25 @@ describe("epp-zone-color-picker — dismissal", () => {
 		document.dispatchEvent(new Event("pointerdown", { bubbles: true }));
 		expect(fired).toBe(false);
 	});
+
+	it("closes on resize", async () => {
+		const el = await opened();
+		window.dispatchEvent(new Event("resize"));
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
+	});
+
+	it("can reopen after being dismissed", async () => {
+		const el = await fixture();
+		const trigger = el.shadowRoot!.querySelector(".trigger") as HTMLElement;
+		trigger.click();
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).not.toBeNull();
+		document.dispatchEvent(new Event("pointerdown", { bubbles: true }));
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
+		trigger.click();
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).not.toBeNull();
+	});
 });
