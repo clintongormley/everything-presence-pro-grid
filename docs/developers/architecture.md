@@ -160,7 +160,10 @@ All signal processing runs on-device in the C++ zone engine:
    are fed into the zone engine with software-managed timeouts
    (active→pending→inactive). Hardware timeouts are set to 1s for debounce; the
    zone engine manages the real timeout. When both sensors are inactive and no
-   zones have active targets, pending zones are force-cleared immediately.
+   zones have active targets, the sensor-assisted clear force-clears pending
+   zones after a configurable grace delay (`assisted_clear_timeout`, default 5 s;
+   0 = immediate). The feature is on by default and can be disabled via
+   `assisted_clear_enabled`.
 5. **Relay output** (`epp_relay.h`) — optional GPIO follows zone state with a
    user-selectable trigger mode (motion / presence / occupancy) and contact mode
    (NO / NC).

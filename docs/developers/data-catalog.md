@@ -328,6 +328,15 @@ Saves all device settings (offsets, timeouts, distances, thresholds, LED, relay,
 | `target_update_rate_ms` | int | 200, 500, 1000, 2000 | Target entity sensor publish rate (stored in `settings.target_update_rate_ms`) |
 | `zone_update_rate_ms` | int | 200, 500, 1000, 2000 | Zone entity sensor publish rate (stored in `settings.zone_update_rate_ms`) |
 
+**Sensor-assisted clear settings:**
+
+| Key | Type | Default | Valid values | Description |
+|-----|------|---------|-------------|-------------|
+| `assisted_clear_enabled` | bool | `true` | — | Enables sensor-assisted clear: pending zones are force-cleared once both presence sensors are inactive and no zone is occupied. Pushed to firmware via `epp_set_assisted_clear`. |
+| `assisted_clear_timeout` | float (s) | `5` | 0–600 | Grace delay the room must stay empty before pending zones are cleared; `0` = immediate. Pushed to firmware via `epp_set_assisted_clear`. |
+
+Both keys thread through the settings pipeline exactly like `stuck_target_timeout` (member of `_SETTINGS_KEYS`, `vol.Required` in the schema). New installs get the 5 s default; pre-existing installs are migrated to `0` (immediate) by the v2→v3 store migration — see [Configuration Storage](#5-configuration-storage).
+
 **Entity toggle keys (within `entities` dict) — additions:**
 
 | Key | Description |
@@ -585,6 +594,16 @@ All config is pushed to the device on save and on reconnect. The push
 prefers the existing frontend session connection when one is active
 (avoids the ESP32 concurrent connection limit); otherwise it creates a
 temporary connection (e.g., on-boot push when no frontend is open).
+
+**Store migrations** are handled by `_MigratingStore._async_migrate_func`
+(`STORAGE_VERSION` is currently **3**):
+
+- **v1 → v2** — adds the `device_groups` list (see below).
+- **v2 → v3** — stamps `assisted_clear_timeout: 0` into the `settings` of every
+  pre-existing device and saved configuration so upgraded installs keep clearing
+  pending zones immediately, matching the old hard-coded behaviour. New installs
+  (no stored settings to migrate) fall through to the 5 s frontend default.
+  `assisted_clear_enabled` needs no stamping — absent means default `true`.
 
 **Device groups** are persisted separately in `EPPGridStore.device_groups`
 (added by the v1→v2 store migration) as a list of definitions:

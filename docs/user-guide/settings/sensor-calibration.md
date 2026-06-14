@@ -2,7 +2,7 @@
 
 Sensitivity and timing for the presence sensors, plus the offsets that correct the environmental readings. Lives under **Settings → Sensor Calibration** in the panel.
 
-The motion and static-presence settings here also feed into the [sensor-assisted clear](../how-detection-works.md#sensor-assisted-clear), the rule that lets the zone engine drop *pending* zones early once both hardware sensors report inactive. Lowering a timeout therefore affects more than just that one sensor's entity: it can also shorten how long an empty room stays marked occupied by the **Occupancy** and **mmWave presence** sensors.
+The motion and static-presence settings here also feed into the [sensor-assisted clear](../how-detection-works.md#sensor-assisted-clear), the rule that lets the zone engine drop *pending* zones early once both hardware sensors report inactive (when that feature is enabled). Lowering a timeout therefore affects more than just that one sensor's entity: it can also shorten how long an empty room stays marked occupied by the **Occupancy** and **mmWave presence** sensors.
 
 ## Motion sensor (PIR)
 
@@ -29,7 +29,7 @@ The SEN0609 mmWave radar reports a single "someone here / not here" signal. Rang
 | **Trigger threshold** | 3 | On-chip sensitivity for *first* detection. 1–9. Higher = harder to trigger. |
 | **Renew threshold** | 3 | On-chip sensitivity for *sustaining* detection. 1–9. Higher = harder to maintain. |
 
-**Presence timeout** is important for the [sensor-assisted clear](../how-detection-works.md#sensor-assisted-clear): once the static sensor reports inactive (and the motion sensor is also inactive, and no zone is currently *occupied*), every *pending* zone is cleared immediately. Lowering this timeout speeds that up, at the cost of clearing zones a little more quickly after someone genuinely leaves.
+**Presence timeout** is important for the [sensor-assisted clear](../how-detection-works.md#sensor-assisted-clear): once the static sensor reports inactive (and the motion sensor is also inactive, and no zone is currently *occupied*), every *pending* zone is cleared after the **Clear delay** described [below](#sensor-assisted-clear) — default 5 s, or immediately if the delay is 0 — provided the feature is enabled. Lowering this timeout speeds that up, at the cost of clearing zones a little more quickly after someone genuinely leaves.
 
 ## Target sensor (LD2450)
 
@@ -44,6 +44,17 @@ Range and the auto/manual toggle for the LD2450 live under [Detection ranges](de
 The radar occasionally fixates on a phantom — a fan blade in just the right position, a reflection off a glass cabinet — and reports it at byte-identical coordinates indefinitely. A real person never sits perfectly still at the radar's resolution, so this rule is safe by default. The dismissed target re-appears the moment the radar reports it at any different coordinates, so it'll come back if it was real.
 
 See [How detection works → Auto-dismiss for stuck targets](../how-detection-works.md#auto-dismiss-for-stuck-targets) for the full pipeline.
+
+## Sensor-assisted clear
+
+The zone engine can drop *pending* zones early once the room reads empty — both the motion and static sensors are inactive and no zone is currently *occupied*. This stops a long *pending* state (a Bed zone holds it for ten minutes) from keeping **Occupancy** and **mmWave Presence** `on` after everyone has left. See [How detection works → Sensor-assisted clear](../how-detection-works.md#sensor-assisted-clear).
+
+| Control | Default | Notes |
+| --- | --- | --- |
+| **Enabled** | On | Turn off to rely only on each zone's own [Presence timeout](../how-detection-works.md#the-zone-state-machine) to clear it. |
+| **Clear delay** | 5 s | Grace period the room must stay empty before *pending* zones are cleared. Range 0–600 s. **0** = clear immediately. Greyed out when **Enabled** is off. |
+
+The delay is a grace period, not an extra wait on top of nothing: the timer only runs while the room reads empty, and any re-detection during it (either sensor going active again, or a target re-occupying a zone) cancels the clear and resets the timer. New installs default to a 5 s delay; installs upgraded from an earlier version keep clearing immediately (0 s) until you change it.
 
 ## Environmental offsets
 
