@@ -2584,6 +2584,8 @@ export class EPPGridPanel extends LitElement {
           .targetAutoDistance=${this._targetAutoDistance}
           .targetMaxDistance=${this._targetMaxDistance}
           .stuckTargetTimeout=${this._stuckTargetTimeout}
+          .assistedClearEnabled=${this._assistedClearEnabled}
+          .assistedClearTimeout=${this._assistedClearTimeout}
           .staticAutoDistance=${this._staticAutoDistance}
           .staticMinDistance=${this._staticMinDistance}
           .staticMaxDistance=${this._staticMaxDistance}

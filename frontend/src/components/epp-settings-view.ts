@@ -71,6 +71,8 @@ interface SliderRowDescriptor {
 	defaultValue: number;
 	/** Translation key for the info tooltip. */
 	tip: string;
+	/** Grey out + disable the row (dependent on a toggle). */
+	disabled?: boolean;
 }
 
 /** One entity-reporting toggle row. */
@@ -208,6 +210,8 @@ export class EppSettingsView extends LitElement {
 	@property({ type: Boolean }) targetAutoDistance = true;
 	@property({ type: Number }) targetMaxDistance = 6.0;
 	@property({ type: Number }) stuckTargetTimeout = 300;
+	@property({ type: Boolean }) assistedClearEnabled = true;
+	@property({ type: Number }) assistedClearTimeout = 5;
 	@property({ type: Boolean }) staticAutoDistance = true;
 	@property({ type: Number }) staticMinDistance = 0.3;
 	@property({ type: Number }) staticMaxDistance = 16.0;
@@ -781,7 +785,7 @@ export class EppSettingsView extends LitElement {
 	/** Render one sensitivity slider row from a descriptor. */
 	renderSliderRow(d: SliderRowDescriptor) {
 		return html`
-      <div class="setting-row">
+      <div class="setting-row${d.disabled ? " row-disabled" : ""}">
         <label>${this.localize(d.label)}</label>
         <span class="setting-input-unit"><input type="range" class="setting-range" .value=${String(d.value)} min=${d.min} max=${d.max} step=${d.step ?? 1} @input=${(
 					e: Event,
@@ -887,6 +891,32 @@ export class EppSettingsView extends LitElement {
         </div>
         `,
 				)}
+        <div class="setting-group">
+          <h4>${this.localize("settings.assisted_clear")}</h4>
+          <div class="setting-row">
+            <label>${this.localize("settings.assisted_clear_enabled")}</label>
+            ${this.renderToggle({
+							checked: this.assistedClearEnabled,
+							onChange: (e: Event) => {
+								const checked = (e.target as HTMLInputElement).checked;
+								this._overrides.assistedClearEnabled = checked;
+								this._fireChange("assistedClearEnabled", checked);
+							},
+						})}
+            ${this.infoTip(this.localize("info.assisted_clear_enabled"))}
+          </div>
+          ${this.renderSliderRow({
+						label: "settings.assisted_clear_timeout",
+						key: "assistedClearTimeout",
+						value: this.assistedClearTimeout,
+						min: 0,
+						max: 600,
+						unit: "s",
+						defaultValue: SLIDER_DEFAULTS.assistedClearTimeout,
+						tip: "info.assisted_clear_timeout",
+						disabled: !this.assistedClearEnabled,
+					})}
+        </div>
         <div class="setting-group">
           <h4>${this.localize("settings.environmental")}</h4>
           ${this.renderEnvOffset(this.localize("settings.illuminance_offset"), () => this.sensorState.illuminance, "illuminance", -500, 500, 1, "lux", 1, this.localize("info.illuminance_offset"), 0)}

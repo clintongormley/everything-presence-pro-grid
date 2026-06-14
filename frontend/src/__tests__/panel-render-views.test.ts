@@ -885,8 +885,8 @@ describe("_renderSettingsSection (via EppSettingsView)", () => {
 		const sv = createSettingsView() as any;
 		const c = renderTo(sv.renderSettingsSection("sensitivity"));
 		expect(c.textContent).toContain("settings.motion_sensor");
-		// 6 sensitivity sliders + 3 environmental offset sliders.
-		expect(c.querySelectorAll(".setting-range").length).toBe(9);
+		// 6 sensitivity sliders + assisted-clear timeout + 3 environmental offset sliders.
+		expect(c.querySelectorAll(".setting-range").length).toBe(10);
 	});
 
 	it("renders reporting section", () => {
@@ -949,7 +949,7 @@ describe("_renderSensitivities (via EppSettingsView)", () => {
 		const sv = createSettingsView();
 		const c = renderTo((sv as any).renderSensitivities());
 		expect(c.textContent).toContain("settings.environmental");
-		expect(c.querySelectorAll(".setting-range").length).toBe(9);
+		expect(c.querySelectorAll(".setting-range").length).toBe(10);
 	});
 });
 

@@ -288,6 +288,57 @@ describe("renderDetectionRanges", () => {
 	});
 });
 
+describe("sensor-assisted clear", () => {
+	function assistedClearTimeoutRow(c: HTMLElement): HTMLElement {
+		const rows = Array.from(
+			c.querySelectorAll(".setting-row"),
+		) as HTMLElement[];
+		const row = rows.find(
+			(r) =>
+				r.querySelector("label")?.textContent?.trim() ===
+				"settings.assisted_clear_timeout",
+		);
+		if (!row) throw new Error("assisted-clear timeout row not found");
+		return row;
+	}
+
+	it("greys out (row-disabled) the timeout slider when the toggle is off", () => {
+		const sv = createView({ assistedClearEnabled: false });
+		const c = renderTo((sv as any).renderSensitivities());
+		expect(assistedClearTimeoutRow(c).classList.contains("row-disabled")).toBe(
+			true,
+		);
+		document.body.removeChild(c);
+	});
+
+	it("does not grey out the timeout slider when the toggle is on", () => {
+		const sv = createView({ assistedClearEnabled: true });
+		const c = renderTo((sv as any).renderSensitivities());
+		expect(assistedClearTimeoutRow(c).classList.contains("row-disabled")).toBe(
+			false,
+		);
+		document.body.removeChild(c);
+	});
+
+	it("toggling the switch updates overrides and fires setting-change", () => {
+		const sv = createView({ assistedClearEnabled: true });
+		const c = renderTo((sv as any).renderSensitivities());
+
+		let firedKey = "";
+		sv.addEventListener("setting-change", ((e: CustomEvent) => {
+			firedKey = e.detail.key;
+		}) as EventListener);
+
+		const checkboxes = c.querySelectorAll('input[type="checkbox"]');
+		const cb = checkboxes[checkboxes.length - 1] as HTMLInputElement;
+		cb.checked = false;
+		cb.dispatchEvent(new Event("change"));
+		expect((sv as any)._overrides.assistedClearEnabled).toBe(false);
+		expect(firedKey).toBe("assistedClearEnabled");
+		document.body.removeChild(c);
+	});
+});
+
 describe("renderSensitivities", () => {
 	it("renders sensitivity controls", () => {
 		const sv = createView();

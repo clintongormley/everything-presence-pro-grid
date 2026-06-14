@@ -606,8 +606,8 @@ describe("_renderSensitivities DOM events", () => {
 		const ranges = c.querySelectorAll(
 			".setting-range",
 		) as NodeListOf<HTMLInputElement>;
-		// 6 sensitivity sliders + 3 environmental offset sliders.
-		expect(ranges.length).toBe(9);
+		// 6 sensitivity sliders + assisted-clear timeout + 3 environmental offset sliders.
+		expect(ranges.length).toBe(10);
 
 		// First slider: motion presence timeout.
 		const motion = ranges[0];
