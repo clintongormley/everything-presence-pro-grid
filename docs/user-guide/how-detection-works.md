@@ -156,7 +156,9 @@ The static and motion sensors fix that. The engine watches for a specific combin
 - Motion sensor: **inactive** (in the case of the **Occupancy** entity), and
 - No zone currently *occupied* (only *pending* ones remain).
 
-When all three hold, the room is treated as empty and a grace timer starts. Once the room has stayed empty for the configured **Clear delay**, every *pending* zone is force-cleared and Occupancy and mmWave Presence drop to `off`. The reasoning: if neither hardware sensor sees anyone and the radar isn't currently tracking a target, the room is empty and there's nothing to wait for. The delay defaults to 5 s on new installs (set it to **0** to clear immediately); installs upgraded from an earlier version keep clearing immediately until you change it. Any re-detection during the delay — either sensor going active again, or a target re-occupying a zone — cancels the clear and resets the timer.
+When all three hold, the room is treated as empty and a grace timer starts. Once the room has stayed empty for the configured **Clear delay**, every *pending* zone is force-cleared and **Occupancy** and **mmWave Presence** drop to `off`. If neither hardware sensor sees anyone and the radar isn't currently tracking a target, the room is empty. The **Clear delay** just guards against a brief sensor dropout before the zones are released.
+
+Any re-detection during the delay — either sensor going active again, or a target re-occupying a zone — cancels the clear and resets the timer. The delay defaults to 5 s on new installs (set it to **0** to clear immediately); installs upgraded from an earlier version keep clearing immediately until you change it.
 
 The whole feature is optional: turn it off under [Sensor calibration → Sensor-assisted clear](settings/sensor-calibration.md#sensor-assisted-clear) and each zone simply clears on its own Presence timeout instead.
 
