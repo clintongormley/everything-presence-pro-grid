@@ -161,6 +161,7 @@ export class EppZoneColorPicker extends LitElement {
 						<input
 							class="custom-input"
 							type="color"
+							aria-label=${this.localize("color.custom")}
 							.value=${this.value}
 							@change=${(e: Event) =>
 								this._select((e.target as HTMLInputElement).value)}

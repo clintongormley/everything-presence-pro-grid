@@ -3044,6 +3044,7 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 						<input
 							class="custom-input"
 							type="color"
+							aria-label=${this.localize("color.custom")}
 							.value=${this.value}
 							@change=${e=>this._select(e.target.value)}
 						/>

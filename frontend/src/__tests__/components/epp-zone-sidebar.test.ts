@@ -172,7 +172,8 @@ describe("epp-zone-sidebar element", () => {
 		const tpl = (el as any)._renderZoneSidebar();
 		const c = renderTo(tpl);
 
-		const colorPicker = c.querySelector(".zone-color-picker");
+		// Inactive zones must NOT render the picker component (only the active one does).
+		const colorPicker = c.querySelector("epp-zone-color-picker");
 		expect(colorPicker).toBeNull();
 
 		const colorDots = c.querySelectorAll(".zone-color-dot");
