@@ -85,6 +85,8 @@ async def test_set_settings_nan_rejected_at_ws_layer(
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,

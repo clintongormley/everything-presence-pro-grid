@@ -408,10 +408,12 @@ class TestDeviceConnection:
         svc_tracking.name = "epp_set_tracking"
         svc_stuck = MagicMock()
         svc_stuck.name = "epp_set_stuck_target_timeout"
+        svc_assisted = MagicMock()
+        svc_assisted.name = "epp_set_assisted_clear"
         svc_static = MagicMock()
         svc_static.name = "epp_set_static_presence"
 
-        services = [svc_env, svc_motion, svc_tracking, svc_stuck, svc_static]
+        services = [svc_env, svc_motion, svc_tracking, svc_stuck, svc_assisted, svc_static]
 
         with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
             mock_client = mock_cls.return_value
@@ -429,6 +431,8 @@ class TestDeviceConnection:
                         "motion_timeout": 8.0,
                         "target_max_distance": 4.5,
                         "stuck_target_timeout": 120.0,
+                        "assisted_clear_enabled": False,
+                        "assisted_clear_timeout": 0.0,
                         "static_min_distance": 0.5,
                         "static_max_distance": 12.0,
                         "static_trigger_threshold": 4,
@@ -457,6 +461,9 @@ class TestDeviceConnection:
 
             # stuck_target_timeout: value passed through
             assert payloads["epp_set_stuck_target_timeout"] == {"timeout": 120.0}
+
+            # assisted_clear: enabled + timeout passed through
+            assert payloads["epp_set_assisted_clear"] == {"enabled": False, "timeout": 0.0}
 
             # static_presence: thresholds inverted (10 - value) onto the chip's
             # 1-9 sensitivity range, trigger_range set to max_distance,
@@ -538,10 +545,12 @@ class TestDeviceConnection:
         svc_tracking.name = "epp_set_tracking"
         svc_stuck = MagicMock()
         svc_stuck.name = "epp_set_stuck_target_timeout"
+        svc_assisted = MagicMock()
+        svc_assisted.name = "epp_set_assisted_clear"
         svc_static = MagicMock()
         svc_static.name = "epp_set_static_presence"
 
-        services = [svc_env, svc_motion, svc_tracking, svc_stuck, svc_static]
+        services = [svc_env, svc_motion, svc_tracking, svc_stuck, svc_assisted, svc_static]
 
         with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
             mock_client = mock_cls.return_value
@@ -564,6 +573,7 @@ class TestDeviceConnection:
             assert payloads["epp_set_motion_timeout"] == {"timeout": 5.0}
             assert payloads["epp_set_tracking"] == {"max_range": 6000.0}
             assert payloads["epp_set_stuck_target_timeout"] == {"timeout": 300.0}
+            assert payloads["epp_set_assisted_clear"] == {"enabled": True, "timeout": 5.0}
             assert payloads["epp_set_static_presence"] == {
                 "min_range": 0.3,
                 "max_range": 16.0,

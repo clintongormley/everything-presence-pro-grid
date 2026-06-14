@@ -1346,6 +1346,8 @@ class TestSchemaInputBounds:
             "target_auto_distance": True,
             "target_max_distance": 4.0,
             "stuck_target_timeout": 120.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": False,
             "static_min_distance": 0.3,
             "static_max_distance": 8.0,
@@ -1533,6 +1535,8 @@ class TestSchemaInputBounds:
             "target_auto_distance": True,
             "target_max_distance": 4.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": False,
             "static_min_distance": 0.3,
             "static_max_distance": 8.0,
@@ -1787,6 +1791,7 @@ class TestSchemaInputBounds:
         "motion_timeout",
         "target_max_distance",
         "stuck_target_timeout",
+        "assisted_clear_timeout",
         "static_min_distance",
         "static_max_distance",
         "static_timeout",
@@ -2271,6 +2276,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 4.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": False,
             "static_min_distance": 0.3,
             "static_max_distance": 8.0,
@@ -2309,6 +2316,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 4.0,
             "stuck_target_timeout": 120.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": False,
             "static_min_distance": 0.3,
             "static_max_distance": 8.0,
@@ -2334,6 +2343,8 @@ class TestWebSocketSettings:
         assert settings["target_auto_distance"] is True
         assert settings["target_max_distance"] == 4.0
         assert settings["stuck_target_timeout"] == 120.0
+        assert settings["assisted_clear_enabled"] is True
+        assert settings["assisted_clear_timeout"] == 5
         assert settings["static_auto_distance"] is False
         assert settings["static_min_distance"] == 0.3
         assert settings["static_max_distance"] == 8.0
@@ -2347,6 +2358,50 @@ class TestWebSocketSettings:
         mock_dm.store.async_save.assert_awaited()
         mock_dm.request_push.assert_called_with("AA:BB:CC:DD:EE:FF")
         connection.send_result.assert_called_once_with(11)
+
+    async def test_set_settings_stores_assisted_clear_non_defaults(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """set_settings persists non-default assisted-clear values (disabled / 0s)."""
+        mock_dm = await setup_integration(hass, config_entry)
+        register_managed_device(mock_dm)
+
+        from custom_components.eppgrid.websocket_api import websocket_set_settings
+
+        connection = MagicMock()
+        msg = {
+            "id": 12,
+            "type": "eppgrid/set_settings",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "temperature_offset": 0.0,
+            "humidity_offset": 0.0,
+            "illuminance_offset": 0.0,
+            "motion_timeout": 5.0,
+            "target_auto_distance": True,
+            "target_max_distance": 4.0,
+            "stuck_target_timeout": 120.0,
+            "assisted_clear_enabled": False,
+            "assisted_clear_timeout": 0,
+            "static_auto_distance": False,
+            "static_min_distance": 0.3,
+            "static_max_distance": 8.0,
+            "static_trigger_threshold": 3,
+            "static_renew_threshold": 3,
+            "static_timeout": 30.0,
+            "static_on_delay": 0.0,
+            "led_mode": "Manual Control",
+            "led_brightness": 1.0,
+            "led_presence_color": "#CC33FF",
+            "relay_trigger_mode": "disabled",
+            "relay_contact_mode": "no",
+        }
+
+        await call_async_handler(hass, websocket_set_settings, connection, msg)
+
+        settings = mock_dm.store.devices["AA:BB:CC:DD:EE:FF"]["settings"]
+        assert settings["assisted_clear_enabled"] is False
+        assert settings["assisted_clear_timeout"] == 0
+        connection.send_result.assert_called_once_with(12)
 
     async def test_set_settings_stores_led_values(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
         """set_settings stores LED settings under device_config['settings']."""
@@ -2367,6 +2422,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -2411,6 +2468,8 @@ class TestWebSocketSettings:
                 "target_auto_distance": True,
                 "target_max_distance": 4.0,
                 "stuck_target_timeout": 300.0,
+                "assisted_clear_enabled": True,
+                "assisted_clear_timeout": 5,
                 "static_auto_distance": False,
                 "static_min_distance": 0.3,
                 "static_max_distance": 8.0,
@@ -2459,6 +2518,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -2508,6 +2569,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -2554,6 +2617,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -2594,6 +2659,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 4.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": False,
             "static_min_distance": 0.3,
             "static_max_distance": 8.0,
@@ -2633,6 +2700,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": False,
             "static_min_distance": 0.3,
             "static_max_distance": 8.0,
@@ -2681,6 +2750,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": False,
             "static_min_distance": 0.3,
             "static_max_distance": 8.0,
@@ -2722,6 +2793,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -2762,6 +2835,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -2799,6 +2874,8 @@ class TestWebSocketSettings:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -2842,6 +2919,8 @@ class TestWebSocketSettings:
                 "target_auto_distance": True,
                 "target_max_distance": 6.0,
                 "stuck_target_timeout": 300.0,
+                "assisted_clear_enabled": True,
+                "assisted_clear_timeout": 5,
                 "static_auto_distance": True,
                 "static_min_distance": 0.3,
                 "static_max_distance": 16.0,
@@ -2882,6 +2961,8 @@ class TestWebSocketSettings:
                 "target_auto_distance": True,
                 "target_max_distance": 6.0,
                 "stuck_target_timeout": 300.0,
+                "assisted_clear_enabled": True,
+                "assisted_clear_timeout": 5,
                 "static_auto_distance": True,
                 "static_min_distance": 0.3,
                 "static_max_distance": 16.0,
@@ -2926,6 +3007,8 @@ class TestZonePresencePreservation:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -2963,6 +3046,8 @@ class TestZonePresencePreservation:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -3003,6 +3088,8 @@ class TestZonePresencePreservation:
                 "target_auto_distance": True,
                 "target_max_distance": 6.0,
                 "stuck_target_timeout": 300.0,
+                "assisted_clear_enabled": True,
+                "assisted_clear_timeout": 5,
                 "static_auto_distance": True,
                 "static_min_distance": 0.3,
                 "static_max_distance": 16.0,
@@ -3048,6 +3135,8 @@ class TestZonePresencePreservation:
                 "target_auto_distance": True,
                 "target_max_distance": 6.0,
                 "stuck_target_timeout": 300.0,
+                "assisted_clear_enabled": True,
+                "assisted_clear_timeout": 5,
                 "static_auto_distance": True,
                 "static_min_distance": 0.3,
                 "static_max_distance": 16.0,
@@ -3098,6 +3187,8 @@ class TestZonePresencePreservation:
             "target_auto_distance": True,
             "target_max_distance": 6.0,
             "stuck_target_timeout": 300.0,
+            "assisted_clear_enabled": True,
+            "assisted_clear_timeout": 5,
             "static_auto_distance": True,
             "static_min_distance": 0.3,
             "static_max_distance": 16.0,
@@ -4288,6 +4379,8 @@ class TestNotReadyGuards:
                     "target_auto_distance": True,
                     "target_max_distance": 4.0,
                     "stuck_target_timeout": 300.0,
+                    "assisted_clear_enabled": True,
+                    "assisted_clear_timeout": 5,
                     "static_auto_distance": False,
                     "static_min_distance": 0.3,
                     "static_max_distance": 8.0,
@@ -5107,6 +5200,8 @@ class TestProtocolVersionGuard:
                     "target_auto_distance": True,
                     "target_max_distance": 4.0,
                     "stuck_target_timeout": 300.0,
+                    "assisted_clear_enabled": True,
+                    "assisted_clear_timeout": 5,
                     "static_auto_distance": False,
                     "static_min_distance": 0.3,
                     "static_max_distance": 8.0,

@@ -492,6 +492,18 @@ class DeviceConnection:
                 _LOGGER.debug("Pushed stuck_target_timeout to %s", self._host)
                 pushed.append("stuck_target_timeout")
 
+            svc = self._services.get("epp_set_assisted_clear")
+            if svc:
+                await self._client.execute_service(
+                    svc,
+                    {
+                        "enabled": settings.get("assisted_clear_enabled", True),
+                        "timeout": settings.get("assisted_clear_timeout", 5.0),
+                    },
+                )
+                _LOGGER.debug("Pushed assisted_clear to %s", self._host)
+                pushed.append("assisted_clear")
+
             svc = self._services.get("epp_set_static_presence")
             if svc:
                 await self._client.execute_service(svc, _static_presence_args(settings))
