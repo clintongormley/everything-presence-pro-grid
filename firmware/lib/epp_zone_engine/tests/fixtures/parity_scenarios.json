@@ -586,6 +586,60 @@
         }
       ]
     },
+    "test_assisted_clear_grace": {
+      "assisted_clear_enabled": true,
+      "assisted_clear_timeout": 3.0,
+      "ticks": [
+        {"t": 100.0, "targets": [{"x": 2550, "y": 150, "frames": 7}],
+         "sensors": {"static_on": true, "static_timeout": 1.0}},
+        {"t": 100.5, "targets": [{"x": 2550, "y": 150, "frames": 7}],
+         "sensors": {"static_on": true, "static_timeout": 1.0}},
+        {"t": 101.0, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}},
+        {"t": 102.5, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}},
+        {"t": 104.0, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}},
+        {"t": 105.0, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}},
+        {"t": 105.5, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}},
+        {"t": 106.0, "targets": [{"x": 2550, "y": 150, "frames": 0}],
+         "sensors": {"static_on": false, "static_timeout": 1.0}}
+      ],
+      "expected": [
+        {
+          "zone_occupancy": {"0": false}
+        },
+        {
+          "zone_occupancy": {"0": true}
+        },
+        {
+          "zone_occupancy": {"0": true},
+          "targets": [{"status": "pending", "x": 2550, "y": 150}]
+        },
+        {
+          "zone_occupancy": {"0": true},
+          "targets": [{"status": "pending", "x": 2550, "y": 150}]
+        },
+        {
+          "zone_occupancy": {"0": true},
+          "targets": [{"status": "pending", "x": 2550, "y": 150}]
+        },
+        {
+          "zone_occupancy": {"0": true},
+          "targets": [{"status": "pending", "x": 2550, "y": 150}]
+        },
+        {
+          "zone_occupancy": {"0": false},
+          "targets": [{"status": "pending", "x": 2550, "y": 150}]
+        },
+        {
+          "zone_occupancy": {"0": false},
+          "targets": [{"status": "inactive"}]
+        }
+      ]
+    },
     "test_overlay_exit_handoff_suppress_cell": {
       "ticks": [
         {"t": 100.0, "targets": [{"x": 2850, "y": 450, "frames": 5}]},

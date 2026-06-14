@@ -89,6 +89,8 @@ interface FixtureExpected {
 interface FixtureScenario {
 	known_divergence?: { ts?: string; cpp?: string };
 	stuck_target_timeout?: number;
+	assisted_clear_enabled?: boolean;
+	assisted_clear_timeout?: number;
 	ticks: FixtureTick[];
 	expected: FixtureExpected[];
 }
@@ -452,6 +454,10 @@ describe("Shared-fixture parity (parity_scenarios.json drives both engines)", ()
 					motionTimeout: tick.sensors?.motion_timeout ?? 10,
 					// Mirror of engine.set_stuck_target_timeout (0 = disabled).
 					stuckTargetTimeout: scenario.stuck_target_timeout ?? 0,
+					// Mirror of engine.set_assisted_clear (enabled=true,
+					// timeout=0 = legacy immediate clear when absent).
+					assistedClearEnabled: scenario.assisted_clear_enabled,
+					assistedClearTimeout: scenario.assisted_clear_timeout,
 					// Fixture-driven clock — never Date.now(), so timeout
 					// scenarios are exact instead of wall-clock approximations.
 					now: tick.t,

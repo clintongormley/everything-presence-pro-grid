@@ -162,6 +162,15 @@ static void run_scenario(const std::string& name, const json& scenario,
         engine.set_stuck_target_timeout(scenario["stuck_target_timeout"].get<float>());
     }
 
+    // Optional scenario-level sensor-assisted clear config. Default (absent)
+    // leaves the engine's enabled=true, timeout=0 (legacy immediate clear).
+    if (scenario.contains("assisted_clear_enabled") ||
+        scenario.contains("assisted_clear_timeout")) {
+        bool enabled = scenario.value("assisted_clear_enabled", true);
+        float timeout = scenario.value("assisted_clear_timeout", 0.0f);
+        engine.set_assisted_clear(enabled, timeout);
+    }
+
     auto& ticks = scenario["ticks"];
     auto& expected_arr = scenario["expected"];
 

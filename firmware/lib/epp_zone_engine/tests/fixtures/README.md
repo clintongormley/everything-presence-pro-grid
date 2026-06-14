@@ -72,6 +72,25 @@ Each scenario runs on a **fresh engine** (no state carries across scenarios).
                                         // scenario (absent ⇒ 0 = disabled;
                                         // C++: set_stuck_target_timeout,
                                         // TS: params.stuckTargetTimeout)
+  "assisted_clear_enabled": true,       // optional — sensor-assisted clear
+                                        // master switch (absent ⇒ true;
+                                        // C++: set_assisted_clear enabled,
+                                        // TS: params.assistedClearEnabled).
+                                        // false leaves pending zones to their
+                                        // own per-zone timeout (no sensor clear)
+  "assisted_clear_timeout": 3.0,        // optional, SECONDS — grace delay before
+                                        // a sensor-confirmed-empty room
+                                        // force-clears its PENDING_CLEAR zones
+                                        // (absent ⇒ 0 = immediate, legacy
+                                        // behaviour; C++: set_assisted_clear
+                                        // timeout, TS: params.assistedClearTimeout).
+                                        // The "empty" condition (both sensors
+                                        // INACTIVE, no zone re-OCCUPIED) must
+                                        // hold continuously for this many
+                                        // seconds; any re-activation resets the
+                                        // grace timer. Either key present ⇒ both
+                                        // applied (the absent one takes its
+                                        // default)
   "ticks": [
     { "t": 100.0,                       // engine timestamp, SECONDS (drives all
                                         // timeout math — no wall clock anywhere)
