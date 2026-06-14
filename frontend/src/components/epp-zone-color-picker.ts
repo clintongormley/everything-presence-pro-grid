@@ -1,5 +1,6 @@
 import { css, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators.js";
+import { DocumentListenerGroup } from "../lib/document-listeners.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 
 // Vertical gap (px) between the trigger dot and the popover below it.
@@ -22,7 +23,7 @@ export class EppZoneColorPicker extends LitElement {
 
 	disconnectedCallback(): void {
 		super.disconnectedCallback();
-		this._detachDismiss();
+		this._dismiss.detach();
 	}
 
 	static styles = css`
@@ -102,14 +103,6 @@ export class EppZoneColorPicker extends LitElement {
 		}
 	`;
 
-	private get _normValue(): string {
-		return this.value.toLowerCase();
-	}
-
-	private _isPresetValue(): boolean {
-		return this.presets.some((c) => c.toLowerCase() === this._normValue);
-	}
-
 	render() {
 		const glow = this.occupiedGlow
 			? `box-shadow: 0 0 6px 2px ${this.value};`
@@ -129,29 +122,34 @@ export class EppZoneColorPicker extends LitElement {
 	}
 
 	private _renderPopover() {
+		const normValue = this.value.toLowerCase();
 		const used = new Set(this.usedColors.map((c) => c.toLowerCase()));
-		const customSelected = !this._isPresetValue();
+		const customSelected = !this.presets.some(
+			(c) => c.toLowerCase() === normValue,
+		);
 		return html`
 			<div class="popover" role="dialog">
 				<div class="grid">
 					${this.presets.map((color, i) => {
-						const isSel = color.toLowerCase() === this._normValue;
-						const isUsed = used.has(color.toLowerCase());
+						const isSel = color.toLowerCase() === normValue;
+						const inUseLabel = used.has(color.toLowerCase())
+							? this.localize("color.in_use")
+							: null;
 						const presetLabel = this.localize("color.preset", { n: i + 1 });
-						const ariaLabel = isUsed
-							? `${presetLabel}, ${this.localize("color.in_use")}`
+						const ariaLabel = inUseLabel
+							? `${presetLabel}, ${inUseLabel}`
 							: presetLabel;
 						return html`<button
 							class="swatch preset ${isSel ? "selected" : ""} ${
-								isUsed ? "in-use" : ""
+								inUseLabel ? "in-use" : ""
 							}"
 							type="button"
 							data-color=${color}
 							style="background: ${color};"
-							title=${isUsed ? this.localize("color.in_use") : nothing}
+							title=${inUseLabel ?? nothing}
 							aria-label=${ariaLabel}
 							aria-pressed=${isSel ? "true" : "false"}
-					@click=${() => this._select(color)}
+							@click=${() => this._select(color)}
 						></button>`;
 					})}
 					<label
@@ -175,11 +173,10 @@ export class EppZoneColorPicker extends LitElement {
 
 	private _toggle = (): void => {
 		if (this._open) {
-			this._open = false;
-			this._detachDismiss();
+			this._close();
 		} else {
 			this._open = true;
-			this._attachDismiss();
+			this._dismiss.attach();
 		}
 	};
 
@@ -189,8 +186,7 @@ export class EppZoneColorPicker extends LitElement {
 
 	private _select(color: string): void {
 		// Close first so a value-changed listener sees the popover already closed.
-		this._open = false;
-		this._detachDismiss();
+		this._close();
 		this.dispatchEvent(
 			new CustomEvent("value-changed", {
 				detail: { value: color },
@@ -204,7 +200,7 @@ export class EppZoneColorPicker extends LitElement {
 
 	private _close = (): void => {
 		this._open = false;
-		this._detachDismiss();
+		this._dismiss.detach();
 	};
 
 	private _onOutside = (e: Event): void => {
@@ -214,26 +210,33 @@ export class EppZoneColorPicker extends LitElement {
 		this._close();
 	};
 
-	private _onKeydown = (e: KeyboardEvent): void => {
-		if (e.key === "Escape") {
+	private _onKeydown = (e: Event): void => {
+		if ((e as KeyboardEvent).key === "Escape") {
 			this._close();
 			this._focusTrigger();
 		}
 	};
 
-	private _attachDismiss(): void {
-		document.addEventListener("pointerdown", this._onOutside, true);
-		document.addEventListener("keydown", this._onKeydown, true);
-		window.addEventListener("scroll", this._close, true);
-		window.addEventListener("resize", this._close, true);
-	}
-
-	private _detachDismiss(): void {
-		document.removeEventListener("pointerdown", this._onOutside, true);
-		document.removeEventListener("keydown", this._onKeydown, true);
-		window.removeEventListener("scroll", this._close, true);
-		window.removeEventListener("resize", this._close, true);
-	}
+	// Global dismiss listeners, active only while the popover is open. Declared
+	// after the handler fields it references (DocumentListenerGroup throws if a
+	// listener is undefined at construction). Capture phase so an inner
+	// scroll container (the sidebar's scroll area) still dismisses the popover.
+	private _dismiss = new DocumentListenerGroup([
+		{
+			target: document,
+			type: "pointerdown",
+			listener: this._onOutside,
+			options: true,
+		},
+		{
+			target: document,
+			type: "keydown",
+			listener: this._onKeydown,
+			options: true,
+		},
+		{ target: window, type: "scroll", listener: this._close, options: true },
+		{ target: window, type: "resize", listener: this._close, options: true },
+	]);
 
 	updated(): void {
 		if (!this._open) return;

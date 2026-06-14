@@ -155,7 +155,7 @@ describe("epp-zone-color-picker — selection events", () => {
 describe("epp-zone-color-picker — dismissal", () => {
 	async function opened(): Promise<EppZoneColorPicker> {
 		const el = await fixture();
-		(el.shadowRoot!.querySelector(".trigger") as HTMLElement).click();
+		openPopover(el);
 		await el.updateComplete;
 		expect(el.shadowRoot!.querySelector(".popover")).not.toBeNull();
 		return el;

@@ -3011,7 +3011,7 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 			color: var(--secondary-text-color, #757575);
 		}
 
-	`,e([ge({attribute:!1})],Us.prototype,"overlayMode",void 0),e([ge({attribute:!1})],Us.prototype,"localize",void 0),customElements.get("epp-overlay-sidebar")||customElements.define("epp-overlay-sidebar",Us);class zs extends le{constructor(){super(...arguments),this.value="#000000",this.presets=[],this.usedColors=[],this.occupiedGlow=!1,this.localize=Bi,this._open=!1,this._toggle=()=>{this._open?(this._open=!1,this._detachDismiss()):(this._open=!0,this._attachDismiss())},this._close=()=>{this._open=!1,this._detachDismiss()},this._onOutside=e=>{e.composedPath().includes(this)||this._close()},this._onKeydown=e=>{"Escape"===e.key&&(this._close(),this._focusTrigger())}}disconnectedCallback(){super.disconnectedCallback(),this._detachDismiss()}get _normValue(){return this.value.toLowerCase()}_isPresetValue(){return this.presets.some(e=>e.toLowerCase()===this._normValue)}render(){const e=this.occupiedGlow?`box-shadow: 0 0 6px 2px ${this.value};`:"";return $`
+	`,e([ge({attribute:!1})],Us.prototype,"overlayMode",void 0),e([ge({attribute:!1})],Us.prototype,"localize",void 0),customElements.get("epp-overlay-sidebar")||customElements.define("epp-overlay-sidebar",Us);class zs extends le{constructor(){super(...arguments),this.value="#000000",this.presets=[],this.usedColors=[],this.occupiedGlow=!1,this.localize=Bi,this._open=!1,this._toggle=()=>{this._open?this._close():(this._open=!0,this._dismiss.attach())},this._close=()=>{this._open=!1,this._dismiss.detach()},this._onOutside=e=>{e.composedPath().includes(this)||this._close()},this._onKeydown=e=>{"Escape"===e.key&&(this._close(),this._focusTrigger())},this._dismiss=new Qi([{target:document,type:"pointerdown",listener:this._onOutside,options:!0},{target:document,type:"keydown",listener:this._onKeydown,options:!0},{target:window,type:"scroll",listener:this._close,options:!0},{target:window,type:"resize",listener:this._close,options:!0}])}disconnectedCallback(){super.disconnectedCallback(),this._dismiss.detach()}render(){const e=this.occupiedGlow?`box-shadow: 0 0 6px 2px ${this.value};`:"";return $`
 			<button
 				class="trigger"
 				type="button"
@@ -3022,25 +3022,25 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 				@click=${this._toggle}
 			></button>
 			${this._open?this._renderPopover():J}
-		`}_renderPopover(){const e=new Set(this.usedColors.map(e=>e.toLowerCase())),t=!this._isPresetValue();return $`
+		`}_renderPopover(){const e=this.value.toLowerCase(),t=new Set(this.usedColors.map(e=>e.toLowerCase())),i=!this.presets.some(t=>t.toLowerCase()===e);return $`
 			<div class="popover" role="dialog">
 				<div class="grid">
-					${this.presets.map((t,i)=>{const s=t.toLowerCase()===this._normValue,r=e.has(t.toLowerCase()),o=this.localize("color.preset",{n:i+1}),n=r?`${o}, ${this.localize("color.in_use")}`:o;return $`<button
-							class="swatch preset ${s?"selected":""} ${r?"in-use":""}"
+					${this.presets.map((i,s)=>{const r=i.toLowerCase()===e,o=t.has(i.toLowerCase())?this.localize("color.in_use"):null,n=this.localize("color.preset",{n:s+1});return $`<button
+							class="swatch preset ${r?"selected":""} ${o?"in-use":""}"
 							type="button"
-							data-color=${t}
-							style="background: ${t};"
-							title=${r?this.localize("color.in_use"):J}
-							aria-label=${n}
-							aria-pressed=${s?"true":"false"}
-					@click=${()=>this._select(t)}
+							data-color=${i}
+							style="background: ${i};"
+							title=${o??J}
+							aria-label=${o?`${n}, ${o}`:n}
+							aria-pressed=${r?"true":"false"}
+							@click=${()=>this._select(i)}
 						></button>`})}
 					<label
-						class="swatch custom ${t?"selected":""}"
-						style=${t?`background: ${this.value};`:""}
+						class="swatch custom ${i?"selected":""}"
+						style=${i?`background: ${this.value};`:""}
 						title=${this.localize("color.custom")}
 					>
-						<span class="custom-glyph">${t?"✎":"+"}</span>
+						<span class="custom-glyph">${i?"✎":"+"}</span>
 						<input
 							class="custom-input"
 							type="color"
@@ -3050,7 +3050,7 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 					</label>
 				</div>
 			</div>
-		`}_focusTrigger(){this.shadowRoot?.querySelector(".trigger")?.focus()}_select(e){this._open=!1,this._detachDismiss(),this.dispatchEvent(new CustomEvent("value-changed",{detail:{value:e},bubbles:!0,composed:!0})),this._focusTrigger()}_attachDismiss(){document.addEventListener("pointerdown",this._onOutside,!0),document.addEventListener("keydown",this._onKeydown,!0),window.addEventListener("scroll",this._close,!0),window.addEventListener("resize",this._close,!0)}_detachDismiss(){document.removeEventListener("pointerdown",this._onOutside,!0),document.removeEventListener("keydown",this._onKeydown,!0),window.removeEventListener("scroll",this._close,!0),window.removeEventListener("resize",this._close,!0)}updated(){if(!this._open)return;const e=this.shadowRoot?.querySelector(".popover"),t=this.shadowRoot?.querySelector(".trigger");if(!e||!t)return;const i=t.getBoundingClientRect();e.style.left=`${i.left}px`,e.style.top=`${i.bottom+6}px`}}zs.styles=n`
+		`}_focusTrigger(){this.shadowRoot?.querySelector(".trigger")?.focus()}_select(e){this._close(),this.dispatchEvent(new CustomEvent("value-changed",{detail:{value:e},bubbles:!0,composed:!0})),this._focusTrigger()}updated(){if(!this._open)return;const e=this.shadowRoot?.querySelector(".popover"),t=this.shadowRoot?.querySelector(".trigger");if(!e||!t)return;const i=t.getBoundingClientRect();e.style.left=`${i.left}px`,e.style.top=`${i.bottom+6}px`}}zs.styles=n`
 		:host { display: inline-flex; }
 		.trigger {
 			width: 16px;
