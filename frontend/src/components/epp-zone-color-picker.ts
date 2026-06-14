@@ -139,7 +139,7 @@ export class EppZoneColorPicker extends LitElement {
 							title=${isUsed ? this.localize("color.in_use") : nothing}
 							aria-label=${this.localize("color.preset", { n: i + 1 })}
 							aria-pressed=${isSel ? "true" : "false"}
-						@click=${() => this._select(color)}
+					@click=${() => this._select(color)}
 						></button>`;
 					})}
 					<label
@@ -166,6 +166,7 @@ export class EppZoneColorPicker extends LitElement {
 	};
 
 	private _select(color: string): void {
+		// Close first so a value-changed listener sees the popover already closed.
 		this._open = false;
 		this.dispatchEvent(
 			new CustomEvent("value-changed", {

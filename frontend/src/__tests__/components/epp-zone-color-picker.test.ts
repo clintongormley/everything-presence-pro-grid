@@ -98,7 +98,7 @@ describe("epp-zone-color-picker — render", () => {
 describe("epp-zone-color-picker — selection events", () => {
 	it("emits value-changed with the chosen preset and closes the popover", async () => {
 		const el = await fixture({ value: "#B8E7FF" });
-		(el.shadowRoot!.querySelector(".trigger") as HTMLElement).click();
+		openPopover(el);
 		await el.updateComplete;
 		const detail = new Promise<{ value: string }>((resolve) => {
 			el.addEventListener("value-changed", (e) =>
@@ -117,7 +117,7 @@ describe("epp-zone-color-picker — selection events", () => {
 
 	it("emits value-changed from the custom native input and closes", async () => {
 		const el = await fixture({ value: "#B8E7FF" });
-		(el.shadowRoot!.querySelector(".trigger") as HTMLElement).click();
+		openPopover(el);
 		await el.updateComplete;
 		const detail = new Promise<{ value: string }>((resolve) => {
 			el.addEventListener("value-changed", (e) =>
