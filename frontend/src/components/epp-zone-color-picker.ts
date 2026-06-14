@@ -139,6 +139,7 @@ export class EppZoneColorPicker extends LitElement {
 							title=${isUsed ? this.localize("color.in_use") : nothing}
 							aria-label=${this.localize("color.preset", { n: i + 1 })}
 							aria-pressed=${isSel ? "true" : "false"}
+						@click=${() => this._select(color)}
 						></button>`;
 					})}
 					<label
@@ -151,6 +152,8 @@ export class EppZoneColorPicker extends LitElement {
 							class="custom-input"
 							type="color"
 							.value=${this.value}
+							@change=${(e: Event) =>
+								this._select((e.target as HTMLInputElement).value)}
 						/>
 					</label>
 				</div>
@@ -161,6 +164,17 @@ export class EppZoneColorPicker extends LitElement {
 	private _toggle = (): void => {
 		this._open = !this._open;
 	};
+
+	private _select(color: string): void {
+		this._open = false;
+		this.dispatchEvent(
+			new CustomEvent("value-changed", {
+				detail: { value: color },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+	}
 }
 
 if (!customElements.get("epp-zone-color-picker")) {

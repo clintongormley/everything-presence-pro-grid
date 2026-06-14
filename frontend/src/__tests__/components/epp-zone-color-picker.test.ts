@@ -94,3 +94,43 @@ describe("epp-zone-color-picker — render", () => {
 		expect(glyph!.textContent!.trim()).toBe("✎");
 	});
 });
+
+describe("epp-zone-color-picker — selection events", () => {
+	it("emits value-changed with the chosen preset and closes the popover", async () => {
+		const el = await fixture({ value: "#B8E7FF" });
+		(el.shadowRoot!.querySelector(".trigger") as HTMLElement).click();
+		await el.updateComplete;
+		const detail = new Promise<{ value: string }>((resolve) => {
+			el.addEventListener("value-changed", (e) =>
+				resolve((e as CustomEvent).detail),
+			);
+		});
+		(
+			el.shadowRoot!.querySelector(
+				'.swatch.preset[data-color="#F06292"]',
+			) as HTMLElement
+		).click();
+		expect((await detail).value).toBe("#F06292");
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
+	});
+
+	it("emits value-changed from the custom native input and closes", async () => {
+		const el = await fixture({ value: "#B8E7FF" });
+		(el.shadowRoot!.querySelector(".trigger") as HTMLElement).click();
+		await el.updateComplete;
+		const detail = new Promise<{ value: string }>((resolve) => {
+			el.addEventListener("value-changed", (e) =>
+				resolve((e as CustomEvent).detail),
+			);
+		});
+		const input = el.shadowRoot!.querySelector(
+			".custom-input",
+		) as HTMLInputElement;
+		input.value = "#abcdef";
+		input.dispatchEvent(new Event("change", { bubbles: true }));
+		expect((await detail).value).toBe("#abcdef");
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
+	});
+});
