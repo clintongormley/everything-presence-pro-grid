@@ -81,6 +81,13 @@ export class EppZoneColorPicker extends LitElement {
 				red, orange, yellow, lime, cyan, blue, magenta, red
 			);
 		}
+		/* The custom swatch's <input> is visually hidden, so mirror the
+		   selected ring on focus-within for keyboard users. */
+		.swatch.custom:focus-within {
+			box-shadow:
+				0 0 0 2px var(--card-background-color, #fff),
+				0 0 0 4px var(--primary-color, #03a9f4);
+		}
 		.custom-glyph {
 			position: absolute;
 			inset: 0;
@@ -128,7 +135,11 @@ export class EppZoneColorPicker extends LitElement {
 			(c) => c.toLowerCase() === normValue,
 		);
 		return html`
-			<div class="popover" role="dialog">
+			<div
+				class="popover"
+				role="dialog"
+				aria-label=${this.localize("color.choose")}
+			>
 				<div class="grid">
 					${this.presets.map((color, i) => {
 						const isSel = color.toLowerCase() === normValue;

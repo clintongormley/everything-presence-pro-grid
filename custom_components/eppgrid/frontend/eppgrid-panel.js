@@ -3023,7 +3023,11 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 			></button>
 			${this._open?this._renderPopover():J}
 		`}_renderPopover(){const e=this.value.toLowerCase(),t=new Set(this.usedColors.map(e=>e.toLowerCase())),i=!this.presets.some(t=>t.toLowerCase()===e);return $`
-			<div class="popover" role="dialog">
+			<div
+				class="popover"
+				role="dialog"
+				aria-label=${this.localize("color.choose")}
+			>
 				<div class="grid">
 					${this.presets.map((i,s)=>{const r=i.toLowerCase()===e,o=t.has(i.toLowerCase())?this.localize("color.in_use"):null,n=this.localize("color.preset",{n:s+1});return $`<button
 							class="swatch preset ${r?"selected":""} ${o?"in-use":""}"
@@ -3105,6 +3109,13 @@ const Fi=Symbol.for(""),Pi=e=>{if(e?.r===Fi)return e?._$litStatic$},Ui=(e,...t)=
 			background: conic-gradient(
 				red, orange, yellow, lime, cyan, blue, magenta, red
 			);
+		}
+		/* The custom swatch's <input> is visually hidden, so mirror the
+		   selected ring on focus-within for keyboard users. */
+		.swatch.custom:focus-within {
+			box-shadow:
+				0 0 0 2px var(--card-background-color, #fff),
+				0 0 0 4px var(--primary-color, #03a9f4);
 		}
 		.custom-glyph {
 			position: absolute;

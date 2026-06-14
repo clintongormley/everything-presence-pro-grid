@@ -202,6 +202,13 @@ describe("epp-zone-color-picker — dismissal", () => {
 		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
 	});
 
+	it("closes when the trigger is clicked a second time", async () => {
+		const el = await opened();
+		(el.shadowRoot!.querySelector(".trigger") as HTMLElement).click();
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".popover")).toBeNull();
+	});
+
 	it("can reopen after being dismissed", async () => {
 		const el = await fixture();
 		const trigger = el.shadowRoot!.querySelector(".trigger") as HTMLElement;
