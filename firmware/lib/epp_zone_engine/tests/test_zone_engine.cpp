@@ -1267,3 +1267,92 @@ TEST_CASE("stuck-target tracking is per-slot") {
     CHECK(r.targets[0].status == TargetStatus::INACTIVE);
     CHECK(r.targets[1].status == TargetStatus::ACTIVE);
 }
+
+TEST_CASE("assisted-clear: disabled -> falls back to per-zone timeout") {
+    ZoneEngine engine = make_parity_engine();
+    engine.set_assisted_clear(false, 0.0f);  // feature OFF
+    float t = 100.0f;
+    SensorInput sensors;
+    sensors.static_on = true;  sensors.static_timeout = 1.0f;
+    sensors.motion_on = true;  sensors.motion_timeout = 1.0f;
+
+    engine.tick(make_window_1(X_OFF + 150, 150, 7), t, sensors);
+    engine.tick(make_window_1(X_OFF + 150, 150, 7), t + 0.5f, sensors);
+    engine.tick(make_window_0(), t + 1.0f, sensors);  // zone 0 -> PENDING_CLEAR
+    sensors.static_on = false;  sensors.motion_on = false;
+
+    // Sensors inactive by t+3, but feature is OFF: zone stays occupied until
+    // its own 10s timeout (pending since t+1 -> clears at t+11).
+    const ProcessingResult& r1 = engine.tick(make_window_0(), t + 5.0f, sensors);
+    CHECK(r1.zone_occupancy[0]);  // NOT cleared (feature off)
+    const ProcessingResult& r2 = engine.tick(make_window_0(), t + 11.5f, sensors);
+    CHECK_FALSE(r2.zone_occupancy[0]);  // per-zone timeout
+}
+
+TEST_CASE("assisted-clear: grace delay holds then clears") {
+    ZoneEngine engine = make_parity_engine();
+    engine.set_assisted_clear(true, 5.0f);  // 5s grace
+    float t = 100.0f;
+    SensorInput sensors;
+    sensors.static_on = true;  sensors.static_timeout = 1.0f;
+    sensors.motion_on = true;  sensors.motion_timeout = 1.0f;
+
+    engine.tick(make_window_1(X_OFF + 150, 150, 7), t, sensors);
+    engine.tick(make_window_1(X_OFF + 150, 150, 7), t + 0.5f, sensors);
+    engine.tick(make_window_0(), t + 1.0f, sensors);  // PENDING_CLEAR
+    sensors.static_on = false;  sensors.motion_on = false;
+    engine.tick(make_window_0(), t + 2.0f, sensors);  // sensors pending
+    engine.tick(make_window_0(), t + 3.0f, sensors);  // sensors INACTIVE -> grace starts
+
+    // Sensors INACTIVE at t+3 -> grace timer starts. Grace = 5s -> clears t+8.
+    const ProcessingResult& r1 = engine.tick(make_window_0(), t + 7.0f, sensors);
+    CHECK(r1.zone_occupancy[0]);  // still within grace
+    const ProcessingResult& r2 = engine.tick(make_window_0(), t + 8.5f, sensors);
+    CHECK_FALSE(r2.zone_occupancy[0]);  // grace elapsed (and < t+11 zone timeout)
+}
+
+TEST_CASE("assisted-clear: grace timer resets when a sensor re-activates") {
+    ZoneEngine engine = make_parity_engine();
+    engine.set_assisted_clear(true, 5.0f);
+    float t = 100.0f;
+    SensorInput sensors;
+    sensors.static_on = true;  sensors.static_timeout = 1.0f;
+    sensors.motion_on = true;  sensors.motion_timeout = 1.0f;
+
+    engine.tick(make_window_1(X_OFF + 150, 150, 7), t, sensors);
+    engine.tick(make_window_1(X_OFF + 150, 150, 7), t + 0.5f, sensors);
+    engine.tick(make_window_0(), t + 1.0f, sensors);
+    sensors.static_on = false;  sensors.motion_on = false;
+    engine.tick(make_window_0(), t + 2.0f, sensors);  // sensors pending
+    engine.tick(make_window_0(), t + 3.0f, sensors);  // INACTIVE -> grace starts ~t+3
+
+    // Motion re-activates at t+4 (cancels grace), then off again.
+    sensors.motion_on = true;
+    engine.tick(make_window_0(), t + 4.0f, sensors);  // motion ACTIVE -> grace cancelled
+    sensors.motion_on = false;
+    engine.tick(make_window_0(), t + 5.0f, sensors);  // motion pending
+    engine.tick(make_window_0(), t + 6.0f, sensors);  // motion INACTIVE -> grace RESTARTS ~t+6
+
+    // t+9: only 3s since the restart (< 5s). Had the timer NOT reset, the
+    // original t+3 grace would have elapsed at t+8 and cleared the zone.
+    // (Stays well under the zone's own 10s timeout, pending since t+1 -> t+11.)
+    const ProcessingResult& r1 = engine.tick(make_window_0(), t + 9.0f, sensors);
+    CHECK(r1.zone_occupancy[0]);  // timer was reset, grace not yet elapsed
+}
+
+TEST_CASE("assisted-clear: timeout 0 == legacy immediate clear") {
+    ZoneEngine engine = make_parity_engine();
+    engine.set_assisted_clear(true, 0.0f);
+    float t = 100.0f;
+    SensorInput sensors;
+    sensors.static_on = true;  sensors.static_timeout = 1.0f;
+    sensors.motion_on = true;  sensors.motion_timeout = 1.0f;
+
+    engine.tick(make_window_1(X_OFF + 150, 150, 7), t, sensors);
+    engine.tick(make_window_1(X_OFF + 150, 150, 7), t + 0.5f, sensors);
+    engine.tick(make_window_0(), t + 1.0f, sensors);
+    sensors.static_on = false;  sensors.motion_on = false;
+    engine.tick(make_window_0(), t + 2.0f, sensors);  // sensors pending
+    const ProcessingResult& r = engine.tick(make_window_0(), t + 3.5f, sensors);
+    CHECK_FALSE(r.zone_occupancy[0]);  // cleared on first inactive tick
+}

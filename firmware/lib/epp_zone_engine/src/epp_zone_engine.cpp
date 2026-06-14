@@ -159,6 +159,11 @@ void ZoneEngine::set_stuck_target_timeout(float seconds) {
     stuck_target_timeout_s_ = seconds < 0.0f ? 0.0f : seconds;
 }
 
+void ZoneEngine::set_assisted_clear(bool enabled, float timeout) {
+    assisted_clear_enabled_ = enabled;
+    assisted_clear_timeout_s_ = timeout < 0.0f ? 0.0f : timeout;
+}
+
 int ZoneEngine::find_zone_index(int zone_id) const {
     if (zone_id < 0 || zone_id >= zone_count_) return -1;
     if (!zone_enabled_[zone_id]) return -1;
@@ -715,22 +720,30 @@ const ProcessingResult& ZoneEngine::tick(const WindowOutput& window, float times
     result_.motion_state = motion_state_;
 
     // -----------------------------------------------------------------------
-    // Step 5c: Force-clear pending zones when all sensors inactive
-    // Only applies once sensors have been seen as active (prevents force-clear
-    // in sensor-free deployments where sensors are always INACTIVE by default).
+    // Step 5c: Sensor-assisted clear — clear pending zones once both sensors
+    // confirm the room is empty. Gated by sensors_ever_active_ (prevents
+    // clears in sensor-free deployments). When enabled, an "empty" condition
+    // must hold continuously for assisted_clear_timeout_s_ before clearing;
+    // any sensor re-activation or zone re-occupancy resets the grace timer.
+    // timeout == 0 clears on the first qualifying tick (legacy behaviour).
     // -----------------------------------------------------------------------
-    if (sensors_ever_active_ &&
+    bool empty_condition = sensors_ever_active_ &&
         static_state_ == SensorPresenceState::INACTIVE &&
-        motion_state_ == SensorPresenceState::INACTIVE) {
-        bool any_occupied = false;
+        motion_state_ == SensorPresenceState::INACTIVE;
+    if (empty_condition) {
         for (int zi = 0; zi < zone_count_; ++zi) {
             if (!zone_enabled_[zi]) continue;
             if (zones_[zi].state == ZoneState::OCCUPIED) {
-                any_occupied = true;
+                empty_condition = false;  // re-occupied zone blocks + resets timer
                 break;
             }
         }
-        if (!any_occupied) {
+    }
+    if (!assisted_clear_enabled_ || !empty_condition) {
+        assisted_clear_since_ = -1.0f;  // cancel grace timer
+    } else {
+        if (assisted_clear_since_ < 0.0f) assisted_clear_since_ = timestamp;
+        if (timestamp - assisted_clear_since_ >= assisted_clear_timeout_s_) {
             for (int zi = 0; zi < zone_count_; ++zi) {
                 if (!zone_enabled_[zi]) continue;
                 if (zones_[zi].state == ZoneState::PENDING_CLEAR) {

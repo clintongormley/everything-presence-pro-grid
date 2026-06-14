@@ -105,6 +105,7 @@ public:
                                  const SensorInput& sensors = SensorInput{});
     void dismiss_target(int target_index, int cell_index);
     void set_stuck_target_timeout(float seconds);
+    void set_assisted_clear(bool enabled, float timeout);
 
 private:
     Grid grid_;
@@ -144,6 +145,14 @@ private:
     float motion_pending_since_ = -1.0f;
     bool sensors_ever_active_ = false;  // true once any sensor has been ACTIVE
     bool prev_occupancy_ = false;       // previous tick's occupancy for transition logging
+
+    // Sensor-assisted clear ("force-clear") config + grace-timer state.
+    // enabled defaults true (preserve shipped behaviour); timeout defaults 0
+    // so an un-pushed device clears immediately like today. since = -1 sentinel
+    // (no grace timer running).
+    bool assisted_clear_enabled_ = true;
+    float assisted_clear_timeout_s_ = 0.0f;
+    float assisted_clear_since_ = -1.0f;
 
     ProcessingResult result_{};
 
