@@ -92,6 +92,8 @@ export interface PanelHost extends ReactiveControllerHost {
 	_targetAutoDistance: boolean;
 	_targetMaxDistance: number;
 	_stuckTargetTimeout: number;
+	_assistedClearEnabled: boolean;
+	_assistedClearTimeout: number;
 	_staticAutoDistance: boolean;
 	_staticMinDistance: number;
 	_staticMaxDistance: number;

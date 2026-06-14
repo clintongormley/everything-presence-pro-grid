@@ -651,6 +651,19 @@ describe("parseSettings", () => {
 		expect(s.staticOnDelay).toBe(2);
 	});
 
+	it("parses assisted-clear defaults and round-trips", () => {
+		const parsed = parseSettings({});
+		expect(parsed.assistedClearEnabled).toBe(true);
+		expect(parsed.assistedClearTimeout).toBe(5);
+
+		const parsed2 = parseSettings({
+			assisted_clear_enabled: false,
+			assisted_clear_timeout: 0,
+		});
+		expect(parsed2.assistedClearEnabled).toBe(false);
+		expect(parsed2.assistedClearTimeout).toBe(0);
+	});
+
 	it("clamps a stale static_on_delay above the 2s hardware limit", () => {
 		// Values up to 30 were storable under the old slider; the C4001 caps at
 		// 2s and the set_settings schema now rejects >2, so the loaded value

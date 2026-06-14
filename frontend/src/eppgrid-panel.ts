@@ -381,6 +381,8 @@ export class EPPGridPanel extends LitElement {
 	@state() _targetAutoDistance = true;
 	@state() _targetMaxDistance = 6.0;
 	@state() _stuckTargetTimeout = 300;
+	@state() _assistedClearEnabled = true;
+	@state() _assistedClearTimeout = 5;
 	@state() _staticAutoDistance = true;
 	@state() _staticMinDistance = 0.3;
 	@state() _staticMaxDistance = 16.0;
@@ -954,6 +956,8 @@ export class EPPGridPanel extends LitElement {
 		this._targetAutoDistance = s.targetAutoDistance;
 		this._targetMaxDistance = s.targetMaxDistance;
 		this._stuckTargetTimeout = s.stuckTargetTimeout;
+		this._assistedClearEnabled = s.assistedClearEnabled;
+		this._assistedClearTimeout = s.assistedClearTimeout;
 		this._staticAutoDistance = s.staticAutoDistance;
 		this._staticMinDistance = s.staticMinDistance;
 		this._staticMaxDistance = s.staticMaxDistance;

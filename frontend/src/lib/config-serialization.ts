@@ -74,6 +74,8 @@ export interface ParsedSettings {
 	targetAutoDistance: boolean;
 	targetMaxDistance: number;
 	stuckTargetTimeout: number;
+	assistedClearEnabled: boolean;
+	assistedClearTimeout: number;
 	staticAutoDistance: boolean;
 	staticMinDistance: number;
 	staticMaxDistance: number;
@@ -293,6 +295,8 @@ export function parseSettings(
 		targetAutoDistance: s.target_auto_distance ?? d.target_auto_distance,
 		targetMaxDistance: s.target_max_distance ?? d.target_max_distance,
 		stuckTargetTimeout: s.stuck_target_timeout ?? d.stuck_target_timeout,
+		assistedClearEnabled: s.assisted_clear_enabled ?? d.assisted_clear_enabled,
+		assistedClearTimeout: s.assisted_clear_timeout ?? d.assisted_clear_timeout,
 		staticAutoDistance: s.static_auto_distance ?? d.static_auto_distance,
 		staticMinDistance: s.static_min_distance ?? d.static_min_distance,
 		staticMaxDistance: s.static_max_distance ?? d.static_max_distance,

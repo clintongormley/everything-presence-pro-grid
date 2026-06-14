@@ -60,6 +60,8 @@ export const SETTINGS_DEFAULTS = {
 	target_auto_distance: true,
 	target_max_distance: 6.0,
 	stuck_target_timeout: 300,
+	assisted_clear_enabled: true,
+	assisted_clear_timeout: 5,
 	static_auto_distance: true,
 	static_min_distance: 0.3,
 	static_max_distance: 16.0,
@@ -153,6 +155,8 @@ export type SettingsHostProp =
 	| "_targetAutoDistance"
 	| "_targetMaxDistance"
 	| "_stuckTargetTimeout"
+	| "_assistedClearEnabled"
+	| "_assistedClearTimeout"
 	| "_staticAutoDistance"
 	| "_staticMinDistance"
 	| "_staticMaxDistance"
@@ -188,6 +192,8 @@ export const SETTINGS_FIELD_MAP: ReadonlyArray<
 	["target_auto_distance", "_targetAutoDistance"],
 	["target_max_distance", "_targetMaxDistance"],
 	["stuck_target_timeout", "_stuckTargetTimeout"],
+	["assisted_clear_enabled", "_assistedClearEnabled"],
+	["assisted_clear_timeout", "_assistedClearTimeout"],
 	["static_auto_distance", "_staticAutoDistance"],
 	["static_min_distance", "_staticMinDistance"],
 	["static_max_distance", "_staticMaxDistance"],

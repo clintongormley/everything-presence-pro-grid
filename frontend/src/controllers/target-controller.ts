@@ -284,6 +284,8 @@ export class TargetController implements ReactiveController {
 			staticTimeout: this.host._staticTimeout,
 			motionTimeout: this.host._motionTimeout,
 			stuckTargetTimeout: this.host._stuckTargetTimeout,
+			assistedClearEnabled: this.host._assistedClearEnabled,
+			assistedClearTimeout: this.host._assistedClearTimeout,
 		});
 
 		// Engine mutates `localZoneState` (a Map) in place. Lit's

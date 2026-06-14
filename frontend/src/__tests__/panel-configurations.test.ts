@@ -214,6 +214,8 @@ describe("_buildSettingsPayload", () => {
 		a._targetAutoDistance = false;
 		a._targetMaxDistance = 5.0;
 		a._stuckTargetTimeout = 120;
+		a._assistedClearEnabled = false;
+		a._assistedClearTimeout = 10;
 		a._staticAutoDistance = false;
 		a._staticMinDistance = 0.5;
 		a._staticMaxDistance = 12.0;
@@ -233,7 +235,7 @@ describe("_buildSettingsPayload", () => {
 
 		const payload = a._buildSettingsPayload();
 
-		// Verify all 22 fields are present
+		// Verify all 25 fields are present
 		expect(payload).toMatchObject({
 			temperature_offset: 0.5,
 			humidity_offset: 1.0,
@@ -242,6 +244,8 @@ describe("_buildSettingsPayload", () => {
 			target_auto_distance: false,
 			target_max_distance: 5.0,
 			stuck_target_timeout: 120,
+			assisted_clear_enabled: false,
+			assisted_clear_timeout: 10,
 			static_auto_distance: false,
 			static_min_distance: 0.5,
 			static_max_distance: 12.0,
@@ -259,8 +263,8 @@ describe("_buildSettingsPayload", () => {
 			entities: { zone_presence: true },
 			log_levels: { esp32: "Warning" },
 		});
-		// Exactly 23 keys — no extras, no omissions
-		expect(Object.keys(payload)).toHaveLength(23);
+		// Exactly 25 keys — no extras, no omissions
+		expect(Object.keys(payload)).toHaveLength(25);
 	});
 });
 
