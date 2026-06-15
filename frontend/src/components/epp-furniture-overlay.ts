@@ -121,17 +121,19 @@ export class EppFurnitureOverlay extends LitElement {
 		   Uses ::after (the visible nub uses ::before on .furn-handle, and is the
 		   element's own circle on the rotate/delete handles). Does not change any
 		   handle geometry/offset or the drag/rotate/delete math. */
-		.furn-handle::after,
-		.furn-rotate-handle::after,
-		.furn-delete-btn::after {
-			content: "";
-			position: absolute;
-			top: 50%;
-			left: 50%;
-			width: 44px;
-			height: 44px;
-			transform: translate(-50%, -50%);
-			/* transparent — just enlarges the touch hit target */
+		@media (max-width: 819px) {
+			.furn-handle::after,
+			.furn-rotate-handle::after,
+			.furn-delete-btn::after {
+				content: "";
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				width: 44px;
+				height: 44px;
+				transform: translate(-50%, -50%);
+				/* transparent — just enlarges the touch hit target */
+			}
 		}
 
 		.furn-rotate-stem {

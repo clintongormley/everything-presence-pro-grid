@@ -123,7 +123,9 @@ describe("layout styles", () => {
 	});
 
 	it("grid-column constrains width to grid via max-width: min-content", () => {
-		const match = layoutCss.match(/\.grid-column\s*\{([^}]+)\}/);
+		// Match the base (desktop) rule, identified by min-width — a separate
+		// mobile media-query rule also targets .grid-column (max-width: 100%).
+		const match = layoutCss.match(/\.grid-column\s*\{([^}]*min-width[^}]*)\}/);
 		expect(match).not.toBeNull();
 		const gridColCss = match![1];
 		expect(gridColCss).toMatch(/min-width:\s*0/);

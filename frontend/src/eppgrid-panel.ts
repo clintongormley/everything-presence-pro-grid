@@ -289,6 +289,9 @@ export const layoutStyles = css`
       width: auto;
       border-left: none;
     }
+    .grid-column {
+      max-width: 100%;
+    }
   }
 
   .grid-column {

@@ -603,7 +603,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
       gap: var(--epp-space-2, 8px);
       justify-content: flex-end;
     }
-  `,e([Ae({type:String})],Vt.prototype,"label",void 0),e([Ae({type:String})],Vt.prototype,"helper",void 0),customElements.get("epp-section-row")||customElements.define("epp-section-row",Vt);class Zt extends le{constructor(){super(...arguments),this.open=!1,this._toggle=()=>{this.open=!this.open,this.dispatchEvent(new CustomEvent("sheet-open-changed",{detail:{open:this.open},bubbles:!0,composed:!0}))}}render(){return N`
+  `,e([Ae({type:String})],Vt.prototype,"label",void 0),e([Ae({type:String})],Vt.prototype,"helper",void 0),customElements.get("epp-section-row")||customElements.define("epp-section-row",Vt);class Zt extends le{constructor(){super(...arguments),this.open=!1,this._hasActions=!1,this._onActionsSlotChange=e=>{this._hasActions=e.target.assignedNodes({flatten:!0}).length>0},this._toggle=()=>{this.open=!this.open,this.dispatchEvent(new CustomEvent("sheet-open-changed",{detail:{open:this.open},bubbles:!0,composed:!0}))}}render(){return N`
       <div
         class="handle-bar"
         role="button"
@@ -615,7 +615,9 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
         <slot name="peek"></slot>
       </div>
       <div class="body" ?hidden=${!this.open}><slot></slot></div>
-      <div class="actions" ?hidden=${!this.open}><slot name="actions"></slot></div>
+      <div class="actions" ?hidden=${!this.open||!this._hasActions}>
+        <slot name="actions" @slotchange=${this._onActionsSlotChange}></slot>
+      </div>
     `}}Zt.styles=a`
     :host {
       position: fixed;
@@ -660,7 +662,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
       border-top: 1px solid var(--epp-border, var(--divider-color, #e0e0e0));
     }
     .actions[hidden] { display: none; }
-  `,e([Ae({type:Boolean,reflect:!0})],Zt.prototype,"open",void 0),customElements.get("epp-sheet")||customElements.define("epp-sheet",Zt);class Xt extends le{constructor(){super(...arguments),this.content=""}render(){return N`
+  `,e([Ae({type:Boolean,reflect:!0})],Zt.prototype,"open",void 0),e([ue()],Zt.prototype,"_hasActions",void 0),customElements.get("epp-sheet")||customElements.define("epp-sheet",Zt);class Xt extends le{constructor(){super(...arguments),this.content=""}render(){return N`
       <slot></slot>
       <span class="tip" role="tooltip">${this.content}</span>
     `}}Xt.styles=a`
@@ -1922,17 +1924,19 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
 		   Uses ::after (the visible nub uses ::before on .furn-handle, and is the
 		   element's own circle on the rotate/delete handles). Does not change any
 		   handle geometry/offset or the drag/rotate/delete math. */
-		.furn-handle::after,
-		.furn-rotate-handle::after,
-		.furn-delete-btn::after {
-			content: "";
-			position: absolute;
-			top: 50%;
-			left: 50%;
-			width: 44px;
-			height: 44px;
-			transform: translate(-50%, -50%);
-			/* transparent — just enlarges the touch hit target */
+		@media (max-width: 819px) {
+			.furn-handle::after,
+			.furn-rotate-handle::after,
+			.furn-delete-btn::after {
+				content: "";
+				position: absolute;
+				top: 50%;
+				left: 50%;
+				width: 44px;
+				height: 44px;
+				transform: translate(-50%, -50%);
+				/* transparent — just enlarges the touch hit target */
+			}
 		}
 
 		.furn-rotate-stem {
@@ -4426,6 +4430,9 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
     .zone-sidebar {
       width: auto;
       border-left: none;
+    }
+    .grid-column {
+      max-width: 100%;
     }
   }
 

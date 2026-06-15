@@ -1,5 +1,5 @@
 import { css, html, LitElement } from "lit";
-import { property } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 
 /**
  * Persistent themed bottom sheet. The `peek` slot is always visible (with a
@@ -10,6 +10,12 @@ import { property } from "lit/decorators.js";
  */
 export class EppSheet extends LitElement {
 	@property({ type: Boolean, reflect: true }) open = false;
+
+	@state() private _hasActions = false;
+	private _onActionsSlotChange = (e: Event) => {
+		this._hasActions =
+			(e.target as HTMLSlotElement).assignedNodes({ flatten: true }).length > 0;
+	};
 
 	static styles = css`
     :host {
@@ -81,7 +87,9 @@ export class EppSheet extends LitElement {
         <slot name="peek"></slot>
       </div>
       <div class="body" ?hidden=${!this.open}><slot></slot></div>
-      <div class="actions" ?hidden=${!this.open}><slot name="actions"></slot></div>
+      <div class="actions" ?hidden=${!this.open || !this._hasActions}>
+        <slot name="actions" @slotchange=${this._onActionsSlotChange}></slot>
+      </div>
     `;
 	}
 }
