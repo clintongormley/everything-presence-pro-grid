@@ -1,0 +1,100 @@
+import { css, html, LitElement } from "lit";
+import { property } from "lit/decorators.js";
+
+/**
+ * Persistent themed bottom sheet. The `peek` slot is always visible (with a
+ * grab handle); tapping the handle toggles between collapsed (peek only) and
+ * open (peek + default content + `actions` footer). The caller owns `open`.
+ * Emits `sheet-open-changed` { detail: { open } }. Used only below the mobile
+ * breakpoint (the consumer renders it conditionally).
+ */
+export class EppSheet extends LitElement {
+	@property({ type: Boolean, reflect: true }) open = false;
+
+	static styles = css`
+    :host {
+      position: fixed;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      z-index: 50;
+      background: var(--epp-surface, var(--card-background-color, #fff));
+      border-top: 1px solid var(--epp-border, var(--divider-color, #e0e0e0));
+      border-radius: var(--epp-radius-lg, 16px) var(--epp-radius-lg, 16px) 0 0;
+      box-shadow: var(--epp-elevation-2, 0 -6px 20px rgba(0, 0, 0, 0.18));
+      display: flex;
+      flex-direction: column;
+      max-height: 85vh;
+    }
+    .handle-bar {
+      flex-shrink: 0;
+      padding: var(--epp-space-2, 8px) var(--epp-space-3, 12px);
+      cursor: pointer;
+      touch-action: none;
+    }
+    .handle {
+      width: 40px;
+      height: 4px;
+      border-radius: var(--epp-radius-pill, 9999px);
+      background: var(--epp-border, var(--divider-color, #e0e0e0));
+      margin: 0 auto var(--epp-space-2, 8px);
+    }
+    .body {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding: 0 var(--epp-space-3, 12px);
+    }
+    .body[hidden] { display: none; }
+    .actions {
+      flex-shrink: 0;
+      display: flex;
+      justify-content: flex-end;
+      gap: var(--epp-space-3, 12px);
+      padding: var(--epp-space-2, 8px) var(--epp-space-3, 12px);
+      border-top: 1px solid var(--epp-border, var(--divider-color, #e0e0e0));
+    }
+    .actions[hidden] { display: none; }
+  `;
+
+	private _toggle = () => {
+		this.open = !this.open;
+		this.dispatchEvent(
+			new CustomEvent("sheet-open-changed", {
+				detail: { open: this.open },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+	};
+
+	render() {
+		return html`
+      <div
+        class="handle-bar"
+        role="button"
+        aria-expanded=${this.open ? "true" : "false"}
+        aria-label="Toggle controls"
+        @click=${this._toggle}
+      >
+        <div class="handle"></div>
+        <slot name="peek"></slot>
+      </div>
+      <div class="body" ?hidden=${!this.open}><slot></slot></div>
+      <div class="actions" ?hidden=${!this.open}><slot name="actions"></slot></div>
+    `;
+	}
+}
+
+/* v8 ignore start — the already-defined path only triggers on HA panel
+   re-import (module re-eval), unreachable in a single test environment */
+if (!customElements.get("epp-sheet")) {
+	customElements.define("epp-sheet", EppSheet);
+}
+/* v8 ignore stop */
+
+declare global {
+	interface HTMLElementTagNameMap {
+		"epp-sheet": EppSheet;
+	}
+}
