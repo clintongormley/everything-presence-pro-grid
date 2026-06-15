@@ -643,24 +643,53 @@ describe("cellCenterMm", () => {
 });
 
 describe("fitCellPx", () => {
+	// availHeightPx (3rd arg) = 0 throughout these width-only cases ⇒ no height
+	// cap, so they assert exactly the pre-height-aware behavior (regression).
 	it("caps by the maxGridPx ceiling when the container is wide", () => {
-		expect(fitCellPx(480, 900, 20, 20)).toBe(24); // 480/20=24; 900 doesn't constrain
+		expect(fitCellPx(480, 900, 0, 20, 20)).toBe(24); // 480/20=24; 900 doesn't constrain
 	});
 	it("shrinks to fit a narrow container", () => {
-		expect(fitCellPx(480, 360, 20, 20)).toBe(18); // 360/20=18 < 24
+		expect(fitCellPx(480, 360, 0, 20, 20)).toBe(18); // 360/20=18 < 24
 	});
 	it("never returns less than 1", () => {
-		expect(fitCellPx(480, 5, 20, 20)).toBe(1);
+		expect(fitCellPx(480, 5, 0, 20, 20)).toBe(1);
 	});
 	it("uses the smaller of the col/row ceiling", () => {
-		expect(fitCellPx(480, 1000, 20, 10)).toBe(24); // min(480/20,480/10)=24
+		expect(fitCellPx(480, 1000, 0, 20, 10)).toBe(24); // min(480/20,480/10)=24
 	});
 	it("falls back to the ceiling when the container is unmeasured", () => {
-		expect(fitCellPx(480, 0, 20, 20)).toBe(24);
-		expect(fitCellPx(480, -1, 20, 20)).toBe(24);
+		expect(fitCellPx(480, 0, 0, 20, 20)).toBe(24);
+		expect(fitCellPx(480, -1, 0, 20, 20)).toBe(24);
 	});
 	it("caps cell size at 32px for small grids", () => {
 		// floor(480/10)=48, but capped at 32; wide container doesn't constrain
-		expect(fitCellPx(480, 900, 10, 10)).toBe(32);
+		expect(fitCellPx(480, 900, 0, 10, 10)).toBe(32);
+	});
+
+	// --- height-aware behavior (availHeightPx > 0) ---
+	it("limits the cell by the height budget when narrow+tall", () => {
+		// width-fit = floor(900/20)=45, height-fit = floor(200/20)=10 → 10 wins
+		// (and 10 < the 32px cap and the ceiling), so the cell is height-bound.
+		expect(fitCellPx(480, 900, 200, 20, 20)).toBe(10);
+	});
+	it("limits the cell by the width budget when wide+short", () => {
+		// width-fit = floor(200/20)=10, height-fit = floor(900/20)=45 → 10 wins,
+		// so the cell is width-bound even with a generous height budget.
+		expect(fitCellPx(480, 200, 900, 20, 20)).toBe(10);
+	});
+	it("caps at maxCellPx when both budgets are large", () => {
+		// width-fit & height-fit both ≥ 32 (and ceiling = 32) → cap wins.
+		expect(fitCellPx(480, 9000, 9000, 10, 10)).toBe(32);
+	});
+	it("treats availHeightPx <= 0 as no height cap (regression)", () => {
+		// 0 and a negative height behave exactly like the old width-only call.
+		expect(fitCellPx(480, 900, 0, 20, 20)).toBe(24);
+		expect(fitCellPx(480, 900, -50, 20, 20)).toBe(24);
+	});
+	it("uses the height budget against visRows, not visCols", () => {
+		// Few rows, many cols: height budget divides by visRows (5), not visCols.
+		// height-fit = floor(100/5)=20; width-fit = floor(900/20)=45; ceiling 32
+		// → 20 wins.
+		expect(fitCellPx(480, 900, 100, 20, 5)).toBe(20);
 	});
 });

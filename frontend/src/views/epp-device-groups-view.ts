@@ -84,6 +84,33 @@ export class EppDeviceGroupsView extends LitElement {
 		}
 		epp-card { display: block; }
 		epp-kebab-menu { flex-shrink: 0; margin: -6px -8px -6px 0; }
+
+		/* Mobile: fill the panel height so the editor's Save/Cancel bar can pin to
+		   the bottom of the screen while its body scrolls. :host and the .content
+		   wrapper become a flex column that fills the height handed down by the
+		   panel (.tab-layout > epp-device-groups-view), letting the editor inside
+		   establish its own scroll/pin regions. .content drops its 600px reading
+		   cap and goes full-width — full-width is fine on a phone. The list mode
+		   reuses the same .content, but its single ha-card simply sits at the top
+		   and the view scrolls naturally (overflow inherited from .tab-layout), so
+		   a long list still scrolls rather than clipping. Placed AFTER the base
+		   rules so it wins on source order (mobile @media before base rules go
+		   silently dead). */
+		@media (max-width: 819px) {
+			:host {
+				display: flex;
+				flex-direction: column;
+				min-height: 0;
+			}
+			.content {
+				flex: 1;
+				min-height: 0;
+				display: flex;
+				flex-direction: column;
+				width: 100%;
+				max-width: none;
+			}
+		}
 	`,
 	];
 

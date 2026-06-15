@@ -684,6 +684,77 @@ describe("epp-zone-sidebar type select reflects saved value on first render", ()
 	});
 });
 
+describe("epp-zone-sidebar full mount with a named active zone (regression)", () => {
+	// Regression: selecting a NAMED zone (slot >= 1) is the only path that
+	// renders <epp-zone-color-picker> + the zone type controls inside the real
+	// element's reactive render(). A throw in that synchronous template makes
+	// Lit abandon the update and leaves the host blank (the whole zone list —
+	// Room, zones, Add-zone — disappears). Mounting the real element and
+	// awaiting the full lifecycle (render + updated()) catches such a throw,
+	// where rendering the detached template alone does not.
+	async function mountWithActiveNamedZone(): Promise<{
+		el: EppZoneSidebar;
+		cleanup: () => void;
+	}> {
+		const el = createSidebar({ activeZone: 1 });
+		(el as any).zoneConfigs = [
+			{ name: "Kitchen", color: ZONE_COLORS[0], type: "default" },
+			{ name: "Living Room", color: ZONE_COLORS[1], type: "default" },
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
+		document.body.appendChild(el);
+		await (el as any).updateComplete;
+		return { el, cleanup: () => document.body.removeChild(el) };
+	}
+
+	it("keeps the full zone list rendered when a named zone is active", async () => {
+		const { el, cleanup } = await mountWithActiveNamedZone();
+		try {
+			const root = (el as any).renderRoot as ParentNode;
+			// The whole list must survive: Room + both named zones still present,
+			// the colour picker for the active zone, and the Add-zone button.
+			const items = root.querySelectorAll(".zone-item");
+			expect(items.length).toBe(3); // Room + 2 named zones
+			expect(root.querySelector("epp-zone-color-picker")).not.toBeNull();
+			expect(root.querySelector(".zone-name-input")).not.toBeNull();
+			expect(root.querySelector(".add-zone-btn")).not.toBeNull();
+		} finally {
+			cleanup();
+		}
+	});
+
+	it("re-renders intact after toggling the active zone to a named slot", async () => {
+		// Mirrors the real interaction: start on the Room (slot 0), then select a
+		// named zone. The reactive re-render must not blank the host.
+		const el = createSidebar({ activeZone: 0 });
+		(el as any).zoneConfigs = [
+			{ name: "Kitchen", color: ZONE_COLORS[0], type: "default" },
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
+		document.body.appendChild(el);
+		try {
+			await (el as any).updateComplete;
+			el.activeZone = 1;
+			await (el as any).updateComplete;
+			const root = (el as any).renderRoot as ParentNode;
+			expect(root.querySelectorAll(".zone-item").length).toBe(2);
+			expect(root.querySelector("epp-zone-color-picker")).not.toBeNull();
+			expect(root.querySelector(".add-zone-btn")).not.toBeNull();
+		} finally {
+			document.body.removeChild(el);
+		}
+	});
+});
+
 describe("epp-zone-sidebar occupancy glow", () => {
 	it("boundary zone dot shows glow when occupied", () => {
 		const localZoneState = new Map([

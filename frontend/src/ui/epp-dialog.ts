@@ -31,6 +31,8 @@ export class EppDialog extends LitElement {
       padding: var(--epp-space-5, 24px);
       min-width: 320px;
       max-width: 440px;
+      max-height: 85vh;
+      box-sizing: border-box;
       display: flex;
       flex-direction: column;
       gap: var(--epp-space-4, 16px);
@@ -38,12 +40,19 @@ export class EppDialog extends LitElement {
     }
     h3 {
       margin: 0;
+      flex-shrink: 0;
       font-size: var(--epp-font-xl, 18px);
       font-weight: var(--epp-weight-medium, 500);
       color: var(--epp-text, var(--primary-text-color, #212121));
     }
+    .body {
+      flex: 1 1 auto;
+      overflow-y: auto;
+      min-height: 0;
+    }
     .actions {
       display: flex;
+      flex-shrink: 0;
       justify-content: flex-end;
       gap: var(--epp-space-3, 12px);
     }
@@ -78,7 +87,7 @@ export class EppDialog extends LitElement {
           aria-label=${this.heading || this.label || nothing}
         >
           ${this.heading ? html`<h3>${this.heading}</h3>` : nothing}
-          <slot></slot>
+          <div class="body"><slot></slot></div>
           <div class="actions"><slot name="actions"></slot></div>
         </div>
       </div>

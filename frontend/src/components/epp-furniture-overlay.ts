@@ -138,18 +138,24 @@ export class EppFurnitureOverlay extends LitElement {
 
 		.furn-rotate-stem {
 			position: absolute;
-			top: -32px;
+			top: -38px;
 			left: 50%;
 			transform: translateX(-50%);
 			width: 2px;
-			height: 32px;
+			height: 38px;
 			background: var(--epp-accent, var(--primary-color, #03a9f4));
 			pointer-events: none;
 		}
 
+		/* z-index: 3 keeps the rotate/delete buttons (and their mobile 44px
+		   ::after hit-areas) above the resize handles (z-index: 2) — otherwise
+		   the NE resize handle's hit-area paints on top of the delete button and
+		   swallows taps on the visible X. Delete is pushed further out diagonally
+		   and rotate lifted higher so their visible discs no longer overlap each
+		   other or the NE corner handle on small items. */
 		.furn-rotate-handle {
 			position: absolute;
-			top: -48px;
+			top: -54px;
 			left: 50%;
 			transform: translateX(-50%);
 			width: 20px;
@@ -164,12 +170,13 @@ export class EppFurnitureOverlay extends LitElement {
 			pointer-events: auto;
 			color: var(--epp-accent-text, #fff);
 			touch-action: none;
+			z-index: 3;
 		}
 
 		.furn-delete-btn {
 			position: absolute;
-			top: -24px;
-			right: -4px;
+			top: -34px;
+			right: -16px;
 			width: 20px;
 			height: 20px;
 			background: var(--epp-danger, var(--error-color, #f44336));
@@ -182,6 +189,7 @@ export class EppFurnitureOverlay extends LitElement {
 			pointer-events: auto;
 			color: var(--epp-accent-text, #fff);
 			touch-action: none;
+			z-index: 3;
 		}
 	`;
 

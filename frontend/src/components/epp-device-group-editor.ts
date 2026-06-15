@@ -57,6 +57,16 @@ export class EppDeviceGroupEditor extends LitElement {
 			flex-direction: column;
 			gap: var(--epp-space-4, 16px);
 		}
+		/* The form rows live in .editor-scroll, which carries the column layout +
+		   16px row gap that .card-content used to apply directly. On desktop
+		   .card-content has two children (.editor-scroll, .actions) with the same
+		   16px gap between them, so the spacing above the actions bar is unchanged
+		   (16px gap + .actions margin-top 4px, exactly as before the wrapper). */
+		.editor-scroll {
+			display: flex;
+			flex-direction: column;
+			gap: var(--epp-space-4, 16px);
+		}
 		.field { display: block; }
 		ha-area-picker {
 			display: block;
@@ -116,6 +126,39 @@ export class EppDeviceGroupEditor extends LitElement {
 			justify-content: space-between;
 			align-items: center;
 			margin-top: var(--epp-space-1, 4px);
+		}
+
+		/* Mobile: pin the Cancel/Save .actions bar to the bottom of the screen and
+		   let the form body scroll inside .editor-scroll. The fill-height chain is
+		   :host -> ha-card -> .card-content (all flex columns filling the height
+		   handed down by the view), then .editor-scroll grows + scrolls while
+		   .actions stays put. .editor-scroll has NO desktop rule, so desktop layout
+		   is byte-identical. Placed AFTER the base rules so it wins on source order
+		   (mobile @media before base rules go silently dead). */
+		@media (max-width: 819px) {
+			:host {
+				display: flex;
+				flex-direction: column;
+				min-height: 0;
+			}
+			ha-card {
+				display: flex;
+				flex-direction: column;
+				flex: 1;
+				min-height: 0;
+			}
+			.card-content {
+				flex: 1;
+				min-height: 0;
+			}
+			.editor-scroll {
+				flex: 1;
+				min-height: 0;
+				overflow-y: auto;
+			}
+			.actions {
+				flex-shrink: 0;
+			}
 		}
 	`,
 	];
@@ -190,47 +233,49 @@ export class EppDeviceGroupEditor extends LitElement {
 		return html`
 			<ha-card>
 				<div class="card-content">
-					<div class="field">${this._renderNameField()}</div>
-					<div class="field">
-						<ha-area-picker
-							.hass=${this.hass}
-							.value=${this._draft.area_id ?? ""}
-							@value-changed=${(e: CustomEvent) => {
-								e.stopPropagation();
-								this._update({ area_id: (e.detail.value as string) || null });
-							}}
-						></ha-area-picker>
-					</div>
-
-					<div class="section">
-						<h3>Source devices</h3>
-						<div class="source-box">
-							${this.availableDevices.map((d) => this._renderSourceRow(d))}
-							${missing.map((s) => this._renderMissingSourceRow(s))}
+					<div class="editor-scroll">
+						<div class="field">${this._renderNameField()}</div>
+						<div class="field">
+							<ha-area-picker
+								.hass=${this.hass}
+								.value=${this._draft.area_id ?? ""}
+								@value-changed=${(e: CustomEvent) => {
+									e.stopPropagation();
+									this._update({ area_id: (e.detail.value as string) || null });
+								}}
+							></ha-area-picker>
 						</div>
-						${
-							missing.length
-								? html`<div class="missing-warning" data-testid="missing-warning">
-										<ha-icon icon="mdi:alert"></ha-icon>
-										Some source devices no longer exist. Turn them off and save
-										to remove them.
-									</div>`
-								: nothing
-						}
-					</div>
 
-					<div class="section">
-						<epp-zone-merge-list
-							.sources=${this._draftSources()}
-							.zoneGroups=${this._draft.zone_groups}
-							@zone-groups-changed=${(e: CustomEvent) => {
-								e.stopPropagation();
-								this._update({ zone_groups: e.detail.zone_groups });
-							}}
-						></epp-zone-merge-list>
-					</div>
+						<div class="section">
+							<h3>Source devices</h3>
+							<div class="source-box">
+								${this.availableDevices.map((d) => this._renderSourceRow(d))}
+								${missing.map((s) => this._renderMissingSourceRow(s))}
+							</div>
+							${
+								missing.length
+									? html`<div class="missing-warning" data-testid="missing-warning">
+											<ha-icon icon="mdi:alert"></ha-icon>
+											Some source devices no longer exist. Turn them off and save
+											to remove them.
+										</div>`
+									: nothing
+							}
+						</div>
 
-					${this._renderSensorsPreview()}
+						<div class="section">
+							<epp-zone-merge-list
+								.sources=${this._draftSources()}
+								.zoneGroups=${this._draft.zone_groups}
+								@zone-groups-changed=${(e: CustomEvent) => {
+									e.stopPropagation();
+									this._update({ zone_groups: e.detail.zone_groups });
+								}}
+							></epp-zone-merge-list>
+						</div>
+
+						${this._renderSensorsPreview()}
+					</div>
 
 					<div class="actions">
 						<epp-button variant="text" @click=${this._cancel}>Cancel</epp-button>

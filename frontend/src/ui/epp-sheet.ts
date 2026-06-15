@@ -47,6 +47,13 @@ export class EppSheet extends LitElement {
       right: auto;
       bottom: auto;
       z-index: auto;
+      /* Inline (mobile editor): fill the remaining flex height below the grid
+         and let the .body scroll internally. Override the fixed-sheet's
+         max-height:85vh cap so the sheet reaches the viewport bottom and the
+         .actions footer (Save/Cancel) stays pinned there. */
+      flex: 1 1 auto;
+      min-height: 0;
+      max-height: none;
     }
     .handle-bar {
       flex-shrink: 0;
@@ -69,6 +76,10 @@ export class EppSheet extends LitElement {
       flex: 1;
       min-height: 0;
       overflow-y: auto;
+      /* Reserve the scrollbar gutter so toggling the body's vertical scrollbar
+         (e.g. when selecting a zone grows the sheet content) doesn't reflow the
+         body width and shift the grid above it. */
+      scrollbar-gutter: stable;
       padding: 0 var(--epp-space-3, 12px);
     }
     .body[hidden] { display: none; }
@@ -78,7 +89,9 @@ export class EppSheet extends LitElement {
       justify-content: flex-end;
       gap: var(--epp-space-3, 12px);
       padding: var(--epp-space-2, 8px) var(--epp-space-3, 12px);
-      border-top: 1px solid var(--epp-border, var(--divider-color, #e0e0e0));
+      /* No border-top here: the sole consumer slots the editor's
+         .save-cancel-bar, which carries its own border-top divider. A border
+         here too rendered TWO stacked lines above the Save/Cancel row. */
     }
     .actions[hidden] { display: none; }
   `;

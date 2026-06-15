@@ -409,6 +409,33 @@ export class EppSettingsView extends LitElement {
         border-top: 1px solid var(--divider-color, #eee);
         margin-top: auto;
       }
+
+      /* Mobile: pin the Save/Cancel bar to the bottom of the screen and let
+         the accordion list scroll inside .settings-scroll. Placed AFTER the
+         base .settings-container / .save-cancel-bar rules so it wins on source
+         order (mobile @media blocks placed before base rules go silently dead). */
+      @media (max-width: 819px) {
+        :host {
+          display: flex;
+          flex-direction: column;
+          min-height: 0;
+        }
+        .settings-container {
+          display: flex;
+          flex-direction: column;
+          flex: 1;
+          min-height: 0;
+          width: 100%;
+        }
+        .settings-scroll {
+          flex: 1;
+          min-height: 0;
+          overflow-y: auto;
+        }
+        .save-cancel-bar {
+          flex-shrink: 0;
+        }
+      }
     `,
 	];
 
@@ -443,6 +470,7 @@ export class EppSettingsView extends LitElement {
 
 		return html`
       <div class="settings-container">
+        <div class="settings-scroll">
         <h2 style="margin: 0 0 16px 0; font-size: 20px; font-weight: 500;">${this.localize("settings.title")}</h2>
         ${sections.map((s) => {
 					const open = this.openAccordions.has(s.id);
@@ -465,6 +493,7 @@ export class EppSettingsView extends LitElement {
             </div>
           `;
 				})}
+        </div>
         ${this.renderSaveCancelButtons()}
       </div>
     `;

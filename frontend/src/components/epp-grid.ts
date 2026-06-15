@@ -67,6 +67,11 @@ export class EppGrid extends LitElement {
 	@property({ type: Number }) maxRangeMm = MAX_RANGE;
 	/** Maximum pixel size for the grid (both call sites currently pass 480) */
 	@property({ type: Number }) maxGridPx = 480;
+	/**
+	 * Mobile-only: cap the grid height to half the viewport so the controls
+	 * panel below it always has room. Desktop leaves this false → no height cap.
+	 */
+	@property({ type: Boolean }) capHeightToHalfViewport = false;
 	/** Map of target index → dismissed cell index (ephemeral, not persisted) */
 	@property({ attribute: false }) dismissedTargets: Map<number, number> =
 		new Map();
@@ -81,8 +86,6 @@ export class EppGrid extends LitElement {
 	/** Measured content width of the host (px); 0 = unmeasured (e.g. unit tests). */
 	@state() private _availPx = 0;
 	private _ro?: ResizeObserver;
-	/** TEMP DEBUG — on-screen width readout (empty in unit tests / no layout). */
-	@state() private _dbg = "";
 
 	/* v8 ignore start -- happy-dom has no real layout/ResizeObserver callback */
 	connectedCallback(): void {
@@ -120,56 +123,30 @@ export class EppGrid extends LitElement {
 	private _measureAvail(): void {
 		const w = this.clientWidth;
 		if (w && Math.abs(w - this._availPx) >= 1) this._availPx = w;
-		// TEMP DEBUG — remove after diagnosing the mobile grid-width issue.
-		if (w) this._dbg = this._buildDbg();
-	}
-
-	// TEMP DEBUG helper — report widths up the ancestor chain so the on-device
-	// layout can be diagnosed (mobile has no usable console).
-	private _buildDbg(): string {
-		const r = (el: Element | null | undefined) =>
-			el
-				? `${Math.round(el.getBoundingClientRect().width)}/${el.clientWidth}/${el.scrollWidth}`
-				: "—";
-		const gc = this.parentElement; // .grid-container
-		const em = gc?.parentElement; // .editor-mobile / .grid-column
-		const panel = em?.parentElement; // .panel (or deeper)
-		const root = this.getRootNode();
-		const pHost = root instanceof ShadowRoot ? root.host : null;
-		const gridEl = this.renderRoot?.querySelector?.(".grid");
-		return [
-			`iw=${window.innerWidth} host=${r(this)}`,
-			`gc=${r(gc)} em=${r(em)}`,
-			`panel=${r(panel)} pHost=${r(pHost)}`,
-			`grid=${r(gridEl)} avail=${this._availPx}`,
-		].join("\n");
 	}
 	/* v8 ignore stop */
 
 	static styles = css`
 		:host {
 			display: block;
-		}
-
-		/* TEMP DEBUG overlay — remove after diagnosing the mobile grid width. */
-		.dbg {
-			position: fixed;
-			top: 0;
-			left: 0;
-			z-index: 99999;
-			max-width: 100vw;
-			background: rgba(0, 0, 0, 0.85);
-			color: #0f0;
-			font: 11px/1.3 monospace;
-			white-space: pre-wrap;
-			padding: 3px 5px;
-			pointer-events: none;
+			/* Centre the inline-block .grid-targets-wrapper horizontally within
+			   the host. The host fills its container width (display:block), so
+			   without this the inline-block grid hugs the LEFT edge whenever the
+			   grid is narrower than its region (tall/narrow rooms, or any room
+			   narrower than the column). The furniture/target overlays are
+			   absolutely positioned relative to .grid-targets-wrapper (which is
+			   position:relative), so centring the wrapper moves the whole
+			   positioning context together — overlay math is unaffected. */
+			text-align: center;
 		}
 
 		.grid-targets-wrapper {
 			position: relative;
 			display: inline-block;
 			vertical-align: top;
+			/* Reset text-align inside the wrapper so the centred host doesn't
+			   leak into the grid-dimensions caption / cell content. */
+			text-align: left;
 		}
 
 		:host(:not([editable])) .grid-targets-wrapper {
@@ -300,6 +277,20 @@ export class EppGrid extends LitElement {
 		// The grid adds a 2px border (×2) + (visCols-1)×1px gaps on top of the
 		// cells; subtract that from the measured width so the grid fits exactly.
 		const gridChromePx = this._availPx > 0 ? 4 + (visCols - 1) : 0;
+		// Mobile only: cap the grid to a fraction of the viewport height so the
+		// controls panel below it keeps a fair share. 0.45 (not 0.5) because the
+		// tab bar + device dropdown sit above the panel, so 50% of the viewport
+		// would be ~55-60% of the usable area below them. The width ResizeObserver
+		// re-renders on viewport resize, refreshing this budget. happy-dom has
+		// innerHeight defined but no layout, so reading it is safe; the cap is
+		// exercised only behind the capHeightToHalfViewport flag.
+		/* v8 ignore next -- window.innerHeight read has no layout effect under happy-dom */
+		const availHeightPx = this.capHeightToHalfViewport
+			? window.innerHeight * 0.45
+			: 0;
+		// Vertical chrome mirrors the width chrome: 2px border (×2) + (visRows-1)
+		// ×1px gaps. Subtract it so the cells fit the height budget exactly.
+		const gridChromeHpx = availHeightPx > 0 ? 4 + (visRows - 1) : 0;
 		const cellPx = fitCellPx(
 			this.maxGridPx,
 			// When measured, clamp to ≥1px so a "measured but tiny" width (chrome
@@ -311,6 +302,7 @@ export class EppGrid extends LitElement {
 			this._availPx > 0
 				? Math.max(1, this._availPx - gridChromePx)
 				: this._availPx,
+			availHeightPx > 0 ? Math.max(1, availHeightPx - gridChromeHpx) : 0,
 			visCols,
 			visRows,
 		);
@@ -329,7 +321,6 @@ export class EppGrid extends LitElement {
 				${this._renderTargetDots(minCol, maxCol, minRow, maxRow, visCols, visRows)}
 			</div>
 			${this._renderGridDimensions(scan.metrics)}
-			${this._dbg ? html`<div class="dbg">${this._dbg}</div>` : nothing}
 		`;
 	}
 

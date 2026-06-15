@@ -121,6 +121,18 @@ export class EppWizard extends LitElement {
 				this._captureOverlayListeners.detach();
 			}
 		}
+		if (changed.has("_wizardCornerIndex")) {
+			// Keep the active corner chip visible as corners advance — the chip
+			// row scrolls horizontally on mobile rather than shrinking/wrapping.
+			const activeChip = this.shadowRoot?.querySelector(
+				".corner-progress .corner-chip.active",
+			) as HTMLElement | null;
+			activeChip?.scrollIntoView?.({
+				behavior: "smooth",
+				inline: "center",
+				block: "nearest",
+			});
+		}
 	}
 
 	disconnectedCallback(): void {
@@ -325,6 +337,7 @@ export class EppWizard extends LitElement {
       .wizard-card {
         max-width: 560px;
         width: 100%;
+        box-sizing: border-box;
         background: var(--card-background-color, #fff);
         border-radius: var(--epp-radius-lg, 16px);
         padding: 32px;
@@ -421,13 +434,6 @@ export class EppWizard extends LitElement {
         overflow: hidden;
       }
 
-      @media (max-width: 819px) {
-        .sensor-fov-view {
-          width: 100%;
-          max-width: 480px;
-        }
-      }
-
       .sensor-fov-svg {
         position: absolute;
         top: 0;
@@ -503,6 +509,15 @@ export class EppWizard extends LitElement {
         gap: var(--epp-space-2, 8px);
       }
 
+      /* The two distance inputs always share one row (flex row); on mobile the
+         label stacks above this row (see the media query below). */
+      .offset-inputs {
+        display: flex;
+        flex: 1;
+        min-width: 0;
+        gap: var(--epp-space-2, 8px);
+      }
+
       .offset-label {
         font-size: var(--epp-font-sm, 13px);
         color: var(--secondary-text-color, #888);
@@ -533,6 +548,7 @@ export class EppWizard extends LitElement {
 
       .offset-input {
         flex: 1;
+        min-width: 0;
         width: 100%;
         padding: 14px var(--epp-space-3, 12px) 6px;
         border: 1px solid var(--divider-color, #e0e0e0);
@@ -583,6 +599,39 @@ export class EppWizard extends LitElement {
 
       .dont-show-again {
         margin-top: var(--epp-space-4, 16px);
+      }
+
+      /* Mobile overrides — placed AFTER all base rules so they win at equal
+         specificity (media queries add no specificity; later source order wins). */
+      @media (max-width: 819px) {
+        .wizard-card {
+          padding: var(--epp-space-4, 16px);
+        }
+        .sensor-fov-view {
+          width: 100%;
+          max-width: 480px;
+        }
+        /* Label on its own line; the two inputs share the row below it (the
+           .offset-inputs flex row, now stretched full-width, keeps them
+           side-by-side instead of overflowing). */
+        .corner-offsets {
+          flex-direction: column;
+          align-items: stretch;
+        }
+        /* Corner chips on a single row (scroll if they don't all fit) rather
+           than wrapping to two lines; shrink them so they usually do fit. */
+        .corner-progress {
+          flex-wrap: nowrap;
+          overflow-x: auto;
+        }
+        .corner-chip {
+          padding: 4px 9px;
+          font-size: var(--epp-font-xs, 12px);
+          white-space: nowrap;
+        }
+        .corner-arrow {
+          font-size: var(--epp-font-base, 14px);
+        }
       }
     `,
 	];
@@ -872,7 +921,8 @@ export class EppWizard extends LitElement {
 
         <div class="corner-offsets">
           <span class="offset-label">${this.localize("wizard.distance_from")}</span>
-          <epp-field
+          <div class="offset-inputs">
+            <epp-field
             class="offset-input"
             type="number"
             min="0"
@@ -908,6 +958,7 @@ export class EppWizard extends LitElement {
 							}
 						}}
           ></epp-field>
+          </div>
         </div>
 
         ${this._renderMiniSensorView()}

@@ -185,6 +185,17 @@ const hostStyles = css`
     background: var(--primary-background-color, #fafafa);
     color: var(--primary-text-color, #212121);
     font-family: var(--ha-font-family-body, "Roboto", sans-serif);
+    /* Own the desktop scroll on the panel host and ALWAYS reserve the
+       scrollbar gutter (scrollbar-gutter only applies on a scroll container,
+       hence overflow-y:auto). Selecting a detection zone grows the sidebar
+       content past the viewport, toggling a vertical scrollbar; without a
+       reserved gutter that toggle shrinks the content width by the scrollbar,
+       and the margin:auto-centred .panel (and the grid inside it) shifts
+       horizontally. Reserving the gutter keeps the layout width constant so
+       the grid stays put. (Mobile re-owns its own scroll via .panel
+       overflow:hidden in the @media block below.) */
+    overflow-y: auto;
+    scrollbar-gutter: stable;
   }
 `;
 
@@ -199,6 +210,11 @@ export const panelStyles = css`
   @media (max-width: 819px) {
     :host {
       --epp-control-height: 44px;
+      /* Mobile re-owns its scroll inside .panel (overflow:hidden below), so
+         the host neither scrolls nor needs a reserved gutter — drop both so a
+         phone doesn't show a wasted gutter strip down the edge. */
+      overflow: hidden;
+      scrollbar-gutter: auto;
     }
     .panel {
       /* Constrain .panel to the panel-host width (which HA sizes to the
@@ -213,12 +229,48 @@ export const panelStyles = css`
          display:flex; .panel is its flex item). (Mobile @media only — desktop
          layout is byte-identical.) */
       max-width: 100%;
+      /* Always fill the host width (not just cap it): as a flex item of :host,
+         .panel would otherwise size to its content's width (flex-basis:auto),
+         so the live view's width visibly jumped when the wide debug log opened
+         /closed. width:100% pins it to the host width regardless of content. */
+      width: 100%;
       box-sizing: border-box;
-      padding: var(--epp-space-3, 12px);
+      /* Drop the BOTTOM padding on mobile so the inline controls sheet reaches
+         the viewport bottom (no gap below it). The 12px bottom padding
+         otherwise leaves a strip between the sheet's pinned Save/Cancel
+         actions and the screen edge. Square bottom corners flush at the edge
+         are expected. */
+      padding: var(--epp-space-3, 12px) var(--epp-space-3, 12px) 0;
       min-width: 0;
+      /* Full-height flex column so the editor's controls panel fills the space
+         below the grid down to the viewport bottom (nothing extends past it).
+         height:100% resolves against :host (which is height:100%). Clipping our
+         own overflow makes the inner regions (sheet body / sidebar) scroll
+         instead of the page. (Mobile @media only — desktop is byte-identical.) */
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+      min-height: 0;
+      overflow: hidden;
     }
     .panel-header ha-select {
       width: 100%;
+    }
+    /* Let the settings view fill the .panel's remaining height (below the
+       header/banner) so its Save/Cancel bar reaches the viewport bottom and
+       the accordion list scrolls internally. (Mobile @media only — desktop is
+       byte-identical.) */
+    .panel > epp-settings-view {
+      flex: 1;
+      min-height: 0;
+    }
+    /* The device-groups view lives directly under .tab-layout (not .panel), so
+       it already gets flex:1 + overflow:auto from the .tab-layout > :not(.tab-bar)
+       rule. Add min-height:0 so its internal flex column can establish a
+       bottom-pinned Save/Cancel bar with the editor body scrolling instead of
+       the whole view. (Mobile @media only — desktop is byte-identical.) */
+    .tab-layout > epp-device-groups-view {
+      min-height: 0;
     }
   }
 
@@ -370,17 +422,42 @@ export const layoutStyles = css`
   }
 
   @media (max-width: 819px) {
+    /* Mobile editor (.editor-mobile): full-height flex column that grows to
+       fill the .panel below the header. The grid container is fixed-height
+       (flex:0 0 auto, sized ≤50% viewport by the grid's own cap), and the
+       inline <epp-sheet> fills the rest and owns its own scroll. */
+    .editor-mobile {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+    }
+    .editor-mobile > .grid-container {
+      flex: 0 0 auto;
+    }
+    .editor-mobile > epp-sheet {
+      flex: 1 1 auto;
+      min-height: 0;
+    }
+    /* Live overview (.editor-layout, already column on mobile): same full-height
+       behavior — the grid column is fixed-height and the sidebar fills the rest.
+       The single scroller is .sidebar-scroll (the .zone-sidebar stays a plain
+       flex:1 container so we don't double-scroll). */
     .editor-layout {
       flex-direction: column;
       align-items: stretch;
+      flex: 1;
+      min-height: 0;
+    }
+    .grid-column {
+      max-width: 100%;
+      flex: 0 0 auto;
     }
     .zone-sidebar {
       width: auto;
       border-left: none;
-    }
-    .grid-column {
-      max-width: 100%;
-      text-align: center;
+      flex: 1 1 auto;
+      min-height: 0;
     }
   }
 `;
@@ -556,6 +633,35 @@ export class EPPGridPanel extends LitElement {
 	// Defaults open so the inline controls sheet is visible immediately under
 	// the grid in the mobile editor (no swipe needed); tap-to-collapse still works.
 	@state() private _editorSheetOpen = true;
+	// True while a text field inside the mobile editor is focused (zone name,
+	// number inputs). The soft keyboard then covers the bottom of the screen, so
+	// the pinned Save/Cancel bar is hidden to keep the edited field visible; it
+	// returns on blur. Mobile-only concern (no soft keyboard on desktop).
+	@state() private _editorTextFocused = false;
+	private _onEditorFocusIn = (e: FocusEvent): void => {
+		const el = (e.composedPath?.()[0] ?? e.target) as HTMLElement | null;
+		if (!el) return;
+		const tag = el.tagName;
+		// Text-entry controls raise the soft keyboard; non-text (buttons,
+		// checkbox/radio/range/file/color) and selects (native picker) do not.
+		const isTextEntry =
+			tag === "TEXTAREA" ||
+			(tag === "INPUT" &&
+				![
+					"button",
+					"checkbox",
+					"radio",
+					"range",
+					"submit",
+					"reset",
+					"color",
+					"file",
+				].includes((el as HTMLInputElement).type));
+		if (isTextEntry) this._editorTextFocused = true;
+	};
+	private _onEditorFocusOut = (): void => {
+		this._editorTextFocused = false;
+	};
 	private _mql?: MediaQueryList;
 	private _onMql = (e: MediaQueryListEvent | MediaQueryList) => {
 		this._isMobile = e.matches;
@@ -1759,6 +1865,11 @@ export class EPPGridPanel extends LitElement {
         padding: var(--epp-space-2, 8px);
         align-self: center;
       }
+      .debug-log-container {
+        /* ~2 log entries (≈4 wrapped lines) before it scrolls — keeps the log
+           from shoving the rest of the panel down on a phone. */
+        max-height: 76px;
+      }
     }
 
     .tab-help {
@@ -2479,6 +2590,7 @@ export class EPPGridPanel extends LitElement {
 				.targetPrevXY=${this._zoneEngineState.targetPrevXY}
 				.localize=${this._localize}
 				.maxGridPx=${480}
+				?capHeightToHalfViewport=${this._isMobile}
 				.maxRangeMm=${this._computeMaxRangeMm()}
 				@furniture-select=${(e: CustomEvent) => {
 					this._selectedFurnitureId = e.detail;
@@ -2815,6 +2927,7 @@ export class EPPGridPanel extends LitElement {
                 .targetPrevXY=${this._zoneEngineState.targetPrevXY}
                 .localize=${this._localize}
                 .maxGridPx=${480}
+                ?capHeightToHalfViewport=${this._isMobile}
                 .maxRangeMm=${this._editorMaxRangeMm()}
                 .frozenBounds=${this._frozenBounds}
                 .dismissedTargets=${this._dismissedTargets}
@@ -2887,7 +3000,11 @@ export class EPPGridPanel extends LitElement {
 			return html`
       <div class="panel" @click=${onPanelClick}>
         ${this._renderHeader()}
-        <div class="editor-mobile">
+        <div
+          class="editor-mobile"
+          @focusin=${this._onEditorFocusIn}
+          @focusout=${this._onEditorFocusOut}
+        >
           <div class="grid-container" @click=${onGridContainerClick}>
             ${gridTemplate}
           </div>
@@ -2900,7 +3017,7 @@ export class EPPGridPanel extends LitElement {
           >
             <div slot="peek">${this._renderSidebarTabs()}</div>
             ${this._renderSidebarContent()}
-            ${this._dirty ? html`<div slot="actions">${this._renderSaveCancelButtons()}</div>` : nothing}
+            ${this._dirty && !this._editorTextFocused ? html`<div slot="actions">${this._renderSaveCancelButtons()}</div>` : nothing}
           </epp-sheet>
         </div>
       </div>

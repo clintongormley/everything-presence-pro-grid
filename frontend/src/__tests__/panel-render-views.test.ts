@@ -329,6 +329,40 @@ describe("render() dispatches to correct view", () => {
 		).not.toBeNull();
 	});
 
+	it("hides the editor save bar while a text field is being edited", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		a._dirty = true;
+		// Editing a zone name focuses a text input → the soft keyboard rises and
+		// the pinned Save/Cancel bar would cover the field. It hides while a text
+		// field is focused so the field stays visible, then returns on blur.
+		a._editorTextFocused = true;
+		let c = renderTo(a._renderEditor());
+		expect(c.querySelector('epp-sheet [slot="actions"]')).toBeNull();
+		a._editorTextFocused = false;
+		c = renderTo(a._renderEditor());
+		expect(
+			c.querySelector('epp-sheet [slot="actions"] .save-cancel-bar'),
+		).not.toBeNull();
+	});
+
+	it("tracks text-field focus in the editor (focusin text input → true, focusout → false, non-text → false)", () => {
+		const a = createPanel() as any;
+		const input = document.createElement("input");
+		input.type = "text";
+		a._onEditorFocusIn({
+			composedPath: () => [input],
+		} as unknown as FocusEvent);
+		expect(a._editorTextFocused).toBe(true);
+		a._onEditorFocusOut();
+		expect(a._editorTextFocused).toBe(false);
+		const btn = document.createElement("button");
+		a._onEditorFocusIn({ composedPath: () => [btn] } as unknown as FocusEvent);
+		expect(a._editorTextFocused).toBe(false);
+	});
+
 	it("defaults the mobile editor sheet to open (inline, visible under the grid)", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
