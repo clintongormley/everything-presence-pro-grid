@@ -22,19 +22,22 @@ export const GRID_CELL_MM = 300; // each cell represents 300mm x 300mm
 export const MAX_RANGE = 6000;
 
 /**
- * Largest integer cell size (px) that keeps a visCols×visRows grid within both
- * the maxGridPx ceiling and the available container width. `availPx <= 0` means
- * "unmeasured" → fall back to the ceiling so the desktop look is unchanged.
+ * Largest integer cell size (px) that keeps a visCols×visRows grid within the
+ * maxGridPx ceiling, the per-cell `maxCellPx` cap, AND the available container
+ * width. `availPx <= 0` means "unmeasured" → fall back to the ceiling so the
+ * desktop look is unchanged.
  */
 export function fitCellPx(
 	maxGridPx: number,
 	availPx: number,
 	visCols: number,
 	visRows: number,
+	maxCellPx = 32,
 ): number {
 	const ceiling = Math.min(
 		Math.floor(maxGridPx / visCols),
 		Math.floor(maxGridPx / visRows),
+		maxCellPx,
 	);
 	if (availPx <= 0) return Math.max(1, ceiling);
 	const widthFit = Math.floor(availPx / visCols);

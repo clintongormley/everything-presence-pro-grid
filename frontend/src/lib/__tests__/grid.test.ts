@@ -659,4 +659,8 @@ describe("fitCellPx", () => {
 		expect(fitCellPx(480, 0, 20, 20)).toBe(24);
 		expect(fitCellPx(480, -1, 20, 20)).toBe(24);
 	});
+	it("caps cell size at 32px for small grids", () => {
+		// floor(480/10)=48, but capped at 32; wide container doesn't constrain
+		expect(fitCellPx(480, 900, 10, 10)).toBe(32);
+	});
 });
