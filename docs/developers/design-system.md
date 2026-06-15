@@ -65,7 +65,7 @@ when re-emitting a composed HA event (else it double-fires across shadow boundar
 | `epp-tooltip` | hover/focus hint on icon buttons / truncated text | `content`; slot = trigger. Replaces raw `title=` |
 | `epp-info-tip` (`components/`) | the `(?)` explanatory bubble (a sentence of help) | click/tap to open; touch-friendly |
 | `epp-dialog` | **every modal** | `open` (caller-owns), `heading?`; slots: default + `actions`; emits `dialog-dismiss` on Esc. **Slot action buttons directly** (`<epp-button slot="actions">`), not inside a wrapper `<div slot="actions">` (that breaks the flex row) |
-| `epp-sheet` | mobile bottom sheet (the editor's controls below the breakpoint) | `open` (caller-owns); slots: `peek` (always visible) + default (body) + `actions`; tap the handle toggles, emits `sheet-open-changed` `{detail:{open}}`. Fixed to the bottom; only rendered below the mobile breakpoint |
+| `epp-sheet` | mobile bottom sheet (the editor's controls below the breakpoint) | `open` (caller-owns) + `inline`; slots: `peek` (always visible) + default (body) + `actions`. The handle is a **non-interactive grab indicator** — the caller controls `open` (no tap-to-toggle, no `sheet-open-changed`). `inline` flows it in document order below the grid (the mobile editor); the default fixes it to the viewport bottom. Only rendered below the mobile breakpoint |
 
 ## Theming rules
 
