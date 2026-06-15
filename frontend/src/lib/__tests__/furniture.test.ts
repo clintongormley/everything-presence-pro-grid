@@ -1065,4 +1065,12 @@ describe("snapRotation", () => {
 		expect(snapRotation(44, 90, 10)).toBe(44);
 		expect(snapRotation(7, 90, 10)).toBe(0);
 	});
+	it("is identity at exact multiples", () => {
+		expect(snapRotation(15)).toBe(15);
+		expect(snapRotation(90)).toBe(90);
+	});
+	it("treats the threshold boundary as free (strict <)", () => {
+		expect(snapRotation(7)).toBe(7); // exactly 7° from 0 → free
+		expect(snapRotation(6)).toBe(0); // 6° from 0 → snaps
+	});
 });

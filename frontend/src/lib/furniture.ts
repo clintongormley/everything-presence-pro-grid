@@ -396,5 +396,5 @@ export function snapRotation(angle: number, step = 15, threshold = 7): number {
 	const nearest = (Math.round(a / step) * step) % 360;
 	let diff = Math.abs(a - nearest);
 	if (diff > 180) diff = 360 - diff;
-	return diff < threshold ? nearest : Math.round(a);
+	return diff < threshold ? nearest : Math.round(a) % 360;
 }
