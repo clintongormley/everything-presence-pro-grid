@@ -4840,7 +4840,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
                 @furniture-pointer-down=${e=>{const{e:t,id:i,type:s,handle:r,rotation:o}=e.detail;this._onFurniturePointerDown(t,i,s,r,o)}}
                 @furniture-delete=${e=>{this._removeFurniture(e.detail)}}
                 @target-undismissed=${e=>{this._handleTargetUndismissed(e.detail.targetIndex)}}
-              ></epp-grid>`,r=e=>{e.composedPath().some(e=>e instanceof HTMLElement&&e.classList.contains("furniture-item"))||(this._selectedFurnitureId=null)},o=e=>{const t=e.target;t.closest(".grid")||t.closest(".zone-sidebar")||this._justPainted||(this._activeZone=null)};return this._isMobile?N`
+              ></epp-grid>`,r=e=>{const t=e.composedPath();if(t.some(e=>e instanceof HTMLElement&&"EPP-SHEET"===e.tagName))return;t.some(e=>e instanceof HTMLElement&&e.classList.contains("furniture-item"))||(this._selectedFurnitureId=null)},o=e=>{const t=e.target;t.closest(".grid")||t.closest(".zone-sidebar")||t.closest("epp-sheet")||this._justPainted||(this._activeZone=null)};return this._isMobile?N`
       <div class="panel" @click=${o}>
         ${this._renderHeader()}
         <div class="editor-mobile">

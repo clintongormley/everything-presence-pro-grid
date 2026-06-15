@@ -2760,13 +2760,17 @@ export class EPPGridPanel extends LitElement {
 		// off a furniture item clears the selection. Shared verbatim by both
 		// branches' wrappers.
 		const onGridContainerClick = (e: Event) => {
-			const onFurniture = e
-				.composedPath()
-				.some(
-					(el) =>
-						el instanceof HTMLElement &&
-						el.classList.contains("furniture-item"),
-				);
+			const path = e.composedPath();
+			if (
+				path.some(
+					(el) => el instanceof HTMLElement && el.tagName === "EPP-SHEET",
+				)
+			)
+				return;
+			const onFurniture = path.some(
+				(el) =>
+					el instanceof HTMLElement && el.classList.contains("furniture-item"),
+			);
 			if (!onFurniture) {
 				this._selectedFurnitureId = null;
 			}
@@ -2777,7 +2781,11 @@ export class EPPGridPanel extends LitElement {
 		// painted). Shared verbatim by both branches' panel wrappers.
 		const onPanelClick = (e: Event) => {
 			const el = e.target as HTMLElement;
-			if (!el.closest(".grid") && !el.closest(".zone-sidebar")) {
+			if (
+				!el.closest(".grid") &&
+				!el.closest(".zone-sidebar") &&
+				!el.closest("epp-sheet")
+			) {
 				if (!this._justPainted) this._activeZone = null;
 			}
 		};

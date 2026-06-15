@@ -347,6 +347,31 @@ describe("render() dispatches to correct view", () => {
 		expect(a._editorSheetOpen).toBe(true);
 	});
 
+	it("keeps the active zone selected when tapping inside the mobile sheet", () => {
+		// Regression: on mobile the editor controls live inside <epp-sheet>
+		// (slotted), not in a .zone-sidebar. The panel-level @click handler must
+		// exempt epp-sheet so a tap that selects a zone (or hits the Room button)
+		// in the sheet doesn't immediately clear _activeZone on the same click.
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		const c = renderTo(a._renderEditor());
+		const sheet = c.querySelector("epp-sheet") as HTMLElement;
+		expect(sheet).not.toBeNull();
+		// User has a zone selected (e.g. just tapped a zone row in the sheet).
+		a._activeZone = 2;
+		a._justPainted = false;
+		// A click originating inside the sheet bubbles up to the .panel handler.
+		const target =
+			(sheet.querySelector("epp-zone-sidebar") as HTMLElement) ?? sheet;
+		target.dispatchEvent(
+			new MouseEvent("click", { bubbles: true, composed: true }),
+		);
+		// Active zone must survive — the sheet is exempted in onPanelClick.
+		expect(a._activeZone).toBe(2);
+	});
+
 	it("flips _isMobile when the media query change fires", () => {
 		const a = createPanel() as any;
 		// _onMql mirrors MediaQueryListEvent.matches onto _isMobile.
