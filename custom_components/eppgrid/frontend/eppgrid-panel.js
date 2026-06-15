@@ -5172,6 +5172,36 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
       flex-shrink: 0;
     }
 
+    .epp-logo {
+      align-self: center;
+      width: 40px;
+      height: 40px;
+      margin-right: var(--epp-space-3, 12px);
+      flex-shrink: 0;
+    }
+
+    .tab {
+      padding: var(--epp-space-3, 12px) 20px;
+      border: none;
+      background: none;
+      color: var(--app-header-text-color, white);
+      cursor: pointer;
+      font-size: var(--epp-font-base, 14px);
+      font-weight: 500;
+      opacity: 0.7;
+      border-bottom: 3px solid transparent;
+    }
+
+    .tab.active {
+      opacity: 1;
+      border-bottom-color: var(--app-header-text-color, white);
+    }
+
+    .tab-icon,
+    .tab-label-short {
+      display: none;
+    }
+
     @media (max-width: 819px) {
       .tab-bar {
         flex-wrap: nowrap;
@@ -5203,36 +5233,6 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
         padding: var(--epp-space-2, 8px);
         align-self: center;
       }
-    }
-
-    .epp-logo {
-      align-self: center;
-      width: 40px;
-      height: 40px;
-      margin-right: var(--epp-space-3, 12px);
-      flex-shrink: 0;
-    }
-
-    .tab {
-      padding: var(--epp-space-3, 12px) 20px;
-      border: none;
-      background: none;
-      color: var(--app-header-text-color, white);
-      cursor: pointer;
-      font-size: var(--epp-font-base, 14px);
-      font-weight: 500;
-      opacity: 0.7;
-      border-bottom: 3px solid transparent;
-    }
-
-    .tab.active {
-      opacity: 1;
-      border-bottom-color: var(--app-header-text-color, white);
-    }
-
-    .tab-icon,
-    .tab-label-short {
-      display: none;
     }
 
     .tab-help {
