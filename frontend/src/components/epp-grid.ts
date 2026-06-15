@@ -242,7 +242,15 @@ export class EppGrid extends LitElement {
 		const gridChromePx = this._availPx > 0 ? 4 + (visCols - 1) : 0;
 		const cellPx = fitCellPx(
 			this.maxGridPx,
-			this._availPx > 0 ? this._availPx - gridChromePx : this._availPx,
+			// When measured, clamp to ≥1px so a "measured but tiny" width (chrome
+			// exceeds the available px in an extreme-narrow/transient layout) still
+			// shrinks. A negative value would read as "unmeasured" in fitCellPx and
+			// snap to the ceiling — overflowing instead of shrinking. The unmeasured
+			// branch keeps passing _availPx unchanged so fitCellPx's own fallback
+			// applies when _availPx <= 0.
+			this._availPx > 0
+				? Math.max(1, this._availPx - gridChromePx)
+				: this._availPx,
 			visCols,
 			visRows,
 		);

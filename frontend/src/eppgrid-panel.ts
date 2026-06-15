@@ -2838,17 +2838,17 @@ export class EPPGridPanel extends LitElement {
 		// off a furniture item clears the selection. Shared verbatim by both
 		// branches' wrappers.
 		const onGridContainerClick = (e: Event) => {
-			const path = e.composedPath();
-			if (
-				path.some(
-					(el) => el instanceof HTMLElement && el.tagName === "EPP-SHEET",
-				)
-			)
-				return;
-			const onFurniture = path.some(
-				(el) =>
-					el instanceof HTMLElement && el.classList.contains("furniture-item"),
-			);
+			// `<epp-sheet>` is never a descendant of `.grid-container` (mobile: a
+			// sibling inside `.editor-mobile`; desktop: absent), so a sheet click
+			// never reaches this handler — the active-zone-preserving exemption
+			// lives in `onPanelClick`. This handler only clears furniture selection.
+			const onFurniture = e
+				.composedPath()
+				.some(
+					(el) =>
+						el instanceof HTMLElement &&
+						el.classList.contains("furniture-item"),
+				);
 			if (!onFurniture) {
 				this._selectedFurnitureId = null;
 			}

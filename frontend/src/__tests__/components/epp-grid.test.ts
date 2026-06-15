@@ -1386,3 +1386,79 @@ describe("epp-grid target dot keying (per-target identity)", () => {
 		document.body.removeChild(el);
 	});
 });
+
+describe("epp-grid cell sizing (measured available width)", () => {
+	// Number of repeated columns in `grid-template-columns: repeat(N, Xpx)`.
+	const visColsOf = (grid: HTMLElement): number => {
+		const m = grid.style.gridTemplateColumns.match(/repeat\((\d+),/);
+		return m ? Number(m[1]) : 0;
+	};
+	// The per-cell px from `repeat(N, Xpx)`.
+	const cellPxOf = (grid: HTMLElement): number => {
+		const m = grid.style.gridTemplateColumns.match(/repeat\(\d+,\s*(\d+)px\)/);
+		return m ? Number(m[1]) : 0;
+	};
+
+	it("shrinks the grid when measured available width is tinier than the grid chrome", async () => {
+		const el = createGrid();
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const grid = el.shadowRoot!.querySelector(".grid") as HTMLElement;
+		const visCols = visColsOf(grid);
+		expect(visCols).toBeGreaterThan(0);
+
+		// Grid chrome is 4px (2px border ×2) + (visCols-1)px gaps. Pick a measured
+		// available width SMALLER than that chrome so `availPx - chrome` is < 0.
+		const gridChromePx = 4 + (visCols - 1);
+		const tinyAvail = Math.max(1, gridChromePx - 5);
+		expect(tinyAvail).toBeLessThan(gridChromePx);
+
+		// `_availPx` is a private @state; set it directly (happy-dom has no real
+		// ResizeObserver) and force a re-render.
+		(el as unknown as { _availPx: number })._availPx = tinyAvail;
+		(el as unknown as { requestUpdate: () => void }).requestUpdate();
+		await el.updateComplete;
+
+		// With a measured-but-tiny width the grid must SHRINK, not snap to the
+		// 32px maxCell ceiling and overflow.
+		const cellPx = cellPxOf(grid);
+		expect(cellPx).toBeGreaterThan(0);
+		expect(cellPx).toBeLessThan(32);
+
+		document.body.removeChild(el);
+	});
+
+	it("uses the ceiling cell size when the width is unmeasured", async () => {
+		// Unmeasured (_availPx === 0, the default in tests) keeps the desktop
+		// look: the cell snaps to the maxCell/ceiling, not 1px.
+		const el = createGrid();
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const grid = el.shadowRoot!.querySelector(".grid") as HTMLElement;
+		expect(cellPxOf(grid)).toBe(32);
+
+		document.body.removeChild(el);
+	});
+
+	it("fits the cells to a generous measured width without exceeding the ceiling", async () => {
+		const el = createGrid();
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const grid = el.shadowRoot!.querySelector(".grid") as HTMLElement;
+		const visCols = visColsOf(grid);
+
+		// A wide-enough measured width must leave the cell at the 32px ceiling
+		// (unchanged from the unmeasured desktop look).
+		const wide = 32 * visCols + (4 + (visCols - 1)) + 100;
+		(el as unknown as { _availPx: number })._availPx = wide;
+		(el as unknown as { requestUpdate: () => void }).requestUpdate();
+		await el.updateComplete;
+
+		expect(cellPxOf(grid)).toBe(32);
+
+		document.body.removeChild(el);
+	});
+});
