@@ -433,6 +433,17 @@ def _entity_key_for_object_id(object_id: str) -> str | None:
 
 _FOLLOWER_KEYS: frozenset[str] = frozenset(k for followers in _ENTITY_KEY_FOLLOWERS.values() for k in followers)
 
+# Zone presence / target_count entities are enabled/disabled exclusively by
+# `async_update_zone_entities` (device_manager), which is layout-aware — only
+# zone 0 + named slots are enabled, unused slots stay disabled. The
+# `zone_presence` / `zone_target_count` category keys map to ALL zone slots, so
+# `_apply_entity_states` must NOT act on them: enabling the category here would
+# (transiently) enable the unused slots, which `async_update_zone_entities` then
+# re-disables in the same save. That disabled_by churn fires entity-registry
+# events that reload the ESPHome config entry and bounce the device connection
+# on EVERY settings save (re-pushing config + resetting the static sensor).
+_LAYOUT_MANAGED_KEYS: frozenset[str] = frozenset({"zone_presence", "zone_target_count"})
+
 
 def _get_entity_states(hass: HomeAssistant, mac: str) -> dict[str, bool]:
     """Read entity enabled/disabled states from HA entity registry.
@@ -491,7 +502,8 @@ def _apply_entity_states(hass: HomeAssistant, mac: str, entities: dict[str, bool
     for entry in entries:
         object_id = _object_id_from_unique_id(entry.unique_id)
         key = _entity_key_for_object_id(object_id)
-        if key is None or key not in expanded:
+        # Layout-managed zone keys are owned by async_update_zone_entities.
+        if key is None or key not in expanded or key in _LAYOUT_MANAGED_KEYS:
             continue
         # Never overwrite entities the user has manually disabled
         if entry.disabled_by == er.RegistryEntryDisabler.USER:

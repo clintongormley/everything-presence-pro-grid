@@ -3435,6 +3435,56 @@ class TestApplyEntityStates:
                 "button.calibrate_co2", disabled_by=RegistryEntryDisabler.INTEGRATION
             )
 
+    async def test_apply_entity_states_ignores_layout_managed_zone_keys(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Zone presence / target_count entities are layout-managed solely by
+        async_update_zone_entities, so _apply_entity_states must leave them
+        untouched.
+
+        Otherwise zone_presence=True enables ALL zone entities (including
+        unused slots), which async_update_zone_entities then re-disables in the
+        same save. That transient disabled_by churn fires entity-registry
+        events that reload the ESPHome config entry and bounce the device
+        connection on every settings save — re-pushing the static-presence
+        config and resetting the DFRobot sensor each time.
+        """
+        from homeassistant.helpers.entity_registry import RegistryEntryDisabler
+
+        from custom_components.eppgrid.device_manager import ManagedDevice
+        from custom_components.eppgrid.websocket_api import _apply_entity_states
+
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(mac="AA:BB:CC:DD:EE:FF", name="EPP", host="192.168.1.50")
+        mock_dm.devices["AA:BB:CC:DD:EE:FF"].device_id = "dev123"
+
+        # Unused zone slot: integration-disabled presence + target_count entities.
+        zone_presence_entry = MagicMock()
+        zone_presence_entry.unique_id = "AA:BB:CC:DD:EE:FF-binary_sensor-zone_2_presence"
+        zone_presence_entry.entity_id = "binary_sensor.zone_2_presence"
+        zone_presence_entry.disabled_by = RegistryEntryDisabler.INTEGRATION
+
+        zone_count_entry = MagicMock()
+        zone_count_entry.unique_id = "AA:BB:CC:DD:EE:FF-sensor-zone_2_target_count"
+        zone_count_entry.entity_id = "sensor.zone_2_target_count"
+        zone_count_entry.disabled_by = RegistryEntryDisabler.INTEGRATION
+
+        with (
+            patch("custom_components.eppgrid.websocket_api._devices.er.async_get") as mock_er,
+            patch("custom_components.eppgrid.websocket_api._devices.er.async_entries_for_device") as mock_entries,
+        ):
+            mock_registry = mock_er.return_value
+            mock_entries.return_value = [zone_presence_entry, zone_count_entry]
+
+            _apply_entity_states(
+                hass,
+                "AA:BB:CC:DD:EE:FF",
+                {"zone_presence": True, "zone_target_count": True},
+            )
+
+            # Layout-managed zone entities must not be enabled/disabled here.
+            mock_registry.async_update_entity.assert_not_called()
+
     async def test_get_entity_states_excludes_followers(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
