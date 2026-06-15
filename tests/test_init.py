@@ -395,7 +395,7 @@ async def test_register_panel(hass: HomeAssistant) -> None:
 
 
 async def test_register_frontend_resources_registers_static_path(hass: HomeAssistant) -> None:
-    """_register_frontend_resources registers the static path and returns the cache-busted URL."""
+    """_register_frontend_resources registers a content-hashed path and returns its URL."""
     from custom_components.eppgrid import _register_frontend_resources
 
     hass.http = MagicMock()
@@ -405,7 +405,11 @@ async def test_register_frontend_resources_registers_static_path(hass: HomeAssis
         module_url = await _register_frontend_resources(hass)
 
     hass.http.async_register_static_paths.assert_awaited_once()
-    assert module_url == "/eppgrid_static/eppgrid-panel.js?v=abcd1234"
+    # The hash lives in the PATH (not a ?v= query) so the companion app's
+    # service worker, which ignores query strings, can't serve a stale copy.
+    assert module_url == "/eppgrid_static/abcd1234/eppgrid-panel.js"
+    configs = hass.http.async_register_static_paths.call_args.args[0]
+    assert any(c.url_path == "/eppgrid_static/abcd1234" for c in configs)
 
 
 async def test_register_frontend_resources_hash_oserror(hass: HomeAssistant) -> None:
@@ -421,7 +425,7 @@ async def test_register_frontend_resources_hash_oserror(hass: HomeAssistant) -> 
     with patch.object(hass, "async_add_executor_job", side_effect=executor_raises):
         module_url = await _register_frontend_resources(hass)
 
-    assert module_url.endswith("?v=0")
+    assert module_url == "/eppgrid_static/0/eppgrid-panel.js"
 
 
 async def test_register_frontend_resources_registers_static_path_once(hass: HomeAssistant) -> None:
@@ -435,7 +439,7 @@ async def test_register_frontend_resources_registers_static_path_once(hass: Home
         first = await _register_frontend_resources(hass)
         second = await _register_frontend_resources(hass)
 
-    assert first == second
+    assert first == second == "/eppgrid_static/abcd1234/eppgrid-panel.js"
     hass.http.async_register_static_paths.assert_awaited_once()
 
 
@@ -451,9 +455,10 @@ async def test_register_frontend_resources_recomputes_hash_on_reload(hass: HomeA
         first = await _register_frontend_resources(hass)
         second = await _register_frontend_resources(hass)
 
-    assert first.endswith("v=abcd1234")
-    assert second.endswith("v=ef567890")
-    hass.http.async_register_static_paths.assert_awaited_once()
+    assert first == "/eppgrid_static/abcd1234/eppgrid-panel.js"
+    assert second == "/eppgrid_static/ef567890/eppgrid-panel.js"
+    # A new bundle hash → a new path registered (one per distinct hash).
+    assert hass.http.async_register_static_paths.await_count == 2
 
 
 async def test_setup_entry_unwinds_on_start_failure_and_allows_retry(

@@ -27,7 +27,7 @@ FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "frontend")
 # Key in hass.data marking that the static path has been registered with the
 # HTTP component. Static path registration can only happen once per HA process
 # and will error on duplicate registration, so we guard it with a flag.
-_STATIC_PATH_REGISTERED_KEY = f"{DOMAIN}_static_path_registered"
+_STATIC_HASH_PATHS_KEY = f"{DOMAIN}_static_hash_paths"
 # Key tracking whether the sidebar panel was registered, so unload can remove
 # it without warning when the user had it disabled.
 _PANEL_REGISTERED_KEY = f"{DOMAIN}_panel_registered"
@@ -167,32 +167,41 @@ async def async_apply_panel_visibility(hass: HomeAssistant, visible: bool) -> No
 
 
 async def _register_frontend_resources(hass: HomeAssistant) -> str:
-    """Register the static path serving the bundled JS module.
+    """Register a content-hashed static path for the bundle and return its URL.
 
-    Returns the versioned module URL for `panel_custom.async_register_panel` to
-    load on panel access. The static path is registered only once per HA
-    process. The hash is recomputed on every call so reloads pick up new
-    bundles via the cache-bust query string.
+    The bundle's content hash is embedded in the URL PATH
+    (`/eppgrid_static/<hash>/eppgrid-panel.js`) rather than a `?v=` query.
+    The Home Assistant companion app's service worker caches by URL and ignores
+    query strings, so a query cache-bust was served stale across versions; a
+    hashed path makes each bundle a genuinely distinct resource, forcing a fresh
+    fetch (an integration reload re-registers the panel at the new path).
+
+    Each hash's prefix is registered once per HA process (old hashes' prefixes
+    linger harmlessly until restart). The content at a hashed path never
+    changes, so it is served with immutable cache headers. No base
+    `/eppgrid_static` mapping is registered, so the hashed prefixes can't
+    collide with it in the aiohttp router.
     """
-    if not hass.data.get(_STATIC_PATH_REGISTERED_KEY):
-        await hass.http.async_register_static_paths(
-            [
-                StaticPathConfig(
-                    url_path=f"/{DOMAIN}_static",
-                    path=FRONTEND_DIR,
-                    cache_headers=False,
-                )
-            ]
-        )
-        hass.data[_STATIC_PATH_REGISTERED_KEY] = True
-
     js_path = os.path.join(FRONTEND_DIR, "eppgrid-panel.js")
     try:
         js_hash = await hass.async_add_executor_job(_hash_file, js_path)
     except OSError:
         js_hash = "0"
 
-    return f"/{DOMAIN}_static/eppgrid-panel.js?v={js_hash}"
+    registered: set[str] = hass.data.setdefault(_STATIC_HASH_PATHS_KEY, set())
+    if js_hash not in registered:
+        await hass.http.async_register_static_paths(
+            [
+                StaticPathConfig(
+                    url_path=f"/{DOMAIN}_static/{js_hash}",
+                    path=FRONTEND_DIR,
+                    cache_headers=True,
+                )
+            ]
+        )
+        registered.add(js_hash)
+
+    return f"/{DOMAIN}_static/{js_hash}/eppgrid-panel.js"
 
 
 async def _register_panel(hass: HomeAssistant, module_url: str) -> None:
