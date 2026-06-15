@@ -188,9 +188,12 @@ describe("GridStateController", () => {
 			expect(host._activeZone).toBe(1);
 		});
 
-		it("marks the host as dirty", () => {
+		it("does NOT mark the host as dirty (an empty zone has no drawn cells yet)", () => {
+			// Dirty must come from actually drawing cells (paint flow) or editing a
+			// zone's config (name/type) — not from adding an empty slot.
+			host._dirty = false;
 			ctrl.addZone();
-			expect(host._dirty).toBe(true);
+			expect(host._dirty).toBe(false);
 		});
 
 		it("fills a gap rather than always using slot 0", () => {

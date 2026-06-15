@@ -630,9 +630,6 @@ export class EPPGridPanel extends LitElement {
 	// every editor render test, which runs with happy-dom's matches:false — is
 	// the byte-identical existing markup).
 	@state() private _isMobile = false;
-	// Defaults open so the inline controls sheet is visible immediately under
-	// the grid in the mobile editor (no swipe needed); tap-to-collapse still works.
-	@state() private _editorSheetOpen = true;
 	// True while a text field inside the mobile editor is focused (zone name,
 	// number inputs). The soft keyboard then covers the bottom of the screen, so
 	// the pinned Save/Cancel bar is hidden to keep the edited field visible; it
@@ -3008,13 +3005,7 @@ export class EPPGridPanel extends LitElement {
           <div class="grid-container" @click=${onGridContainerClick}>
             ${gridTemplate}
           </div>
-          <epp-sheet
-            inline
-            ?open=${this._editorSheetOpen}
-            @sheet-open-changed=${(e: CustomEvent<{ open: boolean }>) => {
-							this._editorSheetOpen = e.detail.open;
-						}}
-          >
+          <epp-sheet inline open>
             <div slot="peek">${this._renderSidebarTabs()}</div>
             ${this._renderSidebarContent()}
             ${this._dirty && !this._editorTextFocused ? html`<div slot="actions">${this._renderSaveCancelButtons()}</div>` : nothing}
@@ -3168,8 +3159,8 @@ export class EPPGridPanel extends LitElement {
             role="tab"
             aria-selected=${this._sidebarTab === t.id ? "true" : "false"}
             @click=${(e: Event) => {
-							// Stop the click bubbling to epp-sheet's handle-bar (which
-							// would toggle the sheet open/closed on tab-switch).
+							// Keep the tab-switch self-contained (don't let it bubble to the
+							// panel-level click handler / influence zone selection).
 							e.stopPropagation();
 							this._applyView({ view: "editor", sidebarTab: t.id });
 						}}

@@ -299,6 +299,7 @@ export class EppZoneSidebar extends LitElement {
 								<input
 									class="zone-name-input"
 									type="text"
+									?readonly=${this.activeZone !== slot}
 									.value=${zone.name}
 									@input=${(e: Event) => {
 										const val = (e.target as HTMLInputElement).value;

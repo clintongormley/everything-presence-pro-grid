@@ -71,11 +71,13 @@ describe("_addZone", () => {
 		expect(a._zoneConfigs[2].color).toBe(ZONE_COLORS[1]);
 	});
 
-	it("sets _dirty = true", () => {
+	it("does NOT set _dirty (adding an empty zone draws no cells)", () => {
+		// Dirty must come from drawing cells or editing a zone's config, not from
+		// adding an empty slot — otherwise the Save/Cancel bar appears prematurely.
 		const a = el as any;
 		expect(a._dirty).toBe(false);
 		a._addZone();
-		expect(a._dirty).toBe(true);
+		expect(a._dirty).toBe(false);
 	});
 
 	it("sets _activeZone to the 1-based slot number", () => {

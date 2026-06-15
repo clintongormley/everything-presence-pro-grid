@@ -830,3 +830,66 @@ describe("epp-zone-sidebar occupancy glow", () => {
 		document.body.removeChild(c);
 	});
 });
+
+describe("epp-zone-sidebar two-step name editing (readonly until active)", () => {
+	// Tapping a zone selects it WITHOUT popping the soft keyboard. The name input
+	// is readonly while its zone is not the active one — a readonly input still
+	// fires the row's selecting @click/@focus (so selection works) but does not
+	// raise the soft keyboard. Once the zone is active, the input is editable.
+	function twoZones() {
+		return [
+			{ name: "Z1", color: ZONE_COLORS[0], type: "default" as const },
+			{ name: "Z2", color: ZONE_COLORS[1], type: "default" as const },
+			null,
+			null,
+			null,
+			null,
+			null,
+		];
+	}
+
+	it("renders a non-active zone's name input as readonly", () => {
+		const el = createSidebar({ activeZone: 1 });
+		(el as any).zoneConfigs = twoZones();
+		const c = renderTo((el as any)._renderZoneSidebar());
+		try {
+			// Zone 2 (slot 2) is NOT active → its name input is readonly.
+			const inputs = c.querySelectorAll<HTMLInputElement>(".zone-name-input");
+			// inputs[0] = active zone 1, inputs[1] = inactive zone 2.
+			expect(inputs[1].hasAttribute("readonly")).toBe(true);
+		} finally {
+			document.body.removeChild(c);
+		}
+	});
+
+	it("renders the active zone's name input WITHOUT readonly", () => {
+		const el = createSidebar({ activeZone: 2 });
+		(el as any).zoneConfigs = twoZones();
+		const c = renderTo((el as any)._renderZoneSidebar());
+		try {
+			// Same zone 2, now active → editable (no readonly).
+			const inputs = c.querySelectorAll<HTMLInputElement>(".zone-name-input");
+			expect(inputs[1].hasAttribute("readonly")).toBe(false);
+		} finally {
+			document.body.removeChild(c);
+		}
+	});
+
+	it("still selects on click when the name input is readonly (non-active)", () => {
+		const el = createSidebar({ activeZone: 1 });
+		(el as any).zoneConfigs = twoZones();
+		const handler = vi.fn();
+		el.addEventListener("zone-select", handler);
+		const c = renderTo((el as any)._renderZoneSidebar());
+		try {
+			const inputs = c.querySelectorAll<HTMLInputElement>(".zone-name-input");
+			// inputs[1] is the readonly (non-active) zone-2 input.
+			expect(inputs[1].hasAttribute("readonly")).toBe(true);
+			inputs[1].click();
+			expect(handler).toHaveBeenCalledTimes(1);
+			expect(handler.mock.calls[0][0].detail.zone).toBe(2);
+		} finally {
+			document.body.removeChild(c);
+		}
+	});
+});
