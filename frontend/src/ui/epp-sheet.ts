@@ -4,9 +4,11 @@ import { property, state } from "lit/decorators.js";
 /**
  * Persistent themed bottom sheet. The `peek` slot is always visible (with a
  * grab handle); tapping the handle toggles between collapsed (peek only) and
- * open (peek + default content + `actions` footer). The caller owns `open`.
- * Emits `sheet-open-changed` { detail: { open } }. Used only below the mobile
- * breakpoint (the consumer renders it conditionally).
+ * open (peek + default content + `actions` footer). Tapping the handle toggles
+ * `open` (peek↔expanded); `open` is also a settable property the consumer can
+ * control. `sheet-open-changed` { detail: { open } } is emitted on every toggle
+ * so the consumer can observe/sync it. Used only below the mobile breakpoint
+ * (the consumer renders it conditionally).
  */
 export class EppSheet extends LitElement {
 	@property({ type: Boolean, reflect: true }) open = false;
@@ -37,6 +39,10 @@ export class EppSheet extends LitElement {
       padding: var(--epp-space-2, 8px) var(--epp-space-3, 12px);
       cursor: pointer;
       touch-action: none;
+    }
+    .handle-bar:focus-visible {
+      outline: var(--epp-focus-ring, 2px solid var(--primary-color, #03a9f4));
+      outline-offset: -2px;
     }
     .handle {
       width: 40px;
@@ -74,14 +80,23 @@ export class EppSheet extends LitElement {
 		);
 	};
 
+	private _onKeydown = (e: KeyboardEvent) => {
+		if (e.key === "Enter" || e.key === " ") {
+			e.preventDefault();
+			this._toggle();
+		}
+	};
+
 	render() {
 		return html`
       <div
         class="handle-bar"
         role="button"
+        tabindex="0"
         aria-expanded=${this.open ? "true" : "false"}
         aria-label="Toggle controls"
         @click=${this._toggle}
+        @keydown=${this._onKeydown}
       >
         <div class="handle"></div>
         <slot name="peek"></slot>

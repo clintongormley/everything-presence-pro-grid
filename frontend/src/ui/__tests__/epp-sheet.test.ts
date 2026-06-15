@@ -58,4 +58,40 @@ describe("epp-sheet", () => {
 		expect(el.open).toBe(true);
 		expect(detail).toEqual({ open: true });
 	});
+	it("toggles open + emits sheet-open-changed on Enter keydown", async () => {
+		const el = await fixture(false);
+		let detail: { open: boolean } | undefined;
+		el.addEventListener("sheet-open-changed", (e) => {
+			detail = (e as CustomEvent<{ open: boolean }>).detail;
+		});
+		(el.shadowRoot!.querySelector(".handle-bar") as HTMLElement).dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Enter" }),
+		);
+		expect(el.open).toBe(true);
+		expect(detail).toEqual({ open: true });
+	});
+	it("toggles open + emits sheet-open-changed on Space keydown", async () => {
+		const el = await fixture(false);
+		let detail: { open: boolean } | undefined;
+		el.addEventListener("sheet-open-changed", (e) => {
+			detail = (e as CustomEvent<{ open: boolean }>).detail;
+		});
+		(el.shadowRoot!.querySelector(".handle-bar") as HTMLElement).dispatchEvent(
+			new KeyboardEvent("keydown", { key: " " }),
+		);
+		expect(el.open).toBe(true);
+		expect(detail).toEqual({ open: true });
+	});
+	it("ignores non-activating keys on the handle", async () => {
+		const el = await fixture(false);
+		let fired = false;
+		el.addEventListener("sheet-open-changed", () => {
+			fired = true;
+		});
+		(el.shadowRoot!.querySelector(".handle-bar") as HTMLElement).dispatchEvent(
+			new KeyboardEvent("keydown", { key: "Tab" }),
+		);
+		expect(el.open).toBe(false);
+		expect(fired).toBe(false);
+	});
 });

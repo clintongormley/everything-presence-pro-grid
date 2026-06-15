@@ -603,13 +603,15 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
       gap: var(--epp-space-2, 8px);
       justify-content: flex-end;
     }
-  `,e([Ae({type:String})],Vt.prototype,"label",void 0),e([Ae({type:String})],Vt.prototype,"helper",void 0),customElements.get("epp-section-row")||customElements.define("epp-section-row",Vt);class Zt extends le{constructor(){super(...arguments),this.open=!1,this._hasActions=!1,this._onActionsSlotChange=e=>{this._hasActions=e.target.assignedNodes({flatten:!0}).length>0},this._toggle=()=>{this.open=!this.open,this.dispatchEvent(new CustomEvent("sheet-open-changed",{detail:{open:this.open},bubbles:!0,composed:!0}))}}render(){return N`
+  `,e([Ae({type:String})],Vt.prototype,"label",void 0),e([Ae({type:String})],Vt.prototype,"helper",void 0),customElements.get("epp-section-row")||customElements.define("epp-section-row",Vt);class Zt extends le{constructor(){super(...arguments),this.open=!1,this._hasActions=!1,this._onActionsSlotChange=e=>{this._hasActions=e.target.assignedNodes({flatten:!0}).length>0},this._toggle=()=>{this.open=!this.open,this.dispatchEvent(new CustomEvent("sheet-open-changed",{detail:{open:this.open},bubbles:!0,composed:!0}))},this._onKeydown=e=>{"Enter"!==e.key&&" "!==e.key||(e.preventDefault(),this._toggle())}}render(){return N`
       <div
         class="handle-bar"
         role="button"
+        tabindex="0"
         aria-expanded=${this.open?"true":"false"}
         aria-label="Toggle controls"
         @click=${this._toggle}
+        @keydown=${this._onKeydown}
       >
         <div class="handle"></div>
         <slot name="peek"></slot>
@@ -638,6 +640,10 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
       padding: var(--epp-space-2, 8px) var(--epp-space-3, 12px);
       cursor: pointer;
       touch-action: none;
+    }
+    .handle-bar:focus-visible {
+      outline: var(--epp-focus-ring, 2px solid var(--primary-color, #03a9f4));
+      outline-offset: -2px;
     }
     .handle {
       width: 40px;
