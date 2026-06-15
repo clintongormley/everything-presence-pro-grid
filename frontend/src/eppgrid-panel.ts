@@ -284,21 +284,6 @@ export const layoutStyles = css`
     align-items: flex-start;
   }
 
-  @media (max-width: 819px) {
-    .editor-layout {
-      flex-direction: column;
-      align-items: stretch;
-    }
-    .zone-sidebar {
-      width: auto;
-      border-left: none;
-    }
-    .grid-column {
-      max-width: 100%;
-      text-align: center;
-    }
-  }
-
   .grid-column {
     min-width: 0;
     max-width: min-content;
@@ -373,6 +358,21 @@ export const layoutStyles = css`
   .sidebar-tabs .sidebar-tab.active {
     background: var(--secondary-background-color, #f5f5f5);
     color: var(--primary-color, #03a9f4);
+  }
+
+  @media (max-width: 819px) {
+    .editor-layout {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .zone-sidebar {
+      width: auto;
+      border-left: none;
+    }
+    .grid-column {
+      max-width: 100%;
+      text-align: center;
+    }
   }
 `;
 

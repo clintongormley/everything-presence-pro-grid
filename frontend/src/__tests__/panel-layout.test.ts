@@ -142,6 +142,23 @@ describe("layout styles", () => {
 		expect(scrollCss).toMatch(/min-height:\s*0/);
 		expect(scrollCss).toMatch(/flex:\s*1/);
 	});
+
+	it("layout mobile overrides come after their base rules (cascade order)", () => {
+		// Media queries add NO specificity; at equal specificity the LATER rule in
+		// the concatenated cssText wins. The mobile @media (max-width: 819px) block
+		// overrides .zone-sidebar (width:auto) and .grid-column (max-width:100%), so
+		// it MUST come after the base .zone-sidebar (width:240px) and base
+		// .grid-column (max-width:min-content) declarations — otherwise the bases win
+		// and the grid overflows / the live sidebar stays narrow on phones.
+		const sidebarBaseIdx = layoutCss.indexOf("240px");
+		const gridColBaseIdx = layoutCss.indexOf("min-content");
+		const mediaIdx = layoutCss.indexOf("@media (max-width: 819px)");
+
+		expect(sidebarBaseIdx).toBeGreaterThan(-1);
+		expect(gridColBaseIdx).toBeGreaterThan(-1);
+		expect(mediaIdx).toBeGreaterThan(sidebarBaseIdx);
+		expect(mediaIdx).toBeGreaterThan(gridColBaseIdx);
+	});
 });
 
 describe("live overview layout structure", () => {
