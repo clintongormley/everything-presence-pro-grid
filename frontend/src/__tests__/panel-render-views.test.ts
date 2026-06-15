@@ -363,6 +363,33 @@ describe("render() dispatches to correct view", () => {
 		expect(a._editorTextFocused).toBe(false);
 	});
 
+	it("clears _editorTextFocused when leaving the editor (focusout may not fire on unmount)", () => {
+		const a = createPanel() as any;
+		a._isMobile = true;
+		a._view = "live"; // now outside the editor
+		a._editorTextFocused = true;
+		a.willUpdate(new Map([["_view", "editor"]]));
+		expect(a._editorTextFocused).toBe(false);
+	});
+
+	it("clears _editorTextFocused when the layout leaves mobile (rotate to desktop)", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = false; // rotated to a desktop-width layout
+		a._editorTextFocused = true;
+		a.willUpdate(new Map([["_isMobile", true]]));
+		expect(a._editorTextFocused).toBe(false);
+	});
+
+	it("keeps _editorTextFocused on unrelated updates inside the mobile editor", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._editorTextFocused = true;
+		a.willUpdate(new Map([["_dirty", false]]));
+		expect(a._editorTextFocused).toBe(true);
+	});
+
 	it("renders the mobile editor sheet always-open (inline, visible under the grid)", () => {
 		const a = createPanel() as any;
 		a._view = "editor";

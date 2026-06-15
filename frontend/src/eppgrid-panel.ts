@@ -860,6 +860,19 @@ export class EPPGridPanel extends LitElement {
 		if (changed.has("_view") && this._view !== "editor") {
 			this._sidebarTab = DEFAULT_SIDEBAR_TAB;
 		}
+		// `_editorTextFocused` (hides the mobile Save/Cancel bar while a text
+		// field is focused) is only meaningful inside the mobile editor. A
+		// focusout isn't guaranteed when the `.editor-mobile` container unmounts
+		// — leaving the editor, or rotating to a ≥820px (desktop) layout while an
+		// input is focused — so clear it whenever we're not in the mobile editor,
+		// otherwise a stale `true` would keep the bar hidden on re-entry (with
+		// nothing focused) and block Save.
+		if (
+			(changed.has("_view") || changed.has("_isMobile")) &&
+			(this._view !== "editor" || !this._isMobile)
+		) {
+			this._editorTextFocused = false;
+		}
 		if (changed.has("_view") || changed.has("_sidebarTab")) {
 			this._navGuard.syncHashFromState();
 		}
