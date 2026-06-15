@@ -117,6 +117,23 @@ export class EppFurnitureOverlay extends LitElement {
 		.furn-handle-se { bottom: -11px; right: -11px; }
 		.furn-handle-sw { bottom: -11px; left: -11px; }
 
+		/* Transparent >=44px centered touch hit area on each interactive handle.
+		   Uses ::after (the visible nub uses ::before on .furn-handle, and is the
+		   element's own circle on the rotate/delete handles). Does not change any
+		   handle geometry/offset or the drag/rotate/delete math. */
+		.furn-handle::after,
+		.furn-rotate-handle::after,
+		.furn-delete-btn::after {
+			content: "";
+			position: absolute;
+			top: 50%;
+			left: 50%;
+			width: 44px;
+			height: 44px;
+			transform: translate(-50%, -50%);
+			/* transparent — just enlarges the touch hit target */
+		}
+
 		.furn-rotate-stem {
 			position: absolute;
 			top: -32px;
