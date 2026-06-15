@@ -119,7 +119,10 @@ def _static_presence_args(source: dict[str, Any]) -> dict[str, Any]:
         "trigger_range": source.get("static_max_distance", 16.0),
         "trigger_sensitivity": _sensitivity("static_trigger_threshold"),
         "sustain_sensitivity": _sensitivity("static_renew_threshold"),
-        "timeout": source.get("static_timeout", 30.0),
+        # NB: static_timeout is intentionally NOT here. It is a live zone-engine
+        # value pushed via the dedicated epp_set_static_timeout service; bundling
+        # it into this DFRobot-reconfigure payload would reset the sensor (~8s)
+        # on every timeout change. See `async_push_config`.
         "on_delay": min(max(source.get("static_on_delay", 0.0), 0.0), STATIC_ON_DELAY_MAX),
         "led_enabled": True,
     }

@@ -76,7 +76,15 @@ class OtaWatcherState:
 class DeviceConnection:
     """On-demand API connection to an EPP device."""
 
-    def __init__(self, host: str, port: int = DEFAULT_PORT, noise_psk: str = "") -> None:
+    def __init__(
+        self,
+        host: str,
+        port: int = DEFAULT_PORT,
+        noise_psk: str = "",
+        *,
+        mac: str | None = None,
+        static_presence_cache: dict[str, dict[str, Any]] | None = None,
+    ) -> None:
         self._host = host
         self._port = port
         self._noise_psk = noise_psk
@@ -89,6 +97,15 @@ class DeviceConnection:
         self._log_callbacks: list[Any] = []
         self._unsub_logs: Any = None
         self.connected: bool = False
+        # Skip cache for `_push_static_presence`, keyed by mac: the manager owns
+        # it and shares one dict across this device's connections — see
+        # `DeviceManager._static_presence_cache` for the full rationale.
+        # Standalone connections (no manager, e.g. unit tests) fall back to a
+        # private dict keyed by host.
+        self._mac = mac or host
+        self._static_presence_cache: dict[str, dict[str, Any]] = (
+            static_presence_cache if static_presence_cache is not None else {}
+        )
         # See OtaWatcherState — shared per-connection OTA watcher bookkeeping.
         self.ota: OtaWatcherState = OtaWatcherState()
 
@@ -165,6 +182,10 @@ class DeviceConnection:
         self._states_subscribed = False
         self._log_callbacks.clear()
         self._unsub_logs = None
+        # NB: the static-presence skip cache is intentionally NOT cleared here —
+        # it is owned by the manager (keyed by mac) and must survive this
+        # connection's death so a reconnecting session doesn't redundantly
+        # reconfigure the DFRobot sensor. The manager clears it on device offline.
         # OTA watcher state is per-connection: a dead connection took its
         # log subscription and level bump with it.
         self.ota.reset()
@@ -336,9 +357,36 @@ class DeviceConnection:
                 svc,
                 {"max_range": override.get("target_max_distance", 6.0) * 1000},
             )
+        # Routes through the shared helper so the override updates the skip
+        # cache — otherwise a later save with the (unchanged) stored settings
+        # would be skipped, stranding the device on the override values.
+        await self._push_static_presence(override)
+
+    async def _push_static_presence(self, source: dict[str, Any]) -> bool:
+        """Push static-presence config to the DFRobot sensor, skipping the push
+        when the resulting args match the last ones sent for this mac.
+
+        The firmware's ``epp_set_static_presence`` action stops, reconfigures,
+        flash-saves, and restarts the static sensor (~8s blackout) — far too
+        costly to run on every config push (every save, every reconnect, every
+        page refresh) when no static parameter actually changed. The skip cache
+        is keyed by mac in a manager-owned dict shared across the device's
+        connections, so it survives connection churn; the manager clears the
+        entry when the device goes offline, so the first push after a (re)join
+        re-applies.
+
+        Returns True when the service was called, False when skipped or when the
+        device doesn't expose the service.
+        """
         svc = self._services.get("epp_set_static_presence")
-        if svc:
-            await self._client.execute_service(svc, _static_presence_args(override))
+        if svc is None or self._client is None:
+            return False
+        args = _static_presence_args(source)
+        if args == self._static_presence_cache.get(self._mac):
+            return False
+        await self._client.execute_service(svc, args)
+        self._static_presence_cache[self._mac] = args
+        return True
 
     async def async_dismiss_target(self, target_index: int, cell_index: int) -> None:
         """Send dismiss target command to firmware."""
@@ -504,11 +552,21 @@ class DeviceConnection:
                 _LOGGER.debug("Pushed assisted_clear to %s", self._host)
                 pushed.append("assisted_clear")
 
-            svc = self._services.get("epp_set_static_presence")
-            if svc:
-                await self._client.execute_service(svc, _static_presence_args(settings))
+            if await self._push_static_presence(settings):
                 _LOGGER.debug("Pushed static_presence to %s", self._host)
                 pushed.append("static_presence")
+
+            # static_timeout is a live zone-engine value with its own service —
+            # pushed every time (cheap, no UART), separate from the DFRobot
+            # reconfigure above so a timeout change never resets the sensor.
+            svc = self._services.get("epp_set_static_timeout")
+            if svc:
+                await self._client.execute_service(
+                    svc,
+                    {"timeout": settings.get("static_timeout", 30.0)},
+                )
+                _LOGGER.debug("Pushed static_timeout to %s", self._host)
+                pushed.append("static_timeout")
 
             svc = self._services.get("epp_set_led")
             if svc:

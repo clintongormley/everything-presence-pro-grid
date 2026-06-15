@@ -474,7 +474,6 @@ class TestDeviceConnection:
                 "trigger_range": 12.0,
                 "trigger_sensitivity": 6,  # 10 - 4
                 "sustain_sensitivity": 8,  # 10 - 2
-                "timeout": 45.0,
                 "on_delay": 1.5,
                 "led_enabled": True,
             }
@@ -580,10 +579,59 @@ class TestDeviceConnection:
                 "trigger_range": 16.0,
                 "trigger_sensitivity": 7,  # 10 - 3
                 "sustain_sensitivity": 7,  # 10 - 3
-                "timeout": 30.0,
                 "on_delay": 0.0,
                 "led_enabled": True,
             }
+
+    async def test_push_config_pushes_static_timeout_via_dedicated_service(self) -> None:
+        """static_timeout is a live zone-engine value, pushed via its own
+        epp_set_static_timeout service — NOT bundled into epp_set_static_presence
+        (which stops/reconfigures/restarts the DFRobot sensor for ~8s). So a
+        timeout-only change updates the device without resetting the radar.
+        """
+        conn = DeviceConnection("192.168.1.100")
+        svc_static = MagicMock()
+        svc_static.name = "epp_set_static_presence"
+        svc_static_timeout = MagicMock()
+        svc_static_timeout.name = "epp_set_static_timeout"
+
+        with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.connect = AsyncMock()
+            mock_client.list_entities_services = AsyncMock(return_value=([], [svc_static, svc_static_timeout]))
+            mock_client.execute_service = AsyncMock()
+
+            await conn.async_connect()
+            await conn.async_push_config({"settings": {"static_timeout": 45.0}})
+
+            calls = mock_client.execute_service.await_args_list
+            payloads = {c.args[0].name: c.args[1] for c in calls}
+            # Pushed live via the dedicated service...
+            assert payloads["epp_set_static_timeout"] == {"timeout": 45.0}
+            # ...and NOT bundled into the DFRobot reconfigure payload.
+            assert "timeout" not in payloads["epp_set_static_presence"]
+
+    async def test_push_config_skips_static_timeout_when_service_absent(self) -> None:
+        """Firmware predating epp_set_static_timeout (a device not yet reflashed)
+        must be handled gracefully: the push skips the dedicated service rather
+        than raising. Backward-compatibility guard for the split-out service."""
+        conn = DeviceConnection("192.168.1.100")
+        svc_static = MagicMock()
+        svc_static.name = "epp_set_static_presence"
+        # epp_set_static_timeout intentionally NOT advertised by this device.
+
+        with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.connect = AsyncMock()
+            mock_client.list_entities_services = AsyncMock(return_value=([], [svc_static]))
+            mock_client.execute_service = AsyncMock()
+
+            await conn.async_connect()
+            # Must not raise even though the device lacks epp_set_static_timeout.
+            await conn.async_push_config({"settings": {"static_timeout": 45.0}})
+
+            pushed = {c.args[0].name for c in mock_client.execute_service.await_args_list}
+            assert "epp_set_static_timeout" not in pushed
 
     async def test_push_config_threshold_inverts_within_1_to_9(self) -> None:
         """Threshold 1-9 inverts to chip sensitivity 1-9 as 10 - threshold.
@@ -626,6 +674,112 @@ class TestDeviceConnection:
         p = await push(0, 10)
         assert p["trigger_sensitivity"] == 9  # clamp 0 -> 1, 10 - 1
         assert p["sustain_sensitivity"] == 1  # clamp 10 -> 9, 10 - 9
+
+    @staticmethod
+    def _static_payloads(mock_client: MagicMock) -> list[dict]:
+        """epp_set_static_presence payloads pushed via the mock, in call order."""
+        return [
+            call.args[1]
+            for call in mock_client.execute_service.await_args_list
+            if call.args[0].name == "epp_set_static_presence"
+        ]
+
+    async def test_push_config_skips_static_presence_when_unchanged(self) -> None:
+        """A second push with identical static settings must NOT re-run the
+        DFRobot reconfigure. That firmware action stops, reconfigures, saves,
+        and restarts the static sensor (~8s blackout + a flash write), so it
+        must only fire when a static parameter actually changes."""
+        conn = DeviceConnection("192.168.1.100")
+        svc_static = MagicMock()
+        svc_static.name = "epp_set_static_presence"
+
+        with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.connect = AsyncMock()
+            mock_client.list_entities_services = AsyncMock(return_value=([], [svc_static]))
+            mock_client.execute_service = AsyncMock()
+
+            await conn.async_connect()
+            settings = {"settings": {"static_max_distance": 5.0}}
+            await conn.async_push_config(settings)
+            await conn.async_push_config(settings)
+
+            assert len(self._static_payloads(mock_client)) == 1
+
+    async def test_push_config_repushes_static_presence_when_changed(self) -> None:
+        """Changing a static parameter re-runs the reconfigure with new values."""
+        conn = DeviceConnection("192.168.1.100")
+        svc_static = MagicMock()
+        svc_static.name = "epp_set_static_presence"
+
+        with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.connect = AsyncMock()
+            mock_client.list_entities_services = AsyncMock(return_value=([], [svc_static]))
+            mock_client.execute_service = AsyncMock()
+
+            await conn.async_connect()
+            await conn.async_push_config({"settings": {"static_max_distance": 5.0}})
+            await conn.async_push_config({"settings": {"static_max_distance": 8.0}})
+
+            payloads = self._static_payloads(mock_client)
+            assert len(payloads) == 2
+            assert payloads[-1]["max_range"] == 8.0
+
+    async def test_static_cache_shared_across_connections_skips_on_refresh(self) -> None:
+        """The skip cache is owned by the manager and shared (by mac) across a
+        device's connections, so re-opening the session — e.g. a panel page
+        refresh, which builds a NEW DeviceConnection — does not re-run the
+        DFRobot reconfigure for unchanged settings. The device never left, so
+        it must not be reset. (Reset happens only when the device goes offline;
+        see test_device_offline_clears_static_presence_cache.)
+        """
+        cache: dict = {}
+        mac = "AA:BB:CC:DD:EE:FF"
+        settings = {"settings": {"static_max_distance": 5.0}}
+
+        async def push_on_new_connection() -> list[dict]:
+            conn = DeviceConnection("192.168.1.100", mac=mac, static_presence_cache=cache)
+            svc_static = MagicMock()
+            svc_static.name = "epp_set_static_presence"
+            with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
+                mock_client = mock_cls.return_value
+                mock_client.connect = AsyncMock()
+                mock_client.list_entities_services = AsyncMock(return_value=([], [svc_static]))
+                mock_client.execute_service = AsyncMock()
+                await conn.async_connect()
+                await conn.async_push_config(settings)
+                return self._static_payloads(mock_client)
+
+        # First connection applies static once and populates the shared cache.
+        assert len(await push_on_new_connection()) == 1
+        # A fresh connection (page refresh) for the same device reuses the
+        # shared cache and skips the reconfigure.
+        assert len(await push_on_new_connection()) == 0
+
+    async def test_push_distance_override_updates_static_cache(self) -> None:
+        """A live range override changes the device's static config, so it must
+        update the skip cache. Otherwise a later save with the (unchanged)
+        stored settings would be wrongly skipped, stranding the device on the
+        override values."""
+        conn = DeviceConnection("192.168.1.100")
+        svc_static = MagicMock()
+        svc_static.name = "epp_set_static_presence"
+
+        with patch("custom_components.eppgrid.device_manager._connection.APIClient") as mock_cls:
+            mock_client = mock_cls.return_value
+            mock_client.connect = AsyncMock()
+            mock_client.list_entities_services = AsyncMock(return_value=([], [svc_static]))
+            mock_client.execute_service = AsyncMock()
+
+            await conn.async_connect()
+            await conn.async_push_config({"settings": {"static_max_distance": 5.0}})
+            await conn.async_push_distance_override({"static_max_distance": 8.0})
+            await conn.async_push_config({"settings": {"static_max_distance": 5.0}})
+
+            payloads = self._static_payloads(mock_client)
+            assert len(payloads) == 3
+            assert payloads[-1]["max_range"] == 5.0
 
     async def test_fetch_build_flags_returns_empty_when_service_missing(self) -> None:
         """No get_build_flags service -> cacheable empty result."""
@@ -1309,6 +1463,46 @@ class TestDeviceManager:
             manager._on_state_changed(event)
 
         mock_sched.assert_called_once_with(mac)
+
+    async def test_device_offline_clears_static_presence_cache(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """Going offline clears the device's static-presence skip cache, so the
+        first push after it (re)joins re-applies the DFRobot config. The cache
+        otherwise persists across connection churn (page refreshes), so this
+        offline→online boundary is the only time the sensor is re-reset."""
+        mac = "AA:BB:CC:DD:EE:FF"
+        manager.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50")
+        manager._static_presence_cache[mac] = {"min_range": 0.3, "max_range": 5.0}
+
+        ent_reg = er.async_get(hass)
+        dev_reg = dr.async_get(hass)
+        config_entry = MockConfigEntry(domain="esphome", data={})
+        config_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=config_entry.entry_id,
+            identifiers={("esphome", mac)},
+            connections={(dr.CONNECTION_NETWORK_MAC, mac)},
+        )
+        manager.devices[mac].device_id = device.id
+        ent = ent_reg.async_get_or_create(
+            domain="sensor",
+            platform="esphome",
+            unique_id="firmware_version_aa",
+            device_id=device.id,
+            suggested_object_id="fw",
+        )
+
+        from homeassistant.core import State
+
+        old = State(ent.entity_id, "online")
+        new = State(ent.entity_id, STATE_UNAVAILABLE)
+        event = MagicMock()
+        event.data = {"old_state": old, "new_state": new, "entity_id": ent.entity_id}
+
+        manager._on_state_changed(event)
+
+        assert mac not in manager._static_presence_cache
 
     async def test_open_and_close_session(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """Open session creates a connection, close session cleans it up."""
@@ -2167,7 +2361,12 @@ class TestAsyncTriggerOta:
 
             await manager.async_trigger_ota(mac)
 
-        mock_cls.assert_called_once_with("192.168.1.50", noise_psk="abcdef==")
+        mock_cls.assert_called_once_with(
+            "192.168.1.50",
+            noise_psk="abcdef==",
+            mac=mac,
+            static_presence_cache=manager._static_presence_cache,
+        )
 
     async def test_temp_conn_connect_timeout_wrapped_as_ota_trigger_failed(
         self, hass: HomeAssistant, manager: DeviceManager
@@ -2492,7 +2691,12 @@ class TestNoisePsk:
             mock_conn.async_disconnect = AsyncMock()
             mock_conn.connected = True
             await manager.async_open_session("AA:BB:CC:DD:EE:FF")
-        mock_cls.assert_called_once_with("192.168.1.50", noise_psk="abcdef==")
+        mock_cls.assert_called_once_with(
+            "192.168.1.50",
+            noise_psk="abcdef==",
+            mac="AA:BB:CC:DD:EE:FF",
+            static_presence_cache=manager._static_presence_cache,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -3406,7 +3610,7 @@ class TestPushConfig:
             assert static_data["trigger_range"] == 8.0  # same as max_range
             assert static_data["trigger_sensitivity"] == 7  # 10 - 3
             assert static_data["sustain_sensitivity"] == 7  # 10 - 3
-            assert static_data["timeout"] == 30.0
+            assert "timeout" not in static_data  # pushed via epp_set_static_timeout instead
             assert static_data["on_delay"] == 0.0
             assert static_data["led_enabled"] is True
 

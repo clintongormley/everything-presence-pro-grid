@@ -395,13 +395,12 @@ api:
         trigger_range: float
         sustain_sensitivity: int
         trigger_sensitivity: int
-        timeout: float
         on_delay: float
         led_enabled: bool
       then:
         - lambda: |-
-            ESP_LOGI("epp", "epp_set_static_presence: min_range=%.1f max_range=%.1f trigger_range=%.1f sustain_sensitivity=%d trigger_sensitivity=%d timeout=%.1f on_delay=%.2f led_enabled=%s",
-                     min_range, max_range, trigger_range, sustain_sensitivity, trigger_sensitivity, timeout, on_delay, led_enabled ? "true" : "false");
+            ESP_LOGI("epp", "epp_set_static_presence: min_range=%.1f max_range=%.1f trigger_range=%.1f sustain_sensitivity=%d trigger_sensitivity=%d on_delay=%.2f led_enabled=%s",
+                     min_range, max_range, trigger_range, sustain_sensitivity, trigger_sensitivity, on_delay, led_enabled ? "true" : "false");
         - uart.write:
             id: uart_bus_dfrobot
             data: "sensorStop\r\n"
@@ -446,8 +445,16 @@ api:
         - uart.write:
             id: uart_bus_dfrobot
             data: "sensorStart\r\n"
-        - delay: 1s
+    - action: epp_set_static_timeout
+      variables:
+        timeout: float
+      then:
         - lambda: |-
+            ESP_LOGI("epp", "epp_set_static_timeout: timeout=%.1f", timeout);
+            // The DFRobot's hardware latency is fixed at 1s (see setLatency in
+            // epp_set_static_presence); the real static timeout is a live
+            // zone-engine value applied here WITHOUT any UART, so a timeout
+            // change never triggers the ~8s sensor reconfigure/restart.
             id(epp_component).set_static_timeout(timeout);
     - action: epp_set_led
       variables:

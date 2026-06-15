@@ -207,6 +207,16 @@ class DeviceManager:
         # `async_open_session` re-pushes the pipeline on reopen so emission
         # resumes without a page refresh.
         self._target_subs: dict[str, dict[str, int]] = {}
+        # Skip cache for the static-presence (DFRobot) reconfigure, keyed by mac.
+        # Lives HERE, at the manager/mac level, NOT on the ephemeral
+        # `DeviceConnection` (same rationale as `_target_subs`): re-running the
+        # reconfigure stops/restarts the sensor for ~8s, so it must only fire
+        # when a static parameter actually changes. A per-connection cache would
+        # start empty after every flap/page-refresh and reconfigure needlessly;
+        # keyed by mac it survives connection replacement. Shared by reference
+        # into each `DeviceConnection` and cleared on device offline so the first
+        # push after a (re)join re-applies.
+        self._static_presence_cache: dict[str, dict[str, Any]] = {}
         self._session_locks: dict[str, asyncio.Lock] = {}
         # Serializes `_push_config_to_device` per mac. Without this, the
         # firmware_version-arrival re-spawn in `_on_state_changed` could
@@ -578,6 +588,7 @@ class DeviceManager:
         self._active_connections.clear()
         self._session_refcounts.clear()
         self._target_subs.clear()
+        self._static_presence_cache.clear()
 
     async def async_trigger_ota(self, mac: str) -> None:
         """Trigger firmware OTA update on a device.
@@ -1172,6 +1183,9 @@ class DeviceManager:
             # so the task is tracked in `_pending_closes` and async_stop can
             # drain it instead of leaking past teardown.
             self._pushing.discard(mac)
+            # Forget the static-presence skip cache: the device left, so the
+            # first push after it rejoins must re-apply the DFRobot config.
+            self._static_presence_cache.pop(mac, None)
             if mac in self._active_connections:
                 self.schedule_close_session(mac)
             # Only fire the broadcast on the actual available→unavailable
@@ -1287,6 +1301,7 @@ class DeviceManager:
         self._ota_locks.pop(mac, None)
         self._push_locks.pop(mac, None)
         self._target_subs.pop(mac, None)
+        self._static_presence_cache.pop(mac, None)
         self._connection_failed.discard(mac)
         self._entity_update_macs.discard(mac)
         self._failed_pushes.discard(mac)
@@ -1523,6 +1538,8 @@ class DeviceManager:
         conn = DeviceConnection(
             dev.host,
             noise_psk=_extract_noise_psk(dev.esphome_config_entry_id, self._hass),
+            mac=mac,
+            static_presence_cache=self._static_presence_cache,
         )
         try:
             await asyncio.wait_for(
@@ -1762,6 +1779,8 @@ class DeviceManager:
             conn = DeviceConnection(
                 dev.host,
                 noise_psk=_extract_noise_psk(dev.esphome_config_entry_id, self._hass),
+                mac=mac,
+                static_presence_cache=self._static_presence_cache,
             )
             await asyncio.wait_for(conn.async_connect(), timeout=30)
             # Re-check availability after the connect: if HA flipped the
