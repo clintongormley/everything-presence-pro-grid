@@ -237,7 +237,15 @@ export class EppGrid extends LitElement {
 		const maxRow = noRoom ? GRID_ROWS - 1 : bounds.maxRow;
 		const visCols = maxCol - minCol + 1;
 		const visRows = maxRow - minRow + 1;
-		const cellPx = fitCellPx(this.maxGridPx, this._availPx, visCols, visRows);
+		// The grid adds a 2px border (×2) + (visCols-1)×1px gaps on top of the
+		// cells; subtract that from the measured width so the grid fits exactly.
+		const gridChromePx = this._availPx > 0 ? 4 + (visCols - 1) : 0;
+		const cellPx = fitCellPx(
+			this.maxGridPx,
+			this._availPx > 0 ? this._availPx - gridChromePx : this._availPx,
+			visCols,
+			visRows,
+		);
 
 		return html`
 			<div class="grid-targets-wrapper">
