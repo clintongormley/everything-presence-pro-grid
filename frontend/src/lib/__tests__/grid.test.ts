@@ -18,6 +18,7 @@ import {
 	cellSetZone,
 	cellZone,
 	computeAlignmentOffset,
+	fitCellPx,
 	GRID_CELL_COUNT,
 	GRID_COLS,
 	GRID_ROWS,
@@ -638,5 +639,24 @@ describe("cellCenterMm", () => {
 
 	it("yields negative x for columns left of the room", () => {
 		expect(cellCenterMm(4, 0, 3000).x).toBe(-150);
+	});
+});
+
+describe("fitCellPx", () => {
+	it("caps by the maxGridPx ceiling when the container is wide", () => {
+		expect(fitCellPx(480, 900, 20, 20)).toBe(24); // 480/20=24; 900 doesn't constrain
+	});
+	it("shrinks to fit a narrow container", () => {
+		expect(fitCellPx(480, 360, 20, 20)).toBe(18); // 360/20=18 < 24
+	});
+	it("never returns less than 1", () => {
+		expect(fitCellPx(480, 5, 20, 20)).toBe(1);
+	});
+	it("uses the smaller of the col/row ceiling", () => {
+		expect(fitCellPx(480, 1000, 20, 10)).toBe(24); // min(480/20,480/10)=24
+	});
+	it("falls back to the ceiling when the container is unmeasured", () => {
+		expect(fitCellPx(480, 0, 20, 20)).toBe(24);
+		expect(fitCellPx(480, -1, 20, 20)).toBe(24);
 	});
 });

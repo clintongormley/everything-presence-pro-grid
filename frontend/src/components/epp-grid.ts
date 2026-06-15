@@ -1,5 +1,5 @@
 import { css, html, LitElement, nothing, type PropertyValues } from "lit";
-import { property } from "lit/decorators.js";
+import { property, state } from "lit/decorators.js";
 import { MAX_TARGETS, TARGET_COLORS } from "../constants.js";
 import { mapTargetToGridCell, targetCellIndex } from "../lib/coordinates.js";
 import type { FurnitureItem } from "../lib/furniture.js";
@@ -10,6 +10,7 @@ import {
 	cellIsInside,
 	cellOverlay,
 	cellZone,
+	fitCellPx,
 	GRID_CELL_COUNT,
 	GRID_COLS,
 	GRID_ROWS,
@@ -76,6 +77,29 @@ export class EppGrid extends LitElement {
 		minRow: number;
 		maxRow: number;
 	} | null = null;
+
+	/** Measured content width of the host (px); 0 = unmeasured (e.g. unit tests). */
+	@state() private _availPx = 0;
+	private _ro?: ResizeObserver;
+
+	/* v8 ignore start -- happy-dom has no real layout/ResizeObserver callback */
+	connectedCallback(): void {
+		super.connectedCallback();
+		if (typeof ResizeObserver !== "undefined") {
+			this._ro = new ResizeObserver((entries) => {
+				const w = entries[0]?.contentRect.width ?? 0;
+				if (w && Math.abs(w - this._availPx) >= 1)
+					this._availPx = Math.floor(w);
+			});
+			this._ro.observe(this);
+		}
+	}
+
+	disconnectedCallback(): void {
+		super.disconnectedCallback();
+		this._ro?.disconnect();
+	}
+	/* v8 ignore stop */
 
 	static styles = css`
 		:host {
@@ -213,11 +237,7 @@ export class EppGrid extends LitElement {
 		const maxRow = noRoom ? GRID_ROWS - 1 : bounds.maxRow;
 		const visCols = maxCol - minCol + 1;
 		const visRows = maxRow - minRow + 1;
-		const cellPx = Math.min(
-			Math.floor(this.maxGridPx / visCols),
-			Math.floor(this.maxGridPx / visRows),
-			32,
-		);
+		const cellPx = fitCellPx(this.maxGridPx, this._availPx, visCols, visRows);
 
 		return html`
 			<div class="grid-targets-wrapper">

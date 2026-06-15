@@ -21,6 +21,26 @@ export const GRID_CELL_COUNT = GRID_COLS * GRID_ROWS;
 export const GRID_CELL_MM = 300; // each cell represents 300mm x 300mm
 export const MAX_RANGE = 6000;
 
+/**
+ * Largest integer cell size (px) that keeps a visCols×visRows grid within both
+ * the maxGridPx ceiling and the available container width. `availPx <= 0` means
+ * "unmeasured" → fall back to the ceiling so the desktop look is unchanged.
+ */
+export function fitCellPx(
+	maxGridPx: number,
+	availPx: number,
+	visCols: number,
+	visRows: number,
+): number {
+	const ceiling = Math.min(
+		Math.floor(maxGridPx / visCols),
+		Math.floor(maxGridPx / visRows),
+	);
+	if (availPx <= 0) return Math.max(1, ceiling);
+	const widthFit = Math.floor(availPx / visCols);
+	return Math.max(1, Math.min(ceiling, widthFit));
+}
+
 export const cellIsInside = (v: number): boolean => (v & CELL_ROOM_BIT) !== 0;
 export const cellZone = (v: number): number => (v >> CELL_ZONE_SHIFT) & 0x07;
 export const cellSetInside = (v: number, inside: boolean): number =>
