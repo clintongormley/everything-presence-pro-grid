@@ -188,7 +188,7 @@ const hostStyles = css`
   }
 `;
 
-const panelStyles = css`
+export const panelStyles = css`
   .panel {
     padding: 24px;
     max-width: 1100px;
@@ -203,6 +203,14 @@ const panelStyles = css`
     .panel {
       max-width: none;
       padding: var(--epp-space-3, 12px);
+      /* :host is display:flex; .panel is its flex item. A flex item defaults
+         to min-width:auto, which floors its main size at the content's
+         min-content width — here ~maxGridPx (the grid's fixed-px columns),
+         overflowing a narrow phone viewport. min-width:0 removes that floor so
+         .panel shrinks to the viewport; the grid then measures the real width
+         and fitCellPx shrinks the cells to fit. (Mobile @media only — desktop
+         never hits the floor, so its layout is byte-identical.) */
+      min-width: 0;
     }
     .panel-header ha-select {
       width: 100%;
@@ -2857,10 +2865,14 @@ export class EPPGridPanel extends LitElement {
 		// activeZone-deselect handler for the .panel wrapper — clicking outside
 		// the grid and sidebar deselects the active zone (unless we just
 		// painted). Shared verbatim by both branches' panel wrappers.
+		// We match `.grid-container` (the light-DOM wrapper around <epp-grid>),
+		// NOT `.grid` (which lives in <epp-grid>'s shadow DOM): a grid-cell click
+		// retargets to the <epp-grid> host at this panel-level handler, so a
+		// `.grid` check is always null for grid taps and would wrongly deselect.
 		const onPanelClick = (e: Event) => {
 			const el = e.target as HTMLElement;
 			if (
-				!el.closest(".grid") &&
+				!el.closest(".grid-container") &&
 				!el.closest(".zone-sidebar") &&
 				!el.closest("epp-sheet")
 			) {

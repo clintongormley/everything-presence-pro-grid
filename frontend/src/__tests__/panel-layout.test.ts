@@ -1,6 +1,10 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
-import { type EPPGridPanel, layoutStyles } from "../eppgrid-panel.js";
+import {
+	type EPPGridPanel,
+	layoutStyles,
+	panelStyles,
+} from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
@@ -158,6 +162,21 @@ describe("layout styles", () => {
 		expect(gridColBaseIdx).toBeGreaterThan(-1);
 		expect(mediaIdx).toBeGreaterThan(sidebarBaseIdx);
 		expect(mediaIdx).toBeGreaterThan(gridColBaseIdx);
+	});
+
+	it("mobile .panel sets min-width: 0 to drop the flex min-content floor", () => {
+		// Bug 1: :host is display:flex; .panel is its flex item, defaulting to
+		// min-width:auto → floored at the grid's min-content (~maxGridPx), which
+		// overflows a narrow phone. The fix adds min-width:0 to the .panel rule
+		// inside the mobile @media (max-width: 819px) block so .panel shrinks to
+		// the viewport. happy-dom can't evaluate flex layout, so this is a
+		// lightweight cssText guard: the min-width:0 must live AFTER the mobile
+		// media-query marker (i.e. inside that block, not the base .panel rule).
+		const panelCss = panelStyles.cssText;
+		const mediaIdx = panelCss.indexOf("@media (max-width: 819px)");
+		const minWidthIdx = panelCss.indexOf("min-width: 0");
+		expect(mediaIdx).toBeGreaterThan(-1);
+		expect(minWidthIdx).toBeGreaterThan(mediaIdx);
 	});
 });
 

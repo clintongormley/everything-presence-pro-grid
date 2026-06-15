@@ -372,6 +372,56 @@ describe("render() dispatches to correct view", () => {
 		expect(a._activeZone).toBe(2);
 	});
 
+	it("keeps the active zone selected when tapping the grid", () => {
+		// Regression (Bug 2): `.grid` lives in <epp-grid>'s shadow DOM, so a
+		// grid-cell click retargets to the <epp-grid> host at the panel handler.
+		// `el.closest(".grid")` was therefore always null for grid taps → the
+		// active zone was cleared on the first tap (on touch, the synthesized
+		// click fires after _justPainted has been reset). The handler must match
+		// the light-DOM `.grid-container` wrapper instead so the deselect is
+		// correctly skipped and painting keeps working.
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector(
+			".editor-mobile .grid-container epp-grid",
+		) as HTMLElement;
+		expect(grid).not.toBeNull();
+		// User has a zone selected and we are NOT in the just-painted window.
+		a._activeZone = 2;
+		a._justPainted = false;
+		// A retargeted grid click reaches the .panel handler with the <epp-grid>
+		// host as its target.
+		grid.dispatchEvent(
+			new MouseEvent("click", { bubbles: true, composed: true }),
+		);
+		// Active zone must survive — the grid-container is exempted.
+		expect(a._activeZone).toBe(2);
+	});
+
+	it("clears the active zone when tapping the bare panel background", () => {
+		// Companion to the grid-tap regression above: a genuine outside click —
+		// one whose target is neither in `.grid-container`/`.zone-sidebar` nor
+		// `epp-sheet` — must still deselect the active zone.
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		const c = renderTo(a._renderEditor());
+		const panel = c.querySelector(".panel") as HTMLElement;
+		expect(panel).not.toBeNull();
+		a._activeZone = 2;
+		a._justPainted = false;
+		// Click directly on the bare .panel background (not inside any exempt
+		// region) bubbles to the handler and must clear the selection.
+		panel.dispatchEvent(
+			new MouseEvent("click", { bubbles: true, composed: true }),
+		);
+		expect(a._activeZone).toBeNull();
+	});
+
 	it("flips _isMobile when the media query change fires", () => {
 		const a = createPanel() as any;
 		// _onMql mirrors MediaQueryListEvent.matches onto _isMobile.
