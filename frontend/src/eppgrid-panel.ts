@@ -310,6 +310,42 @@ export const layoutStyles = css`
     padding: 10px 12px 8px;
     color: var(--primary-text-color, #212121);
   }
+
+  /* Mobile editor: grid full-width, controls in a persistent bottom sheet.
+     This container only renders below 820px (the _isMobile branch), so these
+     rules never affect the desktop layout. */
+  .editor-mobile {
+    display: block;
+  }
+
+  .editor-mobile .grid-container {
+    padding-bottom: 96px; /* clear the persistent peek bar */
+  }
+
+  /* Sidebar-tab switcher — rendered in the mobile bottom-sheet peek only. */
+  .sidebar-tabs {
+    display: flex;
+    gap: 4px;
+  }
+
+  .sidebar-tabs .sidebar-tab {
+    flex: 1;
+    appearance: none;
+    border: none;
+    background: transparent;
+    padding: 8px 4px;
+    border-radius: var(--epp-radius-md, 8px);
+    font: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--secondary-text-color, #727272);
+    cursor: pointer;
+  }
+
+  .sidebar-tabs .sidebar-tab.active {
+    background: var(--secondary-background-color, #f5f5f5);
+    color: var(--primary-color, #03a9f4);
+  }
 `;
 
 const liveMenuStyles = css`
@@ -473,6 +509,18 @@ export class EPPGridPanel extends LitElement {
 	} | null = null;
 	@state() _saving = false;
 	@state() _dirty = false;
+	// Mobile/responsive: below 820px the editor renders the grid full-width
+	// with the sidebar controls in a bottom sheet (epp-sheet); at/above 820px
+	// the desktop side-by-side layout is used unchanged. Driven by matchMedia
+	// wired in connectedCallback (defaults false so the desktop layout — and
+	// every editor render test, which runs with happy-dom's matches:false — is
+	// the byte-identical existing markup).
+	@state() private _isMobile = false;
+	@state() private _editorSheetOpen = false;
+	private _mql?: MediaQueryList;
+	private _onMql = (e: MediaQueryListEvent | MediaQueryList) => {
+		this._isMobile = e.matches;
+	};
 	// Failed grid-controller op (applyLayout/saveSettings/save/load
 	// configuration) — rendered as a dismissible banner; the op name doubles
 	// as the `errors.*` translation-key suffix. Cleared when a new op starts
@@ -613,6 +661,11 @@ export class EPPGridPanel extends LitElement {
 		// beforeunload / hashchange / history interception are owned by
 		// _navGuard (hostConnected ran in super.connectedCallback() above).
 		window.addEventListener("keydown", this._onKeyDown);
+		// Mobile breakpoint: editor switches to the bottom-sheet layout below
+		// 820px. Seed the flag from the current match, then track changes.
+		this._mql = window.matchMedia("(max-width: 819px)");
+		this._isMobile = this._mql.matches;
+		this._mql.addEventListener("change", this._onMql);
 	}
 
 	disconnectedCallback(): void {
@@ -626,6 +679,7 @@ export class EPPGridPanel extends LitElement {
 		// beforeunload / hashchange / history-interception teardown is owned
 		// by _navGuard (hostDisconnected ran in super.disconnectedCallback()).
 		window.removeEventListener("keydown", this._onKeyDown);
+		this._mql?.removeEventListener("change", this._onMql);
 	}
 
 	private _attachConnectionListeners(conn: any): void {
@@ -2651,28 +2705,11 @@ export class EPPGridPanel extends LitElement {
 		// `editorSensorState = { ...this._sensorState, occupancy, mmwave }`
 		// and pass it explicitly — never mutate `this._sensorState`.
 
-		return html`
-      <div class="panel" @click=${(e: Event) => {
-				const el = e.target as HTMLElement;
-				if (!el.closest(".grid") && !el.closest(".zone-sidebar")) {
-					if (!this._justPainted) this._activeZone = null;
-				}
-			}}>
-        ${this._renderHeader()}
-        <div class="editor-layout">
-          <div class="grid-column">
-            <div class="grid-container" @click=${(e: Event) => {
-							const onFurniture = e
-								.composedPath()
-								.some(
-									(el) =>
-										el instanceof HTMLElement &&
-										el.classList.contains("furniture-item"),
-								);
-							if (!onFurniture) {
-								this._selectedFurnitureId = null;
-							}
-						}}>
+		// The <epp-grid> element is identical between the desktop and mobile
+		// layouts — extract it once so both branches bind it verbatim. (The
+		// `.grid-container` wrapper + its furniture-deselect @click are kept per
+		// branch because their surrounding column differs.)
+		const gridTemplate = html`
               <epp-grid
                 .grid=${this._grid}
                 .zoneConfigs=${this._namedZones()}
@@ -2717,7 +2754,64 @@ export class EPPGridPanel extends LitElement {
                 @target-undismissed=${(e: CustomEvent) => {
 									this._handleTargetUndismissed(e.detail.targetIndex);
 								}}
-              ></epp-grid>
+              ></epp-grid>`;
+
+		// Furniture-deselect handler for the grid-container wrapper — clicking
+		// off a furniture item clears the selection. Shared verbatim by both
+		// branches' wrappers.
+		const onGridContainerClick = (e: Event) => {
+			const onFurniture = e
+				.composedPath()
+				.some(
+					(el) =>
+						el instanceof HTMLElement &&
+						el.classList.contains("furniture-item"),
+				);
+			if (!onFurniture) {
+				this._selectedFurnitureId = null;
+			}
+		};
+
+		// activeZone-deselect handler for the .panel wrapper — clicking outside
+		// the grid and sidebar deselects the active zone (unless we just
+		// painted). Shared verbatim by both branches' panel wrappers.
+		const onPanelClick = (e: Event) => {
+			const el = e.target as HTMLElement;
+			if (!el.closest(".grid") && !el.closest(".zone-sidebar")) {
+				if (!this._justPainted) this._activeZone = null;
+			}
+		};
+
+		if (this._isMobile) {
+			return html`
+      <div class="panel" @click=${onPanelClick}>
+        ${this._renderHeader()}
+        <div class="editor-mobile">
+          <div class="grid-container" @click=${onGridContainerClick}>
+            ${gridTemplate}
+          </div>
+          <epp-sheet
+            ?open=${this._editorSheetOpen}
+            @sheet-open-changed=${(e: CustomEvent<{ open: boolean }>) => {
+							this._editorSheetOpen = e.detail.open;
+						}}
+          >
+            <div slot="peek">${this._renderSidebarTabs()}</div>
+            ${this._renderSidebarContent()}
+            ${this._dirty ? html`<div slot="actions">${this._renderSaveCancelButtons()}</div>` : nothing}
+          </epp-sheet>
+        </div>
+      </div>
+    `;
+		}
+
+		return html`
+      <div class="panel" @click=${onPanelClick}>
+        ${this._renderHeader()}
+        <div class="editor-layout">
+          <div class="grid-column">
+            <div class="grid-container" @click=${onGridContainerClick}>
+            ${gridTemplate}
             </div>
             ${this._sidebarTab === "zones" || this._sidebarTab === "overlays" ? this._renderDebugLog() : nothing}
           </div>
@@ -2730,9 +2824,24 @@ export class EPPGridPanel extends LitElement {
 									: this._localize("sidebar.detection_zones")
 						}</div>
             <div class="sidebar-scroll">
-            ${
-							this._sidebarTab === "zones"
-								? html`<epp-zone-sidebar
+            ${this._renderSidebarContent()}
+            </div>
+            ${this._renderSaveCancelButtons()}
+          </div>
+        </div>
+      </div>
+    `;
+	}
+
+	/**
+	 * The `_sidebarTab`-conditional sidebar component block
+	 * (zones/overlays/furniture). Extracted from `_renderEditor` so both the
+	 * desktop sidebar and the mobile bottom-sheet body render it verbatim —
+	 * the bindings are unchanged from the original inline markup.
+	 */
+	private _renderSidebarContent() {
+		return this._sidebarTab === "zones"
+			? html`<epp-zone-sidebar
                     .zoneConfigs=${this._namedZones()}
                     .activeZone=${this._activeZone}
                     .zone0=${this._zoneConfigs[0]}
@@ -2772,8 +2881,8 @@ export class EPPGridPanel extends LitElement {
 											this._zoneEngineZoneConfigChanged();
 										}}
                   ></epp-zone-sidebar>`
-								: this._sidebarTab === "overlays"
-									? html`<epp-overlay-sidebar
+			: this._sidebarTab === "overlays"
+				? html`<epp-overlay-sidebar
                     .overlayMode=${this._overlayMode}
                     .localize=${this._localize}
                     @overlay-select=${(
@@ -2782,7 +2891,7 @@ export class EPPGridPanel extends LitElement {
 											this._overlayMode = e.detail.mode;
 										}}
                   ></epp-overlay-sidebar>`
-									: html`<epp-furniture-sidebar
+				: html`<epp-furniture-sidebar
                     .furniture=${this._furniture}
                     .selectedFurnitureId=${this._selectedFurnitureId}
                     .hass=${this.hass}
@@ -2813,12 +2922,40 @@ export class EPPGridPanel extends LitElement {
                     @dirty=${() => {
 											this._dirty = true;
 										}}
-                  ></epp-furniture-sidebar>`
-						}
-            </div>
-            ${this._renderSaveCancelButtons()}
-          </div>
-        </div>
+                  ></epp-furniture-sidebar>`;
+	}
+
+	/**
+	 * Editor sidebar-tab switcher (zones / overlays / furniture). The desktop
+	 * editor has no inline switcher — the sub-tab is chosen from the live
+	 * overview's kebab on the way into the editor — so this is the switcher the
+	 * mobile bottom-sheet peek needs to let the user change sub-tab without
+	 * leaving the editor. It writes `_sidebarTab` via the existing `_applyView`
+	 * path (same state-write the kebab uses), keeping `_overlayMode` in sync.
+	 * Rendered in the sheet peek only (mobile); always shown there so the bar
+	 * is consistent regardless of which sub-tab is active.
+	 */
+	private _renderSidebarTabs() {
+		const tabs: { id: SidebarTab; label: string }[] = [
+			{ id: "zones", label: this._localize("menu.detection_zones") },
+			{ id: "overlays", label: this._localize("menu.overlays") },
+			{ id: "furniture", label: this._localize("menu.furniture") },
+		];
+		return html`
+      <div class="sidebar-tabs" role="tablist">
+        ${tabs.map(
+					(t) => html`<button
+            class="sidebar-tab ${this._sidebarTab === t.id ? "active" : ""}"
+            role="tab"
+            aria-selected=${this._sidebarTab === t.id ? "true" : "false"}
+            @click=${(e: Event) => {
+							// Stop the click bubbling to epp-sheet's handle-bar (which
+							// would toggle the sheet open/closed on tab-switch).
+							e.stopPropagation();
+							this._applyView({ view: "editor", sidebarTab: t.id });
+						}}
+          >${t.label}</button>`,
+				)}
       </div>
     `;
 	}

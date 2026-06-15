@@ -8,6 +8,7 @@ import "../components/epp-furniture-sidebar.js";
 import "../components/epp-settings-view.js";
 import "../components/epp-wizard.js";
 import "../components/epp-grid.js";
+import "../ui/epp-sheet.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import type { EppGrid } from "../components/epp-grid.js";
 import type { EppSettingsView } from "../components/epp-settings-view.js";
@@ -256,6 +257,103 @@ describe("render() dispatches to correct view", () => {
 		const grid = c.querySelector("epp-grid") as any;
 		expect(grid).not.toBeNull();
 		expect(grid.editable).toBe(false);
+	});
+
+	it("renders editor in a bottom sheet when _isMobile is true", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		const c = renderTo(a._renderEditor());
+		// Bottom sheet present, with the grid full-width and the sidebar content
+		// inside it; the desktop side-by-side layout is gone.
+		const sheet = c.querySelector("epp-sheet");
+		expect(sheet).not.toBeNull();
+		expect(c.querySelector(".editor-mobile")).not.toBeNull();
+		expect(c.querySelector(".editor-layout")).toBeNull();
+		expect(c.querySelector(".zone-sidebar")).toBeNull();
+		// Grid full-width in the mobile grid-container.
+		const grid = c.querySelector(
+			".editor-mobile .grid-container epp-grid",
+		) as any;
+		expect(grid).not.toBeNull();
+		expect(grid.editable).toBe(true);
+		// Sidebar content (zones tab is the default) slotted into the sheet.
+		expect(sheet!.querySelector("epp-zone-sidebar")).not.toBeNull();
+		// Sub-tab switcher in the sheet peek.
+		const tabs = sheet!.querySelectorAll(".sidebar-tabs .sidebar-tab");
+		expect(tabs.length).toBe(3);
+	});
+
+	it("keeps the desktop side-by-side editor layout when _isMobile is false", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		// _isMobile defaults to false (happy-dom matchMedia matches:false).
+		a._grid = initGridFromRoom(3000, 4000);
+		const c = renderTo(a._renderEditor());
+		expect(c.querySelector(".editor-layout")).not.toBeNull();
+		expect(c.querySelector(".zone-sidebar")).not.toBeNull();
+		expect(c.querySelector("epp-sheet")).toBeNull();
+		expect(c.querySelector(".editor-mobile")).toBeNull();
+	});
+
+	it("switches sub-tab from the mobile sheet peek without leaving the editor", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		const c = renderTo(a._renderEditor());
+		const furnitureTab = [
+			...c.querySelectorAll<HTMLButtonElement>(".sidebar-tabs .sidebar-tab"),
+		].find((b) => b.getAttribute("aria-selected") === "false");
+		expect(furnitureTab).not.toBeUndefined();
+		furnitureTab!.click();
+		expect(a._view).toBe("editor");
+		expect(a._sidebarTab).not.toBe("zones");
+	});
+
+	it("renders the editor save bar in the sheet actions only when dirty", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		// Clean: no actions slot content.
+		a._dirty = false;
+		let c = renderTo(a._renderEditor());
+		expect(c.querySelector('epp-sheet [slot="actions"]')).toBeNull();
+		// Dirty: save bar present in the actions slot.
+		a._dirty = true;
+		c = renderTo(a._renderEditor());
+		expect(
+			c.querySelector('epp-sheet [slot="actions"] .save-cancel-bar'),
+		).not.toBeNull();
+	});
+
+	it("tracks the bottom sheet open state from sheet-open-changed", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		const c = renderTo(a._renderEditor());
+		const sheet = c.querySelector("epp-sheet") as HTMLElement;
+		expect(a._editorSheetOpen).toBe(false);
+		sheet.dispatchEvent(
+			new CustomEvent("sheet-open-changed", {
+				detail: { open: true },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+		expect(a._editorSheetOpen).toBe(true);
+	});
+
+	it("flips _isMobile when the media query change fires", () => {
+		const a = createPanel() as any;
+		// _onMql mirrors MediaQueryListEvent.matches onto _isMobile.
+		a._onMql({ matches: true } as MediaQueryListEvent);
+		expect(a._isMobile).toBe(true);
+		a._onMql({ matches: false } as MediaQueryListEvent);
+		expect(a._isMobile).toBe(false);
 	});
 
 	it("renders delete calibration dialog", () => {
