@@ -196,6 +196,16 @@ const panelStyles = css`
     font-size: 14px;
   }
 
+  @media (max-width: 819px) {
+    :host {
+      --epp-control-height: 44px;
+    }
+    .panel {
+      max-width: none;
+      padding: var(--epp-space-3, 12px);
+    }
+  }
+
   .controller-error-banner {
     display: flex;
     align-items: center;
@@ -269,6 +279,12 @@ export const layoutStyles = css`
     display: flex;
     gap: 24px;
     align-items: flex-start;
+  }
+
+  @media (max-width: 819px) {
+    .editor-layout {
+      flex-direction: column;
+    }
   }
 
   .grid-column {
@@ -1657,6 +1673,12 @@ export class EPPGridPanel extends LitElement {
       background: var(--app-header-background-color, var(--primary-color));
       padding: 0 var(--epp-space-4, 16px);
       flex-shrink: 0;
+    }
+
+    @media (max-width: 819px) {
+      .tab-bar {
+        flex-wrap: wrap;
+      }
     }
 
     .epp-logo {

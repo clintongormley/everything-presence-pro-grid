@@ -4315,6 +4315,16 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
     font-size: 14px;
   }
 
+  @media (max-width: 819px) {
+    :host {
+      --epp-control-height: 44px;
+    }
+    .panel {
+      max-width: none;
+      padding: var(--epp-space-3, 12px);
+    }
+  }
+
   .controller-error-banner {
     display: flex;
     align-items: center;
@@ -4383,6 +4393,12 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
     display: flex;
     gap: 24px;
     align-items: flex-start;
+  }
+
+  @media (max-width: 819px) {
+    .editor-layout {
+      flex-direction: column;
+    }
   }
 
   .grid-column {
@@ -5096,6 +5112,12 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
       background: var(--app-header-background-color, var(--primary-color));
       padding: 0 var(--epp-space-4, 16px);
       flex-shrink: 0;
+    }
+
+    @media (max-width: 819px) {
+      .tab-bar {
+        flex-wrap: wrap;
+      }
     }
 
     .epp-logo {
