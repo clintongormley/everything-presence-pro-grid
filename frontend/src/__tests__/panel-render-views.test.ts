@@ -329,6 +329,20 @@ describe("render() dispatches to correct view", () => {
 		).not.toBeNull();
 	});
 
+	it("defaults the mobile editor sheet to open (inline, visible under the grid)", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		const c = renderTo(a._renderEditor());
+		// Controls are visible immediately, no swipe needed.
+		expect(a._editorSheetOpen).toBe(true);
+		const sheet = c.querySelector("epp-sheet") as HTMLElement;
+		// Inline flow (sits directly under the grid) rather than fixed to the
+		// viewport bottom.
+		expect(sheet.hasAttribute("inline")).toBe(true);
+	});
+
 	it("tracks the bottom sheet open state from sheet-open-changed", () => {
 		const a = createPanel() as any;
 		a._view = "editor";
@@ -336,15 +350,17 @@ describe("render() dispatches to correct view", () => {
 		a._grid = initGridFromRoom(3000, 4000);
 		const c = renderTo(a._renderEditor());
 		const sheet = c.querySelector("epp-sheet") as HTMLElement;
-		expect(a._editorSheetOpen).toBe(false);
+		// Defaults open (visible under the grid); the tap-to-collapse affordance
+		// still drives _editorSheetOpen via sheet-open-changed.
+		expect(a._editorSheetOpen).toBe(true);
 		sheet.dispatchEvent(
 			new CustomEvent("sheet-open-changed", {
-				detail: { open: true },
+				detail: { open: false },
 				bubbles: true,
 				composed: true,
 			}),
 		);
-		expect(a._editorSheetOpen).toBe(true);
+		expect(a._editorSheetOpen).toBe(false);
 	});
 
 	it("keeps the active zone selected when tapping inside the mobile sheet", () => {

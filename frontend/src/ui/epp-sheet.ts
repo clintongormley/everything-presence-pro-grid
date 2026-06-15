@@ -12,6 +12,13 @@ import { property, state } from "lit/decorators.js";
  */
 export class EppSheet extends LitElement {
 	@property({ type: Boolean, reflect: true }) open = false;
+	/**
+	 * When set, the sheet flows inline in normal document order (e.g. directly
+	 * below the grid in the mobile editor) instead of being fixed to the bottom
+	 * of the viewport. Keeps the panel chrome (rounded top, border, shadow,
+	 * scrolling body) — only the positioning changes.
+	 */
+	@property({ type: Boolean, reflect: true }) inline = false;
 
 	@state() private _hasActions = false;
 	private _onActionsSlotChange = (e: Event) => {
@@ -33,6 +40,13 @@ export class EppSheet extends LitElement {
       display: flex;
       flex-direction: column;
       max-height: 85vh;
+    }
+    :host([inline]) {
+      position: relative;
+      left: auto;
+      right: auto;
+      bottom: auto;
+      z-index: auto;
     }
     .handle-bar {
       flex-shrink: 0;

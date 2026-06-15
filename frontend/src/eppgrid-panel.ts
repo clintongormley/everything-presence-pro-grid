@@ -339,10 +339,6 @@ export const layoutStyles = css`
     display: block;
   }
 
-  .editor-mobile .grid-container {
-    padding-bottom: 96px; /* clear the persistent peek bar */
-  }
-
   /* Sidebar-tab switcher — rendered in the mobile bottom-sheet peek only. */
   .sidebar-tabs {
     display: flex;
@@ -552,7 +548,9 @@ export class EPPGridPanel extends LitElement {
 	// every editor render test, which runs with happy-dom's matches:false — is
 	// the byte-identical existing markup).
 	@state() private _isMobile = false;
-	@state() private _editorSheetOpen = false;
+	// Defaults open so the inline controls sheet is visible immediately under
+	// the grid in the mobile editor (no swipe needed); tap-to-collapse still works.
+	@state() private _editorSheetOpen = true;
 	private _mql?: MediaQueryList;
 	private _onMql = (e: MediaQueryListEvent | MediaQueryList) => {
 		this._isMobile = e.matches;
@@ -2889,6 +2887,7 @@ export class EPPGridPanel extends LitElement {
             ${gridTemplate}
           </div>
           <epp-sheet
+            inline
             ?open=${this._editorSheetOpen}
             @sheet-open-changed=${(e: CustomEvent<{ open: boolean }>) => {
 							this._editorSheetOpen = e.detail.open;

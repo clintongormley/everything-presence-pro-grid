@@ -82,6 +82,16 @@ describe("epp-sheet", () => {
 		expect(el.open).toBe(true);
 		expect(detail).toEqual({ open: true });
 	});
+	it("reflects the inline property to the host attribute", async () => {
+		const el = await fixture(false);
+		expect(el.hasAttribute("inline")).toBe(false);
+		el.inline = true;
+		await el.updateComplete;
+		expect(el.hasAttribute("inline")).toBe(true);
+		el.inline = false;
+		await el.updateComplete;
+		expect(el.hasAttribute("inline")).toBe(false);
+	});
 	it("ignores non-activating keys on the handle", async () => {
 		const el = await fixture(false);
 		let fired = false;

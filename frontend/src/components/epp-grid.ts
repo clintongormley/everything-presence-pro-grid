@@ -101,6 +101,26 @@ export class EppGrid extends LitElement {
 	}
 	/* v8 ignore stop */
 
+	/* v8 ignore start -- happy-dom has no layout (clientWidth 0); measured visually */
+	// Deterministic, synchronous width measurement that doesn't depend on the
+	// ResizeObserver. In the HA companion webview the observer doesn't deliver a
+	// usable callback, leaving _availPx at 0 → fitCellPx snaps to the ceiling cell
+	// size and overflows. The host's own clientWidth tracks the constrained parent
+	// (`:host { display: block }`), so reading it here fits the grid to the viewport.
+	// Converges in 2 renders: clientWidth stays constant regardless of cell size, so
+	// the second pass sees |w - _availPx| < 1 and stops.
+	firstUpdated(): void {
+		this._measureAvail();
+	}
+	updated(): void {
+		this._measureAvail();
+	}
+	private _measureAvail(): void {
+		const w = this.clientWidth;
+		if (w && Math.abs(w - this._availPx) >= 1) this._availPx = w;
+	}
+	/* v8 ignore stop */
+
 	static styles = css`
 		:host {
 			display: block;

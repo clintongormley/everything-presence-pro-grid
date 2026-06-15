@@ -181,6 +181,7 @@ export class EppFurnitureOverlay extends LitElement {
 			cursor: pointer;
 			pointer-events: auto;
 			color: var(--epp-accent-text, #fff);
+			touch-action: none;
 		}
 	`;
 
