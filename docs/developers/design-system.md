@@ -65,6 +65,7 @@ when re-emitting a composed HA event (else it double-fires across shadow boundar
 | `epp-tooltip` | hover/focus hint on icon buttons / truncated text | `content`; slot = trigger. Replaces raw `title=` |
 | `epp-info-tip` (`components/`) | the `(?)` explanatory bubble (a sentence of help) | click/tap to open; touch-friendly |
 | `epp-dialog` | **every modal** | `open` (caller-owns), `heading?`; slots: default + `actions`; emits `dialog-dismiss` on Esc. **Slot action buttons directly** (`<epp-button slot="actions">`), not inside a wrapper `<div slot="actions">` (that breaks the flex row) |
+| `epp-sheet` | mobile bottom sheet (the editor's controls below the breakpoint) | `open` (caller-owns); slots: `peek` (always visible) + default (body) + `actions`; tap the handle toggles, emits `sheet-open-changed` `{detail:{open}}`. Fixed to the bottom; only rendered below the mobile breakpoint |
 
 ## Theming rules
 
@@ -82,6 +83,24 @@ when re-emitting a composed HA event (else it double-fires across shadow boundar
 - **Link-styled controls stay native.** A control that should look like an inline text
   link (not a button) is a native `<button>`/`<a>` with link CSS — don't force it through
   `epp-button` (the primitive imposes button height/colour/padding).
+
+## Responsive / mobile (Phase 3)
+
+- **Breakpoint: 820px.** Below it the panel uses the mobile layout; at/above it the desktop
+  layout is unchanged. Use `@media (max-width: 819px)` for pure-CSS reflow and
+  `window.matchMedia("(max-width: 819px)")` for the structural JS flag (`_isMobile` on the
+  panel host). Keep the two in sync.
+- **Touch targets ≥44px.** Below the breakpoint the panel host sets `--epp-control-height: 44px`,
+  which cascades into every primitive. The grid's furniture handles carry a transparent
+  ≥44px `::after` hit area (visible nub unchanged).
+- **Editor on mobile = grid + bottom sheet.** The grid renders full-width (it fits the
+  container via `fitCellPx` + a `ResizeObserver`) with the controls in an `epp-sheet`
+  (peek = mode tabs; expanded = the same `epp-zone-sidebar`/`epp-furniture-sidebar`/
+  `epp-overlay-sidebar` content; dirty-only save/cancel in `actions`). The desktop
+  side-by-side is untouched. **Pan/pinch-zoom is deferred** (scope C); painting uses
+  per-cell-element pointer events, so a future zoom transform is additive.
+- Conventional views (settings/live/flasher/device-groups) already stack; they reflow with
+  reduced panel padding + full width below the breakpoint.
 
 ## Discipline
 
