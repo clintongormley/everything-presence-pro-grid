@@ -15,6 +15,7 @@ import {
 	type FurnitureSticker,
 	isFurnitureOutsideGrid,
 	removeFurnitureItem,
+	snapRotation,
 	updateFurnitureItem,
 } from "../lib/furniture.js";
 import {
@@ -489,10 +490,12 @@ export class GridStateController implements ReactiveController {
 				) *
 				(180 / Math.PI);
 			this.updateFurniture(ds.id, {
-				rotation: computeFurnitureRotation(
-					ds.origRot,
-					ds.startAngle ?? 0,
-					currentAngle,
+				rotation: snapRotation(
+					computeFurnitureRotation(
+						ds.origRot,
+						ds.startAngle ?? 0,
+						currentAngle,
+					),
 				),
 			});
 		}

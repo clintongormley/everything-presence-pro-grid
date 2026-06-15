@@ -11,6 +11,7 @@ import {
 	mmToPx,
 	pxToMm,
 	removeFurnitureItem,
+	snapRotation,
 	updateFurnitureItem,
 } from "../furniture.js";
 import { GRID_CELL_MM } from "../grid.js";
@@ -1040,5 +1041,28 @@ describe("computeFurnitureRotation", () => {
 
 	it("returns 0 for full rotation", () => {
 		expect(computeFurnitureRotation(0, 0, 360)).toBe(0);
+	});
+});
+
+describe("snapRotation", () => {
+	it("snaps to the nearest 15° when within the threshold", () => {
+		expect(snapRotation(2)).toBe(0);
+		expect(snapRotation(13)).toBe(15);
+		expect(snapRotation(88)).toBe(90);
+	});
+	it("leaves angles outside the threshold free", () => {
+		expect(snapRotation(22)).toBe(22);
+	});
+	it("wraps cleanly near 360/0", () => {
+		expect(snapRotation(358)).toBe(0);
+		expect(snapRotation(359)).toBe(0);
+	});
+	it("normalises out-of-range input", () => {
+		expect(snapRotation(-2)).toBe(0);
+		expect(snapRotation(362)).toBe(0);
+	});
+	it("honours custom step/threshold", () => {
+		expect(snapRotation(44, 90, 10)).toBe(44);
+		expect(snapRotation(7, 90, 10)).toBe(0);
 	});
 });

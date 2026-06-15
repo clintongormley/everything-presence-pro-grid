@@ -384,3 +384,17 @@ export function computeFurnitureRotation(
 	const deltaAngle = currentAngle - startAngle;
 	return Math.round((origRotation + deltaAngle + 360) % 360);
 }
+
+/**
+ * Magnetically snap a rotation (degrees) to the nearest `step` multiple when
+ * within `threshold` degrees of it; otherwise leave it free. Lets furniture
+ * "prefer" 15° increments while still allowing any angle. Applied only on the
+ * rotate drag (not to typed rotation values).
+ */
+export function snapRotation(angle: number, step = 15, threshold = 7): number {
+	const a = ((angle % 360) + 360) % 360;
+	const nearest = (Math.round(a / step) * step) % 360;
+	let diff = Math.abs(a - nearest);
+	if (diff > 180) diff = 360 - diff;
+	return diff < threshold ? nearest : Math.round(a);
+}
