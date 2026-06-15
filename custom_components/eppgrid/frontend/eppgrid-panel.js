@@ -3103,6 +3103,13 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
         overflow: hidden;
       }
 
+      @media (max-width: 819px) {
+        .sensor-fov-view {
+          width: 100%;
+          max-width: 480px;
+        }
+      }
+
       .sensor-fov-svg {
         position: absolute;
         top: 0;
@@ -4398,6 +4405,10 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
   @media (max-width: 819px) {
     .editor-layout {
       flex-direction: column;
+    }
+    .zone-sidebar {
+      width: auto;
+      border-left: none;
     }
   }
 

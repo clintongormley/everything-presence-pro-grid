@@ -421,6 +421,13 @@ export class EppWizard extends LitElement {
         overflow: hidden;
       }
 
+      @media (max-width: 819px) {
+        .sensor-fov-view {
+          width: 100%;
+          max-width: 480px;
+        }
+      }
+
       .sensor-fov-svg {
         position: absolute;
         top: 0;

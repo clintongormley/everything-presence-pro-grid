@@ -102,15 +102,20 @@ describe("layout styles", () => {
 	const layoutCss = layoutStyles.cssText;
 
 	it("sidebar has flex-shrink: 0 to prevent squeezing", () => {
-		// Extract .zone-sidebar block
-		const match = layoutCss.match(/\.zone-sidebar\s*\{([^}]+)\}/);
+		// Extract the base (desktop) .zone-sidebar block — the one with
+		// width: 240px, not the @media (max-width: 819px) width: auto override.
+		const match = layoutCss.match(
+			/\.zone-sidebar\s*\{([^}]*width:\s*240px[^}]*)\}/,
+		);
 		expect(match).not.toBeNull();
 		const sidebarCss = match![1];
 		expect(sidebarCss).toMatch(/flex-shrink:\s*0/);
 	});
 
 	it("sidebar does not clip overflow (so menu is not cut off)", () => {
-		const match = layoutCss.match(/\.zone-sidebar\s*\{([^}]+)\}/);
+		const match = layoutCss.match(
+			/\.zone-sidebar\s*\{([^}]*width:\s*240px[^}]*)\}/,
+		);
 		expect(match).not.toBeNull();
 		const sidebarCss = match![1];
 		// Should NOT have overflow: hidden

@@ -285,6 +285,10 @@ export const layoutStyles = css`
     .editor-layout {
       flex-direction: column;
     }
+    .zone-sidebar {
+      width: auto;
+      border-left: none;
+    }
   }
 
   .grid-column {
