@@ -81,6 +81,8 @@ export class EppGrid extends LitElement {
 	/** Measured content width of the host (px); 0 = unmeasured (e.g. unit tests). */
 	@state() private _availPx = 0;
 	private _ro?: ResizeObserver;
+	/** TEMP DEBUG — on-screen width readout (empty in unit tests / no layout). */
+	@state() private _dbg = "";
 
 	/* v8 ignore start -- happy-dom has no real layout/ResizeObserver callback */
 	connectedCallback(): void {
@@ -118,12 +120,50 @@ export class EppGrid extends LitElement {
 	private _measureAvail(): void {
 		const w = this.clientWidth;
 		if (w && Math.abs(w - this._availPx) >= 1) this._availPx = w;
+		// TEMP DEBUG — remove after diagnosing the mobile grid-width issue.
+		if (w) this._dbg = this._buildDbg();
+	}
+
+	// TEMP DEBUG helper — report widths up the ancestor chain so the on-device
+	// layout can be diagnosed (mobile has no usable console).
+	private _buildDbg(): string {
+		const r = (el: Element | null | undefined) =>
+			el
+				? `${Math.round(el.getBoundingClientRect().width)}/${el.clientWidth}/${el.scrollWidth}`
+				: "—";
+		const gc = this.parentElement; // .grid-container
+		const em = gc?.parentElement; // .editor-mobile / .grid-column
+		const panel = em?.parentElement; // .panel (or deeper)
+		const root = this.getRootNode();
+		const pHost = root instanceof ShadowRoot ? root.host : null;
+		const gridEl = this.renderRoot?.querySelector?.(".grid");
+		return [
+			`iw=${window.innerWidth} host=${r(this)}`,
+			`gc=${r(gc)} em=${r(em)}`,
+			`panel=${r(panel)} pHost=${r(pHost)}`,
+			`grid=${r(gridEl)} avail=${this._availPx}`,
+		].join("\n");
 	}
 	/* v8 ignore stop */
 
 	static styles = css`
 		:host {
 			display: block;
+		}
+
+		/* TEMP DEBUG overlay — remove after diagnosing the mobile grid width. */
+		.dbg {
+			position: fixed;
+			top: 0;
+			left: 0;
+			z-index: 99999;
+			max-width: 100vw;
+			background: rgba(0, 0, 0, 0.85);
+			color: #0f0;
+			font: 11px/1.3 monospace;
+			white-space: pre-wrap;
+			padding: 3px 5px;
+			pointer-events: none;
 		}
 
 		.grid-targets-wrapper {
@@ -289,6 +329,7 @@ export class EppGrid extends LitElement {
 				${this._renderTargetDots(minCol, maxCol, minRow, maxRow, visCols, visRows)}
 			</div>
 			${this._renderGridDimensions(scan.metrics)}
+			${this._dbg ? html`<div class="dbg">${this._dbg}</div>` : nothing}
 		`;
 	}
 

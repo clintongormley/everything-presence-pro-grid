@@ -201,15 +201,16 @@ export const panelStyles = css`
       --epp-control-height: 44px;
     }
     .panel {
-      max-width: none;
+      /* Hard-cap at the viewport. In real HA the panel-host's container is
+         content-sized, so without this cap .panel grows to the grid's content
+         width (~maxGridPx) and the whole page scrolls horizontally on a narrow
+         phone. 100vw is viewport-relative (definite) regardless of how the
+         ancestor chain is sized, so it constrains .panel — and thus the grid's
+         measured host width — to the viewport. min-width:0 also drops the flex
+         min-content floor (:host is display:flex; .panel is its flex item).
+         (Mobile @media only — desktop layout is byte-identical.) */
+      max-width: 100vw;
       padding: var(--epp-space-3, 12px);
-      /* :host is display:flex; .panel is its flex item. A flex item defaults
-         to min-width:auto, which floors its main size at the content's
-         min-content width — here ~maxGridPx (the grid's fixed-px columns),
-         overflowing a narrow phone viewport. min-width:0 removes that floor so
-         .panel shrinks to the viewport; the grid then measures the real width
-         and fitCellPx shrinks the cells to fit. (Mobile @media only — desktop
-         never hits the floor, so its layout is byte-identical.) */
       min-width: 0;
     }
     .panel-header ha-select {

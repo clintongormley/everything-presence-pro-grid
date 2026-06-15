@@ -1999,7 +1999,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
 			color: var(--epp-accent-text, #fff);
 			touch-action: none;
 		}
-	`,e([Ae({attribute:!1})],ps.prototype,"furniture",void 0),e([Ae({attribute:!1})],ps.prototype,"selectedFurnitureId",void 0),e([Ae({type:Number})],ps.prototype,"roomWidth",void 0),e([Ae({type:Number})],ps.prototype,"cellPx",void 0),e([Ae({type:Number})],ps.prototype,"minCol",void 0),e([Ae({type:Number})],ps.prototype,"minRow",void 0),e([Ae({type:Number})],ps.prototype,"visCols",void 0),e([Ae({type:Number})],ps.prototype,"visRows",void 0),e([Ae({attribute:!1})],ps.prototype,"sidebarTab",void 0),e([Ae({attribute:!1})],ps.prototype,"localize",void 0),customElements.get("epp-furniture-overlay")||customElements.define("epp-furniture-overlay",ps);const As={[ni]:`background-image: ${zi(1,6)};`,[li]:`background-image: ${zi(2,5)};`,[ci]:`background-image: ${zi(3,5)};`};class us extends ce{constructor(){super(...arguments),this.grid=new Uint8Array(0),this.zoneConfigs=[],this.targets=[],this.roomWidth=0,this.roomDepth=0,this.perspective=null,this.furniture=[],this.selectedFurnitureId=null,this.sidebarTab="zones",this.editable=!1,this.activeZone=null,this.occupancy={},this.targetPrevXY=[],this.localize=Kt,this.maxRangeMm=ui,this.maxGridPx=480,this.dismissedTargets=new Map,this.frozenBounds=null,this._availPx=0,this._fovCache=null,this._fovPerspective=us._FOV_UNCACHED,this._scanCache=null,this._lastEnterIdx=-1,this._onStrokeEnd=()=>{this._lastEnterIdx=-1,this.dispatchEvent(new CustomEvent("cell-paint",{detail:{action:"up"},bubbles:!0,composed:!0}))}}connectedCallback(){super.connectedCallback(),"undefined"!=typeof ResizeObserver&&(this._ro=new ResizeObserver(e=>{const t=e[0]?.contentRect.width??0;t&&Math.abs(t-this._availPx)>=1&&(this._availPx=Math.floor(t))}),this._ro.observe(this))}disconnectedCallback(){super.disconnectedCallback(),this._ro?.disconnect()}firstUpdated(){this._measureAvail()}updated(){this._measureAvail()}_measureAvail(){const e=this.clientWidth;e&&Math.abs(e-this._availPx)>=1&&(this._availPx=e)}willUpdate(e){if((e.has("targets")||e.has("dismissedTargets")||e.has("roomWidth")||e.has("roomDepth"))&&0!==this.dismissedTargets.size)for(const[e,t]of this.dismissedTargets){const i=this.targets[e];if(!i||"inactive"===i.status||null==i.x||null==i.y)continue;const s=cs(i.x,i.y,this.roomWidth,this.roomDepth);if(!s)continue;hs(s)!==t&&this.dispatchEvent(new CustomEvent("target-undismissed",{detail:{targetIndex:e},bubbles:!0,composed:!0}))}}render(){const e=this._getScan(),t=this.frozenBounds??e.bounds,i=t.minCol>t.maxCol,s=i?0:t.minCol,r=i?19:t.maxCol,o=i?0:t.minRow,a=i?19:t.maxRow,n=r-s+1,l=a-o+1,c=this._availPx>0?n-1+4:0,h=function(e,t,i,s,r=32){const o=Math.min(Math.floor(e/i),Math.floor(e/s),r);if(t<=0)return Math.max(1,o);const a=Math.floor(t/i);return Math.max(1,Math.min(o,a))}(this.maxGridPx,this._availPx>0?Math.max(1,this._availPx-c):this._availPx,n,l);return N`
+	`,e([Ae({attribute:!1})],ps.prototype,"furniture",void 0),e([Ae({attribute:!1})],ps.prototype,"selectedFurnitureId",void 0),e([Ae({type:Number})],ps.prototype,"roomWidth",void 0),e([Ae({type:Number})],ps.prototype,"cellPx",void 0),e([Ae({type:Number})],ps.prototype,"minCol",void 0),e([Ae({type:Number})],ps.prototype,"minRow",void 0),e([Ae({type:Number})],ps.prototype,"visCols",void 0),e([Ae({type:Number})],ps.prototype,"visRows",void 0),e([Ae({attribute:!1})],ps.prototype,"sidebarTab",void 0),e([Ae({attribute:!1})],ps.prototype,"localize",void 0),customElements.get("epp-furniture-overlay")||customElements.define("epp-furniture-overlay",ps);const As={[ni]:`background-image: ${zi(1,6)};`,[li]:`background-image: ${zi(2,5)};`,[ci]:`background-image: ${zi(3,5)};`};class us extends ce{constructor(){super(...arguments),this.grid=new Uint8Array(0),this.zoneConfigs=[],this.targets=[],this.roomWidth=0,this.roomDepth=0,this.perspective=null,this.furniture=[],this.selectedFurnitureId=null,this.sidebarTab="zones",this.editable=!1,this.activeZone=null,this.occupancy={},this.targetPrevXY=[],this.localize=Kt,this.maxRangeMm=ui,this.maxGridPx=480,this.dismissedTargets=new Map,this.frozenBounds=null,this._availPx=0,this._dbg="",this._fovCache=null,this._fovPerspective=us._FOV_UNCACHED,this._scanCache=null,this._lastEnterIdx=-1,this._onStrokeEnd=()=>{this._lastEnterIdx=-1,this.dispatchEvent(new CustomEvent("cell-paint",{detail:{action:"up"},bubbles:!0,composed:!0}))}}connectedCallback(){super.connectedCallback(),"undefined"!=typeof ResizeObserver&&(this._ro=new ResizeObserver(e=>{const t=e[0]?.contentRect.width??0;t&&Math.abs(t-this._availPx)>=1&&(this._availPx=Math.floor(t))}),this._ro.observe(this))}disconnectedCallback(){super.disconnectedCallback(),this._ro?.disconnect()}firstUpdated(){this._measureAvail()}updated(){this._measureAvail()}_measureAvail(){const e=this.clientWidth;e&&Math.abs(e-this._availPx)>=1&&(this._availPx=e),e&&(this._dbg=this._buildDbg())}_buildDbg(){const e=e=>e?`${Math.round(e.getBoundingClientRect().width)}/${e.clientWidth}/${e.scrollWidth}`:"—",t=this.parentElement,i=t?.parentElement,s=i?.parentElement,r=this.getRootNode(),o=r instanceof ShadowRoot?r.host:null,a=this.renderRoot?.querySelector?.(".grid");return[`iw=${window.innerWidth} host=${e(this)}`,`gc=${e(t)} em=${e(i)}`,`panel=${e(s)} pHost=${e(o)}`,`grid=${e(a)} avail=${this._availPx}`].join("\n")}willUpdate(e){if((e.has("targets")||e.has("dismissedTargets")||e.has("roomWidth")||e.has("roomDepth"))&&0!==this.dismissedTargets.size)for(const[e,t]of this.dismissedTargets){const i=this.targets[e];if(!i||"inactive"===i.status||null==i.x||null==i.y)continue;const s=cs(i.x,i.y,this.roomWidth,this.roomDepth);if(!s)continue;hs(s)!==t&&this.dispatchEvent(new CustomEvent("target-undismissed",{detail:{targetIndex:e},bubbles:!0,composed:!0}))}}render(){const e=this._getScan(),t=this.frozenBounds??e.bounds,i=t.minCol>t.maxCol,s=i?0:t.minCol,r=i?19:t.maxCol,o=i?0:t.minRow,a=i?19:t.maxRow,n=r-s+1,l=a-o+1,c=this._availPx>0?n-1+4:0,h=function(e,t,i,s,r=32){const o=Math.min(Math.floor(e/i),Math.floor(e/s),r);if(t<=0)return Math.max(1,o);const a=Math.floor(t/i);return Math.max(1,Math.min(o,a))}(this.maxGridPx,this._availPx>0?Math.max(1,this._availPx-c):this._availPx,n,l);return N`
 			<div class="grid-targets-wrapper">
 				<div
 					class="grid"
@@ -2013,6 +2013,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
 				${this._renderTargetDots(s,r,o,a,n,l)}
 			</div>
 			${this._renderGridDimensions(e.metrics)}
+			${this._dbg?N`<div class="dbg">${this._dbg}</div>`:J}
 		`}_getSensorFov(){return this.perspective?(this._fovPerspective===this.perspective||(this._fovCache=Gi(this.perspective),this._fovPerspective=this.perspective),this._fovCache):null}_getScan(){const e=this._getSensorFov(),t=this._scanCache;if(t&&t.grid===this.grid&&t.fov===e&&t.perspective===this.perspective&&t.roomWidth===this.roomWidth&&t.maxRangeMm===this.maxRangeMm)return t;const i=new Array(pi);for(let t=0;t<di;t++)for(let s=0;s<hi;s++)i[t*hi+s]=$i(s,t,e,this.roomWidth,this.maxRangeMm);return this._scanCache={grid:this.grid,fov:e,perspective:this.perspective,roomWidth:this.roomWidth,maxRangeMm:this.maxRangeMm,status:i,bounds:Yi(this.grid,e,this.roomWidth,this.maxRangeMm),metrics:Vi(this.grid,this.roomWidth,this.perspective,e,this.maxRangeMm)},this._scanCache}_renderVisibleCells(e,t,i,s,r,o){const a=this.occupancy,n=[];for(let l=s;l<=r;l++)for(let s=t;s<=i;s++){const t=l*hi+s,i=this.grid[t],r=e[t],c="in_range"===r,h=gi(i);let d;d="in_range"===r?Pi(i,this.zoneConfigs):"beyond_max_range"===r&&h?"repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(0,0,0,0.13) 3px, rgba(0,0,0,0.13) 4px), repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(0,0,0,0.13) 3px, rgba(0,0,0,0.13) 4px), #fff":"beyond_max_range"===r?Pi(i,this.zoneConfigs):"repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(0,0,0,0.13) 3px, rgba(0,0,0,0.13) 4px), repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(0,0,0,0.13) 3px, rgba(0,0,0,0.13) 4px), #c8c8c8";let p="";if(c&&gi(i)){const e=_i(i);if(a[e]){const t=e>0?this.zoneConfigs[e-1]?.color:null;p=`position: relative; z-index: 1; box-shadow: 0 0 8px 1px color-mix(in srgb, ${t??"#999"} 60%, ${t?"#222":"#444"});`}}const A=c&&gi(i)?As[mi(i)]??"":"",u=this.editable&&c;n.push(N`
 					<div
 						class="cell"
@@ -2053,6 +2054,21 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
 		`:J}}function gs(e){return!0===e.divider}us.styles=a`
 		:host {
 			display: block;
+		}
+
+		/* TEMP DEBUG overlay — remove after diagnosing the mobile grid width. */
+		.dbg {
+			position: fixed;
+			top: 0;
+			left: 0;
+			z-index: 99999;
+			max-width: 100vw;
+			background: rgba(0, 0, 0, 0.85);
+			color: #0f0;
+			font: 11px/1.3 monospace;
+			white-space: pre-wrap;
+			padding: 3px 5px;
+			pointer-events: none;
 		}
 
 		.grid-targets-wrapper {
@@ -2139,7 +2155,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
 			color: var(--secondary-text-color, #757575);
 			margin-top: 8px;
 		}
-	`,us._FOV_UNCACHED={},e([Ae({attribute:!1})],us.prototype,"grid",void 0),e([Ae({attribute:!1})],us.prototype,"zoneConfigs",void 0),e([Ae({attribute:!1})],us.prototype,"targets",void 0),e([Ae({type:Number})],us.prototype,"roomWidth",void 0),e([Ae({type:Number})],us.prototype,"roomDepth",void 0),e([Ae({attribute:!1})],us.prototype,"perspective",void 0),e([Ae({attribute:!1})],us.prototype,"furniture",void 0),e([Ae({attribute:!1})],us.prototype,"selectedFurnitureId",void 0),e([Ae({attribute:!1})],us.prototype,"sidebarTab",void 0),e([Ae({type:Boolean,reflect:!0})],us.prototype,"editable",void 0),e([Ae({attribute:!1})],us.prototype,"activeZone",void 0),e([Ae({attribute:!1})],us.prototype,"occupancy",void 0),e([Ae({attribute:!1})],us.prototype,"targetPrevXY",void 0),e([Ae({attribute:!1})],us.prototype,"localize",void 0),e([Ae({type:Number})],us.prototype,"maxRangeMm",void 0),e([Ae({type:Number})],us.prototype,"maxGridPx",void 0),e([Ae({attribute:!1})],us.prototype,"dismissedTargets",void 0),e([Ae({attribute:!1})],us.prototype,"frozenBounds",void 0),e([ue()],us.prototype,"_availPx",void 0),customElements.get("epp-grid")||customElements.define("epp-grid",us);class _s extends ce{constructor(){super(...arguments),this.items=[],this._open=!1,this._onOutside=e=>{e.composedPath().includes(this)||(this._open=!1,this._detachOutside())}}disconnectedCallback(){super.disconnectedCallback(),this._detachOutside()}render(){return customElements.get("ha-button-menu")?this._renderNative():this._renderFallback()}_renderNative(){return N`
+	`,us._FOV_UNCACHED={},e([Ae({attribute:!1})],us.prototype,"grid",void 0),e([Ae({attribute:!1})],us.prototype,"zoneConfigs",void 0),e([Ae({attribute:!1})],us.prototype,"targets",void 0),e([Ae({type:Number})],us.prototype,"roomWidth",void 0),e([Ae({type:Number})],us.prototype,"roomDepth",void 0),e([Ae({attribute:!1})],us.prototype,"perspective",void 0),e([Ae({attribute:!1})],us.prototype,"furniture",void 0),e([Ae({attribute:!1})],us.prototype,"selectedFurnitureId",void 0),e([Ae({attribute:!1})],us.prototype,"sidebarTab",void 0),e([Ae({type:Boolean,reflect:!0})],us.prototype,"editable",void 0),e([Ae({attribute:!1})],us.prototype,"activeZone",void 0),e([Ae({attribute:!1})],us.prototype,"occupancy",void 0),e([Ae({attribute:!1})],us.prototype,"targetPrevXY",void 0),e([Ae({attribute:!1})],us.prototype,"localize",void 0),e([Ae({type:Number})],us.prototype,"maxRangeMm",void 0),e([Ae({type:Number})],us.prototype,"maxGridPx",void 0),e([Ae({attribute:!1})],us.prototype,"dismissedTargets",void 0),e([Ae({attribute:!1})],us.prototype,"frozenBounds",void 0),e([ue()],us.prototype,"_availPx",void 0),e([ue()],us.prototype,"_dbg",void 0),customElements.get("epp-grid")||customElements.define("epp-grid",us);class _s extends ce{constructor(){super(...arguments),this.items=[],this._open=!1,this._onOutside=e=>{e.composedPath().includes(this)||(this._open=!1,this._detachOutside())}}disconnectedCallback(){super.disconnectedCallback(),this._detachOutside()}render(){return customElements.get("ha-button-menu")?this._renderNative():this._renderFallback()}_renderNative(){return N`
 			<ha-button-menu
 				fixed
 				@action=${this._onNativeAction}
@@ -4362,15 +4378,16 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:E},pe=(e=de
       --epp-control-height: 44px;
     }
     .panel {
-      max-width: none;
+      /* Hard-cap at the viewport. In real HA the panel-host's container is
+         content-sized, so without this cap .panel grows to the grid's content
+         width (~maxGridPx) and the whole page scrolls horizontally on a narrow
+         phone. 100vw is viewport-relative (definite) regardless of how the
+         ancestor chain is sized, so it constrains .panel — and thus the grid's
+         measured host width — to the viewport. min-width:0 also drops the flex
+         min-content floor (:host is display:flex; .panel is its flex item).
+         (Mobile @media only — desktop layout is byte-identical.) */
+      max-width: 100vw;
       padding: var(--epp-space-3, 12px);
-      /* :host is display:flex; .panel is its flex item. A flex item defaults
-         to min-width:auto, which floors its main size at the content's
-         min-content width — here ~maxGridPx (the grid's fixed-px columns),
-         overflowing a narrow phone viewport. min-width:0 removes that floor so
-         .panel shrinks to the viewport; the grid then measures the real width
-         and fitCellPx shrinks the cells to fit. (Mobile @media only — desktop
-         never hits the floor, so its layout is byte-identical.) */
       min-width: 0;
     }
     .panel-header ha-select {
