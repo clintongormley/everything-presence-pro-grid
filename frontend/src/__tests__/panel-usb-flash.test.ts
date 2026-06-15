@@ -385,8 +385,8 @@ describe("epp-flasher-view inline event handlers", () => {
 
 		// Simulate clicking the "Flash Firmware" tab
 		const tabButtons = container.querySelectorAll(".tab");
-		const flasherTab = Array.from(tabButtons).find(
-			(btn) => btn.textContent?.trim() === "tabs.flash_firmware",
+		const flasherTab = Array.from(tabButtons).find((btn) =>
+			btn.textContent?.includes("tabs.flash_firmware"),
 		) as HTMLElement;
 		expect(flasherTab).toBeTruthy();
 		flasherTab.click();

@@ -330,8 +330,11 @@
 	},
 	"tabs": {
 		"device_configuration": "Device Configuration",
+		"device_configuration_short": "Config",
 		"flash_firmware": "Flash Firmware",
+		"flash_firmware_short": "Flash",
 		"device_groups": "Device Groups",
+		"device_groups_short": "Groups",
 		"help": "Open user guide"
 	},
 	"flasher": {

@@ -204,6 +204,9 @@ const panelStyles = css`
       max-width: none;
       padding: var(--epp-space-3, 12px);
     }
+    .panel-header ha-select {
+      width: 100%;
+    }
   }
 
   .controller-error-banner {
@@ -284,6 +287,7 @@ export const layoutStyles = css`
   @media (max-width: 819px) {
     .editor-layout {
       flex-direction: column;
+      align-items: stretch;
     }
     .zone-sidebar {
       width: auto;
@@ -291,6 +295,7 @@ export const layoutStyles = css`
     }
     .grid-column {
       max-width: 100%;
+      text-align: center;
     }
   }
 
@@ -1684,7 +1689,34 @@ export class EPPGridPanel extends LitElement {
 
     @media (max-width: 819px) {
       .tab-bar {
-        flex-wrap: wrap;
+        flex-wrap: nowrap;
+        padding: 0 var(--epp-space-2, 8px);
+      }
+      .epp-logo {
+        display: none;
+      }
+      .tab {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 2px;
+        padding: var(--epp-space-2, 8px) var(--epp-space-1, 4px);
+        font-size: var(--epp-font-xs, 12px);
+      }
+      .tab-icon {
+        display: block;
+        --mdc-icon-size: 22px;
+      }
+      .tab-label-full {
+        display: none;
+      }
+      .tab-label-short {
+        display: inline;
+      }
+      .tab-help {
+        padding: var(--epp-space-2, 8px);
+        align-self: center;
       }
     }
 
@@ -1711,6 +1743,11 @@ export class EPPGridPanel extends LitElement {
     .tab.active {
       opacity: 1;
       border-bottom-color: var(--app-header-text-color, white);
+    }
+
+    .tab-icon,
+    .tab-label-short {
+      display: none;
     }
 
     .tab-help {
@@ -1855,7 +1892,11 @@ export class EPPGridPanel extends LitElement {
 							void this._flasherCtrl.resetUsbState();
 							this._panelTab = "config";
 							this._loadDevices();
-						})}>${this._localize("tabs.device_configuration")}</button>
+						})}>
+					<ha-icon class="tab-icon" icon="mdi:cog-outline"></ha-icon>
+					<span class="tab-label-full">${this._localize("tabs.device_configuration")}</span>
+					<span class="tab-label-short">${this._localize("tabs.device_configuration_short")}</span>
+				</button>
 				<button class="tab ${this._panelTab === "flasher" ? "active" : ""}"
 					@click=${() =>
 						this._navGuard.guardNavigation(() => {
@@ -1865,13 +1906,21 @@ export class EPPGridPanel extends LitElement {
 								this._flasherCtrl.hass = this.hass;
 								this._flasherCtrl.subscribeDeviceList();
 							}
-						})}>${this._localize("tabs.flash_firmware")}</button>
+						})}>
+					<ha-icon class="tab-icon" icon="mdi:flash"></ha-icon>
+					<span class="tab-label-full">${this._localize("tabs.flash_firmware")}</span>
+					<span class="tab-label-short">${this._localize("tabs.flash_firmware_short")}</span>
+				</button>
 				<button class="tab ${this._panelTab === "device-groups" ? "active" : ""}"
 					@click=${() =>
 						this._navGuard.guardNavigation(() => {
 							void this._flasherCtrl.resetUsbState();
 							this._panelTab = "device-groups";
-						})}>${this._localize("tabs.device_groups")}</button>
+						})}>
+					<ha-icon class="tab-icon" icon="mdi:devices"></ha-icon>
+					<span class="tab-label-full">${this._localize("tabs.device_groups")}</span>
+					<span class="tab-label-short">${this._localize("tabs.device_groups_short")}</span>
+				</button>
 				<a class="tab-help"
 					href=${getHelpUrl({
 						panelTab: this._panelTab,

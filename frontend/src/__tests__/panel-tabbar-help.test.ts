@@ -228,9 +228,8 @@ describe("tab-bar logo", () => {
 		expect(logo).not.toBeNull();
 		const configTab = Array.from(
 			tabBar?.querySelectorAll("button.tab") ?? [],
-		).find(
-			(b) =>
-				b.textContent?.trim() === setupLocalize()("tabs.device_configuration"),
+		).find((b) =>
+			b.textContent?.includes(setupLocalize()("tabs.device_configuration")),
 		);
 		expect(configTab).not.toBeUndefined();
 		// DOCUMENT_POSITION_FOLLOWING => configTab comes after logo in DOM order.

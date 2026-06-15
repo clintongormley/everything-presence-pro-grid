@@ -330,8 +330,11 @@
 	},
 	"tabs": {
 		"device_configuration": "Configuración del dispositivo",
+		"device_configuration_short": "Config",
 		"flash_firmware": "Instalar firmware",
+		"flash_firmware_short": "Flash",
 		"device_groups": "Grupos de dispositivos",
+		"device_groups_short": "Grupos",
 		"help": "Abrir la guía del usuario"
 	},
 	"flasher": {
