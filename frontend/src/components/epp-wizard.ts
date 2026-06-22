@@ -1118,7 +1118,7 @@ export class EppWizard extends LitElement {
 
 		return html`
       <div style="display: flex; flex-direction: column; align-items: center; padding: var(--epp-space-5, 24px);">
-        <svg viewBox="0 0 320 210" width="320" height="210" style="display: block;">
+        <svg viewBox="0 0 320 210" style="display: block; width: 320px; max-width: 100%; height: auto;">
           <!-- Sensor at top center -->
           <rect x="${cx - 6}" y="0" width="12" height="8" rx="3" fill="${fovColor}"/>
           <circle cx="${cx}" cy="0" r="4" fill="${fovColor}" opacity="0.4"/>

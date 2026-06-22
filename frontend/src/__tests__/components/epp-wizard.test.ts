@@ -37,6 +37,23 @@ describe("render mode branches", () => {
 		expect(root.innerHTML.length).toBeGreaterThan(0);
 	});
 
+	it("uncalibrated-fov SVG scales to its container instead of overflowing at narrow widths", async () => {
+		const el = createWizard({ mode: "uncalibrated-fov" });
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const svg = el.shadowRoot!.querySelector("svg")!;
+		// viewBox preserves the aspect ratio while the rendered size flexes.
+		expect(svg.getAttribute("viewBox")).toBe("0 0 320 210");
+		const style = (svg.getAttribute("style") ?? "").replace(/\s+/g, " ");
+		// Caps at its natural width but shrinks below it; height follows the ratio.
+		expect(style).toContain("max-width: 100%");
+		expect(style).toContain("height: auto");
+		// No fixed pixel size attributes that would force overflow in a narrow column.
+		expect(svg.getAttribute("width")).toBeNull();
+		expect(svg.getAttribute("height")).toBeNull();
+	});
+
 	it("mode = 'wizard' with _setupStep = null renders nothing", async () => {
 		const el = createWizard();
 		(el as any)._setupStep = null;

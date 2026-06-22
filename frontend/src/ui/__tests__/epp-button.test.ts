@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import "../epp-button.js";
-import type { EppButton } from "../epp-button.js";
+import { EppButton } from "../epp-button.js";
 
 async function fixture(attrs = ""): Promise<EppButton> {
 	const el = document.createElement("epp-button") as EppButton;
@@ -58,5 +57,15 @@ describe("epp-button", () => {
 		const icon = el.shadowRoot!.querySelector("ha-icon");
 		expect(icon).toBeTruthy();
 		expect(icon!.getAttribute("icon")).toBe("mdi:content-save");
+	});
+
+	it("uses min-height so a wrapping label grows the button instead of overflowing", () => {
+		// A long label in a narrow container wraps to several lines. With a fixed
+		// `height` the text spills out of the rounded box; `min-height` lets the
+		// button grow to contain it while keeping the control height as a floor.
+		const css = EppButton.styles.cssText.replace(/\s+/g, " ");
+		expect(css).toContain("min-height: var(--epp-control-height");
+		// No bare `height:` pinning the control height (min-/line-/max- are fine).
+		expect(css).not.toMatch(/(?<![a-z-])height: var\(--epp-control-height/);
 	});
 });

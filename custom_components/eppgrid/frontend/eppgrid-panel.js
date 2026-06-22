@@ -47,7 +47,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:v},pe=(e=de
       cursor: pointer;
       border: 1px solid transparent;
       border-radius: var(--epp-radius-md, 10px);
-      height: var(--epp-control-height, 40px);
+      min-height: var(--epp-control-height, 40px);
       padding: 0 var(--epp-space-4, 16px);
       font-size: var(--epp-font-base, 14px);
       font-weight: var(--epp-weight-semibold, 600);
@@ -3109,7 +3109,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:v},pe=(e=de
       </div>
     `}_renderUncalibratedFov(){const e=this.sensorState.occupancy,t=e?"#4CAF50":"var(--primary-color, #03a9f4)",i=160,s=14,r=180,o=30*Math.PI/180,a=150*Math.PI/180,n=i+r*Math.cos(o),l=s+r*Math.sin(o),c=i+r*Math.cos(a),h=s+r*Math.sin(a);return N`
       <div style="display: flex; flex-direction: column; align-items: center; padding: var(--epp-space-5, 24px);">
-        <svg viewBox="0 0 320 210" width="320" height="210" style="display: block;">
+        <svg viewBox="0 0 320 210" style="display: block; width: 320px; max-width: 100%; height: auto;">
           <!-- Sensor at top center -->
           <rect x="${154}" y="0" width="12" height="8" rx="3" fill="${t}"/>
           <circle cx="${i}" cy="0" r="4" fill="${t}" opacity="0.4"/>

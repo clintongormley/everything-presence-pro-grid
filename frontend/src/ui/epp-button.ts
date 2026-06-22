@@ -18,7 +18,7 @@ export class EppButton extends LitElement {
       cursor: pointer;
       border: 1px solid transparent;
       border-radius: var(--epp-radius-md, 10px);
-      height: var(--epp-control-height, 40px);
+      min-height: var(--epp-control-height, 40px);
       padding: 0 var(--epp-space-4, 16px);
       font-size: var(--epp-font-base, 14px);
       font-weight: var(--epp-weight-semibold, 600);
