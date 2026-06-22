@@ -976,12 +976,19 @@ export class EppFlasherView extends LitElement {
                 </div>`
 								: html`
                 <div class="device-list">
-                  ${flashableDevices.map((device) => {
-										const isFaded =
-											!device.available || device.firmware_type === "original";
-										const { badges, action } =
-											this._deviceRowDescriptor(device);
-										return html`
+                  ${[...flashableDevices]
+										.sort((a, b) =>
+											a.name.localeCompare(b.name, undefined, {
+												sensitivity: "base",
+											}),
+										)
+										.map((device) => {
+											const isFaded =
+												!device.available ||
+												device.firmware_type === "original";
+											const { badges, action } =
+												this._deviceRowDescriptor(device);
+											return html`
                       <div class="device-row">
                         <div class="device-info${isFaded ? " device-info-faded" : ""}">
                           <div class="device-name">${device.name} <span class="device-mac">(${device.mac.replace(/:/g, "").slice(-6).toLowerCase()})</span></div>
@@ -1000,7 +1007,7 @@ export class EppFlasherView extends LitElement {
                         ${action}
                       </div>
                     `;
-									})}
+										})}
                 </div>
               `
 						}

@@ -162,6 +162,45 @@ describe("render() device list", () => {
 		expect(c.querySelectorAll(".device-row").length).toBe(2);
 	});
 
+	it("sorts devices alphabetically by friendly name", () => {
+		const el = createView({
+			flashableDevices: [
+				{ ...device1, name: "Zebra" },
+				{ ...device2, name: "apple" },
+				{ ...updatableDevice, name: "Mango" },
+			],
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const names = [...c.querySelectorAll(".device-name")].map(
+			(n) => n.textContent,
+		);
+		expect(names[0]).toContain("apple");
+		expect(names[1]).toContain("Mango");
+		expect(names[2]).toContain("Zebra");
+	});
+
+	it("sorts case-insensitively (case-only differences do not reorder)", () => {
+		// "Apple" and "apple" are equal under a case-insensitive comparison, so a
+		// stable sort must keep their original order. A case-sensitive comparator
+		// would instead reorder them by case.
+		const el = createView({
+			flashableDevices: [
+				{ ...device1, name: "Apple" },
+				{ ...device2, name: "apple" },
+			],
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const names = [...c.querySelectorAll(".device-name")].map(
+			(n) => n.textContent,
+		);
+		expect(names[0]).toContain("Apple");
+		expect(names[1]).toContain("apple");
+	});
+
 	it("shows device name and host", () => {
 		const el = createView({ flashableDevices: [device1] });
 		const tpl = (el as any).render();

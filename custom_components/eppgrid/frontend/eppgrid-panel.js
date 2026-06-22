@@ -1537,7 +1537,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:v},pe=(e=de
                   <p>${this.localize("flasher.no_devices")}</p>
                 </div>`:N`
                 <div class="device-list">
-                  ${e.map(e=>{const t=!e.available||"original"===e.firmware_type,{badges:i,action:s}=this._deviceRowDescriptor(e);return N`
+                  ${[...e].sort((e,t)=>e.name.localeCompare(t.name,void 0,{sensitivity:"base"})).map(e=>{const t=!e.available||"original"===e.firmware_type,{badges:i,action:s}=this._deviceRowDescriptor(e);return N`
                       <div class="device-row">
                         <div class="device-info${t?" device-info-faded":""}">
                           <div class="device-name">${e.name} <span class="device-mac">(${e.mac.replace(/:/g,"").slice(-6).toLowerCase()})</span></div>
