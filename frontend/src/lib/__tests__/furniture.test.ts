@@ -429,7 +429,7 @@ describe("visibleHandles", () => {
 });
 
 describe("computeFurnitureResize", () => {
-	describe("free-form (lockAspect=false)", () => {
+	describe("edge handles (unlocked) resize a single axis", () => {
 		it("resizes east handle", () => {
 			const result = computeFurnitureResize(
 				"e",
@@ -658,7 +658,7 @@ describe("computeFurnitureResize", () => {
 		});
 	});
 
-	describe("unlocked corner resizes proportionally", () => {
+	describe("unlocked resize: corner proportional, edge single-axis", () => {
 		it("keeps aspect ratio when dragging the se corner of an unlocked item", () => {
 			const result = computeFurnitureResize(
 				"se",
