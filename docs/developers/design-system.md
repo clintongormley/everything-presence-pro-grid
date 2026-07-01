@@ -47,6 +47,17 @@ values but stay overridable via the same `--epp-*` names. When tokenising,
 --epp-tooltip-text  var(--card-background-color, #fff)
 ```
 
+**Colour — furniture (domain-specific, not themed):**
+
+```
+--epp-furniture-on-dark        #eef2f7   light furniture, used on dark room colours
+--epp-furniture-on-light       #28303c   dark furniture, used on light room colours
+--epp-furniture-halo-on-dark   rgba(0,0,0,.85)      dark outline behind light furniture
+--epp-furniture-halo-on-light  rgba(255,255,255,.95) light outline behind dark furniture
+```
+
+Applied automatically by the card when `room_color` is set; picked per-background by `lib/furniture-contrast.ts`.
+
 **Spacing (4px base):** `--epp-space-1..6` = 4 / 8 / 12 / 16 / 24 / 32px
 **Radius:** `--epp-radius-sm` 6 · `-md` 10 · `-lg` 16 · `-pill` 9999px
 **Elevation:** `--epp-elevation-1` `0 2px 8px rgba(0,0,0,.12)` · `-2`

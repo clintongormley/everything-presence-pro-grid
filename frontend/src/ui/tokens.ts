@@ -29,6 +29,12 @@ export const tokens = css`
     --epp-tooltip-bg: var(--primary-text-color, #212121);
     --epp-tooltip-text: var(--card-background-color, #fff);
 
+    /* furniture auto-contrast (domain colours — not themed) */
+    --epp-furniture-on-dark: #eef2f7;
+    --epp-furniture-on-light: #28303c;
+    --epp-furniture-halo-on-dark: rgba(0, 0, 0, 0.85);
+    --epp-furniture-halo-on-light: rgba(255, 255, 255, 0.95);
+
     /* spacing — 4px base */
     --epp-space-1: 4px;
     --epp-space-2: 8px;
