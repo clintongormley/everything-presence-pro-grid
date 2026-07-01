@@ -8,6 +8,7 @@ import {
 	type FurnitureSticker,
 	filterAndSortStickers,
 	getResizeCursor,
+	isProportionalResize,
 	mmToPx,
 	pxToMm,
 	removeFurnitureItem,
@@ -383,6 +384,29 @@ describe("clampFurnitureMove", () => {
 			expect(result.x).toBe(2700);
 			expect(result.y).toBe(3900);
 		});
+	});
+});
+
+describe("isProportionalResize", () => {
+	const corners = ["ne", "nw", "se", "sw"];
+	const edges = ["n", "s", "e", "w"];
+
+	it("is proportional for every handle when hard-locked", () => {
+		for (const h of [...corners, ...edges]) {
+			expect(isProportionalResize(h, true)).toBe(true);
+		}
+	});
+
+	it("is proportional for corner handles when unlocked", () => {
+		for (const h of corners) {
+			expect(isProportionalResize(h, false)).toBe(true);
+		}
+	});
+
+	it("is single-axis (not proportional) for edge handles when unlocked", () => {
+		for (const h of edges) {
+			expect(isProportionalResize(h, false)).toBe(false);
+		}
 	});
 });
 

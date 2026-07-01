@@ -178,6 +178,28 @@ export function clampFurnitureMove(
 }
 
 /**
+ * Decide whether a resize should preserve the item's aspect ratio.
+ *
+ * The constraint is encoded in the handle: corner handles carry both a
+ * horizontal and a vertical component (e.g. "ne", "sw") and resize
+ * proportionally; edge handles ("n", "s", "e", "w") stretch a single axis. A
+ * hard-locked item is always proportional, regardless of which handle is used.
+ *
+ * @param handle Resize handle id (e.g. "ne", "e")
+ * @param hardLock Whether the item is aspect-locked (never distortable)
+ * @returns true to preserve aspect ratio, false to resize one axis freely
+ */
+export function isProportionalResize(
+	handle: string,
+	hardLock: boolean,
+): boolean {
+	if (hardLock) return true;
+	const horizontal = handle.includes("e") || handle.includes("w");
+	const vertical = handle.includes("n") || handle.includes("s");
+	return horizontal && vertical;
+}
+
+/**
  * Compute resized dimensions for a furniture item.
  *
  * Supports locked-aspect (uniform) and free-form resize, with per-handle
