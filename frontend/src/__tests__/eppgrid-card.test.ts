@@ -384,6 +384,17 @@ describe("eppgrid-card rendering", () => {
 		expect(grid.fill).toBe(true);
 	});
 
+	it("tells epp-grid to fade uncovered cells (clean room rectangle)", async () => {
+		const el = await mount({
+			type: "custom:eppgrid-card",
+			device_id: "card-fade-uncovered",
+		});
+		const grid = el.shadowRoot!.querySelector("epp-grid") as unknown as {
+			fadeUncovered: boolean;
+		};
+		expect(grid.fadeUncovered).toBe(true);
+	});
+
 	it("passes room_color to epp-grid as a CSS rgb() string", async () => {
 		const el = await mount({
 			type: "custom:eppgrid-card",
