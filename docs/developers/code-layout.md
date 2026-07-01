@@ -214,6 +214,8 @@ Pure-logic modules — no Lit, no HA, testable in isolation.
 - `furniture.ts` — furniture model, sticker definitions, presets.
 - `heatmap.ts` — per-zone CSS colour resolution + hatched-cell backgrounds
     (`CELL_BG_OUT_OF_RANGE`, `CELL_BG_BEYOND_MAX_RANGE`).
+- `furniture-contrast.ts` — auto furniture tone + outline vs a custom
+    `room_color` (WCAG contrast; applied by `<epp-grid>` only when set).
 - `zone-defaults.ts` — default thresholds per zone type, palette, threshold
     resolver.
 - `settings-defaults.ts` — `ENTITY_DEFAULTS` + `SETTINGS_DEFAULTS` tables
