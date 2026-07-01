@@ -555,6 +555,9 @@ export class EppGrid extends LitElement {
 		const cellBgConfigs = plain ? [] : this.zoneConfigs;
 		const cellBg = (v: number): string =>
 			getCellColor(v, cellBgConfigs, this.roomColor);
+		// Overview fade is a wash of the room colour — the same for every cell,
+		// so build it once here rather than per cell in the loop below.
+		const faded = this.fadeUncovered ? fadedRoomColor(this.roomColor) : "";
 
 		const cells = [];
 		for (let r = minRow; r <= maxRow; r++) {
@@ -565,17 +568,14 @@ export class EppGrid extends LitElement {
 				const inRange = cellStatus === "in_range";
 				const inside = cellIsInside(cellVal);
 				let bg: string;
-				if (this.fadeUncovered) {
-					// Overview: outside cells and in-coverage cells keep their normal
-					// colour; in-room out-of-coverage cells (out of cone / beyond max
-					// range) fade instead of the cross-hatch, so the room reads as a
-					// clean rectangle. cellBg returns the outside colour for !inside.
-					bg =
-						!inside || inRange
-							? cellBg(cellVal)
-							: fadedRoomColor(this.roomColor);
-				} else if (inRange) {
+				if (inRange) {
 					bg = cellBg(cellVal);
+				} else if (this.fadeUncovered) {
+					// Overview: in-room out-of-coverage cells (out of cone / beyond
+					// max range) fade to a wash of the room colour instead of the
+					// cross-hatch, so the room reads as a clean rectangle; outside-room
+					// cells keep the plain outside colour (cellBg → outside for !inside).
+					bg = inside ? faded : cellBg(cellVal);
 				} else if (cellStatus === "beyond_max_range" && inside) {
 					// Only inside-room cells get the hatch-on-white "configured out"
 					// decoration; outside-room padding rendered as plain outside so
