@@ -19,6 +19,8 @@ export class EppFurnitureOverlay extends LitElement {
 	@property({ type: Number }) visRows = 20;
 	@property({ attribute: false }) sidebarTab: SidebarTab = "zones";
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
+	@property({ attribute: false }) furnitureColor?: string;
+	@property({ attribute: false }) furnitureHalo?: string;
 
 	static styles = css`
 		:host {
@@ -55,7 +57,10 @@ export class EppFurnitureOverlay extends LitElement {
 			border: 1px solid var(--epp-border, var(--divider-color, #e0e0e0));
 			border-radius: 4px;
 			background: transparent;
-			color: var(--epp-text-muted, var(--secondary-text-color, #757575));
+			color: var(
+				--epp-furniture-color,
+				var(--epp-text-muted, var(--secondary-text-color, #757575))
+			);
 			pointer-events: auto;
 			cursor: grab;
 			transform-origin: center center;
@@ -73,6 +78,11 @@ export class EppFurnitureOverlay extends LitElement {
 			box-shadow: 0 0 8px
 				color-mix(in srgb, var(--epp-accent, #03a9f4) 40%, transparent);
 			z-index: 10;
+		}
+
+		.furniture-item.has-halo {
+			filter: drop-shadow(0 0 1.3px var(--epp-furniture-halo-color))
+				drop-shadow(0 0 1.3px var(--epp-furniture-halo-color));
 		}
 
 		.furniture-item ha-icon {
@@ -252,8 +262,18 @@ export class EppFurnitureOverlay extends LitElement {
 		const step = this.cellPx + 1;
 
 		const interactive = this.sidebarTab === "furniture";
+		const overlayVars =
+			(this.furnitureColor
+				? `--epp-furniture-color:${this.furnitureColor};`
+				: "") +
+			(this.furnitureHalo
+				? `--epp-furniture-halo-color:${this.furnitureHalo};`
+				: "");
 		return html`
-			<div class="furniture-overlay ${interactive ? "" : "non-interactive"}">
+			<div
+				class="furniture-overlay ${interactive ? "" : "non-interactive"}"
+				style=${overlayVars}
+			>
 				${this.furniture.map((item) => {
 					const leftPx = (startCol - this.minCol) * step + this._mmToPx(item.x);
 					const topPx = (0 - this.minRow) * step + this._mmToPx(item.y);
@@ -263,7 +283,9 @@ export class EppFurnitureOverlay extends LitElement {
 
 					return html`
 						<div
-							class="furniture-item ${selected ? "selected" : ""}"
+							class="furniture-item ${selected ? "selected" : ""} ${
+								this.furnitureHalo ? "has-halo" : ""
+							}"
 							data-id="${item.id}"
 							style="
 								left: ${leftPx}px; top: ${topPx}px;

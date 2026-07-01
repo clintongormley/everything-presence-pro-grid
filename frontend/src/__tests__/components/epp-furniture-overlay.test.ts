@@ -521,3 +521,33 @@ describe("FLOOR_PLAN_SVGS own-property lookup", () => {
 		document.body.removeChild(el);
 	});
 });
+
+describe("epp-furniture-overlay auto-contrast", () => {
+	it("sets colour + halo vars and has-halo when both props are set", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			furnitureColor: "var(--epp-furniture-on-dark, #eef2f7)",
+			furnitureHalo: "var(--epp-furniture-halo-on-dark, rgba(0, 0, 0, 0.85))",
+		});
+		const c = renderTo((el as any).render());
+		const overlay = c.querySelector(".furniture-overlay") as HTMLElement;
+		const style = overlay.getAttribute("style") ?? "";
+		expect(style).toContain("--epp-furniture-color:");
+		expect(style).toContain("--epp-furniture-halo-color:");
+		const item = c.querySelector(".furniture-item") as HTMLElement;
+		expect(item.classList.contains("has-halo")).toBe(true);
+		document.body.removeChild(c);
+	});
+
+	it("omits the vars and has-halo when the props are unset", () => {
+		const el = createOverlay({ furniture: [SAMPLE_FURNITURE] });
+		const c = renderTo((el as any).render());
+		const overlay = c.querySelector(".furniture-overlay") as HTMLElement;
+		const style = overlay.getAttribute("style") ?? "";
+		expect(style).not.toContain("--epp-furniture-color");
+		expect(style).not.toContain("--epp-furniture-halo-color");
+		const item = c.querySelector(".furniture-item") as HTMLElement;
+		expect(item.classList.contains("has-halo")).toBe(false);
+		document.body.removeChild(c);
+	});
+});
