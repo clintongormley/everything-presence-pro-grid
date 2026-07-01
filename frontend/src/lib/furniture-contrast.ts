@@ -64,6 +64,21 @@ export function isRgbTriple(v: unknown): v is [number, number, number] {
 	);
 }
 
+/** Parse a computed `rgb(r, g, b)` / `rgba(r, g, b, a)` string (comma- or
+ *  space-separated) to an `[r, g, b]` triple. Returns null for anything
+ *  unparseable (`""`, `transparent`, a gradient) so callers keep the default
+ *  look rather than picking a tone from garbage. */
+export function parseRgb(css: string): [number, number, number] | null {
+	const m = /^rgba?\(\s*([0-9.]+)[\s,]+([0-9.]+)[\s,]+([0-9.]+)/i.exec(css);
+	if (!m) return null;
+	const rgb: [number, number, number] = [
+		Number(m[1]),
+		Number(m[2]),
+		Number(m[3]),
+	];
+	return isRgbTriple(rgb) ? rgb : null;
+}
+
 /** Precomputed luminance of the two fixed tones — they never change, so there's
  *  no need to recompute them on every call. */
 const LIGHT_TONE_LUM = relativeLuminance(LIGHT_TONE);

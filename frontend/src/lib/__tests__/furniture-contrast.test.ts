@@ -4,6 +4,7 @@ import {
 	FURNITURE_TONE_CSS,
 	furnitureContrast,
 	isRgbTriple,
+	parseRgb,
 	relativeLuminance,
 } from "../furniture-contrast.js";
 
@@ -57,5 +58,18 @@ describe("furnitureContrast", () => {
 	});
 	it("uses the dark tone on a light grey", () => {
 		expect(furnitureContrast([200, 200, 200]).tone).toBe("dark");
+	});
+});
+
+describe("parseRgb", () => {
+	it("parses rgb() and rgba(), comma- or space-separated", () => {
+		expect(parseRgb("rgb(18, 48, 71)")).toEqual([18, 48, 71]);
+		expect(parseRgb("rgba(238, 242, 247, 0.9)")).toEqual([238, 242, 247]);
+		expect(parseRgb("rgb(18 48 71)")).toEqual([18, 48, 71]);
+	});
+	it("returns null for anything it can't parse", () => {
+		expect(parseRgb("")).toBeNull();
+		expect(parseRgb("transparent")).toBeNull();
+		expect(parseRgb("linear-gradient(0deg, #fff, #000)")).toBeNull();
 	});
 });
