@@ -40,6 +40,11 @@ describe("computeFurnitureTones", () => {
 			]).has("f1"),
 		).toBe(false);
 	});
+	it("omits an item when the room has no size", () => {
+		expect(
+			computeFurnitureTones([item()], 0, 5100, () => [0, 0, 0]).has("f1"),
+		).toBe(false);
+	});
 	it("reads a cell per item", () => {
 		const read = vi.fn(() => [0, 0, 0] as [number, number, number]);
 		computeFurnitureTones(
