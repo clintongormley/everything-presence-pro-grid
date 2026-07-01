@@ -178,10 +178,22 @@ export function clampFurnitureMove(
 }
 
 /**
+ * Whether a resize handle is a corner — it carries both a horizontal (e/w) and
+ * a vertical (n/s) component, e.g. "ne", "sw" — as opposed to an edge ("n",
+ * "s", "e", "w"). This is the single structural definition of "corner"; both
+ * the resize constraint (`isProportionalResize`) and the rendered corner set
+ * (`CORNER_HANDLES`) derive from it, so the two can't drift apart.
+ */
+function isCornerHandle(handle: string): boolean {
+	const horizontal = handle.includes("e") || handle.includes("w");
+	const vertical = handle.includes("n") || handle.includes("s");
+	return horizontal && vertical;
+}
+
+/**
  * Decide whether a resize should preserve the item's aspect ratio.
  *
- * The constraint is encoded in the handle: corner handles carry both a
- * horizontal and a vertical component (e.g. "ne", "sw") and resize
+ * The constraint is encoded in the handle: corner handles resize
  * proportionally; edge handles ("n", "s", "e", "w") stretch a single axis. A
  * hard-locked item is always proportional, regardless of which handle is used.
  *
@@ -193,10 +205,7 @@ export function isProportionalResize(
 	handle: string,
 	hardLock: boolean,
 ): boolean {
-	if (hardLock) return true;
-	const horizontal = handle.includes("e") || handle.includes("w");
-	const vertical = handle.includes("n") || handle.includes("s");
-	return horizontal && vertical;
+	return hardLock || isCornerHandle(handle);
 }
 
 /**
@@ -208,8 +217,10 @@ export function isProportionalResize(
  */
 export const EDGE_HANDLE_MIN_PX = 120;
 
-const CORNER_HANDLES = ["ne", "nw", "se", "sw"] as const;
+// All eight resize handles, in render order. CORNER_HANDLES derives from this
+// via isCornerHandle, so the corner/edge split lives in exactly one place.
 const ALL_HANDLES = ["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const;
+const CORNER_HANDLES = ALL_HANDLES.filter(isCornerHandle);
 
 /**
  * Which resize handles to render for a selected item.
