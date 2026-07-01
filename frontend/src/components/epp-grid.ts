@@ -200,7 +200,7 @@ export class EppGrid extends LitElement {
 
 	private _updateFurnitureTones(changed: PropertyValues): void {
 		if (!this.furniture.length) {
-			if (this._furnitureTones !== undefined) this._furnitureTones = undefined;
+			this._furnitureTones = undefined;
 			return;
 		}
 		// Cell backgrounds depend on these; target/occupancy/selection changes
@@ -240,6 +240,9 @@ export class EppGrid extends LitElement {
 
 	/* v8 ignore start -- getComputedStyle needs real layout; happy-dom returns "" */
 	private _readCellRgb(idx: number): [number, number, number] | null {
+		// Only cells inside the visible/in-range window are rendered, so a cell
+		// outside it legitimately has no element — null then means "keep the
+		// default grey for this item", not an error.
 		const cell = this.shadowRoot?.querySelector(`.cell[data-idx="${idx}"]`);
 		if (!cell) return null;
 		return parseRgb(getComputedStyle(cell).backgroundColor);
