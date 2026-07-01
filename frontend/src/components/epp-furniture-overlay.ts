@@ -4,6 +4,7 @@ import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { FLOOR_PLAN_SVGS } from "../constants.js";
 import type { FurnitureItem } from "../lib/furniture.js";
 import { getResizeCursor, mmToPx } from "../lib/furniture.js";
+import type { FurnitureItemTone } from "../lib/furniture-tones.js";
 import { roomStartCol } from "../lib/grid.js";
 import type { SidebarTab } from "../lib/view-hash.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
@@ -19,13 +20,12 @@ export class EppFurnitureOverlay extends LitElement {
 	@property({ type: Number }) visRows = 20;
 	@property({ attribute: false }) sidebarTab: SidebarTab = "zones";
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
-	// Auto-contrast furniture styling (colour + outline), derived by the grid from
-	// the room colour. A single object so colour and halo are atomically
-	// both-or-neither — never a partial state.
-	@property({ attribute: false }) furnitureTone?: {
-		color: string;
-		halo: string;
-	};
+	// Per-item auto-contrast styling, keyed by furniture id, derived by the grid
+	// from the cell under each item. Absent id → the item keeps the default grey.
+	@property({ attribute: false }) furnitureTones?: Map<
+		string,
+		FurnitureItemTone
+	>;
 
 	static styles = css`
 		:host {
@@ -267,21 +267,15 @@ export class EppFurnitureOverlay extends LitElement {
 		const step = this.cellPx + 1;
 
 		const interactive = this.sidebarTab === "furniture";
-		const tone = this.furnitureTone;
-		const overlayVars = tone
-			? `--epp-furniture-color:${tone.color};--epp-furniture-halo-color:${tone.halo};`
-			: "";
 		return html`
-			<div
-				class="furniture-overlay ${interactive ? "" : "non-interactive"}"
-				style=${overlayVars || nothing}
-			>
+			<div class="furniture-overlay ${interactive ? "" : "non-interactive"}">
 				${this.furniture.map((item) => {
 					const leftPx = (startCol - this.minCol) * step + this._mmToPx(item.x);
 					const topPx = (0 - this.minRow) * step + this._mmToPx(item.y);
 					const wPx = this._mmToPx(item.width);
 					const hPx = this._mmToPx(item.height);
 					const selected = this.selectedFurnitureId === item.id;
+					const tone = this.furnitureTones?.get(item.id);
 
 					return html`
 						<div
@@ -290,6 +284,7 @@ export class EppFurnitureOverlay extends LitElement {
 							}"
 							data-id="${item.id}"
 							style="
+								${tone ? `--epp-furniture-color:${tone.color};--epp-furniture-halo-color:${tone.halo};` : ""}
 								left: ${leftPx}px; top: ${topPx}px;
 								width: ${wPx}px; height: ${hPx}px;
 								transform: rotate(${item.rotation}deg);

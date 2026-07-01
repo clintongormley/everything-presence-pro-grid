@@ -523,33 +523,38 @@ describe("FLOOR_PLAN_SVGS own-property lookup", () => {
 });
 
 describe("epp-furniture-overlay auto-contrast", () => {
-	it("sets colour + halo vars and has-halo when a tone is set", () => {
+	it("applies a colour var + has-halo to items present in the map", () => {
 		const el = createOverlay({
 			furniture: [SAMPLE_FURNITURE],
-			furnitureTone: {
-				color: "var(--epp-furniture-on-dark, #eef2f7)",
-				halo: "var(--epp-furniture-halo-on-dark, rgba(0, 0, 0, 0.85))",
-			},
+			furnitureTones: new Map([
+				[
+					"f1",
+					{
+						color: "var(--epp-furniture-on-dark, #eef2f7)",
+						halo: "var(--epp-furniture-halo-on-dark, rgba(0, 0, 0, 0.85))",
+					},
+				],
+			]),
 		});
 		const c = renderTo((el as any).render());
-		const overlay = c.querySelector(".furniture-overlay") as HTMLElement;
-		const style = overlay.getAttribute("style") ?? "";
+		const outer = c.querySelector(".furniture-item") as HTMLElement;
+		const style = outer.getAttribute("style") ?? "";
 		expect(style).toContain("--epp-furniture-color:");
 		expect(style).toContain("--epp-furniture-halo-color:");
-		const item = c.querySelector(".furniture-item") as HTMLElement;
-		expect(item.classList.contains("has-halo")).toBe(true);
+		expect(outer.classList.contains("has-halo")).toBe(true);
 		document.body.removeChild(c);
 	});
 
-	it("omits the vars and has-halo when no tone is set", () => {
-		const el = createOverlay({ furniture: [SAMPLE_FURNITURE] });
+	it("leaves items absent from the map grey with no halo", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			furnitureTones: new Map(),
+		});
 		const c = renderTo((el as any).render());
-		const overlay = c.querySelector(".furniture-overlay") as HTMLElement;
-		const style = overlay.getAttribute("style") ?? "";
+		const outer = c.querySelector(".furniture-item") as HTMLElement;
+		const style = outer.getAttribute("style") ?? "";
 		expect(style).not.toContain("--epp-furniture-color");
-		expect(style).not.toContain("--epp-furniture-halo-color");
-		const item = c.querySelector(".furniture-item") as HTMLElement;
-		expect(item.classList.contains("has-halo")).toBe(false);
+		expect(outer.classList.contains("has-halo")).toBe(false);
 		document.body.removeChild(c);
 	});
 });
