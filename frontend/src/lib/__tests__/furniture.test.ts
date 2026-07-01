@@ -14,6 +14,7 @@ import {
 	removeFurnitureItem,
 	snapRotation,
 	updateFurnitureItem,
+	visibleHandles,
 } from "../furniture.js";
 import { GRID_CELL_MM } from "../grid.js";
 
@@ -407,6 +408,23 @@ describe("isProportionalResize", () => {
 		for (const h of edges) {
 			expect(isProportionalResize(h, false)).toBe(false);
 		}
+	});
+});
+
+describe("visibleHandles", () => {
+	const ALL = ["e", "n", "ne", "nw", "s", "se", "sw", "w"]; // sorted
+	const CORNERS = ["ne", "nw", "se", "sw"]; // already sorted
+
+	it("shows only corners for a hard-locked item", () => {
+		expect([...visibleHandles(true, false)].sort()).toEqual(CORNERS);
+	});
+
+	it("shows only corners for a small unlocked item", () => {
+		expect([...visibleHandles(false, true)].sort()).toEqual(CORNERS);
+	});
+
+	it("shows all eight handles for a large unlocked item", () => {
+		expect([...visibleHandles(false, false)].sort()).toEqual(ALL);
 	});
 });
 

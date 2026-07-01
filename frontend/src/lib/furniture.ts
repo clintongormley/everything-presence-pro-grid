@@ -200,6 +200,36 @@ export function isProportionalResize(
 }
 
 /**
+ * On-screen size (px, shorter side) below which an unlocked item shows corner
+ * handles only. Eight ~44px touch targets overlap on a smaller item, so a
+ * finger can't reliably pick an edge vs a corner; collapsing to corners keeps
+ * the safe (proportional) default. Zooming in (larger cellPx) reveals the edge
+ * handles. Tunable — starting value, validate against touch devices.
+ */
+export const EDGE_HANDLE_MIN_PX = 120;
+
+const CORNER_HANDLES = ["ne", "nw", "se", "sw"] as const;
+const ALL_HANDLES = ["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const;
+
+/**
+ * Which resize handles to render for a selected item.
+ *
+ * Corner handles are always shown (proportional resize). Edge handles — which
+ * stretch a single axis — are shown only for an unlocked item that is large
+ * enough on screen for the extra touch targets to be distinguishable.
+ *
+ * @param hardLock Whether the item is aspect-locked (never distortable)
+ * @param tooSmall Whether the item is below EDGE_HANDLE_MIN_PX on its short side
+ * @returns Handle ids to render
+ */
+export function visibleHandles(
+	hardLock: boolean,
+	tooSmall: boolean,
+): readonly string[] {
+	return hardLock || tooSmall ? CORNER_HANDLES : ALL_HANDLES;
+}
+
+/**
  * Compute resized dimensions for a furniture item.
  *
  * Supports locked-aspect (uniform) and free-form resize, with per-handle
