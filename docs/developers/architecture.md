@@ -125,7 +125,8 @@ everything-presence-pro-grid/
 │   │       ├── configuration-thumbnail.ts # SVG thumbnail of a saved configuration
 │   │       ├── furniture.ts              # Furniture model + sticker definitions
 │   │       ├── heatmap.ts                # Per-zone CSS color resolution
-│   │       ├── furniture-contrast.ts     # Auto furniture tone vs room colour (WCAG contrast)
+│   │       ├── furniture-contrast.ts     # WCAG luminance/contrast + tone selection
+│   │       ├── furniture-tones.ts        # Per-item furniture tone from the cell underneath
 │   │       ├── view-hash.ts              # URL fragment ↔ ViewState encoding
 │   │       ├── help-url.ts               # Panel state → contextual user-guide URL
 │   │       ├── tablist-nav.ts            # Roving-tabindex keyboard nav for ARIA tablists
@@ -687,12 +688,18 @@ fills, furniture stickers, FOV-aware bounds) shown in the picker.
 **heatmap.ts** — Per-zone CSS color resolution used by both the grid component
 and the live sidebar.
 
-**furniture-contrast.ts** — Picks the furniture tone (near-white or near-dark)
-that maximizes WCAG contrast against a custom `room_color`, paired with an
-opposite-tone outline so furniture stays legible over painted zones.
-`relativeLuminance` / `contrastRatio` / `furnitureContrast` / `isRgbTriple`.
-Applied by `<epp-grid>` only when `room_color` is set (otherwise furniture keeps
-the default theme grey — no change).
+**furniture-contrast.ts** — WCAG colour maths: `relativeLuminance`,
+`contrastRatio`, `parseRgb`, `isRgbTriple`, and `furnitureContrast` — which
+picks the near-white or near-dark tone that best contrasts a given background,
+paired with an opposite-tone outline (halo).
+
+**furniture-tones.ts** — `computeFurnitureTones` builds the per-item furniture
+tone map: it maps each item's centre to a grid cell and contrasts against that
+cell's rendered background. Always on — furniture over a coloured zone is toned
+against the zone, furniture over open floor against the room/theme background.
+`<epp-grid>` supplies the cell-background reader (`getComputedStyle`) and
+memoises the map off the target-move hot path; items whose cell can't be read
+keep the default grey.
 
 **view-hash.ts** — URL fragment ↔ `ViewState` (view + sidebar tab) encoding for
 per-tab view persistence.
