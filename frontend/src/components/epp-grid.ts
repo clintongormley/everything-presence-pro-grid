@@ -14,6 +14,7 @@ import {
 	GRID_CELL_COUNT,
 	GRID_COLS,
 	GRID_ROWS,
+	getRawRoomBounds,
 	MAX_RANGE,
 } from "../lib/grid.js";
 import {
@@ -433,7 +434,7 @@ export class EppGrid extends LitElement {
 					@pointerup=${this.editable ? this._onStrokeEnd : nothing}
 					@pointercancel=${this.editable ? this._onStrokeEnd : nothing}
 				>
-					${this._renderVisibleCells(scan.status, minCol, maxCol, minRow, maxRow, cellPx)}
+					${this._renderVisibleCells(scan.status, minCol, maxCol, minRow, maxRow, cellPx, scan.rawBounds)}
 				</div>
 				${this._renderFurnitureOverlay(cellPx, minCol, minRow, visCols, visRows)}
 				${this._renderTargetDots(minCol, maxCol, minRow, maxRow, visCols, visRows)}
@@ -478,6 +479,12 @@ export class EppGrid extends LitElement {
 		showDimensions: boolean;
 		status: CellRangeStatus[];
 		bounds: { minCol: number; maxCol: number; minRow: number; maxRow: number };
+		rawBounds: {
+			minCol: number;
+			maxCol: number;
+			minRow: number;
+			maxRow: number;
+		};
 		metrics: { widthM: number; depthM: number; furthestM: number } | null;
 	} | null = null;
 
@@ -523,6 +530,10 @@ export class EppGrid extends LitElement {
 				this.roomWidth,
 				this.maxRangeMm,
 			),
+			// The room's physical bounding rectangle (unpadded). fadeUncovered
+			// keys the wash on this so out-of-coverage cells that lost their room
+			// bit but sit inside the rectangle still read as room.
+			rawBounds: getRawRoomBounds(this.grid),
 			// Only the dimensions caption consumes metrics; skip the extra grid
 			// scan when it's hidden (e.g. the overview card).
 			metrics: this.showDimensions
@@ -545,6 +556,12 @@ export class EppGrid extends LitElement {
 		minRow: number,
 		maxRow: number,
 		cellPx: number,
+		rawBounds: {
+			minCol: number;
+			maxCol: number;
+			minRow: number;
+			maxRow: number;
+		},
 	) {
 		const occupancy = this.occupancy;
 		const plain = this.plain;
@@ -558,6 +575,15 @@ export class EppGrid extends LitElement {
 		// Overview fade is a wash of the room colour — the same for every cell,
 		// so build it once here rather than per cell in the loop below.
 		const faded = this.fadeUncovered ? fadedRoomColor(this.roomColor) : "";
+		// fadeUncovered fills the room's bounding RECTANGLE (rawBounds), keyed on
+		// the rectangle rather than each cell's room bit: a footprint that drops
+		// the out-of-cone cells still has them inside the rectangle, so they read
+		// as (uncovered) room. Cells beyond the rectangle keep the outside colour.
+		const inRoomRect = (col: number, row: number): boolean =>
+			col >= rawBounds.minCol &&
+			col <= rawBounds.maxCol &&
+			row >= rawBounds.minRow &&
+			row <= rawBounds.maxRow;
 
 		const cells = [];
 		for (let r = minRow; r <= maxRow; r++) {
@@ -571,11 +597,11 @@ export class EppGrid extends LitElement {
 				if (inRange) {
 					bg = cellBg(cellVal);
 				} else if (this.fadeUncovered) {
-					// Overview: in-room out-of-coverage cells (out of cone / beyond
-					// max range) fade to a wash of the room colour instead of the
-					// cross-hatch, so the room reads as a clean rectangle; outside-room
-					// cells keep the plain outside colour (cellBg → outside for !inside).
-					bg = inside ? faded : cellBg(cellVal);
+					// Overview: out-of-coverage cells inside the room rectangle (out of
+					// cone / beyond max range) fade to a wash of the room colour so the
+					// room reads as a clean rectangle; cells beyond the rectangle keep
+					// the plain outside colour.
+					bg = inRoomRect(c, r) ? faded : cellBg(cellVal);
 				} else if (cellStatus === "beyond_max_range" && inside) {
 					// Only inside-room cells get the hatch-on-white "configured out"
 					// decoration; outside-room padding rendered as plain outside so

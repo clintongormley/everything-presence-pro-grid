@@ -6,11 +6,18 @@ import {
 	CELL_OVERLAY_INTERFERENCE,
 	CELL_OVERLAY_SUPPRESS,
 	CELL_ROOM_BIT,
+	cellIsInside,
 	cellSetOverlay,
 	cellSetZone,
 	GRID_CELL_COUNT,
+	GRID_COLS,
+	GRID_ROWS,
 	initGridFromRoom,
 } from "../../lib/grid.js";
+import {
+	classifyCellInSensor,
+	computeSensorFov,
+} from "../../lib/room-geometry.js";
 import { ZONE_COLORS } from "../../lib/zone-defaults.js";
 import type { Target } from "../../types.js";
 
@@ -1227,6 +1234,51 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		).toBe(true);
 
 		document.body.removeChild(el);
+	});
+
+	it("washes out-of-coverage cells inside the room rectangle even without the room bit", async () => {
+		// Field bug: a device whose stored footprint drops the out-of-cone cells'
+		// room bit even though they sit inside the room's bounding rectangle. They
+		// must still fade — not fall back to the plain outside colour as though
+		// they were beyond the room.
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const opts = {
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+		};
+
+		const grid = initGridFromRoom(opts.roomWidth, opts.roomDepth);
+		const fov = computeSensorFov(perspective);
+		let cleared = 0;
+		for (let r = 0; r < GRID_ROWS; r++) {
+			for (let c = 0; c < GRID_COLS; c++) {
+				const idx = r * GRID_COLS + c;
+				if (!cellIsInside(grid[idx])) continue;
+				if (
+					classifyCellInSensor(c, r, fov, opts.roomWidth, opts.maxRangeMm) ===
+					"out_of_cone"
+				) {
+					grid[idx] &= ~CELL_ROOM_BIT; // footprint drops this in-rect cell
+					cleared++;
+				}
+			}
+		}
+		expect(cleared).toBeGreaterThan(0); // fixture actually dropped some cells
+
+		const el = createGrid({ ...opts, grid, fadeUncovered: true });
+		document.body.appendChild(el);
+		await el.updateComplete;
+		const washed = cellStyles(el).filter(
+			(s) => s.includes("color-mix") && s.includes("#808080"),
+		).length;
+		document.body.removeChild(el);
+
+		// Every cleared cell is out-of-coverage and inside the room rectangle, so
+		// all of them fade despite lacking the room bit (pre-fix: 0 washed, as they
+		// fell through to the outside colour).
+		expect(washed).toBe(cleared);
 	});
 });
 
