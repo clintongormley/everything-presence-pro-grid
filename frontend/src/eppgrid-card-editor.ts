@@ -154,7 +154,15 @@ export class EppGridCardEditor extends LitElement {
 		detail: { value: EppGridCardConfig };
 	}): void {
 		ev.stopPropagation();
-		let config = ev.detail.value;
+		// <ha-form> only round-trips the keys in our schema, so re-emitting its
+		// value verbatim would drop HA-managed keys such as `grid_options` (the
+		// layout width the user set by resizing the card in a Sections
+		// dashboard), `visibility`, and `view_layout`. Merge the form's values
+		// over the existing config so those passthrough keys survive. ha-form
+		// emits every schema key on each change (a cleared field arrives as ""
+		// rather than being omitted), so this merge never leaves a stale schema
+		// value from `this._config`.
+		let config = { ...this._config, ...ev.detail.value };
 		if (config.show_map === false && config.show_sensors === false) {
 			// Never let the user end up with nothing to show — re-enable the map.
 			config = { ...config, show_map: true };

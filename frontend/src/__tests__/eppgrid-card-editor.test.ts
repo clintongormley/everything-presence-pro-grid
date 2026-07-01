@@ -42,6 +42,43 @@ describe("eppgrid-card-editor", () => {
 		expect(got).toHaveBeenCalledWith(expect.objectContaining({ primary: "X" }));
 	});
 
+	it("preserves HA-managed passthrough keys (grid_options, visibility) on a form change", () => {
+		// HA writes these keys into the card config: grid_options when the user
+		// resizes the card in a Sections dashboard, visibility for conditional
+		// display. The card never reads them, but a form change must not discard
+		// them — ha-form only round-trips the keys in our schema.
+		const el = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		el.setConfig({
+			type: "custom:eppgrid-card",
+			device_id: "d1",
+			grid_options: { columns: 12, rows: "auto" },
+			visibility: [
+				{ condition: "state", entity: "sun.sun", state: "above_horizon" },
+			],
+		} as any);
+		const got = vi.fn();
+		el.addEventListener("config-changed", (e: any) => got(e.detail.config));
+		// ha-form echoes only the schema-managed keys — the passthrough keys are absent.
+		el._valueChanged({
+			stopPropagation: vi.fn(),
+			detail: {
+				value: {
+					type: "custom:eppgrid-card",
+					device_id: "d1",
+					show_grid: false,
+				},
+			},
+		} as any);
+		const cfg = got.mock.calls.at(-1)![0];
+		expect(cfg.grid_options).toEqual({ columns: 12, rows: "auto" });
+		expect(cfg.visibility).toEqual([
+			{ condition: "state", entity: "sun.sun", state: "above_horizon" },
+		]);
+		expect(cfg.show_grid).toBe(false);
+	});
+
 	it("re-enables a part when the user turns both off", () => {
 		const el = document.createElement(
 			"eppgrid-card-editor",

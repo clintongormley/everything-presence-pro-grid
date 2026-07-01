@@ -39,6 +39,24 @@ export interface EppGridCardConfig {
 	};
 	show_furniture?: boolean;
 	show_overlays?: boolean;
+	/**
+	 * HA-managed keys the card itself never reads but must preserve through the
+	 * editor round-trip (see `EppGridCardEditor._valueChanged`): `grid_options`
+	 * holds the width/height the user set by resizing the card in a Sections
+	 * dashboard; `visibility`/`view_layout` drive conditional display and legacy
+	 * layout. Declared so a future field-by-field config rebuild can't silently
+	 * drop them.
+	 */
+	grid_options?: {
+		columns?: number | "full";
+		rows?: number | "auto";
+		min_columns?: number;
+		max_columns?: number;
+		min_rows?: number;
+		max_rows?: number;
+	};
+	visibility?: unknown;
+	view_layout?: unknown;
 }
 
 type ResolvedCardConfig = Omit<EppGridCardConfig, "sensors"> & {
