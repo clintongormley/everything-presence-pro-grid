@@ -210,13 +210,14 @@ export function isProportionalResize(
 
 /**
  * On-screen size (px, shorter side) below which an unlocked item shows corner
- * handles only. Set to twice the ~44px touch target: below this an edge handle
- * and its adjacent corner handle's hit areas overlap, so a finger can't
- * reliably pick between them; collapsing to corners keeps the safe
- * (proportional) default. Zooming in (larger cellPx) reveals the edge handles.
- * Tunable.
+ * handles only. Below this, an edge handle sits close enough to its adjacent
+ * corner handle that their ~44px hit areas overlap and a finger can't reliably
+ * pick between them; collapsing to corners keeps the safe (proportional)
+ * default. Set below 2× the touch target to let edges appear on fairly small
+ * items, trading a little hit-area overlap for reach. Zooming in (larger
+ * cellPx) reveals the edge handles. Tunable.
  */
-export const EDGE_HANDLE_MIN_PX = 88;
+export const EDGE_HANDLE_MIN_PX = 72;
 
 // All eight resize handles, in render order. CORNER_HANDLES derives from this
 // via isCornerHandle, so the corner/edge split lives in exactly one place.

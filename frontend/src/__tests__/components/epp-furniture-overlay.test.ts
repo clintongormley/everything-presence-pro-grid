@@ -127,10 +127,10 @@ describe("epp-furniture-overlay DOM rendering", () => {
 		document.body.removeChild(c);
 	});
 
-	it("renders all 8 resize handles for a mid-size item (~97px, above the 88px threshold)", () => {
-		// 1000mm at cellPx=28 → ~97px short side: below the earlier 120px
-		// threshold (would have shown corners only) but above the current
-		// 88px threshold, so edge handles now appear.
+	it("renders all 8 resize handles for a mid-size item (~97px, above the 72px threshold)", () => {
+		// 1000mm at cellPx=28 → ~97px short side: comfortably above the 72px
+		// threshold, so edge handles appear (this size showed corners only at
+		// the original 120px threshold).
 		const el = createOverlay({
 			furniture: [{ ...LARGE_FURNITURE, width: 1000, height: 1000 }],
 			selectedFurnitureId: "f1",
@@ -142,9 +142,24 @@ describe("epp-furniture-overlay DOM rendering", () => {
 		document.body.removeChild(c);
 	});
 
+	it("renders all 8 resize handles for an item just above the threshold (~77px)", () => {
+		// 800mm at cellPx=28 → ~77px short side: above the 72px threshold, so
+		// edge handles appear (this size showed corners only at the earlier
+		// 88px threshold).
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			selectedFurnitureId: "f1",
+		});
+		const c = renderTo((el as any).render());
+
+		expect(c.querySelectorAll(".furn-handle").length).toBe(8);
+
+		document.body.removeChild(c);
+	});
+
 	it("renders only the 4 corner handles for a small item", () => {
 		const el = createOverlay({
-			furniture: [SAMPLE_FURNITURE], // ~77px, below EDGE_HANDLE_MIN_PX
+			furniture: [{ ...SAMPLE_FURNITURE, width: 600, height: 600 }], // ~58px
 			selectedFurnitureId: "f1",
 		});
 		const c = renderTo((el as any).render());
