@@ -4233,6 +4233,148 @@ class TestWebSocketSubscriptions:
         connection.send_message.assert_not_called()
 
 
+def test_decode_heatmap_b64_roundtrip() -> None:
+    import base64
+
+    from custom_components.eppgrid.websocket_api._devices import _decode_heatmap_b64
+
+    raw = bytearray(400)
+    raw[0] = 255
+    raw[399] = 128
+    encoded = base64.b64encode(bytes(raw)).decode("ascii")
+
+    cells = _decode_heatmap_b64(encoded)
+    assert len(cells) == 400
+    assert cells[0] == 255
+    assert cells[399] == 128
+    assert cells[1] == 0
+
+
+def test_decode_heatmap_b64_rejects_bad_input() -> None:
+    import base64
+
+    from custom_components.eppgrid.websocket_api._devices import _decode_heatmap_b64
+
+    assert _decode_heatmap_b64("") == [0] * 400
+    assert _decode_heatmap_b64("not-base64!!") == [0] * 400
+    # wrong length (too short) -> all zero
+    short = base64.b64encode(bytes(10)).decode("ascii")
+    assert _decode_heatmap_b64(short) == [0] * 400
+
+
+class TestSubscribeHeatmap:
+    """Tests for eppgrid/subscribe_heatmap."""
+
+    async def test_subscribe_heatmap_no_session(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        """subscribe_heatmap returns error without active session."""
+        await setup_integration(hass, config_entry)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_heatmap
+
+        connection = MagicMock()
+        msg = {"id": 30, "type": "eppgrid/subscribe_heatmap", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        await call_async_handler(hass, websocket_subscribe_heatmap, connection, msg)
+
+        connection.send_error.assert_called_once_with(
+            30,
+            "no_session",
+            "No active session — call subscribe_device first",
+            translation_domain=DOMAIN,
+            translation_key="no_active_session",
+        )
+
+    async def test_subscribe_heatmap_with_session(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        """subscribe_heatmap registers state callback and unsubscribe."""
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_device_conn = MagicMock()
+        mock_device_conn.entities = []
+        mock_device_conn.subscribe_states = AsyncMock()
+        mock_device_conn.unsubscribe_states = MagicMock()
+        mock_dm.get_session = MagicMock(return_value=mock_device_conn)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_heatmap
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 31, "type": "eppgrid/subscribe_heatmap", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        await call_async_handler(hass, websocket_subscribe_heatmap, connection, msg)
+
+        connection.send_result.assert_called_once_with(31)
+        mock_device_conn.subscribe_states.assert_awaited_once()
+        assert 31 in connection.subscriptions
+        mock_dm.note_target_subscribe.assert_called_once_with("AA:BB:CC:DD:EE:FF", "heatmap_subs")
+        connection.subscriptions[31]()
+        mock_dm.note_target_unsubscribe.assert_called_once_with("AA:BB:CC:DD:EE:FF", "heatmap_subs")
+
+    async def test_subscribe_heatmap_emits_cells_on_state(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """A matching TextSensorState update on the Heatmap entity emits {"cells": [...]}."""
+        import base64
+
+        from aioesphomeapi import TextSensorInfo
+        from aioesphomeapi import TextSensorState
+
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_device_conn = MagicMock()
+        mock_device_conn.entities = [
+            TextSensorInfo(object_id="heatmap", key=42, name="Heatmap"),
+        ]
+        mock_device_conn.subscribe_states = AsyncMock()
+        mock_device_conn.unsubscribe_states = MagicMock()
+        mock_dm.get_session = MagicMock(return_value=mock_device_conn)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_heatmap
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 32, "type": "eppgrid/subscribe_heatmap", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        await call_async_handler(hass, websocket_subscribe_heatmap, connection, msg)
+        on_state = mock_device_conn.subscribe_states.await_args[0][0]
+        connection.send_message.reset_mock()
+
+        raw = bytearray(400)
+        raw[5] = 200
+        encoded = base64.b64encode(bytes(raw)).decode("ascii")
+        on_state(TextSensorState(key=42, state=encoded, missing_state=False))
+
+        connection.send_message.assert_called_once()
+        payload = connection.send_message.call_args[0][0]
+        cells = payload.get("event", {}).get("cells")
+        assert cells is not None
+        assert len(cells) == 400
+        assert cells[5] == 200
+
+    async def test_subscribe_heatmap_ignores_unrelated_state(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """State updates for other entities (or no Heatmap entity present) don't emit."""
+        from aioesphomeapi import TextSensorState
+
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_device_conn = MagicMock()
+        mock_device_conn.entities = []
+        mock_device_conn.subscribe_states = AsyncMock()
+        mock_device_conn.unsubscribe_states = MagicMock()
+        mock_dm.get_session = MagicMock(return_value=mock_device_conn)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_heatmap
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 33, "type": "eppgrid/subscribe_heatmap", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        await call_async_handler(hass, websocket_subscribe_heatmap, connection, msg)
+        on_state = mock_device_conn.subscribe_states.await_args[0][0]
+        connection.send_message.reset_mock()
+
+        on_state(TextSensorState(key=99, state="anything", missing_state=False))
+        connection.send_message.assert_not_called()
+
+
 class TestSubscribeDeviceList:
     """Tests for eppgrid/subscribe_device_list."""
 

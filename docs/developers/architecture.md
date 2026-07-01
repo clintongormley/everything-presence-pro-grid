@@ -124,7 +124,7 @@ everything-presence-pro-grid/
 │   │       ├── config-serialization.ts   # Saved-configuration encode/decode
 │   │       ├── configuration-thumbnail.ts # SVG thumbnail of a saved configuration
 │   │       ├── furniture.ts              # Furniture model + sticker definitions
-│   │       ├── heatmap.ts                # Per-zone CSS color resolution
+│   │       ├── heatmap.ts                # Per-zone CSS color resolution + heat-ramp colour
 │   │       ├── furniture-contrast.ts     # WCAG luminance/contrast + tone selection
 │   │       ├── furniture-tones.ts        # Per-item furniture tone from the cell underneath
 │   │       ├── view-hash.ts              # URL fragment ↔ ViewState encoding
@@ -179,6 +179,16 @@ All signal processing runs on-device in the C++ zone engine:
 1. **Relay output** (`epp_relay.h`) — optional GPIO follows zone state with a
     user-selectable trigger mode (motion / presence / occupancy) and contact
     mode (NO / NC).
+1. **Activity heatmap** (`epp_heatmap.h`, `epp::Heatmap`) — a per-cell
+    accumulator (one float per grid cell) that bumps the cell of each detected
+    target every frame, decays all cells on a 5-minute timer (~14-day
+    half-life), and persists to NVS hourly so accumulated activity survives a
+    reboot. Always running — cheap enough to leave on regardless of whether a
+    frontend is looking at it. It resets on calibration/room-layout change (old
+    activity has no meaning against a different room mapping) and publishes
+    only while a frontend has the heatmap layer open (see `heatmap_interval` in
+    data-catalog.md). Some variants compile it out via `EPP_HEATMAP_ENABLED` to
+    save the ~1.6 KB; the device reports this via the `heatmap` build flag.
 1. **Publishing**: raw targets (5Hz), grid targets (5Hz), zone state (1Hz). A
     composite `mmWave Presence` binary sensor combines static presence with
     target tracking (motion-independent), useful for follow-on automations.
@@ -503,7 +513,10 @@ compose `<epp-grid>` with the appropriate sidebars.
 **Controllers** (shared state, no DOM):
 
 - `DeviceController` — WS subscriptions, device loading, session lifecycle,
-    online/offline tracking
+    online/offline tracking. Also owns the `eppgrid/subscribe_heatmap`
+    subscription: `setHeatmapEnabled(bool)` records layer-on/off intent and
+    opens/closes the subscription against the selected device, re-opening it
+    automatically on reconnect/device-swap iff intent is still on
 - `GridStateController` — grid/zone/furniture mutation, settings, saved
     configurations (load/save/apply)
 - `TargetController` — target/sensor/zone state, frontend zone-engine replica,
@@ -518,7 +531,12 @@ compose `<epp-grid>` with the appropriate sidebars.
 - `<epp-settings-view>` — accordion panels for detection ranges, reporting, env
     offsets, LED/relay control, log levels, entity toggles
 - `<epp-grid>` — grid cell rendering, target dots, furniture overlay, FOV
-    darkness, beyond-range hatching (used by both live and editor)
+    darkness, beyond-range hatching (used by both live and editor). Also renders
+    the optional `.heatmap-overlay` (`showHeatmap` + `heatmapCells`): a heat
+    cell per non-zero grid cell, coloured via the fixed `heatCellColor` ramp,
+    plus live per-target movement-trail polylines (`trails`, frontend-only,
+    ephemeral — the last ~60 positions per target slot, unrelated to the
+    firmware-persisted heatmap data)
 - `<epp-live-sidebar>` — presence/zone/environment sensor display
 - `<epp-zone-sidebar>` — zone list, type controls, add/remove
 - `<epp-overlay-sidebar>` — entry-point / interference / suppress paint controls
@@ -526,6 +544,18 @@ compose `<epp-grid>` with the appropriate sidebars.
 - `<epp-furniture-overlay>` — drag, resize, rotate furniture items
 - `<epp-info-tip>` — shared `(?)` help affordance: click-toggled, fixed-position
     tooltip (one open at a time; stays clickable even inside disabled rows)
+
+**Heatmap layer toggle.** Live overview and the editor both render a per-device-
+persisted (`localStorage`, keyed by MAC) "Heatmap" toggle that flips
+`showHeatmap` on `<epp-grid>` and `DeviceController.setHeatmapEnabled`.
+`_heatmapAvailability()` on the orchestrator resolves a three-state gate for the
+selected device: `"available"` (subscription can be opened), `"needs_firmware"`
+(firmware predates 1.3.0 — via `firmware_status`, since older firmware never
+sends the `heatmap` build flag at all), or `"no_memory"` (connected firmware
+explicitly reports `heatmap: false` — a variant that compiled the accumulator
+out). The toggle is disabled and forced off, with an explanatory hint
+(`grid.heatmap_needs_firmware` / `grid.heatmap_no_memory`), in the latter two
+states.
 
 **State flow:** Controllers own cross-cutting state (device, grid, targets,
 flasher). Components receive data as properties and fire `CustomEvent`s for
@@ -686,7 +716,9 @@ fills, furniture stickers, FOV-aware bounds) shown in the picker.
 (room-space ↔ overlay-space).
 
 **heatmap.ts** — Per-zone CSS color resolution used by both the grid component
-and the live sidebar.
+and the live sidebar, plus `heatCellColor(value)`: maps a 0-255 activity byte to
+the fixed (non-themed) amber→orange→red heat-ramp colour used by `<epp-grid>`'s
+`.heatmap-overlay`.
 
 **furniture-contrast.ts** — WCAG colour maths: `relativeLuminance`,
 `contrastRatio`, `parseRgb`, `isRgbTriple`, and `furnitureContrast` — which
@@ -761,7 +793,8 @@ Two host-testable libraries, each with its own CMake build and CTest run:
     zone-config parser, relay.
 - `firmware/lib/epp_component_helpers/tests/`: NVS layout, frame ring buffer,
     frame staleness, change detector, indexed setter, JSON writer, perspective
-    parser, relay publish, target validity.
+    parser, relay publish, target validity, heatmap (bump/decay/normalize/
+    serialize round-trip).
 
 The pre-push hook builds and tests both when firmware code changes.
 

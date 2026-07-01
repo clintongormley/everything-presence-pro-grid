@@ -97,6 +97,11 @@ event, and calls `e.stopPropagation()` when re-emitting a composed HA event
 - **Domain colours are fixed, not themed** — furniture / zone / target / heatmap
     colours must read identically in light and dark mode. They live in `lib/`
     (heatmap, zone/target defaults, the furniture catalog in `constants.ts`).
+    This includes the activity-heatmap layer: `heatCellColor()`
+    (`lib/heatmap.ts`) is a fixed amber→orange→red ramp (log-scaled, alpha
+    rising with intensity) and the live movement-trail polyline stroke in
+    `<epp-grid>` is a fixed blue (`rgba(3,169,244,0.7)`) — neither reads
+    `--epp-*` tokens or HA theme vars, same rule as the zone/target palettes.
 - **Floor-plan / furniture SVG art uses `currentColor`** (not hardcoded `black`)
     and the containing element sets a themed ink (`--epp-text-muted`) so
     furniture is visible in dark mode. The grid background is themed, so

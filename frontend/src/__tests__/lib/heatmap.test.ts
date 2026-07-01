@@ -4,6 +4,7 @@ import {
 	CELL_COLOR_OUTSIDE,
 	CELL_COLOR_ROOM,
 	getCellColor,
+	heatCellColor,
 } from "../../lib/heatmap.js";
 import { ZONE_COLORS } from "../../lib/zone-defaults.js";
 
@@ -37,5 +38,22 @@ describe("getCellColor roomColor override", () => {
 		expect(getCellColor(OUTSIDE, zoneConfigs, "rgb(10, 20, 30)")).toBe(
 			CELL_COLOR_OUTSIDE,
 		);
+	});
+});
+
+describe("heatCellColor", () => {
+	it("is transparent at or below zero", () => {
+		expect(heatCellColor(0)).toBe("transparent");
+		expect(heatCellColor(-5)).toBe("transparent");
+	});
+
+	it("returns an rgba string with increasing alpha toward the peak", () => {
+		const low = heatCellColor(20);
+		const high = heatCellColor(255);
+		expect(low).toMatch(/^rgba\(/);
+		expect(high).toMatch(/^rgba\(/);
+		const alpha = (s: string) => Number(s.slice(0, -1).split(",").pop());
+		expect(alpha(high)).toBeGreaterThan(alpha(low));
+		expect(alpha(high)).toBeLessThanOrEqual(1);
 	});
 });

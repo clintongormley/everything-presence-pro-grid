@@ -195,6 +195,7 @@ def _compute_pipeline(
     config: dict[str, Any],
     raw_target_subs: int,
     grid_target_subs: int,
+    heatmap_subs: int = 0,
 ) -> dict[str, int]:
     """Derive all pipeline intervals from current settings and subscriber counts."""
     settings = config.get("settings", {})
@@ -212,6 +213,7 @@ def _compute_pipeline(
         "entity_zone_interval": zone_rate if any_zone else 0,
         "display_interval": 200 if has_display_sub else 0,
         "zone_state_interval": 1000 if grid_target_subs > 0 else 0,
+        "heatmap_interval": 2000 if heatmap_subs > 0 else 0,
     }
 
 
@@ -238,6 +240,40 @@ def _compare_firmware_version(device_version: str) -> str | None:
     if dev_ver < req_ver:
         return "firmware_behind"
     return "firmware_ahead"
+
+
+HEATMAP_MIN_FIRMWARE = "1.3.0"
+
+
+def supports_heatmap(version: str | None) -> bool:
+    """True when firmware includes the Heatmap entity + pipeline field.
+
+    Compares against a fixed floor (``HEATMAP_MIN_FIRMWARE``), independent of
+    the integration's pinned ``FIRMWARE_VERSION`` — after a future bump to,
+    say, 1.4.0, a genuinely-heatmap-capable 1.3.0 device must still read as
+    supported rather than being judged against the (unrelated) exact-pin
+    compatibility check `_compare_firmware_version` performs.
+    """
+    if not version:
+        return False
+    try:
+        from packaging.version import Version
+
+        return Version(version) >= Version(HEATMAP_MIN_FIRMWARE)
+    except Exception:
+        return False
+
+
+def strip_unsupported_pipeline_fields(pipeline: dict[str, int], fw_ver: str | None) -> None:
+    """Drop pipeline fields the device's firmware can't accept (in place, BWC).
+
+    Pre-1.3.0 ``epp_set_pipeline`` has no ``heatmap_interval`` variable, so
+    pushing it would feed that firmware's service an unknown argument. Centralised
+    here so both push paths (`_push_pipeline_to_device` and the temp-connection
+    push) stay in sync as the pipeline schema evolves.
+    """
+    if not supports_heatmap(fw_ver):
+        pipeline.pop("heatmap_interval", None)
 
 
 def _sync_firmware_repair_issue(

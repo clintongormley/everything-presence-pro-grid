@@ -23,6 +23,7 @@ CONF_ZONE_OCCUPANCY = "zone_occupancy"
 CONF_TARGET_POSITIONS = "target_positions"
 CONF_RAW_TARGET_POSITIONS = "raw_target_positions"
 CONF_ZONE_STATE = "zone_state"
+CONF_HEATMAP = "heatmap"
 CONF_STATIC_PRESENCE = "static_presence"
 CONF_MOTION_PRESENCE = "motion_presence"
 CONF_STATIC_PRESENCE_OUTPUT = "static_presence_output"
@@ -65,6 +66,7 @@ CONFIG_SCHEMA = cv.Schema(
         cv.Optional(CONF_TARGET_POSITIONS): TARGET_POSITIONS_SCHEMA,
         cv.Optional(CONF_RAW_TARGET_POSITIONS): RAW_TARGET_POSITIONS_SCHEMA,
         cv.Optional(CONF_ZONE_STATE): text_sensor.text_sensor_schema(),
+        cv.Optional(CONF_HEATMAP): text_sensor.text_sensor_schema(),
         cv.Optional(CONF_STATIC_PRESENCE): cv.use_id(binary_sensor.BinarySensor),
         cv.Optional(CONF_MOTION_PRESENCE): cv.use_id(binary_sensor.BinarySensor),
         cv.Optional(CONF_STATIC_PRESENCE_OUTPUT): binary_sensor.binary_sensor_schema(),
@@ -131,6 +133,11 @@ async def to_code(config):
     if CONF_ZONE_STATE in config:
         sens = await text_sensor.new_text_sensor(config[CONF_ZONE_STATE])
         cg.add(var.set_zone_state_sensor(sens))
+
+    # Heatmap text sensor (base64 of encode_normalized(), gated by heatmap_interval)
+    if CONF_HEATMAP in config:
+        sens = await text_sensor.new_text_sensor(config[CONF_HEATMAP])
+        cg.add(var.set_heatmap_sensor(sens))
 
     # Static presence binary sensor input (reference to existing sensor)
     if CONF_STATIC_PRESENCE in config:

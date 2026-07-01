@@ -8,11 +8,13 @@ import {
 	type FurnitureSticker,
 	filterAndSortStickers,
 	getResizeCursor,
+	isProportionalResize,
 	mmToPx,
 	pxToMm,
 	removeFurnitureItem,
 	snapRotation,
 	updateFurnitureItem,
+	visibleHandles,
 } from "../furniture.js";
 import { GRID_CELL_MM } from "../grid.js";
 
@@ -386,8 +388,48 @@ describe("clampFurnitureMove", () => {
 	});
 });
 
+describe("isProportionalResize", () => {
+	const corners = ["ne", "nw", "se", "sw"];
+	const edges = ["n", "s", "e", "w"];
+
+	it("is proportional for every handle when hard-locked", () => {
+		for (const h of [...corners, ...edges]) {
+			expect(isProportionalResize(h, true)).toBe(true);
+		}
+	});
+
+	it("is proportional for corner handles when unlocked", () => {
+		for (const h of corners) {
+			expect(isProportionalResize(h, false)).toBe(true);
+		}
+	});
+
+	it("is single-axis (not proportional) for edge handles when unlocked", () => {
+		for (const h of edges) {
+			expect(isProportionalResize(h, false)).toBe(false);
+		}
+	});
+});
+
+describe("visibleHandles", () => {
+	const ALL = ["e", "n", "ne", "nw", "s", "se", "sw", "w"]; // sorted
+	const CORNERS = ["ne", "nw", "se", "sw"]; // already sorted
+
+	it("shows only corners for a hard-locked item", () => {
+		expect([...visibleHandles(true, false)].sort()).toEqual(CORNERS);
+	});
+
+	it("shows only corners for a small unlocked item", () => {
+		expect([...visibleHandles(false, true)].sort()).toEqual(CORNERS);
+	});
+
+	it("shows all eight handles for a large unlocked item", () => {
+		expect([...visibleHandles(false, false)].sort()).toEqual(ALL);
+	});
+});
+
 describe("computeFurnitureResize", () => {
-	describe("free-form (lockAspect=false)", () => {
+	describe("edge handles (unlocked) resize a single axis", () => {
 		it("resizes east handle", () => {
 			const result = computeFurnitureResize(
 				"e",
@@ -457,23 +499,6 @@ describe("computeFurnitureResize", () => {
 			// n handle: height = max(100, 400 - 300) = 100, y = 500 + 300 = 800
 			expect(result.height).toBeCloseTo(100);
 			expect(result.y).toBeCloseTo(800);
-		});
-
-		it("handles diagonal corner (se)", () => {
-			const result = computeFurnitureResize(
-				"se",
-				29,
-				29,
-				28,
-				0,
-				0,
-				600,
-				400,
-				false,
-				0,
-			);
-			expect(result.width).toBeCloseTo(900); // 600 + 300
-			expect(result.height).toBeCloseTo(700); // 400 + 300
 		});
 
 		it("enforces minimum size of 100mm", () => {
@@ -630,6 +655,44 @@ describe("computeFurnitureResize", () => {
 					expect(r.height).toBeCloseTo(200, 0);
 				});
 			}
+		});
+	});
+
+	describe("unlocked resize: corner proportional, edge single-axis", () => {
+		it("keeps aspect ratio when dragging the se corner of an unlocked item", () => {
+			const result = computeFurnitureResize(
+				"se",
+				29,
+				0,
+				28,
+				0,
+				0,
+				600,
+				400,
+				false, // unlocked — corner is still proportional
+				0,
+			);
+			// Dominant axis is x (dxMm≈300), aspect 1.5 → w=900, h=600.
+			expect(result.width).toBeCloseTo(900, 0);
+			expect(result.height).toBeCloseTo(600, 0);
+			expect(result.width / result.height).toBeCloseTo(600 / 400, 4);
+		});
+
+		it("stretches one axis when dragging the e edge of an unlocked item", () => {
+			const result = computeFurnitureResize(
+				"e",
+				29,
+				0,
+				28,
+				0,
+				0,
+				600,
+				400,
+				false,
+				0,
+			);
+			expect(result.width).toBeCloseTo(900, 0);
+			expect(result.height).toBe(400); // edge = single axis, height unchanged
 		});
 	});
 

@@ -439,6 +439,7 @@ def async_register_websocket_commands(hass: HomeAssistant, manager: Any) -> None
     websocket_api.async_register_command(hass, websocket_subscribe_device)
     websocket_api.async_register_command(hass, websocket_subscribe_grid_targets)
     websocket_api.async_register_command(hass, websocket_subscribe_raw_targets)
+    websocket_api.async_register_command(hass, websocket_subscribe_heatmap)
     websocket_api.async_register_command(hass, websocket_set_entity_enabled)
     websocket_api.async_register_command(hass, websocket_set_settings)
     websocket_api.async_register_command(hass, websocket_set_distance_override)
@@ -581,6 +582,7 @@ from ._devices import websocket_set_show_room_calibration_tutorial  # noqa: E402
 from ._devices import websocket_subscribe_device  # noqa: E402
 from ._devices import websocket_subscribe_device_list  # noqa: E402
 from ._devices import websocket_subscribe_grid_targets  # noqa: E402
+from ._devices import websocket_subscribe_heatmap  # noqa: E402
 from ._devices import websocket_subscribe_raw_targets  # noqa: E402
 from ._firmware import websocket_dismiss_target  # noqa: E402
 from ._firmware import websocket_subscribe_ota_progress  # noqa: E402

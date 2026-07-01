@@ -9,7 +9,7 @@ esphome:
   min_version: "2026.5.3"
   project:
     name: EverythingSmartTechnology.Everything Presence Pro
-    version: "1.2.1"
+    version: "1.3.0"
   on_boot:
     - priority: 200
       then:
@@ -123,6 +123,10 @@ epp:
       entity_category: diagnostic
   zone_state:
     name: "Zone State"
+    disabled_by_default: true
+    entity_category: diagnostic
+  heatmap:
+    name: "Heatmap"
     disabled_by_default: true
     entity_category: diagnostic
   target_entities:
@@ -510,12 +514,14 @@ api:
         entity_zone_interval: int
         display_interval: int
         zone_state_interval: int
+        heatmap_interval: int
       then:
         - lambda: |-
             id(epp_component).set_entity_target_interval(entity_target_interval);
             id(epp_component).set_entity_zone_interval(entity_zone_interval);
             id(epp_component).set_display_interval(display_interval);
             id(epp_component).set_zone_state_interval(zone_state_interval);
+            id(epp_component).set_heatmap_interval(heatmap_interval);
     - action: epp_set_log_level
       variables:
         category: string
@@ -578,6 +584,7 @@ api:
               root["sensor_variant"]    = "${ device_config.sensor_variant }";
               root["firmware_channel"]  = "${ device_config.firmware_channel }";
               root["model"]             = "${ device_config.model }";
+              root["heatmap"]           = EPP_HEATMAP_ENABLED != 0;
 
   on_client_connected:
     then:

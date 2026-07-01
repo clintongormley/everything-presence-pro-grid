@@ -139,3 +139,5 @@ Still stuck? See [Troubleshooting](troubleshooting.md) for how to open an issue.
 
 - **[Detection zones →](detection-zones.md)** — paint named regions on the grid
     so each one fires its own presence entity.
+- **[Heatmap →](heatmap.md)** — turn on the Heatmap layer to see where people
+    spend time and how they move through the room.

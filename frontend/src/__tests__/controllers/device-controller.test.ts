@@ -993,6 +993,271 @@ describe("DeviceController", () => {
 		});
 	});
 
+	// --- Heatmap subscription ---
+	describe("setHeatmapEnabled", () => {
+		it("subscribes to heatmap only when enabled and unsubscribes when disabled", async () => {
+			const unsub = vi.fn();
+			const subscribeMessage = vi.fn().mockResolvedValue(unsub);
+			ctrl.hass = { callWS: vi.fn(), connection: { subscribeMessage } };
+			ctrl.selectedMac = "AA:BB:CC:DD:EE:FF";
+
+			ctrl.setHeatmapEnabled(true);
+			await new Promise((r) => setTimeout(r, 0));
+			expect(subscribeMessage).toHaveBeenCalledWith(expect.any(Function), {
+				type: "eppgrid/subscribe_heatmap",
+				mac: "AA:BB:CC:DD:EE:FF",
+			});
+
+			ctrl.setHeatmapEnabled(false);
+			expect(unsub).toHaveBeenCalled();
+		});
+
+		it("does nothing when hass is null", () => {
+			ctrl.hass = null;
+			ctrl.selectedMac = "aa";
+			ctrl.setHeatmapEnabled(true);
+			expect(hass.connection.subscribeMessage).not.toHaveBeenCalled();
+		});
+
+		it("does nothing when selectedMac is empty", () => {
+			ctrl.selectedMac = "";
+			ctrl.setHeatmapEnabled(true);
+			expect(hass.connection.subscribeMessage).not.toHaveBeenCalled();
+		});
+
+		it("invokes onHeatmapData with event.cells", async () => {
+			let capturedCallback: ((event: any) => void) | undefined;
+			ctrl.hass = {
+				callWS: vi.fn(),
+				connection: {
+					subscribeMessage: vi.fn().mockImplementation((cb: any, msg: any) => {
+						if (msg.type === "eppgrid/subscribe_heatmap") {
+							capturedCallback = cb;
+						}
+						return Promise.resolve(vi.fn());
+					}),
+				},
+			};
+			ctrl.selectedMac = "aa";
+			const onHeatmapData = vi.fn();
+			ctrl.onHeatmapData = onHeatmapData;
+
+			ctrl.setHeatmapEnabled(true);
+			await new Promise((r) => setTimeout(r, 0));
+
+			expect(capturedCallback).toBeDefined();
+			capturedCallback!({ cells: [1, 2, 3] });
+			expect(onHeatmapData).toHaveBeenCalledWith([1, 2, 3]);
+		});
+
+		it("resubscribes once on redundant enable(true)", () => {
+			ctrl.selectedMac = "aa";
+			ctrl.setHeatmapEnabled(true);
+			const callsAfterFirst =
+				hass.connection.subscribeMessage.mock.calls.length;
+			ctrl.setHeatmapEnabled(true);
+			expect(hass.connection.subscribeMessage.mock.calls.length).toBe(
+				callsAfterFirst + 1,
+			);
+		});
+
+		it("unsubscribes the prior heatmap sub before re-subscribing when subscribeTargets runs twice (reconnect)", async () => {
+			// Regression test for a subscription leak: subscribeTargets (via
+			// reopenSession on a device offline->online reconnect) used to call
+			// _subscribeHeatmap() without tearing down any heatmap sub that was
+			// already live, since closeDeviceSession/unsubscribeTargets never
+			// touch heatmap state. That opened a second server-side
+			// subscribe_heatmap subscription and silently overwrote
+			// _unsubHeatmap, leaking the first subscription's unsub forever.
+			const unsubSpies: Array<() => void> = [];
+			ctrl.hass = {
+				callWS: vi.fn(),
+				connection: {
+					subscribeMessage: vi.fn().mockImplementation((_cb: any, msg: any) => {
+						if (msg.type === "eppgrid/subscribe_heatmap") {
+							const spy = vi.fn();
+							unsubSpies.push(spy);
+							return Promise.resolve(spy);
+						}
+						return Promise.resolve(vi.fn());
+					}),
+				},
+			};
+			ctrl.selectedMac = "aa";
+			ctrl.setHeatmapEnabled(true);
+			await new Promise((r) => setTimeout(r, 0));
+
+			// First heatmap sub is live.
+			expect(unsubSpies.length).toBe(1);
+
+			// Simulate a reconnect: subscribeTargets runs again while the
+			// heatmap sub is already live (e.g. device went offline then back
+			// online and reopenSession -> subscribeTargets fires again).
+			ctrl.subscribeTargets("aa");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const heatmapCalls = (
+				ctrl.hass.connection.subscribeMessage as ReturnType<typeof vi.fn>
+			).mock.calls.filter(
+				(c: any[]) => c[1]?.type === "eppgrid/subscribe_heatmap",
+			);
+			expect(heatmapCalls.length).toBe(2);
+			expect(unsubSpies.length).toBe(2);
+			// The first subscription's unsub must have fired — otherwise it's
+			// an orphaned, leaked server-side subscription.
+			expect(unsubSpies[0]).toHaveBeenCalled();
+			// Only one live subscription should remain: the second unsub must
+			// NOT have been called (it's the current, still-live sub).
+			expect(unsubSpies[1]).not.toHaveBeenCalled();
+		});
+
+		it("does not resubscribe heatmap directly on a connection swap; it reconverges via subscribeTargets", async () => {
+			// eppgrid/subscribe_heatmap requires an open device session
+			// (backend get_session(mac)), exactly like subscribe_grid_targets /
+			// subscribe_display. Those are only re-subscribed via
+			// subscribeTargets(mac) AFTER the session reopens — never directly
+			// from the `hass` setter's connection-swap block. Firing
+			// _subscribeHeatmap() there runs before the session is open and the
+			// backend replies no_session, which can spuriously latch
+			// _connectionFailed. Heatmap must follow the same reconvergence
+			// path as grid-targets/display: swap -> (session reopens) ->
+			// subscribeTargets -> heatmap resubscribes.
+			ctrl.selectedMac = "aa";
+			ctrl.setHeatmapEnabled(true);
+			await new Promise((r) => setTimeout(r, 0));
+			(
+				ctrl.hass.connection.subscribeMessage as ReturnType<typeof vi.fn>
+			).mockClear();
+
+			const newSubscribe = vi.fn().mockResolvedValue(vi.fn());
+			ctrl.hass = {
+				callWS: vi.fn(),
+				connection: { subscribeMessage: newSubscribe },
+			};
+			await new Promise((r) => setTimeout(r, 0));
+
+			// The swap itself must not open a heatmap sub on the new connection.
+			const heatmapCallsAfterSwap = newSubscribe.mock.calls.filter(
+				(c: any[]) => c[1]?.type === "eppgrid/subscribe_heatmap",
+			);
+			expect(heatmapCallsAfterSwap.length).toBe(0);
+
+			// Once the session reopens and subscribeTargets runs (the normal
+			// reconnect path), heatmap resubscribes exactly once.
+			ctrl.subscribeTargets("aa");
+			await new Promise((r) => setTimeout(r, 0));
+
+			const heatmapCallsAfterResubscribe = newSubscribe.mock.calls.filter(
+				(c: any[]) => c[1]?.type === "eppgrid/subscribe_heatmap",
+			);
+			expect(heatmapCallsAfterResubscribe.length).toBe(1);
+		});
+
+		it("re-establishes the heatmap sub when subscribeTargets runs and heatmap is enabled", () => {
+			ctrl.selectedMac = "aa";
+			ctrl.setHeatmapEnabled(true);
+			hass.connection.subscribeMessage.mockClear();
+			ctrl.subscribeTargets("aa");
+			const calls = hass.connection.subscribeMessage.mock.calls;
+			const heatmapCall = calls.find(
+				(c: any[]) => c[1]?.type === "eppgrid/subscribe_heatmap",
+			);
+			expect(heatmapCall).toBeDefined();
+			expect(heatmapCall![1]).toEqual({
+				type: "eppgrid/subscribe_heatmap",
+				mac: "aa",
+			});
+		});
+
+		it("does not open a heatmap sub on subscribeTargets when heatmap is disabled", () => {
+			ctrl.selectedMac = "aa";
+			ctrl.subscribeTargets("aa");
+			const calls = hass.connection.subscribeMessage.mock.calls;
+			const heatmapCall = calls.find(
+				(c: any[]) => c[1]?.type === "eppgrid/subscribe_heatmap",
+			);
+			expect(heatmapCall).toBeUndefined();
+		});
+
+		it("closes the heatmap sub on hostDisconnected", async () => {
+			ctrl.selectedMac = "aa";
+			ctrl.setHeatmapEnabled(true);
+			await new Promise((r) => setTimeout(r, 0));
+			const unsub = (ctrl as any)._unsubHeatmap;
+			expect(unsub).toBeDefined();
+			ctrl.hostDisconnected();
+			expect(unsub).toHaveBeenCalled();
+			expect((ctrl as any)._unsubHeatmap).toBeUndefined();
+		});
+
+		it("does not latch connectionFailed when the heatmap subscription exhausts retries (optional overlay)", async () => {
+			// The heatmap is an OPTIONAL overlay. If it runs while no device
+			// session is open yet (backend replies no_session), retries exhaust
+			// exactly like grid-targets/raw-targets — but that must NOT surface
+			// the connection-failed banner, since the core streams may be fine.
+			vi.useFakeTimers();
+			try {
+				const subscribeMock = vi
+					.fn()
+					.mockImplementation((_cb: any, msg: any) => {
+						if (msg.type === "eppgrid/subscribe_heatmap") {
+							return Promise.reject(new Error("no_session"));
+						}
+						return Promise.resolve(vi.fn());
+					});
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: subscribeMock },
+				};
+				ctrl.selectedMac = "aa";
+
+				ctrl.setHeatmapEnabled(true);
+				await vi.advanceTimersByTimeAsync(0);
+				// Drive well past 5 retry windows.
+				for (let i = 0; i < 8; i++) {
+					await vi.advanceTimersByTimeAsync(2000);
+				}
+
+				const heatmapSubs = subscribeMock.mock.calls.filter(
+					(c: any[]) => c[1]?.type === "eppgrid/subscribe_heatmap",
+				);
+				expect(heatmapSubs).toHaveLength(5);
+				expect(ctrl.connectionFailed).toBe(false);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+
+		it("still latches connectionFailed when grid-targets exhausts retries even if heatmap is also subscribed", async () => {
+			vi.useFakeTimers();
+			try {
+				const subscribeMock = vi
+					.fn()
+					.mockImplementation((_cb: any, msg: any) => {
+						if (msg.type === "eppgrid/subscribe_grid_targets") {
+							return Promise.reject(new Error("unknown command"));
+						}
+						return Promise.resolve(vi.fn());
+					});
+				ctrl.hass = {
+					callWS: vi.fn(),
+					connection: { subscribeMessage: subscribeMock },
+				};
+				ctrl.selectedMac = "aa";
+				ctrl.setHeatmapEnabled(true);
+				ctrl.subscribeTargets("aa");
+				await vi.advanceTimersByTimeAsync(0);
+				for (let i = 0; i < 8; i++) {
+					await vi.advanceTimersByTimeAsync(2000);
+				}
+
+				expect(ctrl.connectionFailed).toBe(true);
+			} finally {
+				vi.useRealTimers();
+			}
+		});
+	});
+
 	// --- selectDevice ---
 	describe("selectDevice", () => {
 		it("updates selectedMac and saves to localStorage", () => {

@@ -178,6 +178,71 @@ export function clampFurnitureMove(
 }
 
 /**
+ * Whether a resize handle is a corner — it carries both a horizontal (e/w) and
+ * a vertical (n/s) component, e.g. "ne", "sw" — as opposed to an edge ("n",
+ * "s", "e", "w"). This is the single structural definition of "corner"; both
+ * the resize constraint (`isProportionalResize`) and the rendered corner set
+ * (`CORNER_HANDLES`) derive from it, so the two can't drift apart.
+ */
+function isCornerHandle(handle: string): boolean {
+	const horizontal = handle.includes("e") || handle.includes("w");
+	const vertical = handle.includes("n") || handle.includes("s");
+	return horizontal && vertical;
+}
+
+/**
+ * Decide whether a resize should preserve the item's aspect ratio.
+ *
+ * The constraint is encoded in the handle: corner handles resize
+ * proportionally; edge handles ("n", "s", "e", "w") stretch a single axis. A
+ * hard-locked item is always proportional, regardless of which handle is used.
+ *
+ * @param handle Resize handle id (e.g. "ne", "e")
+ * @param hardLock Whether the item is aspect-locked (never distortable)
+ * @returns true to preserve aspect ratio, false to resize one axis freely
+ */
+export function isProportionalResize(
+	handle: string,
+	hardLock: boolean,
+): boolean {
+	return hardLock || isCornerHandle(handle);
+}
+
+/**
+ * On-screen size (px, shorter side) below which an unlocked item shows corner
+ * handles only. Below this, an edge handle sits close enough to its adjacent
+ * corner handle that their ~44px hit areas overlap and a finger can't reliably
+ * pick between them; collapsing to corners keeps the safe (proportional)
+ * default. Set below 2× the touch target to let edges appear on fairly small
+ * items, trading a little hit-area overlap for reach. Zooming in (larger
+ * cellPx) reveals the edge handles. Tunable.
+ */
+export const EDGE_HANDLE_MIN_PX = 72;
+
+// All eight resize handles, in render order. CORNER_HANDLES derives from this
+// via isCornerHandle, so the corner/edge split lives in exactly one place.
+const ALL_HANDLES = ["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const;
+const CORNER_HANDLES = ALL_HANDLES.filter(isCornerHandle);
+
+/**
+ * Which resize handles to render for a selected item.
+ *
+ * Corner handles are always shown (proportional resize). Edge handles — which
+ * stretch a single axis — are shown only for an unlocked item that is large
+ * enough on screen for the extra touch targets to be distinguishable.
+ *
+ * @param hardLock Whether the item is aspect-locked (never distortable)
+ * @param tooSmall Whether the item is below EDGE_HANDLE_MIN_PX on its short side
+ * @returns Handle ids to render
+ */
+export function visibleHandles(
+	hardLock: boolean,
+	tooSmall: boolean,
+): readonly string[] {
+	return hardLock || tooSmall ? CORNER_HANDLES : ALL_HANDLES;
+}
+
+/**
  * Compute resized dimensions for a furniture item.
  *
  * Supports locked-aspect (uniform) and free-form resize, with per-handle
@@ -195,7 +260,7 @@ export function clampFurnitureMove(
  * @param origY Original Y position (mm, top-left of unrotated bounding box)
  * @param origW Original width (mm)
  * @param origH Original height (mm)
- * @param lockAspect Whether to lock the aspect ratio
+ * @param hardLock Whether the item is aspect-locked (never distortable)
  * @param rotationDeg Item rotation in degrees (CW, matches CSS transform)
  * @returns Updated { x, y, width, height }
  */
@@ -208,7 +273,7 @@ export function computeFurnitureResize(
 	origY: number,
 	origW: number,
 	origH: number,
-	lockAspect: boolean,
+	hardLock: boolean,
 	rotationDeg: number,
 ): { x: number; y: number; width: number; height: number } {
 	// Inverse-rotate the screen-space pointer delta into the item's local
@@ -229,7 +294,7 @@ export function computeFurnitureResize(
 	let w = origW;
 	let h = origH;
 
-	if (lockAspect) {
+	if (isProportionalResize(handle, hardLock)) {
 		// Uniform scale from the dominant axis (in local frame), signed by
 		// THAT axis's own edge sign so dragging outward always grows and
 		// inward always shrinks. A blanket "any negative edge → -1" would

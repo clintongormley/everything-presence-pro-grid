@@ -5030,6 +5030,43 @@ class TestEventCallbacks:
         mock_conn.async_push_config.assert_awaited_once()
         mock_conn.async_disconnect.assert_awaited_once()
 
+    async def test_push_config_temp_connection_strips_heatmap_interval_for_old_firmware(
+        self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
+    ) -> None:
+        """The temp-connection push path (boot / no active session) applies
+        the same BWC strip as the session path: `heatmap_interval` must not
+        reach `epp_set_pipeline` on firmware that predates the Heatmap
+        feature. `supports_heatmap` is forced False here — in practice this
+        branch only runs once firmware compatibility is confirmed, but the
+        strip stays defensive in case that gating ever changes."""
+        mac = "AA:BB:CC:DD:EE:FF"
+        store.devices[mac] = {"calibration": {"perspective": [1.0] * 8}}
+        manager.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50")
+
+        mock_conn = MagicMock()
+        mock_conn.async_connect = AsyncMock()
+        mock_conn.async_push_config = AsyncMock()
+        mock_conn.async_execute_service = AsyncMock()
+        mock_conn.async_fetch_build_flags = AsyncMock(return_value={})
+        mock_conn.async_disconnect = AsyncMock()
+
+        with (
+            patch.object(manager, "read_firmware_version", return_value=FIRMWARE_VERSION),
+            patch(
+                "custom_components.eppgrid.device_manager.DeviceConnection",
+                return_value=mock_conn,
+            ),
+            patch(
+                "custom_components.eppgrid.device_manager._helpers.supports_heatmap",
+                return_value=False,
+            ),
+        ):
+            result = await manager._push_config_to_device(mac)
+
+        assert result is True
+        pipeline = mock_conn.async_execute_service.await_args.args[1]
+        assert "heatmap_interval" not in pipeline
+
     async def test_push_config_skips_disconnected_session(
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
     ) -> None:
@@ -8298,6 +8335,22 @@ class TestBuildFlags:
         assert result[0]["sensor_variant"] == "ld2450"
         assert result[0]["firmware_channel"] == "stable"
         assert result[0]["model"] == "pro"
+
+    async def test_list_devices_surfaces_heatmap_build_flag(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """list_devices passes through the heatmap build flag without dropping it."""
+        mac = "AA:BB:CC:DD:EE:FF"
+        manager.devices[mac] = ManagedDevice(mac=mac, name="EPP Device", host="192.168.1.50", available=True)
+        manager._build_flags[mac] = {"heatmap": True}
+
+        result = manager.list_devices()
+        assert len(result) == 1
+        assert result[0]["heatmap"] is True
+
+        # Also test heatmap=False flows through as a boolean (not dropped or coerced).
+        manager._build_flags[mac] = {"heatmap": False}
+        result = manager.list_devices()
+        assert len(result) == 1
+        assert result[0]["heatmap"] is False
 
     async def test_push_config_skips_fetch_when_cached_session(
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager

@@ -17,6 +17,7 @@
 #include "epp_relay_publish.h"
 #include "epp_indexed_setter.h"
 #include "epp_event_codec.h"
+#include "epp_heatmap.h"
 
 #include <string>
 
@@ -76,10 +77,12 @@ class EPPComponent : public esphome::Component {
   void set_zone_state_sensor(esphome::text_sensor::TextSensor *sensor) {
     zone_state_sensor_ = sensor;
   }
+  void set_heatmap_sensor(esphome::text_sensor::TextSensor *sensor) { heatmap_sensor_ = sensor; }
   void set_entity_target_interval(uint32_t ms) { entity_target_interval_ms_ = ms; }
   void set_entity_zone_interval(uint32_t ms) { entity_zone_interval_ms_ = ms; }
   void set_display_interval(uint32_t ms) { display_interval_ms_ = ms; }
   void set_zone_state_interval(uint32_t ms) { zone_state_interval_ms_ = ms; }
+  void set_heatmap_interval(int ms) { heatmap_interval_ms_ = ms < 0 ? 0 : (uint32_t) ms; }
   void set_static_presence_sensor(esphome::binary_sensor::BinarySensor *sensor) {
     static_presence_sensor_ = sensor;
   }
@@ -137,6 +140,17 @@ class EPPComponent : public esphome::Component {
   #endif
   static constexpr const char* FIRMWARE_VERSION_STR = ESPHOME_PROJECT_VERSION;
 
+  // Heatmap feature gate. Default on. Today this flag ONLY controls the
+  // reported `heatmap` capability flag (so the panel can show/hide the
+  // overlay and explain availability) — the `heatmap_` accumulator member
+  // and all heatmap logic are always compiled in regardless of this value.
+  // A future memory-constrained variant that sets this to 0 to reclaim the
+  // ~1.6 KB accumulator would ALSO need to #if-guard the `heatmap_` member
+  // and its use sites; that guarding doesn't exist yet.
+  #ifndef EPP_HEATMAP_ENABLED
+  #define EPP_HEATMAP_ENABLED 1
+  #endif
+
   // Target data from LD2450 — pushed by feed_targets() (UART lambda),
   // drained by loop(). The ring buffer protects against ESPHome scheduling
   // jitter: if loop() runs late and a second UART frame arrives before the
@@ -178,6 +192,10 @@ class EPPComponent : public esphome::Component {
   void save_grid_to_nvs_();
   void save_zones_to_nvs_(const std::string &zones_json);
   void save_relay_to_nvs_();
+  void save_heatmap_to_nvs_();
+
+  // Heatmap
+  void reset_heatmap_();
 
   // Cached perspective blob for NVS (8 coeffs + room_width + room_depth).
   // Doubles as the idempotency cache for set_perspective() — see
@@ -204,6 +222,9 @@ class EPPComponent : public esphome::Component {
 
   // Zone state text sensor (JSON at 1Hz)
   esphome::text_sensor::TextSensor *zone_state_sensor_{nullptr};
+
+  // Heatmap text sensor (base64 of encode_normalized(), gated by heatmap_interval_ms_)
+  esphome::text_sensor::TextSensor *heatmap_sensor_{nullptr};
 
   // Sensor presence inputs (references to raw hardware binary sensors)
   esphome::binary_sensor::BinarySensor *static_presence_sensor_{nullptr};
@@ -248,6 +269,14 @@ class EPPComponent : public esphome::Component {
   uint32_t last_display_publish_ms_ = 0;
   uint32_t last_zone_state_ms_ = 0;
   uint32_t last_system_ms_ = 0;
+
+  // Heatmap: per-cell activity accumulator (see epp_heatmap.h). Bumped every
+  // frame in loop(), decayed on a timer, reset whenever the grid changes.
+  epp::Heatmap heatmap_{};
+  uint32_t heatmap_interval_ms_ = 0;      // 0 = don't publish
+  uint32_t last_heatmap_publish_ms_ = 0;
+  uint32_t last_heatmap_decay_ms_ = 0;
+  uint32_t last_heatmap_nvs_ms_ = 0;
 
   // Cached zone result for the publish throttles. Only the fields BEFORE the
   // log buffer are maintained — loop() copies offsetof(ProcessingResult, log)

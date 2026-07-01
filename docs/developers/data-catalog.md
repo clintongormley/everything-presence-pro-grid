@@ -79,6 +79,7 @@ appropriate. The integration manages enable/disable/rename.
 | Target 1-3 Position   | text_sensor   | "x,y,status" post-transform                                                                                             |
 | Raw Target 1-3        | text_sensor   | "x,y" pre-transform (sensor-space)                                                                                      |
 | Zone State            | text_sensor   | JSON with zone engine tick results                                                                                      |
+| Heatmap               | text_sensor   | base64 of 400 normalized activity bytes (0-255, row-major) — see [Activity Heatmap](#activity-heatmap-firmware)         |
 | Target 1-3 X          | sensor (mm)   | per-target X position post-transform                                                                                    |
 | Target 1-3 Y          | sensor (mm)   | per-target Y position post-transform                                                                                    |
 | Target 1-3 Signal     | sensor        | per-target signal strength                                                                                              |
@@ -200,6 +201,31 @@ events.
 - System outputs (device tracking, presence binary sensors, relay): fixed 1000ms
     regardless of frontend subscription
 
+### `subscribe_heatmap` — activity heatmap overlay
+
+Streams the on-device activity heatmap for the panel's Heatmap layer. Decodes
+the firmware `Heatmap` text sensor (base64 of 400 normalized bytes, row-major,
+0-255) into a dense array; any malformed/wrong-length payload decodes to 400
+zeroes rather than erroring. Admin only (`@require_admin`), like the panel's
+other device-session streams (`subscribe_raw_targets` /
+`subscribe_grid_targets`).
+
+**Request:** `{ "type": "eppgrid/subscribe_heatmap", "mac": str }`
+
+**Event payload:**
+
+```json
+{ "cells": [0, 0, 12, 255, ...] }
+```
+
+`cells` is always exactly `GRID_COLS * GRID_ROWS` (400) entries. Opening this
+subscription increments the same per-MAC subscriber counter family as
+`subscribe_raw_targets` / `subscribe_grid_targets` (`heatmap_subs`, tracked
+alongside `raw_target_subs` / `grid_target_subs` — see *Pipeline intervals*
+below), which is what causes the firmware to start publishing the `Heatmap`
+sensor at all: see [Activity Heatmap](#activity-heatmap-firmware) for the full
+firmware-side accumulator and gating.
+
 ## 3. Commands
 
 ### Overview Card Commands
@@ -266,6 +292,7 @@ Returns discovered EPP devices.
             "bluetooth_enabled": false,
             "co2_enabled": true,
             "ethernet_enabled": false,
+            "heatmap": true,
             "board_revision": "v2",
             "sensor_variant": "ld2450",
             "firmware_channel": "stable",
@@ -287,12 +314,18 @@ HA or ESPHome are reflected on the next call.
 `FIRMWARE_VERSION` using semver.
 
 The build flag fields (`bluetooth_enabled`, `co2_enabled`, `ethernet_enabled`,
-`board_revision`, `sensor_variant`, `firmware_channel`, `model`) are optional —
-they are only present after the device has connected and build flags have been
-fetched via the `get_build_flags` API action. Build flags are merged without
-overriding the base fields above (`mac`, `name`, `host`, `available`,
+`heatmap`, `board_revision`, `sensor_variant`, `firmware_channel`, `model`) are
+optional — they are only present after the device has connected and build flags
+have been fetched via the `get_build_flags` API action. Build flags are merged
+without overriding the base fields above (`mac`, `name`, `host`, `available`,
 `configured`, `area`, `firmware_status`, `current_connection_count`) — flag data
 comes from the device and must not rewrite identity fields.
+
+`heatmap` reflects whether the connected firmware build compiled in the
+activity-heatmap accumulator (`EPP_HEATMAP_ENABLED`) — some variants omit it to
+save RAM. The panel gates the heatmap overlay toggle on this flag (plus
+`firmware_status`, since firmware older than 1.3.0 never sends it at all): see
+`_heatmapAvailability()` in `frontend/src/eppgrid-panel.ts`.
 
 ### `frontend_version`
 
@@ -591,20 +624,28 @@ ESPHome service. Backend-internal — not a WS command surface.
 | `entity_zone_interval`   | `settings.zone_update_rate_ms` if any zone entity is enabled, else `0`     |
 | `display_interval`       | `200` when a frontend raw or grid subscription is open, else `0`           |
 | `zone_state_interval`    | `1000` when a frontend grid subscription is open, else `0`                 |
+| `heatmap_interval`       | `2000` when a frontend heatmap subscription is open, else `0`              |
 
-The subscriber counts that gate `display_interval` / `zone_state_interval` are
-held on the `DeviceManager` keyed by MAC (`_target_subs`),
-incremented/decremented by the `subscribe_raw_targets` /
-`subscribe_grid_targets` handlers via `note_target_subscribe` /
-`note_target_unsubscribe`. They deliberately do **not** live on the
-`DeviceConnection`: a device flap tears the connection down and reopens a fresh
-one whose own counters would reset to zero, so a pipeline recomputed from those
-would tell the device "no subscribers" and silence target/zone emission while
-clients are still subscribed — the v1.1.0 "target disappears in the editor"
-freeze. Keyed by MAC the counts survive connection replacement, the decrement
-floors at zero (a stray unsubscribe whose increment landed on a since-replaced
-connection can't drive it negative), and `async_open_session` re-pushes the
-pipeline on reopen so emission resumes without a page refresh.
+The subscriber counts that gate `display_interval` / `zone_state_interval` /
+`heatmap_interval` are held on the `DeviceManager` keyed by MAC
+(`_target_subs`), incremented/decremented by the `subscribe_raw_targets` /
+`subscribe_grid_targets` / `subscribe_heatmap` handlers via
+`note_target_subscribe` / `note_target_unsubscribe`. They deliberately do
+**not** live on the `DeviceConnection`: a device flap tears the connection down
+and reopens a fresh one whose own counters would reset to zero, so a pipeline
+recomputed from those would tell the device "no subscribers" and silence
+target/zone emission while clients are still subscribed — the v1.1.0 "target
+disappears in the editor" freeze. Keyed by MAC the counts survive connection
+replacement, the decrement floors at zero (a stray unsubscribe whose increment
+landed on a since-replaced connection can't drive it negative), and
+`async_open_session` re-pushes the pipeline on reopen so emission resumes
+without a page refresh.
+
+`heatmap_interval` is stripped from the pushed pipeline dict entirely
+(`pipeline.pop("heatmap_interval", None)`) for devices whose firmware predates
+1.3.0 (`supports_heatmap()` in `device_manager/_helpers.py`, gated on
+`HEATMAP_MIN_FIRMWARE = "1.3.0"`) — older `epp_set_pipeline` ESPHome service
+calls have no such parameter, so sending it would fail the call outright.
 
 The firmware rolling-median window is fixed at 1000ms (10 frames at the LD2450's
 nominal 10Hz). Signal is `min(frame_count, 9)` over that window, so it stays
@@ -854,6 +895,47 @@ never included in the `ev` array or the `subscribe_grid_targets` payload.
 | ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `T<i> parked -> T<j>`                | Step 0 pending-target relocation: the PENDING target held in slot `i` was moved to free slot `j` because slot `i` was reused by a far new entrant. Entrance-gated (the new entrant must arrive via an entry overlay); falls back to distance-only when no entry overlay is configured anywhere on the grid. |
 | `T<i> pending dropped: no free slot` | Step 0 fallback when all slots are active: no free slot was available to park the held PENDING target, so it is dropped and its zone's pending bit is stripped (clean clobber).                                                                                                                             |
+
+### Activity Heatmap (firmware)
+
+`epp::Heatmap` (`firmware/lib/epp_component_helpers/include/epp_heatmap.h`) is a
+per-cell activity accumulator, one `float` per grid cell (400 cells). It is
+always running — cheap to keep on, independent of whether any frontend is
+looking at it:
+
+- **Bump** — every frame, each detected target's grid cell is bumped (`+1.0f`),
+    gated on the cell being inside the room (`grid_.cell_is_room`).
+- **Decay** — every 5 minutes, all cells are multiplied by a fixed factor
+    (`HEATMAP_DECAY_INTERVAL_MS`), tuned so repeated bumps to the same cell
+    decay with a ~14-day half-life (`HEATMAP_HALF_LIFE_TICKS = 4032` — the
+    number of 5-minute ticks in 14 days). This is what makes the heatmap track
+    "where people spend time lately" rather than accumulating forever.
+- **Publish** — gated by `heatmap_interval_ms_` (see `heatmap_interval` in
+    *Pipeline intervals* above; `0` = don't publish). When non-zero, every
+    interval the accumulator is normalized to the peak cell
+    (`encode_normalized`: each cell scaled to 0-255 against the current max) and
+    base64-encoded onto the `Heatmap` text sensor. Normalizing against the live
+    peak (rather than a fixed scale) keeps the colour ramp meaningful whether
+    the room has light or heavy traffic.
+- **Persist** — every hour, the raw (pre-normalization) float array is
+    serialized (`serialize()`/`blob_size()`) and written to NVS under the key
+    `"heatmap"` (schema/format version 3 — see the NVS layout notes in
+    `epp_component_helpers`). Restored from NVS on boot
+    (`nvs_get_blob(handle, "heatmap", ...)`), so accumulated activity survives a
+    reboot/power-cycle; a length-mismatched blob (e.g. after a schema change) is
+    ignored rather than partially applied.
+- **Reset** — `reset_heatmap_()` zeroes the accumulator. Called wherever the
+    grid geometry or calibration changes (new perspective calibration, new room
+    layout) — old cell activity has no meaning against a different room mapping,
+    so it doesn't carry over.
+
+**Build flag:** the accumulator (and the `Heatmap` sensor/`heatmap_interval`
+pipeline field) can be compiled out entirely via `EPP_HEATMAP_ENABLED` (default
+`1`) for variants that can't spare the ~1.6 KB. The component reports this at
+runtime through `get_build_flags` as the `heatmap` field (see `list_devices` in
+*Commands* above) — the panel uses it, together with `firmware_status`, to
+distinguish "firmware too old to know about heatmap at all" from "this build
+compiled it out."
 
 ## 5. Configuration Storage
 

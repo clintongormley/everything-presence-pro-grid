@@ -94,6 +94,7 @@ nav:
     - Placement: user-guide/placement.md
     - Calibration: user-guide/calibration.md
     - Live overview: user-guide/live-overview.md
+    - Heatmap: user-guide/heatmap.md
     - Detection zones: user-guide/detection-zones.md
     - Overlays: user-guide/overlays.md
     - How detection works: user-guide/how-detection-works.md

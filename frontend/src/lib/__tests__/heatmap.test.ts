@@ -10,6 +10,7 @@ import {
 import {
 	CELL_COLOR_OUTSIDE,
 	CELL_COLOR_ROOM,
+	fadedRoomColor,
 	getCellColor,
 	overlayStripeGradient,
 } from "../heatmap.js";
@@ -92,5 +93,19 @@ describe("overlayStripeGradient", () => {
 
 	it("returns empty string for unknown kinds", () => {
 		expect(overlayStripeGradient(99, 4)).toBe("");
+	});
+});
+
+describe("fadedRoomColor", () => {
+	it("defaults to the theme card background mixed toward neutral grey", () => {
+		expect(fadedRoomColor()).toBe(
+			"color-mix(in srgb, var(--card-background-color, #fff) 88%, #808080)",
+		);
+	});
+
+	it("fades a supplied room colour at the wash ratio", () => {
+		expect(fadedRoomColor("rgb(10, 20, 30)")).toBe(
+			"color-mix(in srgb, rgb(10, 20, 30) 88%, #808080)",
+		);
 	});
 });

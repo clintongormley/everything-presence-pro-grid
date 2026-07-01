@@ -133,6 +133,10 @@ export interface PanelHost extends ReactiveControllerHost {
 	// Targets / sensors / zones (TargetController-side)
 	_targets: Target[];
 	_rawTargets: RawTarget[];
+	// Live movement-trail ring buffers (frontend-only, ephemeral) — one
+	// polyline per target index, most-recent point last, capped at
+	// TRAIL_MAX. Only populated in the live/editor views.
+	_targetTrails: Array<Array<{ x: number; y: number }>>;
 	_sensorState: SensorState;
 	_zoneState: ZoneStateSummary;
 	_showDebugLog: boolean;

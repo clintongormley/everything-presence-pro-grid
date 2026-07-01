@@ -16,6 +16,7 @@ class TestComputePipeline:
             "entity_zone_interval": 0,
             "display_interval": 0,
             "zone_state_interval": 0,
+            "heatmap_interval": 0,
         }
 
     def test_target_entities_enabled_uses_configured_rate(self) -> None:
@@ -120,3 +121,25 @@ class TestComputePipeline:
             grid_target_subs=0,
         )
         assert result["entity_target_interval"] == 1000
+
+    def test_heatmap_subscribers_enable_heatmap_interval(self) -> None:
+        from custom_components.eppgrid.device_manager._helpers import _compute_pipeline
+
+        off = _compute_pipeline(config={}, raw_target_subs=0, grid_target_subs=0, heatmap_subs=0)
+        assert off["heatmap_interval"] == 0
+
+        on = _compute_pipeline(config={}, raw_target_subs=0, grid_target_subs=0, heatmap_subs=1)
+        assert on["heatmap_interval"] == 2000
+        # heatmap alone must not turn on the display/zone-state streams
+        assert on["display_interval"] == 0
+        assert on["zone_state_interval"] == 0
+
+
+def test_supports_heatmap_version_gate() -> None:
+    from custom_components.eppgrid.device_manager._helpers import supports_heatmap
+
+    assert supports_heatmap("1.3.0") is True
+    assert supports_heatmap("1.4.0") is True
+    assert supports_heatmap("1.2.1") is False
+    assert supports_heatmap("") is False
+    assert supports_heatmap(None) is False  # type: ignore[arg-type]

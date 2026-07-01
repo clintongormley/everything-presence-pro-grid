@@ -66,3 +66,24 @@ export function persistDismissedLangRequest(code: string): void {
 		/* localStorage unavailable */
 	}
 }
+
+export const STORAGE_KEY_HEATMAP_ENABLED = "epp_heatmap_enabled_";
+
+export function readHeatmapEnabled(mac: string): boolean {
+	try {
+		return localStorage.getItem(STORAGE_KEY_HEATMAP_ENABLED + mac) === "1";
+	} catch {
+		return false;
+	}
+}
+
+export function persistHeatmapEnabled(mac: string, enabled: boolean): void {
+	try {
+		localStorage.setItem(
+			STORAGE_KEY_HEATMAP_ENABLED + mac,
+			enabled ? "1" : "0",
+		);
+	} catch {
+		/* localStorage unavailable */
+	}
+}

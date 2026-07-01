@@ -424,6 +424,7 @@ export class EppGridCard extends LitElement {
 				.plain=${!cfg.show_grid}
 				.roomColor=${rgbCss(cfg.room_color)}
 				.fill=${true}
+				.fadeUncovered=${true}
 			></epp-grid>
 		`;
 	}

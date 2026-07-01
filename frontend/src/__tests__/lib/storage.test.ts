@@ -2,7 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
 	isLangRequestDismissed,
 	persistDismissedLangRequest,
+	persistHeatmapEnabled,
 	persistSelectedMac,
+	readHeatmapEnabled,
 	readStoredMac,
 	STORAGE_KEY_LANG_REQUEST_DISMISSED,
 	STORAGE_KEY_SELECTED_MAC,
@@ -95,6 +97,22 @@ describe("lib/storage", () => {
 			});
 			expect(() => persistDismissedLangRequest("fr")).not.toThrow();
 			spy.mockRestore();
+		});
+	});
+
+	describe("heatmap-enabled persistence", () => {
+		beforeEach(() => localStorage.clear());
+
+		it("defaults to false when unset", () => {
+			expect(readHeatmapEnabled("AA:BB")).toBe(false);
+		});
+
+		it("round-trips per mac", () => {
+			persistHeatmapEnabled("AA:BB", true);
+			expect(readHeatmapEnabled("AA:BB")).toBe(true);
+			expect(readHeatmapEnabled("CC:DD")).toBe(false);
+			persistHeatmapEnabled("AA:BB", false);
+			expect(readHeatmapEnabled("AA:BB")).toBe(false);
 		});
 	});
 

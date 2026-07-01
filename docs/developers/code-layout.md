@@ -212,8 +212,9 @@ Pure-logic modules — no Lit, no HA, testable in isolation.
     smoothing.
 - `room-geometry.ts` — FOV cone, range, sensor-position derivation.
 - `furniture.ts` — furniture model, sticker definitions, presets.
-- `heatmap.ts` — per-zone CSS colour resolution + hatched-cell backgrounds
-    (`CELL_BG_OUT_OF_RANGE`, `CELL_BG_BEYOND_MAX_RANGE`).
+- `heatmap.ts` — per-zone CSS colour resolution, hatched-cell backgrounds
+    (`CELL_BG_OUT_OF_RANGE`, `CELL_BG_BEYOND_MAX_RANGE`), and the fixed
+    activity-heatmap colour ramp (`heatCellColor`).
 - `furniture-contrast.ts` — WCAG luminance/contrast maths + light/dark tone
     selection (`furnitureContrast`, `parseRgb`).
 - `furniture-tones.ts` — per-item furniture tone from the cell rendered under

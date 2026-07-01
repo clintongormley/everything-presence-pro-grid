@@ -62,10 +62,16 @@ static_assert(GRID_BASE64_MAX >= GRID_CELL_COUNT,
 
 // Schema version of the persisted NVS blob set. Bump on any on-flash byte
 // layout change. 0 is the "absent key" sentinel returned by nvs_get_u8 on
-// fresh install. The current value is 2 because pre-0.100 firmware wrote a
-// global `version=2` key alongside today's blob layouts; matching that value
-// means existing installs migrate without a wipe — the per-blob refactor in
-// 0.100 didn't actually change any blob's byte layout.
-static constexpr uint8_t NVS_SCHEMA_VERSION = 2;
+// fresh install. The value was 2 because pre-0.100 firmware wrote a global
+// `version=2` key alongside today's blob layouts; matching that value meant
+// existing installs migrated without a wipe — the per-blob refactor in 0.100
+// didn't actually change any blob's byte layout.
+//
+// Bumped to 3 to add the "heatmap" blob (see save_heatmap_to_nvs_ /
+// restore_from_nvs_ in epp_component.cpp). This wipes the namespace on first
+// boot of the new firmware (existing behaviour on version mismatch), so
+// calibration/grid/zones re-push on reconnect — acceptable, already handled
+// by the integration's on-reconnect config push.
+static constexpr uint8_t NVS_SCHEMA_VERSION = 3;
 
 }  // namespace epp

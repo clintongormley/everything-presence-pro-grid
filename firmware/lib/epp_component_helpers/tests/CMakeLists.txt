@@ -48,6 +48,11 @@ add_executable(epp_helpers_indexed_setter_tests
 )
 target_link_libraries(epp_helpers_indexed_setter_tests PRIVATE epp_component_helpers doctest::doctest)
 
+add_executable(epp_helpers_heatmap_tests
+    test_epp_heatmap.cpp
+)
+target_link_libraries(epp_helpers_heatmap_tests PRIVATE epp_component_helpers doctest::doctest)
+
 # target_zone_or_invalid calls Grid (a compiled class from epp_zone_engine).
 # Compile the needed epp_zone_engine sources directly into this test executable
 # rather than adding the sibling lib as a subdirectory (which would pull in its
@@ -73,4 +78,5 @@ doctest_discover_tests(epp_helpers_perspective_parser_tests)
 doctest_discover_tests(epp_helpers_relay_publish_tests)
 doctest_discover_tests(epp_helpers_frame_staleness_tests)
 doctest_discover_tests(epp_helpers_indexed_setter_tests)
+doctest_discover_tests(epp_helpers_heatmap_tests)
 doctest_discover_tests(epp_helpers_target_zone_tests)

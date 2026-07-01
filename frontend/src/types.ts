@@ -28,6 +28,8 @@ export interface DeviceInfo {
 	bluetooth_enabled?: boolean;
 	co2_enabled?: boolean;
 	ethernet_enabled?: boolean;
+	/** Heatmap build flag: undefined until fetched, or on firmware that predates it. */
+	heatmap?: boolean;
 }
 
 export interface WizardCorner {

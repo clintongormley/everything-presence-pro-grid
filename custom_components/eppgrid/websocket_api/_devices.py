@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import json
 import math
 from collections.abc import Callable
@@ -37,6 +39,10 @@ from . import _require_manager
 from . import _send_no_session
 from . import _validate_zone_slots
 from . import finite_float
+
+# Dense length of the firmware `Heatmap` text-sensor payload once decoded —
+# one byte per grid cell, row-major, normalized 0..255.
+_HEATMAP_CELL_COUNT = GRID_COLS * GRID_ROWS
 
 
 def _parse_position_csv(raw: str) -> tuple[float, float, str | None] | None:
@@ -706,7 +712,7 @@ async def _start_target_stream(
     msg: dict[str, Any],
     manager: Any,
     *,
-    counter_attr: Literal["raw_target_subs", "grid_target_subs"],
+    counter_attr: Literal["raw_target_subs", "grid_target_subs", "heatmap_subs"],
     make_on_state: Callable[[Any], Callable[[Any], None]],
 ) -> None:
     """Shared scaffolding for `subscribe_raw_targets` / `subscribe_grid_targets`.
@@ -979,6 +985,76 @@ async def websocket_subscribe_grid_targets(
         manager,
         counter_attr="grid_target_subs",
         make_on_state=lambda dc: _make_grid_target_on_state(connection, msg["id"], mac, dc),
+    )
+
+
+# -- subscribe_heatmap --
+
+
+def _decode_heatmap_b64(value: str) -> list[int]:
+    """Decode the firmware Heatmap text sensor to a dense 400-length 0..255 list.
+
+    Returns an all-zero list of length `_HEATMAP_CELL_COUNT` for any input that
+    isn't a clean, correctly-sized base64 blob (empty, garbled, or the wrong
+    decoded length) rather than raising — the caller streams this straight to
+    the frontend, and a malformed one-off firmware emit must not crash the
+    subscription.
+    """
+    if not value:
+        return [0] * _HEATMAP_CELL_COUNT
+    try:
+        data = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        return [0] * _HEATMAP_CELL_COUNT
+    if len(data) != _HEATMAP_CELL_COUNT:
+        return [0] * _HEATMAP_CELL_COUNT
+    return list(data)
+
+
+def _make_heatmap_on_state(
+    connection: websocket_api.ActiveConnection, msg_id: int, mac: str, device_conn: Any
+) -> Callable[[Any], None]:
+    """Build the per-session state callback that decodes and emits the
+    on-device activity heatmap for `subscribe_heatmap`.
+    """
+    key_map = _build_entity_key_map(device_conn.entities)
+    heatmap_key = key_map.get("Heatmap")
+
+    @callback
+    def _on_state(state: Any) -> None:
+        if heatmap_key is None:
+            return
+        if isinstance(state, TextSensorState) and state.key == heatmap_key and state.state:
+            cells = _decode_heatmap_b64(state.state)
+            connection.send_message(websocket_api.event_message(msg_id, {"cells": cells}))
+
+    return _on_state
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/subscribe_heatmap",
+        vol.Required("mac"): MAC_SCHEMA,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+@_require_manager
+async def websocket_subscribe_heatmap(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+    manager: Any,
+) -> None:
+    """Stream the on-device activity heatmap for a device session."""
+    mac = msg["mac"]
+    await _start_target_stream(
+        hass,
+        connection,
+        msg,
+        manager,
+        counter_attr="heatmap_subs",
+        make_on_state=lambda dc: _make_heatmap_on_state(connection, msg["id"], mac, dc),
     )
 
 

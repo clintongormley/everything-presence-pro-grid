@@ -167,6 +167,18 @@ void EPPComponent::loop() {
 
     const auto &result = zone_engine_.tick(zone_input, ts, sensor_input);
 
+    // Heatmap: bump the cell each validly-detected target occupies this frame.
+    // Gate on the target window's `active` flag only: an inactive window has no
+    // confirmed median position to bump. (Zone "pending" is a per-zone state,
+    // not a per-target one — it does not apply here; don't "fix" this to include
+    // pending.)
+    for (int i = 0; i < epp::MAX_TARGETS; i++) {
+      const auto &tw = zone_input.targets[i];
+      if (!tw.active) continue;
+      int cell = grid_.xy_to_cell(tw.median_x, tw.median_y);
+      if (cell >= 0 && grid_.cell_is_room(cell)) heatmap_.bump(cell);
+    }
+
     // Output zone engine log entries immediately (before throttle may overwrite)
     for (int i = 0; i < result.log_count; ++i) {
       if (result.log[i].level == epp::LogLevel::INFO) {
@@ -476,6 +488,42 @@ void EPPComponent::loop() {
       }
     }
   }
+
+  // Timer 6: Heatmap decay — every 5 min, multiply all cells so activity
+  // fades with a ~14-day half-life. 4032 five-minute ticks == 14 days.
+  static constexpr uint32_t HEATMAP_DECAY_INTERVAL_MS = 5u * 60u * 1000u;
+  static constexpr uint32_t HEATMAP_HALF_LIFE_TICKS = 4032u;
+  if (now - last_heatmap_decay_ms_ >= HEATMAP_DECAY_INTERVAL_MS) {
+    last_heatmap_decay_ms_ = now;
+    heatmap_.decay(std::pow(0.5f, 1.0f / (float) HEATMAP_HALF_LIFE_TICKS));
+  }
+
+  // Timer 7: Heatmap publish (base64 of encode_normalized(), user Hz)
+  if (heatmap_interval_ms_ > 0 && heatmap_sensor_ != nullptr &&
+      now - last_heatmap_publish_ms_ >= heatmap_interval_ms_) {
+    last_heatmap_publish_ms_ = now;
+    uint8_t norm[GRID_CELL_COUNT];
+    heatmap_.encode_normalized(norm);
+    // base64 of 400 bytes -> 536 chars + NUL; GRID_BASE64_MAX is the same
+    // ceil(n/3)*4 + slack formula already used for the set_grid decode path.
+    char encoded[GRID_BASE64_MAX];
+    size_t encoded_len = 0;
+    int ret = mbedtls_base64_encode(reinterpret_cast<unsigned char *>(encoded), sizeof(encoded),
+                                    &encoded_len, norm, sizeof(norm));
+    if (ret != 0) {
+      ESP_LOGE(TAG, "Heatmap base64 encode failed (error %d)", ret);
+    } else {
+      heatmap_sensor_->publish_state(std::string(encoded, encoded_len));
+    }
+  }
+
+  // Timer 8: Heatmap NVS save — hourly, so accumulated activity survives
+  // reboot/OTA without wearing flash on every decay/publish tick.
+  static constexpr uint32_t HEATMAP_NVS_INTERVAL_MS = 60u * 60u * 1000u;
+  if (now - last_heatmap_nvs_ms_ >= HEATMAP_NVS_INTERVAL_MS) {
+    last_heatmap_nvs_ms_ = now;
+    save_heatmap_to_nvs_();
+  }
 }
 
 float EPPComponent::get_setup_priority() const {
@@ -495,6 +543,7 @@ void EPPComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "    device_tracking:  %s", device_tracking_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    firmware_version: %s", firmware_version_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    zone_state:       %s", zone_state_sensor_ ? "yes" : "no");
+  ESP_LOGCONFIG(TAG, "    heatmap:          %s", heatmap_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    static_input:     %s", static_presence_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    motion_input:     %s", motion_presence_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    target_count:     %s", target_count_sensor_ ? "yes" : "no");
@@ -606,6 +655,12 @@ void EPPComponent::set_perspective(const std::string &perspective,
   ESP_LOGI(TAG, "Perspective set: room %.0fx%.0f mm", room_width, room_depth);
 
   if (changed) {
+    // Perspective changed → target→cell mapping changed → previously-accumulated
+    // heat is now spatially misaligned. Gated on `changed` so the integration's
+    // identical config re-push on every reconnect does NOT wipe the heatmap
+    // (that push would otherwise reset it, and even clobber the NVS-restored
+    // heat right after boot).
+    reset_heatmap_();
     save_perspective_to_nvs_();
   } else {
     ESP_LOGD(TAG, "Perspective unchanged, skipping NVS write");
@@ -675,6 +730,11 @@ void EPPComponent::set_grid(const std::string &grid_data,
   has_grid_cache_ = true;
 
   if (changed) {
+    // Cell↔space mapping changed → previously-accumulated heat is misaligned.
+    // Gated on `changed` so the integration's identical config re-push on every
+    // reconnect does NOT wipe the heatmap (and so the NVS-restored heat survives
+    // the on-reconnect re-push right after boot).
+    reset_heatmap_();
     save_grid_to_nvs_();
   } else {
     ESP_LOGD(TAG, "Grid unchanged, skipping NVS write");
@@ -817,6 +877,15 @@ void EPPComponent::restore_from_nvs_() {
     ESP_LOGI(TAG, "Restored grid from NVS (origin %.0f, %.0f)", origin_x, origin_y);
   }
 
+  // Restore heatmap (GRID_CELL_COUNT floats, see epp_heatmap.h).
+  size_t hm_len = epp::Heatmap::blob_size();
+  uint8_t hm_buf[epp::Heatmap::blob_size()];
+  if (nvs_get_blob(handle, "heatmap", hm_buf, &hm_len) == ESP_OK &&
+      hm_len == epp::Heatmap::blob_size()) {
+    heatmap_.deserialize(hm_buf, hm_len);
+    ESP_LOGI(TAG, "Restored heatmap from NVS");
+  }
+
   // Restore relay settings
   uint8_t relay_trig = 0;
   if (nvs_get_u8(handle, "relay_trig", &relay_trig) == ESP_OK) {
@@ -940,6 +1009,30 @@ void EPPComponent::save_grid_to_nvs_() {
     return;
   }
   ESP_LOGD(TAG, "Grid saved to NVS (%d bytes)", (int)sizeof(buf));
+}
+
+void EPPComponent::reset_heatmap_() {
+  heatmap_.reset();
+}
+
+void EPPComponent::save_heatmap_to_nvs_() {
+  nvs_handle_t handle;
+  if (nvs_open(NVS_NAMESPACE, NVS_READWRITE, &handle) != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to open NVS for writing");
+    return;
+  }
+
+  uint8_t buf[epp::Heatmap::blob_size()];
+  heatmap_.serialize(buf);
+
+  esp_err_t err = nvs_set_blob(handle, "heatmap", buf, sizeof(buf));
+  if (err == ESP_OK) err = nvs_commit(handle);
+  nvs_close(handle);
+  if (err != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to save heatmap to NVS: %s", esp_err_to_name(err));
+    return;
+  }
+  ESP_LOGD(TAG, "Heatmap saved to NVS (%d bytes)", (int)sizeof(buf));
 }
 
 void EPPComponent::save_zones_to_nvs_(const std::string &zones_json) {

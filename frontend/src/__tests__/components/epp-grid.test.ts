@@ -7,11 +7,18 @@ import {
 	CELL_OVERLAY_INTERFERENCE,
 	CELL_OVERLAY_SUPPRESS,
 	CELL_ROOM_BIT,
+	cellIsInside,
 	cellSetOverlay,
 	cellSetZone,
 	GRID_CELL_COUNT,
+	GRID_COLS,
+	GRID_ROWS,
 	initGridFromRoom,
 } from "../../lib/grid.js";
+import {
+	classifyCellInSensor,
+	computeSensorFov,
+} from "../../lib/room-geometry.js";
 import { ZONE_COLORS } from "../../lib/zone-defaults.js";
 import type { Target } from "../../types.js";
 
@@ -1089,6 +1096,190 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		expect(darkWithStripes.length).toBe(0);
 
 		document.body.removeChild(el);
+	});
+
+	it("fadeUncovered replaces the out-of-cone cross-hatch with a faded room wash", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+			fadeUncovered: true,
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = cellStyles(el);
+
+		// the out-of-cone grey cross-hatch (#c8c8c8) is gone
+		expect(styles.some((s) => s.includes("#c8c8c8"))).toBe(false);
+		// at least one in-room cell now shows the faded wash
+		expect(
+			styles.some((s) => s.includes("color-mix") && s.includes("#808080")),
+		).toBe(true);
+
+		document.body.removeChild(el);
+	});
+
+	it("fadeUncovered keeps outside-room cells as the plain outside colour, never hatched or washed", async () => {
+		const opts = {
+			perspective: [1, 0, 1500, 0, 1, 0, 0, 0],
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+		};
+
+		// Panel baseline (fade off): outside-room out-of-cone padding cells render
+		// the grey cross-hatch, so they do NOT count as the outside colour here.
+		const panel = createGrid({ ...opts });
+		document.body.appendChild(panel);
+		await panel.updateComplete;
+		const panelOutside = cellStyles(panel).filter((s) =>
+			s.includes("secondary-background-color"),
+		).length;
+		document.body.removeChild(panel);
+
+		const el = createGrid({ ...opts, fadeUncovered: true });
+		document.body.appendChild(el);
+		await el.updateComplete;
+		const outside = cellStyles(el).filter((s) =>
+			s.includes("secondary-background-color"),
+		);
+
+		// Outside cells exist and none are hatched...
+		expect(outside.length).toBeGreaterThan(0); // padding ring exists
+		expect(outside.some((s) => s.includes("repeating-linear-gradient"))).toBe(
+			false,
+		);
+		// ...and none are washed either. Fade mode paints EVERY outside-room cell
+		// the plain outside colour (converting the panel's out-of-cone hatch to it
+		// too), so it must have strictly MORE outside-coloured cells than the panel.
+		// Dropping the `inside` guard (washing outside cells) would push this count
+		// down to the panel's, so the strict `>` pins the guard.
+		expect(outside.length).toBeGreaterThan(panelOutside);
+
+		document.body.removeChild(el);
+	});
+
+	it("fadeUncovered fades beyond-max-range cells instead of the white hatch", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 500,
+			roomWidth: 3000,
+			roomDepth: 4000,
+			fadeUncovered: true,
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = cellStyles(el);
+
+		// no beyond-max-range hatch on white (#fff, not the #cc3333 interference)
+		const beyondHatch = styles.filter(
+			(s) =>
+				s.includes("repeating-linear-gradient") &&
+				s.includes("#fff") &&
+				!s.includes("#cc3333"),
+		);
+		expect(beyondHatch).toEqual([]);
+		expect(
+			styles.some((s) => s.includes("color-mix") && s.includes("#808080")),
+		).toBe(true);
+
+		document.body.removeChild(el);
+	});
+
+	it("keeps the cross-hatch when fadeUncovered is false (default)", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+		}); // fadeUncovered defaults false
+
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = cellStyles(el);
+
+		expect(styles.some((s) => s.includes("#c8c8c8"))).toBe(true);
+		expect(
+			styles.some((s) => s.includes("color-mix") && s.includes("#808080")),
+		).toBe(false);
+
+		document.body.removeChild(el);
+	});
+
+	it("fades the configured roomColor when fadeUncovered is set", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+			fadeUncovered: true,
+			roomColor: "rgb(10, 20, 30)",
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = cellStyles(el);
+
+		expect(
+			styles.some((s) =>
+				s.includes("color-mix(in srgb, rgb(10, 20, 30) 88%, #808080)"),
+			),
+		).toBe(true);
+
+		document.body.removeChild(el);
+	});
+
+	it("washes out-of-coverage cells inside the room rectangle even without the room bit", async () => {
+		// Field bug: a device whose stored footprint drops the out-of-cone cells'
+		// room bit even though they sit inside the room's bounding rectangle. They
+		// must still fade — not fall back to the plain outside colour as though
+		// they were beyond the room.
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const opts = {
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+		};
+
+		const grid = initGridFromRoom(opts.roomWidth, opts.roomDepth);
+		const fov = computeSensorFov(perspective);
+		let cleared = 0;
+		for (let r = 0; r < GRID_ROWS; r++) {
+			for (let c = 0; c < GRID_COLS; c++) {
+				const idx = r * GRID_COLS + c;
+				if (!cellIsInside(grid[idx])) continue;
+				if (
+					classifyCellInSensor(c, r, fov, opts.roomWidth, opts.maxRangeMm) ===
+					"out_of_cone"
+				) {
+					grid[idx] &= ~CELL_ROOM_BIT; // footprint drops this in-rect cell
+					cleared++;
+				}
+			}
+		}
+		expect(cleared).toBeGreaterThan(0); // fixture actually dropped some cells
+
+		const el = createGrid({ ...opts, grid, fadeUncovered: true });
+		document.body.appendChild(el);
+		await el.updateComplete;
+		const washed = cellStyles(el).filter(
+			(s) => s.includes("color-mix") && s.includes("#808080"),
+		).length;
+		document.body.removeChild(el);
+
+		// Every cleared cell is out-of-coverage and inside the room rectangle, so
+		// all of them fade despite lacking the room bit (pre-fix: 0 washed, as they
+		// fell through to the outside colour).
+		expect(washed).toBe(cleared);
 	});
 });
 

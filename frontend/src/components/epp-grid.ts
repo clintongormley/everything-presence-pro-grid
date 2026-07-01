@@ -1,4 +1,4 @@
-import { css, html, LitElement, nothing, type PropertyValues } from "lit";
+import { css, html, LitElement, nothing, type PropertyValues, svg } from "lit";
 import { property, state } from "lit/decorators.js";
 import { MAX_TARGETS, TARGET_COLORS } from "../constants.js";
 import { mapTargetToGridCell, targetCellIndex } from "../lib/coordinates.js";
@@ -19,12 +19,15 @@ import {
 	GRID_CELL_COUNT,
 	GRID_COLS,
 	GRID_ROWS,
+	getRawRoomBounds,
 	MAX_RANGE,
 } from "../lib/grid.js";
 import {
 	CELL_BG_BEYOND_MAX_RANGE,
 	CELL_BG_OUT_OF_RANGE,
+	fadedRoomColor,
 	getCellColor,
+	heatCellColor,
 	overlayStripeGradient,
 } from "../lib/heatmap.js";
 import {
@@ -110,6 +113,14 @@ export class EppGrid extends LitElement {
 	 */
 	@property({ type: Boolean }) fill = false;
 	/**
+	 * Overview mode (card): render in-room out-of-coverage cells (outside the
+	 * 120° cone or beyond the configured max range) as a faint wash of the room
+	 * colour instead of the cross-hatch, and never hatch outside-room cells, so
+	 * the room reads as a clean rectangle. Defaults off — the panel keeps the
+	 * detailed FOV cross-hatch used during calibration and zone editing.
+	 */
+	@property({ type: Boolean }) fadeUncovered = false;
+	/**
 	 * Mobile-only: cap the grid height to half the viewport so the controls
 	 * panel below it always has room. Desktop leaves this false → no height cap.
 	 */
@@ -124,6 +135,14 @@ export class EppGrid extends LitElement {
 		minRow: number;
 		maxRow: number;
 	} | null = null;
+	/** Dense 400-entry (20x20) activity heatmap, 0..255 per cell; 0 = no heat. */
+	@property({ attribute: false }) heatmapCells: number[] = [];
+	/** When true, renders the `.heatmap-overlay` (heat cells + live trails). */
+	@property({ type: Boolean }) showHeatmap = false;
+	/** Per-target trail point history (room-space mm), one array per target. */
+	@property({ attribute: false }) trails: Array<
+		Array<{ x: number; y: number }>
+	> = [];
 
 	/** Measured content width of the host (px); 0 = unmeasured (e.g. unit tests). */
 	@state() private _availPx = 0;
@@ -371,6 +390,24 @@ export class EppGrid extends LitElement {
 			background: #ff9800;
 		}
 
+		.heatmap-overlay {
+			position: absolute;
+			inset: 0;
+			pointer-events: none;
+			z-index: 15;
+		}
+
+		.heat-cell {
+			position: absolute;
+			transform: translate(-50%, -50%);
+		}
+
+		.trail {
+			position: absolute;
+			inset: 0;
+			overflow: visible;
+		}
+
 		.grid-dimensions {
 			text-align: center;
 			font-size: 12px;
@@ -489,10 +526,11 @@ export class EppGrid extends LitElement {
 					@pointerup=${this.editable ? this._onStrokeEnd : nothing}
 					@pointercancel=${this.editable ? this._onStrokeEnd : nothing}
 				>
-					${this._renderVisibleCells(scan.status, minCol, maxCol, minRow, maxRow, cellPx)}
+					${this._renderVisibleCells(scan.status, minCol, maxCol, minRow, maxRow, cellPx, scan.rawBounds)}
 				</div>
 				${this._renderFurnitureOverlay(cellPx, minCol, minRow, visCols, visRows)}
 				${this._renderTargetDots(minCol, maxCol, minRow, maxRow, visCols, visRows)}
+				${this._renderHeatmap(cellPx, minCol, minRow, visCols, visRows)}
 			</div>
 			${this.showDimensions ? this._renderGridDimensions(scan.metrics) : nothing}
 		`;
@@ -534,6 +572,12 @@ export class EppGrid extends LitElement {
 		showDimensions: boolean;
 		status: CellRangeStatus[];
 		bounds: { minCol: number; maxCol: number; minRow: number; maxRow: number };
+		rawBounds: {
+			minCol: number;
+			maxCol: number;
+			minRow: number;
+			maxRow: number;
+		};
 		metrics: { widthM: number; depthM: number; furthestM: number } | null;
 	} | null = null;
 
@@ -579,6 +623,10 @@ export class EppGrid extends LitElement {
 				this.roomWidth,
 				this.maxRangeMm,
 			),
+			// The room's physical bounding rectangle (unpadded). fadeUncovered
+			// keys the wash on this so out-of-coverage cells that lost their room
+			// bit but sit inside the rectangle still read as room.
+			rawBounds: getRawRoomBounds(this.grid),
 			// Only the dimensions caption consumes metrics; skip the extra grid
 			// scan when it's hidden (e.g. the overview card).
 			metrics: this.showDimensions
@@ -601,6 +649,12 @@ export class EppGrid extends LitElement {
 		minRow: number,
 		maxRow: number,
 		cellPx: number,
+		rawBounds: {
+			minCol: number;
+			maxCol: number;
+			minRow: number;
+			maxRow: number;
+		},
 	) {
 		const occupancy = this.occupancy;
 		const plain = this.plain;
@@ -611,6 +665,18 @@ export class EppGrid extends LitElement {
 		const cellBgConfigs = plain ? [] : this.zoneConfigs;
 		const cellBg = (v: number): string =>
 			getCellColor(v, cellBgConfigs, this.roomColor);
+		// Overview fade is a wash of the room colour — the same for every cell,
+		// so build it once here rather than per cell in the loop below.
+		const faded = this.fadeUncovered ? fadedRoomColor(this.roomColor) : "";
+		// fadeUncovered fills the room's bounding RECTANGLE (rawBounds), keyed on
+		// the rectangle rather than each cell's room bit: a footprint that drops
+		// the out-of-cone cells still has them inside the rectangle, so they read
+		// as (uncovered) room. Cells beyond the rectangle keep the outside colour.
+		const inRoomRect = (col: number, row: number): boolean =>
+			col >= rawBounds.minCol &&
+			col <= rawBounds.maxCol &&
+			row >= rawBounds.minRow &&
+			row <= rawBounds.maxRow;
 
 		const cells = [];
 		for (let r = minRow; r <= maxRow; r++) {
@@ -623,6 +689,12 @@ export class EppGrid extends LitElement {
 				let bg: string;
 				if (inRange) {
 					bg = cellBg(cellVal);
+				} else if (this.fadeUncovered) {
+					// Overview: out-of-coverage cells inside the room rectangle (out of
+					// cone / beyond max range) fade to a wash of the room colour so the
+					// room reads as a clean rectangle; cells beyond the rectangle keep
+					// the plain outside colour.
+					bg = inRoomRect(c, r) ? faded : cellBg(cellVal);
 				} else if (cellStatus === "beyond_max_range" && inside) {
 					// Only inside-room cells get the hatch-on-white "configured out"
 					// decoration; outside-room padding rendered as plain outside so
@@ -863,6 +935,78 @@ export class EppGrid extends LitElement {
 					: nothing
 			}
 		`;
+	}
+
+	private _renderHeatmap(
+		cellPx: number,
+		minCol: number,
+		minRow: number,
+		visCols: number,
+		visRows: number,
+	) {
+		if (!this.showHeatmap) return nothing;
+		const heat = this.heatmapCells;
+		const rects = [];
+		for (let i = 0; i < heat.length; i++) {
+			const v = heat[i];
+			if (!v) continue;
+			const col = (i % GRID_COLS) + 0.5;
+			const row = Math.floor(i / GRID_COLS) + 0.5;
+			const xPct = ((col - minCol) / visCols) * 100;
+			const yPct = ((row - minRow) / visRows) * 100;
+			if (xPct < 0 || xPct > 100 || yPct < 0 || yPct > 100) continue;
+			rects.push(html`<div
+				class="heat-cell"
+				style="left:${xPct}%;top:${yPct}%;width:${cellPx}px;height:${cellPx}px;background:${heatCellColor(v)};"
+			></div>`);
+		}
+		return html`<div class="heatmap-overlay">
+			${rects}
+			${this._renderTrails(minCol, minRow, visCols, visRows)}
+		</div>`;
+	}
+
+	private _renderTrails(
+		minCol: number,
+		minRow: number,
+		visCols: number,
+		visRows: number,
+	) {
+		const lines = this.trails
+			.map((pts) => this._trailPolyline(pts, minCol, minRow, visCols, visRows))
+			.filter((p) => p !== null);
+		if (lines.length === 0) return nothing;
+		return html`<svg class="trail" viewBox="0 0 100 100" preserveAspectRatio="none">${lines}</svg>`;
+	}
+
+	private _trailPolyline(
+		pts: Array<{ x: number; y: number }>,
+		minCol: number,
+		minRow: number,
+		visCols: number,
+		visRows: number,
+	) {
+		if (pts.length < 2) return null;
+		const coords = pts
+			.map((p) => {
+				const cell = mapTargetToGridCell(
+					p.x,
+					p.y,
+					this.roomWidth,
+					this.roomDepth,
+				);
+				if (!cell) return null;
+				const xPct = ((cell.col - minCol) / visCols) * 100;
+				const yPct = ((cell.row - minRow) / visRows) * 100;
+				return `${xPct},${yPct}`;
+			})
+			.filter((c): c is string => c !== null);
+		if (coords.length < 2) return null;
+		return svg`<polyline
+			points=${coords.join(" ")}
+			fill="none" stroke="rgba(3,169,244,0.7)" stroke-width="0.6"
+			stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"
+		/>`;
 	}
 
 	private _renderGridDimensions(

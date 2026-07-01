@@ -3,7 +3,12 @@ import { property } from "lit/decorators.js";
 import { unsafeSVG } from "lit/directives/unsafe-svg.js";
 import { FLOOR_PLAN_SVGS } from "../constants.js";
 import type { FurnitureItem } from "../lib/furniture.js";
-import { getResizeCursor, mmToPx } from "../lib/furniture.js";
+import {
+	EDGE_HANDLE_MIN_PX,
+	getResizeCursor,
+	mmToPx,
+	visibleHandles,
+} from "../lib/furniture.js";
 import type { FurnitureItemTone } from "../lib/furniture-tones.js";
 import { roomStartCol } from "../lib/grid.js";
 import type { SidebarTab } from "../lib/view-hash.js";
@@ -304,8 +309,9 @@ export class EppFurnitureOverlay extends LitElement {
 								selected
 									? html`
 										<!-- Resize handles (cursor follows visual rotation) -->
-										${(
-											["n", "s", "e", "w", "ne", "nw", "se", "sw"] as const
+										${visibleHandles(
+											item.lockAspect,
+											Math.min(wPx, hPx) < EDGE_HANDLE_MIN_PX,
 										).map(
 											(h) => html`
 												<div

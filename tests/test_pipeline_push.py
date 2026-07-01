@@ -9,6 +9,7 @@ from homeassistant.core import HomeAssistant
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.device_manager import DeviceManager
+from custom_components.eppgrid.device_manager import ManagedDevice
 from tests.test_websocket_api import setup_integration
 
 
@@ -131,6 +132,74 @@ class TestEndToEndPipelineFlow:
         assert call_args[0][0] == "epp_set_pipeline"
         pipeline = call_args[0][1]
         assert pipeline["entity_target_interval"] == 0  # Rate ignored, entities all off
+
+
+class TestHeatmapPipelinePushBWCStrip:
+    """`heatmap_interval` must be stripped from the pushed payload for
+    firmware that predates 1.3.0 — the old `epp_set_pipeline` service has no
+    such variable, so pushing it could error on old devices."""
+
+    async def test_heatmap_interval_stripped_for_old_firmware(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """A heatmap subscriber is tracked, but firmware 1.2.1 predates the
+        Heatmap feature — the field must be absent from the payload, not 0."""
+        mock_dm = await setup_integration(hass, config_entry)
+        mac = "AA:BB:CC:DD:EE:FF"
+        mock_dm._store.devices[mac] = {}
+        mock_dm.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50", device_id="dev_abc123")
+
+        mock_session = MagicMock()
+        mock_session.async_execute_service = AsyncMock()
+        mock_session.connected = True
+        mock_dm.get_session = MagicMock(return_value=mock_session)
+        mock_dm._target_subs = {mac: {"raw_target_subs": 0, "grid_target_subs": 0, "heatmap_subs": 1}}
+        mock_dm.read_firmware_version = MagicMock(return_value="1.2.1")
+
+        mock_dm._push_pipeline_to_device = lambda m: DeviceManager._push_pipeline_to_device(mock_dm, m)
+
+        await mock_dm._push_pipeline_to_device(mac)
+
+        # Locks the call site passing `dev.device_id`, NOT the mac: a regression
+        # to `read_firmware_version(mac)` would silently disable heatmap for
+        # every device in production (mac never matches a device_id).
+        mock_dm.read_firmware_version.assert_called_with("dev_abc123")
+
+        call_args = mock_session.async_execute_service.await_args
+        assert call_args[0][0] == "epp_set_pipeline"
+        pipeline = call_args[0][1]
+        assert "heatmap_interval" not in pipeline
+
+    async def test_heatmap_interval_present_for_supported_firmware(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """Firmware 1.3.0+ supports the Heatmap feature — the field must be
+        present and reflect the tracked subscriber count."""
+        mock_dm = await setup_integration(hass, config_entry)
+        mac = "AA:BB:CC:DD:EE:FF"
+        mock_dm._store.devices[mac] = {}
+        mock_dm.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50", device_id="dev_abc123")
+
+        mock_session = MagicMock()
+        mock_session.async_execute_service = AsyncMock()
+        mock_session.connected = True
+        mock_dm.get_session = MagicMock(return_value=mock_session)
+        mock_dm._target_subs = {mac: {"raw_target_subs": 0, "grid_target_subs": 0, "heatmap_subs": 1}}
+        mock_dm.read_firmware_version = MagicMock(return_value="1.3.0")
+
+        mock_dm._push_pipeline_to_device = lambda m: DeviceManager._push_pipeline_to_device(mock_dm, m)
+
+        await mock_dm._push_pipeline_to_device(mac)
+
+        # Locks the call site passing `dev.device_id`, NOT the mac: a regression
+        # to `read_firmware_version(mac)` would silently disable heatmap for
+        # every device in production (mac never matches a device_id).
+        mock_dm.read_firmware_version.assert_called_with("dev_abc123")
+
+        call_args = mock_session.async_execute_service.await_args
+        assert call_args[0][0] == "epp_set_pipeline"
+        pipeline = call_args[0][1]
+        assert pipeline["heatmap_interval"] == 2000
 
 
 class TestSubscriberCountsSurviveSessionReplacement:
