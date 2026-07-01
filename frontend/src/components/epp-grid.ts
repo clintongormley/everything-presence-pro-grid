@@ -3,11 +3,11 @@ import { property, state } from "lit/decorators.js";
 import { MAX_TARGETS, TARGET_COLORS } from "../constants.js";
 import { mapTargetToGridCell, targetCellIndex } from "../lib/coordinates.js";
 import type { FurnitureItem } from "../lib/furniture.js";
+import { parseRgb } from "../lib/furniture-contrast.js";
 import {
-	FURNITURE_TONE_CSS,
-	furnitureContrast,
-	isRgbTriple,
-} from "../lib/furniture-contrast.js";
+	computeFurnitureTones,
+	type FurnitureItemTone,
+} from "../lib/furniture-tones.js";
 import {
 	CELL_OVERLAY_ENTRY,
 	CELL_OVERLAY_INTERFERENCE,
@@ -38,6 +38,7 @@ import {
 import type { SidebarTab } from "../lib/view-hash.js";
 import type { ZoneConfig } from "../lib/zone-defaults.js";
 import type { Target } from "../types.js";
+import type { EppFurnitureOverlay } from "./epp-furniture-overlay.js";
 import "./epp-furniture-overlay.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 
@@ -102,12 +103,6 @@ export class EppGrid extends LitElement {
 	 */
 	@property({ attribute: false }) roomColor?: string;
 	/**
-	 * The raw room-colour `[r, g, b]` triple when set. Used to auto-pick a
-	 * furniture tone that contrasts with the room background. Undefined keeps the
-	 * default theme-grey furniture (no change).
-	 */
-	@property({ attribute: false }) roomColorRgb?: [number, number, number];
-	/**
 	 * Fill mode (overview card): let the grid grow to fill its measured width
 	 * instead of stopping at the desktop cell cap, and drop the viewport-height
 	 * bound so the map fills the card's width (growing taller to match) rather
@@ -134,6 +129,9 @@ export class EppGrid extends LitElement {
 	@state() private _availPx = 0;
 	/** Measured available height for the grid (px); 0 = unmeasured. Desktop only. */
 	@state() private _availHeightPx = 0;
+	/** Per-item furniture tone, id → {color, halo}; memoised, recomputed only
+	 *  when a cell-background-affecting property changes (never on target moves). */
+	@state() private _furnitureTones?: Map<string, FurnitureItemTone>;
 	private _ro?: ResizeObserver;
 	/** Pending post-layout re-measure scheduled in firstUpdated (see below). */
 	private _settleRaf?: number;
@@ -195,9 +193,59 @@ export class EppGrid extends LitElement {
 			});
 		}
 	}
-	updated(): void {
+	updated(changed: PropertyValues): void {
 		this._measureAvail();
+		this._updateFurnitureTones(changed);
 	}
+
+	private _updateFurnitureTones(changed: PropertyValues): void {
+		if (!this.furniture.length) {
+			if (this._furnitureTones !== undefined) this._furnitureTones = undefined;
+			return;
+		}
+		// Cell backgrounds depend on these; target/occupancy/selection changes
+		// (the hot path) do not, so we skip the getComputedStyle reads for them.
+		const affects =
+			changed.has("furniture") ||
+			changed.has("grid") ||
+			changed.has("zoneConfigs") ||
+			changed.has("roomColor") ||
+			changed.has("roomWidth") ||
+			changed.has("roomDepth") ||
+			changed.has("plain") ||
+			changed.has("perspective") ||
+			changed.has("maxRangeMm");
+		if (!affects && this._furnitureTones !== undefined) return;
+		this._furnitureTones = computeFurnitureTones(
+			this.furniture,
+			this.roomWidth,
+			this.roomDepth,
+			(idx) => this._readCellRgb(idx),
+		);
+		// Setting `_furnitureTones` here (inside `updated()`, after the cells
+		// this computation reads have themselves rendered) schedules a second
+		// Lit update to re-render the overlay's `.furnitureTones` binding — a
+		// single `await el.updateComplete` in callers/tests does not wait for
+		// that cascade (Lit's documented `updateComplete` contract: it
+		// resolves before a property set inside `updated()` is applied). The
+		// overlay element already exists in the DOM from the render that just
+		// happened, so push the value onto it directly too — the later
+		// reactive re-render is then a harmless no-op (same value, `nothing`
+		// diff) rather than the only path to consistency.
+		const overlay = this.shadowRoot?.querySelector<EppFurnitureOverlay>(
+			"epp-furniture-overlay",
+		);
+		if (overlay) overlay.furnitureTones = this._furnitureTones;
+	}
+
+	/* v8 ignore start -- getComputedStyle needs real layout; happy-dom returns "" */
+	private _readCellRgb(idx: number): [number, number, number] | null {
+		const cell = this.shadowRoot?.querySelector(`.cell[data-idx="${idx}"]`);
+		if (!cell) return null;
+		return parseRgb(getComputedStyle(cell).backgroundColor);
+	}
+	/* v8 ignore stop */
+
 	private _measureAvail(): void {
 		const w = this.clientWidth;
 		if (w && Math.abs(w - this._availPx) >= 1) this._availPx = w;
@@ -605,6 +653,7 @@ export class EppGrid extends LitElement {
 				cells.push(html`
 					<div
 						class="cell"
+						data-idx="${idx}"
 						style="background: ${bg}; width: ${cellPx}px; height: ${cellPx}px; ${occupancyStyle} ${overlayMarker}"
 						@pointerdown=${
 							paintable
@@ -834,13 +883,6 @@ export class EppGrid extends LitElement {
 	) {
 		if (!this.furniture.length) return nothing;
 
-		// Auto-contrast is computed against the room colour only (room-level, not
-		// per-zone); the overlay's halo keeps furniture legible over painted zones.
-		// Null when no room colour is set → the overlay keeps its default grey.
-		const fc = isRgbTriple(this.roomColorRgb)
-			? furnitureContrast(this.roomColorRgb)
-			: null;
-
 		// The overlay's furniture-* events are `composed: true` and bubble
 		// straight through this component's shadow boundary to the panel —
 		// no stopPropagation/re-dispatch pass-through wrappers needed.
@@ -856,7 +898,7 @@ export class EppGrid extends LitElement {
 				.visRows=${visRows}
 				.sidebarTab=${this.sidebarTab}
 				.localize=${this.localize}
-				.furnitureTone=${fc ? FURNITURE_TONE_CSS[fc.tone] : undefined}
+				.furnitureTones=${this._furnitureTones}
 			></epp-furniture-overlay>
 		`;
 	}
