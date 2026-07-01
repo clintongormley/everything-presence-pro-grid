@@ -2152,7 +2152,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:v},pe=(e=de
 			<div class="grid-dimensions">
 				${this.localize("live.grid_dimensions",{width:e.widthM,depth:e.depthM,furthest:e.furthestM})}
 			</div>
-		`:J}_renderFurnitureOverlay(e,t,i,s,r){if(!this.furniture.length)return J;const o=function(e){return Array.isArray(e)&&3===e.length&&e.every(e=>"number"==typeof e&&Number.isFinite(e))}(this.roomColorRgb)?function(e){const t=vs(e),i=Es(t,bs)>=Es(t,ys)?"light":"dark";return{tone:i,...ws[i]}}(this.roomColorRgb):null;return N`
+		`:J}_renderFurnitureOverlay(e,t,i,s,r){if(!this.furniture.length)return J;const o=function(e){return!(!Array.isArray(e)||3!==e.length)&&"number"==typeof e[0]&&Number.isFinite(e[0])&&"number"==typeof e[1]&&Number.isFinite(e[1])&&"number"==typeof e[2]&&Number.isFinite(e[2])}(this.roomColorRgb)?function(e){const t=vs(e),i=Es(t,bs)>=Es(t,ys)?"light":"dark";return{tone:i,...ws[i]}}(this.roomColorRgb):null;return N`
 			<epp-furniture-overlay
 				.furniture=${this.furniture}
 				.selectedFurnitureId=${this.selectedFurnitureId}

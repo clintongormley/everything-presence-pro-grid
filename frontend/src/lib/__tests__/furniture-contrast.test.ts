@@ -36,6 +36,9 @@ describe("isRgbTriple", () => {
 		expect(isRgbTriple([1, 2, Number.NaN])).toBe(false);
 		expect(isRgbTriple(undefined)).toBe(false);
 	});
+	it("rejects a fully-sparse array (every() skips holes → vacuous true)", () => {
+		expect(isRgbTriple(new Array(3))).toBe(false);
+	});
 });
 
 describe("furnitureContrast", () => {

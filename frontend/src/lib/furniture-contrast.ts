@@ -49,10 +49,16 @@ export function contrastRatio(l1: number, l2: number): number {
 /** True when `v` is a valid `[r, g, b]` triple of finite numbers. Hand-written
  *  YAML can supply a malformed value the TS type does not enforce. */
 export function isRgbTriple(v: unknown): v is [number, number, number] {
+	if (!Array.isArray(v) || v.length !== 3) return false;
+	// Explicit per-index check rather than `.every()`, which skips holes in a
+	// sparse array (`new Array(3)`) and would validate it as a triple.
 	return (
-		Array.isArray(v) &&
-		v.length === 3 &&
-		v.every((n) => typeof n === "number" && Number.isFinite(n))
+		typeof v[0] === "number" &&
+		Number.isFinite(v[0]) &&
+		typeof v[1] === "number" &&
+		Number.isFinite(v[1]) &&
+		typeof v[2] === "number" &&
+		Number.isFinite(v[2])
 	);
 }
 
