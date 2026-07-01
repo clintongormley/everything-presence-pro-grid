@@ -1089,6 +1089,140 @@ describe("epp-grid darkness (sensor FOV)", () => {
 
 		document.body.removeChild(el);
 	});
+
+	it("fadeUncovered replaces the out-of-cone cross-hatch with a faded room wash", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+			fadeUncovered: true,
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = Array.from(
+			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
+		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+
+		// the out-of-cone grey cross-hatch (#c8c8c8) is gone
+		expect(styles.some((s) => s.includes("#c8c8c8"))).toBe(false);
+		// at least one in-room cell now shows the faded wash
+		expect(
+			styles.some((s) => s.includes("color-mix") && s.includes("#808080")),
+		).toBe(true);
+
+		document.body.removeChild(el);
+	});
+
+	it("fadeUncovered never hatches outside-room padding cells", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+			fadeUncovered: true,
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = Array.from(
+			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
+		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+
+		const outside = styles.filter((s) =>
+			s.includes("secondary-background-color"),
+		);
+		expect(outside.length).toBeGreaterThan(0); // padding ring exists
+		expect(outside.some((s) => s.includes("repeating-linear-gradient"))).toBe(
+			false,
+		);
+
+		document.body.removeChild(el);
+	});
+
+	it("fadeUncovered fades beyond-max-range cells instead of the white hatch", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 500,
+			roomWidth: 3000,
+			roomDepth: 4000,
+			fadeUncovered: true,
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = Array.from(
+			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
+		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+
+		// no beyond-max-range hatch on white (#fff, not the #cc3333 interference)
+		const beyondHatch = styles.filter(
+			(s) =>
+				s.includes("repeating-linear-gradient") &&
+				s.includes("#fff") &&
+				!s.includes("#cc3333"),
+		);
+		expect(beyondHatch).toEqual([]);
+		expect(
+			styles.some((s) => s.includes("color-mix") && s.includes("#808080")),
+		).toBe(true);
+
+		document.body.removeChild(el);
+	});
+
+	it("keeps the cross-hatch when fadeUncovered is false (default)", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+		}); // fadeUncovered defaults false
+
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = Array.from(
+			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
+		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+
+		expect(styles.some((s) => s.includes("#c8c8c8"))).toBe(true);
+		expect(
+			styles.some((s) => s.includes("color-mix") && s.includes("#808080")),
+		).toBe(false);
+
+		document.body.removeChild(el);
+	});
+
+	it("fades the configured roomColor when fadeUncovered is set", async () => {
+		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
+		const el = createGrid({
+			perspective,
+			maxRangeMm: 6000,
+			roomWidth: 3000,
+			roomDepth: 4000,
+			fadeUncovered: true,
+			roomColor: "rgb(10, 20, 30)",
+		});
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const styles = Array.from(
+			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
+		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+
+		expect(
+			styles.some((s) =>
+				s.includes("color-mix(in srgb, rgb(10, 20, 30) 88%, #808080)"),
+			),
+		).toBe(true);
+
+		document.body.removeChild(el);
+	});
 });
 
 describe("epp-grid target-click event", () => {

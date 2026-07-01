@@ -19,6 +19,7 @@ import {
 import {
 	CELL_BG_BEYOND_MAX_RANGE,
 	CELL_BG_OUT_OF_RANGE,
+	fadedRoomColor,
 	getCellColor,
 	overlayStripeGradient,
 } from "../lib/heatmap.js";
@@ -103,6 +104,14 @@ export class EppGrid extends LitElement {
 	 * than leaving whitespace. The panel leaves this false to keep its caps.
 	 */
 	@property({ type: Boolean }) fill = false;
+	/**
+	 * Overview mode (card): render in-room out-of-coverage cells (outside the
+	 * 120° cone or beyond the configured max range) as a faint wash of the room
+	 * colour instead of the cross-hatch, and never hatch outside-room cells, so
+	 * the room reads as a clean rectangle. Defaults off — the panel keeps the
+	 * detailed FOV cross-hatch used during calibration and zone editing.
+	 */
+	@property({ type: Boolean }) fadeUncovered = false;
 	/**
 	 * Mobile-only: cap the grid height to half the viewport so the controls
 	 * panel below it always has room. Desktop leaves this false → no height cap.
@@ -556,7 +565,16 @@ export class EppGrid extends LitElement {
 				const inRange = cellStatus === "in_range";
 				const inside = cellIsInside(cellVal);
 				let bg: string;
-				if (inRange) {
+				if (this.fadeUncovered) {
+					// Overview: outside cells and in-coverage cells keep their normal
+					// colour; in-room out-of-coverage cells (out of cone / beyond max
+					// range) fade instead of the cross-hatch, so the room reads as a
+					// clean rectangle. cellBg returns the outside colour for !inside.
+					bg =
+						!inside || inRange
+							? cellBg(cellVal)
+							: fadedRoomColor(this.roomColor);
+				} else if (inRange) {
 					bg = cellBg(cellVal);
 				} else if (cellStatus === "beyond_max_range" && inside) {
 					// Only inside-room cells get the hatch-on-white "configured out"
