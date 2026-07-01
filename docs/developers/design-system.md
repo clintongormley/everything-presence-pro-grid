@@ -56,7 +56,8 @@ values but stay overridable via the same `--epp-*` names. When tokenising,
 --epp-furniture-halo-on-light  rgba(255,255,255,.95) light outline behind dark furniture
 ```
 
-Applied automatically by the card when `room_color` is set; picked per-background by `lib/furniture-contrast.ts`.
+Applied automatically by the card when `room_color` is set; picked
+per-background by `lib/furniture-contrast.ts`.
 
 **Spacing (4px base):** `--epp-space-1..6` = 4 / 8 / 12 / 16 / 24 / 32px
 **Radius:** `--epp-radius-sm` 6 · `-md` 10 · `-lg` 16 · `-pill` 9999px
