@@ -3,6 +3,7 @@ import { property, state } from "lit/decorators.js";
 import { MAX_TARGETS, TARGET_COLORS } from "../constants.js";
 import { mapTargetToGridCell, targetCellIndex } from "../lib/coordinates.js";
 import type { FurnitureItem } from "../lib/furniture.js";
+import { furnitureContrast, isRgbTriple } from "../lib/furniture-contrast.js";
 import {
 	CELL_OVERLAY_ENTRY,
 	CELL_OVERLAY_INTERFERENCE,
@@ -96,6 +97,12 @@ export class EppGrid extends LitElement {
 	 * In plain mode (zones flattened) it colours the whole in-range room.
 	 */
 	@property({ attribute: false }) roomColor?: string;
+	/**
+	 * The raw room-colour `[r, g, b]` triple when set. Used to auto-pick a
+	 * furniture tone that contrasts with the room background. Undefined keeps the
+	 * default theme-grey furniture (no change).
+	 */
+	@property({ attribute: false }) roomColorRgb?: [number, number, number];
 	/**
 	 * Fill mode (overview card): let the grid grow to fill its measured width
 	 * instead of stopping at the desktop cell cap, and drop the viewport-height
@@ -823,6 +830,10 @@ export class EppGrid extends LitElement {
 	) {
 		if (!this.furniture.length) return nothing;
 
+		const fc = isRgbTriple(this.roomColorRgb)
+			? furnitureContrast(this.roomColorRgb)
+			: null;
+
 		// The overlay's furniture-* events are `composed: true` and bubble
 		// straight through this component's shadow boundary to the panel —
 		// no stopPropagation/re-dispatch pass-through wrappers needed.
@@ -838,6 +849,8 @@ export class EppGrid extends LitElement {
 				.visRows=${visRows}
 				.sidebarTab=${this.sidebarTab}
 				.localize=${this.localize}
+				.furnitureColor=${fc?.color}
+				.furnitureHalo=${fc?.halo}
 			></epp-furniture-overlay>
 		`;
 	}

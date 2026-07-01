@@ -426,6 +426,7 @@ export class EppGridCard extends LitElement {
 				.showDimensions=${false}
 				.plain=${!cfg.show_grid}
 				.roomColor=${rgbCss(cfg.room_color)}
+				.roomColorRgb=${cfg.room_color}
 				.fill=${true}
 			></epp-grid>
 		`;

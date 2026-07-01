@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-grid.js";
 import type { EppGrid } from "../../components/epp-grid.js";
 import type { FurnitureItem } from "../../lib/furniture.js";
+import { FURNITURE_TONE_CSS } from "../../lib/furniture-contrast.js";
 import {
 	CELL_OVERLAY_INTERFERENCE,
 	CELL_OVERLAY_SUPPRESS,
@@ -1740,5 +1741,52 @@ describe("epp-grid cell sizing (measured available width)", () => {
 		measureSpy.mockClear();
 		window.dispatchEvent(new Event("resize"));
 		expect(measureSpy).not.toHaveBeenCalled();
+	});
+});
+
+describe("epp-grid furniture auto-contrast", () => {
+	const SAMPLE_FURNITURE = {
+		id: "f1",
+		type: "icon" as const,
+		icon: "mdi:plant",
+		label: "Plant",
+		x: 100,
+		y: 100,
+		width: 300,
+		height: 300,
+		rotation: 0,
+		lockAspect: false,
+	};
+
+	it("passes an auto-contrast colour + halo when a room colour is set", async () => {
+		const el = createGrid();
+		el.furniture = [SAMPLE_FURNITURE];
+		el.roomColorRgb = [18, 48, 71]; // dark navy → light furniture
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const overlay = el.shadowRoot!.querySelector(
+			"epp-furniture-overlay",
+		) as any;
+		expect(overlay).not.toBeNull();
+		expect(overlay.furnitureColor).toBe(FURNITURE_TONE_CSS.light.color);
+		expect(overlay.furnitureHalo).toBe(FURNITURE_TONE_CSS.light.halo);
+
+		document.body.removeChild(el);
+	});
+
+	it("passes undefined colour + halo when no room colour is set", async () => {
+		const el = createGrid();
+		el.furniture = [SAMPLE_FURNITURE];
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const overlay = el.shadowRoot!.querySelector(
+			"epp-furniture-overlay",
+		) as any;
+		expect(overlay.furnitureColor).toBeUndefined();
+		expect(overlay.furnitureHalo).toBeUndefined();
+
+		document.body.removeChild(el);
 	});
 });
