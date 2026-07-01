@@ -27,9 +27,11 @@ export const CELL_BG_BEYOND_MAX_RANGE =
 /**
  * Fraction (percent) of neutral grey mixed into the room colour for the faded
  * "in room but no sensor coverage" fill used by the overview card. Small =
- * faint, so the room still reads as a single rectangle.
+ * faint, so the room still reads as a single rectangle. Module-private: the
+ * only consumer is `fadedRoomColor` below (mirrors this file's other single-use
+ * internals like the stripe-colour constants).
  */
-export const OUT_OF_COVERAGE_WASH_PCT = 12;
+const OUT_OF_COVERAGE_WASH_PCT = 12;
 
 /**
  * Faded fill for an in-room cell the sensor can't cover (outside the 120° cone

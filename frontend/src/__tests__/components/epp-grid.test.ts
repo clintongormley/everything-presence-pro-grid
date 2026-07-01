@@ -1102,9 +1102,7 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		document.body.appendChild(el);
 		await el.updateComplete;
 
-		const styles = Array.from(
-			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
-		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+		const styles = cellStyles(el);
 
 		// the out-of-cone grey cross-hatch (#c8c8c8) is gone
 		expect(styles.some((s) => s.includes("#c8c8c8"))).toBe(false);
@@ -1116,29 +1114,42 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		document.body.removeChild(el);
 	});
 
-	it("fadeUncovered never hatches outside-room padding cells", async () => {
-		const perspective = [1, 0, 1500, 0, 1, 0, 0, 0];
-		const el = createGrid({
-			perspective,
+	it("fadeUncovered keeps outside-room cells as the plain outside colour, never hatched or washed", async () => {
+		const opts = {
+			perspective: [1, 0, 1500, 0, 1, 0, 0, 0],
 			maxRangeMm: 6000,
 			roomWidth: 3000,
 			roomDepth: 4000,
-			fadeUncovered: true,
-		});
+		};
+
+		// Panel baseline (fade off): outside-room out-of-cone padding cells render
+		// the grey cross-hatch, so they do NOT count as the outside colour here.
+		const panel = createGrid({ ...opts });
+		document.body.appendChild(panel);
+		await panel.updateComplete;
+		const panelOutside = cellStyles(panel).filter((s) =>
+			s.includes("secondary-background-color"),
+		).length;
+		document.body.removeChild(panel);
+
+		const el = createGrid({ ...opts, fadeUncovered: true });
 		document.body.appendChild(el);
 		await el.updateComplete;
-
-		const styles = Array.from(
-			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
-		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
-
-		const outside = styles.filter((s) =>
+		const outside = cellStyles(el).filter((s) =>
 			s.includes("secondary-background-color"),
 		);
+
+		// Outside cells exist and none are hatched...
 		expect(outside.length).toBeGreaterThan(0); // padding ring exists
 		expect(outside.some((s) => s.includes("repeating-linear-gradient"))).toBe(
 			false,
 		);
+		// ...and none are washed either. Fade mode paints EVERY outside-room cell
+		// the plain outside colour (converting the panel's out-of-cone hatch to it
+		// too), so it must have strictly MORE outside-coloured cells than the panel.
+		// Dropping the `inside` guard (washing outside cells) would push this count
+		// down to the panel's, so the strict `>` pins the guard.
+		expect(outside.length).toBeGreaterThan(panelOutside);
 
 		document.body.removeChild(el);
 	});
@@ -1155,9 +1166,7 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		document.body.appendChild(el);
 		await el.updateComplete;
 
-		const styles = Array.from(
-			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
-		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+		const styles = cellStyles(el);
 
 		// no beyond-max-range hatch on white (#fff, not the #cc3333 interference)
 		const beyondHatch = styles.filter(
@@ -1186,9 +1195,7 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		document.body.appendChild(el);
 		await el.updateComplete;
 
-		const styles = Array.from(
-			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
-		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+		const styles = cellStyles(el);
 
 		expect(styles.some((s) => s.includes("#c8c8c8"))).toBe(true);
 		expect(
@@ -1211,9 +1218,7 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		document.body.appendChild(el);
 		await el.updateComplete;
 
-		const styles = Array.from(
-			el.shadowRoot!.querySelectorAll(".cell") as NodeListOf<HTMLElement>,
-		).map((c) => (c.getAttribute("style") ?? "").toLowerCase());
+		const styles = cellStyles(el);
 
 		expect(
 			styles.some((s) =>
