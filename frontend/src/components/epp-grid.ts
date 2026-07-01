@@ -214,7 +214,10 @@ export class EppGrid extends LitElement {
 			changed.has("roomDepth") ||
 			changed.has("plain") ||
 			changed.has("perspective") ||
-			changed.has("maxRangeMm");
+			changed.has("maxRangeMm") ||
+			// a paint-stroke freeze/unfreeze changes which cells are rendered, so
+			// a cell newly revealed under an item must be re-read.
+			changed.has("frozenBounds");
 		if (!affects && this._furnitureTones !== undefined) return;
 		this._furnitureTones = computeFurnitureTones(
 			this.furniture,
