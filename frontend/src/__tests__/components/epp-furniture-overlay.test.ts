@@ -42,6 +42,14 @@ const SAMPLE_FURNITURE: FurnitureItem = {
 	lockAspect: false,
 };
 
+// 2000mm at cellPx=28 → ~193px on its short side, above EDGE_HANDLE_MIN_PX,
+// so all eight handles render.
+const LARGE_FURNITURE: FurnitureItem = {
+	...SAMPLE_FURNITURE,
+	width: 2000,
+	height: 2000,
+};
+
 const ICON_FURNITURE: FurnitureItem = {
 	id: "f2",
 	type: "icon",
@@ -105,9 +113,9 @@ describe("epp-furniture-overlay element", () => {
 });
 
 describe("epp-furniture-overlay DOM rendering", () => {
-	it("renders all 8 resize handles when selected", () => {
+	it("renders all 8 resize handles for a large unlocked item", () => {
 		const el = createOverlay({
-			furniture: [SAMPLE_FURNITURE],
+			furniture: [LARGE_FURNITURE],
 			selectedFurnitureId: "f1",
 		});
 		const tpl = (el as any).render();
@@ -115,6 +123,39 @@ describe("epp-furniture-overlay DOM rendering", () => {
 
 		const handles = c.querySelectorAll(".furn-handle");
 		expect(handles.length).toBe(8);
+
+		document.body.removeChild(c);
+	});
+
+	it("renders only the 4 corner handles for a small item", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE], // ~77px, below EDGE_HANDLE_MIN_PX
+			selectedFurnitureId: "f1",
+		});
+		const c = renderTo((el as any).render());
+
+		expect(c.querySelectorAll(".furn-handle").length).toBe(4);
+		for (const corner of ["ne", "nw", "se", "sw"]) {
+			expect(c.querySelector(`.furn-handle-${corner}`)).not.toBeNull();
+		}
+		for (const edge of ["n", "s", "e", "w"]) {
+			expect(c.querySelector(`.furn-handle-${edge}`)).toBeNull();
+		}
+
+		document.body.removeChild(c);
+	});
+
+	it("renders only the 4 corner handles for a hard-locked item", () => {
+		const el = createOverlay({
+			furniture: [{ ...LARGE_FURNITURE, lockAspect: true }],
+			selectedFurnitureId: "f1",
+		});
+		const c = renderTo((el as any).render());
+
+		expect(c.querySelectorAll(".furn-handle").length).toBe(4);
+		for (const edge of ["n", "s", "e", "w"]) {
+			expect(c.querySelector(`.furn-handle-${edge}`)).toBeNull();
+		}
 
 		document.body.removeChild(c);
 	});
@@ -424,7 +465,7 @@ describe("epp-furniture-overlay shadow DOM resize handles", () => {
 	for (const dir of DIRECTIONS) {
 		it(`fires furniture-pointer-down with resize handle "${dir}" via shadow DOM`, async () => {
 			el = createOverlay({
-				furniture: [SAMPLE_FURNITURE],
+				furniture: [LARGE_FURNITURE],
 				selectedFurnitureId: "f1",
 			});
 			document.body.appendChild(el);
