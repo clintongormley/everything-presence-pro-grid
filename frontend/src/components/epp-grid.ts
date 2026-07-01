@@ -830,6 +830,9 @@ export class EppGrid extends LitElement {
 	) {
 		if (!this.furniture.length) return nothing;
 
+		// Auto-contrast is computed against the room colour only (room-level, not
+		// per-zone); the overlay's halo keeps furniture legible over painted zones.
+		// Null when no room colour is set → the overlay keeps its default grey.
 		const fc = isRgbTriple(this.roomColorRgb)
 			? furnitureContrast(this.roomColorRgb)
 			: null;

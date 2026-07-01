@@ -9,6 +9,7 @@ import {
 import { TemplateField } from "./card/template-subscription.js";
 import type { SensorState } from "./components/epp-live-sidebar.js";
 import { parseConfig } from "./lib/config-serialization.js";
+import { isRgbTriple } from "./lib/furniture-contrast.js";
 import { MAX_RANGE } from "./lib/grid.js";
 import { defaultLocalize, type LocalizeFn, setupLocalize } from "./localize.js";
 import { tokens } from "./ui/tokens.js";
@@ -85,11 +86,7 @@ type ResolvedCardConfig = Omit<EppGridCardConfig, "sensors"> & {
 export function rgbCss(
 	rgb: [number, number, number] | undefined,
 ): string | undefined {
-	if (
-		!Array.isArray(rgb) ||
-		rgb.length !== 3 ||
-		rgb.some((n) => !Number.isFinite(n))
-	) {
+	if (!isRgbTriple(rgb)) {
 		return undefined;
 	}
 	return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;

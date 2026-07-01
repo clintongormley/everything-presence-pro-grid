@@ -1745,19 +1745,6 @@ describe("epp-grid cell sizing (measured available width)", () => {
 });
 
 describe("epp-grid furniture auto-contrast", () => {
-	const SAMPLE_FURNITURE = {
-		id: "f1",
-		type: "icon" as const,
-		icon: "mdi:plant",
-		label: "Plant",
-		x: 100,
-		y: 100,
-		width: 300,
-		height: 300,
-		rotation: 0,
-		lockAspect: false,
-	};
-
 	it("passes an auto-contrast colour + halo when a room colour is set", async () => {
 		const el = createGrid();
 		el.furniture = [SAMPLE_FURNITURE];

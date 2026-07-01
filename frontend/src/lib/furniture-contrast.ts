@@ -56,6 +56,11 @@ export function isRgbTriple(v: unknown): v is [number, number, number] {
 	);
 }
 
+/** Precomputed luminance of the two fixed tones — they never change, so there's
+ *  no need to recompute them on every call. */
+const LIGHT_TONE_LUM = relativeLuminance(LIGHT_TONE);
+const DARK_TONE_LUM = relativeLuminance(DARK_TONE);
+
 /** Pick the furniture tone (and its colour + halo CSS) that contrasts best with
  *  `rgb`: light furniture on dark rooms, dark furniture on light rooms. */
 export function furnitureContrast(rgb: [number, number, number]): {
@@ -64,8 +69,8 @@ export function furnitureContrast(rgb: [number, number, number]): {
 	halo: string;
 } {
 	const bg = relativeLuminance(rgb);
-	const lightRatio = contrastRatio(bg, relativeLuminance(LIGHT_TONE));
-	const darkRatio = contrastRatio(bg, relativeLuminance(DARK_TONE));
+	const lightRatio = contrastRatio(bg, LIGHT_TONE_LUM);
+	const darkRatio = contrastRatio(bg, DARK_TONE_LUM);
 	const tone: FurnitureTone = lightRatio >= darkRatio ? "light" : "dark";
 	return { tone, ...FURNITURE_TONE_CSS[tone] };
 }
