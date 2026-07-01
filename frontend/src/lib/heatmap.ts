@@ -25,6 +25,28 @@ export const CELL_BG_BEYOND_MAX_RANGE =
 	"repeating-linear-gradient(45deg, transparent, transparent 3px, rgba(0,0,0,0.13) 3px, rgba(0,0,0,0.13) 4px), repeating-linear-gradient(-45deg, transparent, transparent 3px, rgba(0,0,0,0.13) 3px, rgba(0,0,0,0.13) 4px), #fff";
 
 /**
+ * Fraction (percent) of neutral grey mixed into the room colour for the faded
+ * "in room but no sensor coverage" fill used by the overview card. Small =
+ * faint, so the room still reads as a single rectangle.
+ */
+export const OUT_OF_COVERAGE_WASH_PCT = 12;
+
+/**
+ * Faded fill for an in-room cell the sensor can't cover (outside the 120° cone
+ * or beyond the configured max range). The rest-of-room colour tinted toward a
+ * neutral grey — the room reads as one clean rectangle while the cell clearly
+ * carries no coverage. Fades the room base, never a painted zone colour.
+ *
+ * Mixing toward a fixed neutral grey darkens a light room and lightens a dark
+ * room, reading as "inactive" in either theme.
+ *
+ * @param roomColor Rest-of-room fill (defaults to the theme card background).
+ */
+export function fadedRoomColor(roomColor: string = CELL_COLOR_ROOM): string {
+	return `color-mix(in srgb, ${roomColor} ${100 - OUT_OF_COVERAGE_WASH_PCT}%, #808080)`;
+}
+
+/**
  * Get the CSS color for a grid cell.
  *
  * - Outside cells: secondary background color
