@@ -483,23 +483,6 @@ describe("computeFurnitureResize", () => {
 			expect(result.y).toBeCloseTo(800);
 		});
 
-		it("handles diagonal corner (se)", () => {
-			const result = computeFurnitureResize(
-				"se",
-				29,
-				29,
-				28,
-				0,
-				0,
-				600,
-				400,
-				false,
-				0,
-			);
-			expect(result.width).toBeCloseTo(900); // 600 + 300
-			expect(result.height).toBeCloseTo(700); // 400 + 300
-		});
-
 		it("enforces minimum size of 100mm", () => {
 			const result = computeFurnitureResize(
 				"e",
@@ -654,6 +637,44 @@ describe("computeFurnitureResize", () => {
 					expect(r.height).toBeCloseTo(200, 0);
 				});
 			}
+		});
+	});
+
+	describe("unlocked corner resizes proportionally", () => {
+		it("keeps aspect ratio when dragging the se corner of an unlocked item", () => {
+			const result = computeFurnitureResize(
+				"se",
+				29,
+				0,
+				28,
+				0,
+				0,
+				600,
+				400,
+				false, // unlocked — corner is still proportional
+				0,
+			);
+			// Dominant axis is x (dxMm≈300), aspect 1.5 → w=900, h=600.
+			expect(result.width).toBeCloseTo(900, 0);
+			expect(result.height).toBeCloseTo(600, 0);
+			expect(result.width / result.height).toBeCloseTo(600 / 400, 4);
+		});
+
+		it("stretches one axis when dragging the e edge of an unlocked item", () => {
+			const result = computeFurnitureResize(
+				"e",
+				29,
+				0,
+				28,
+				0,
+				0,
+				600,
+				400,
+				false,
+				0,
+			);
+			expect(result.width).toBeCloseTo(900, 0);
+			expect(result.height).toBe(400); // edge = single axis, height unchanged
 		});
 	});
 

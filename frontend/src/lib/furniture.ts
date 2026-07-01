@@ -217,7 +217,7 @@ export function isProportionalResize(
  * @param origY Original Y position (mm, top-left of unrotated bounding box)
  * @param origW Original width (mm)
  * @param origH Original height (mm)
- * @param lockAspect Whether to lock the aspect ratio
+ * @param hardLock Whether the item is aspect-locked (never distortable)
  * @param rotationDeg Item rotation in degrees (CW, matches CSS transform)
  * @returns Updated { x, y, width, height }
  */
@@ -230,7 +230,7 @@ export function computeFurnitureResize(
 	origY: number,
 	origW: number,
 	origH: number,
-	lockAspect: boolean,
+	hardLock: boolean,
 	rotationDeg: number,
 ): { x: number; y: number; width: number; height: number } {
 	// Inverse-rotate the screen-space pointer delta into the item's local
@@ -251,7 +251,7 @@ export function computeFurnitureResize(
 	let w = origW;
 	let h = origH;
 
-	if (lockAspect) {
+	if (isProportionalResize(handle, hardLock)) {
 		// Uniform scale from the dominant axis (in local frame), signed by
 		// THAT axis's own edge sign so dragging outward always grows and
 		// inward always shrinks. A blanket "any negative edge → -1" would
