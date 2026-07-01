@@ -127,6 +127,21 @@ describe("epp-furniture-overlay DOM rendering", () => {
 		document.body.removeChild(c);
 	});
 
+	it("renders all 8 resize handles for a mid-size item (~97px, above the 88px threshold)", () => {
+		// 1000mm at cellPx=28 → ~97px short side: below the earlier 120px
+		// threshold (would have shown corners only) but above the current
+		// 88px threshold, so edge handles now appear.
+		const el = createOverlay({
+			furniture: [{ ...LARGE_FURNITURE, width: 1000, height: 1000 }],
+			selectedFurnitureId: "f1",
+		});
+		const c = renderTo((el as any).render());
+
+		expect(c.querySelectorAll(".furn-handle").length).toBe(8);
+
+		document.body.removeChild(c);
+	});
+
 	it("renders only the 4 corner handles for a small item", () => {
 		const el = createOverlay({
 			furniture: [SAMPLE_FURNITURE], // ~77px, below EDGE_HANDLE_MIN_PX

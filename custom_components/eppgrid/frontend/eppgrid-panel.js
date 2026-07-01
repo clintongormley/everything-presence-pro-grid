@@ -1906,7 +1906,7 @@ const de={attribute:!0,type:String,converter:w,reflect:!1,hasChanged:v},pe=(e=de
 									</svg>`:N`<ha-icon icon="${i.icon}" style="--mdc-icon-size: ${.6*Math.min(o,a)}px;"></ha-icon>`}
 							${n?N`
 										<!-- Resize handles (cursor follows visual rotation) -->
-										${(l=i.lockAspect,c=Math.min(o,a)<120,l||c?gs:As).map(e=>N`
+										${(l=i.lockAspect,c=Math.min(o,a)<88,l||c?gs:As).map(e=>N`
 												<div
 													class="furn-handle furn-handle-${e}"
 													style="cursor: ${function(e,t){const i=e.includes("e")?1:e.includes("w")?-1:0,s=e.includes("s")?1:e.includes("n")?-1:0,r=((180*Math.atan2(i,-s)/Math.PI+t)%180+180)%180;switch(45*Math.round(r/45)%180){case 0:return"ns-resize";case 45:return"nesw-resize";case 90:return"ew-resize";default:return"nwse-resize"}}(e,i.rotation)};"

@@ -65,7 +65,7 @@ class Ge extends Fe{}Ge.directiveName="unsafeSVG",Ge.resultType=2;const We=(e=>(
 									</svg>`:W`<ha-icon icon="${o.icon}" style="--mdc-icon-size: ${.6*Math.min(n,s)}px;"></ha-icon>`}
 							${a?W`
 										<!-- Resize handles (cursor follows visual rotation) -->
-										${(l=o.lockAspect,c=Math.min(n,s)<120,l||c?Ve:je).map(e=>W`
+										${(l=o.lockAspect,c=Math.min(n,s)<88,l||c?Ve:je).map(e=>W`
 												<div
 													class="furn-handle furn-handle-${e}"
 													style="cursor: ${function(e,t){const o=e.includes("e")?1:e.includes("w")?-1:0,r=e.includes("s")?1:e.includes("n")?-1:0,i=((180*Math.atan2(o,-r)/Math.PI+t)%180+180)%180;switch(45*Math.round(i/45)%180){case 0:return"ns-resize";case 45:return"nesw-resize";case 90:return"ew-resize";default:return"nwse-resize"}}(e,o.rotation)};"
