@@ -33,7 +33,9 @@ export const FURNITURE_TONE_CSS: Record<
 /** WCAG relative luminance of an sRGB colour (0 = black … 1 = white). */
 export function relativeLuminance([r, g, b]: [number, number, number]): number {
 	const lin = (c: number): number => {
-		const s = c / 255;
+		// Clamp to [0, 1] so out-of-range channels (hand-written config can supply
+		// them) match how CSS clamps rgb() when it renders the background.
+		const s = Math.min(1, Math.max(0, c / 255));
 		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
 	};
 	return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);

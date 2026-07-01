@@ -3,7 +3,11 @@ import { property, state } from "lit/decorators.js";
 import { MAX_TARGETS, TARGET_COLORS } from "../constants.js";
 import { mapTargetToGridCell, targetCellIndex } from "../lib/coordinates.js";
 import type { FurnitureItem } from "../lib/furniture.js";
-import { furnitureContrast, isRgbTriple } from "../lib/furniture-contrast.js";
+import {
+	FURNITURE_TONE_CSS,
+	furnitureContrast,
+	isRgbTriple,
+} from "../lib/furniture-contrast.js";
 import {
 	CELL_OVERLAY_ENTRY,
 	CELL_OVERLAY_INTERFERENCE,
@@ -852,8 +856,7 @@ export class EppGrid extends LitElement {
 				.visRows=${visRows}
 				.sidebarTab=${this.sidebarTab}
 				.localize=${this.localize}
-				.furnitureColor=${fc?.color}
-				.furnitureHalo=${fc?.halo}
+				.furnitureTone=${fc ? FURNITURE_TONE_CSS[fc.tone] : undefined}
 			></epp-furniture-overlay>
 		`;
 	}

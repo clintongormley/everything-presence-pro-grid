@@ -19,10 +19,13 @@ export class EppFurnitureOverlay extends LitElement {
 	@property({ type: Number }) visRows = 20;
 	@property({ attribute: false }) sidebarTab: SidebarTab = "zones";
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
-	// Auto-contrast furniture styling, derived by the grid from the room colour
-	// via furnitureContrast(): set together (both, or neither).
-	@property({ attribute: false }) furnitureColor?: string;
-	@property({ attribute: false }) furnitureHalo?: string;
+	// Auto-contrast furniture styling (colour + outline), derived by the grid from
+	// the room colour. A single object so colour and halo are atomically
+	// both-or-neither — never a partial state.
+	@property({ attribute: false }) furnitureTone?: {
+		color: string;
+		halo: string;
+	};
 
 	static styles = css`
 		:host {
@@ -264,13 +267,10 @@ export class EppFurnitureOverlay extends LitElement {
 		const step = this.cellPx + 1;
 
 		const interactive = this.sidebarTab === "furniture";
-		const overlayVars =
-			(this.furnitureColor
-				? `--epp-furniture-color:${this.furnitureColor};`
-				: "") +
-			(this.furnitureHalo
-				? `--epp-furniture-halo-color:${this.furnitureHalo};`
-				: "");
+		const tone = this.furnitureTone;
+		const overlayVars = tone
+			? `--epp-furniture-color:${tone.color};--epp-furniture-halo-color:${tone.halo};`
+			: "";
 		return html`
 			<div
 				class="furniture-overlay ${interactive ? "" : "non-interactive"}"
@@ -286,7 +286,7 @@ export class EppFurnitureOverlay extends LitElement {
 					return html`
 						<div
 							class="furniture-item${selected ? " selected" : ""}${
-								this.furnitureHalo ? " has-halo" : ""
+								tone ? " has-halo" : ""
 							}"
 							data-id="${item.id}"
 							style="

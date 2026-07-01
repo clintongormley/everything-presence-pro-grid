@@ -1756,8 +1756,7 @@ describe("epp-grid furniture auto-contrast", () => {
 			"epp-furniture-overlay",
 		) as any;
 		expect(overlay).not.toBeNull();
-		expect(overlay.furnitureColor).toBe(FURNITURE_TONE_CSS.light.color);
-		expect(overlay.furnitureHalo).toBe(FURNITURE_TONE_CSS.light.halo);
+		expect(overlay.furnitureTone).toBe(FURNITURE_TONE_CSS.light);
 
 		document.body.removeChild(el);
 	});
@@ -1771,8 +1770,7 @@ describe("epp-grid furniture auto-contrast", () => {
 		const overlay = el.shadowRoot!.querySelector(
 			"epp-furniture-overlay",
 		) as any;
-		expect(overlay.furnitureColor).toBeUndefined();
-		expect(overlay.furnitureHalo).toBeUndefined();
+		expect(overlay.furnitureTone).toBeUndefined();
 
 		document.body.removeChild(el);
 	});
