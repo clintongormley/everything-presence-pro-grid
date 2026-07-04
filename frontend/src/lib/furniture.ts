@@ -93,16 +93,30 @@ export function updateFurnitureItem(
 /**
  * Convert mm in room-space to px in the visible grid.
  *
+ * A grid cell occupies `cellPx + gap` pixels: the cell plus the inter-cell
+ * gap the grid draws between cells. `gap` is 1px in gridline mode but 0 in the
+ * clean-map card (where the grid sets `gap: 0`), so callers pass the grid's
+ * actual gap to stay on the same pitch as the cells underneath.
+ *
  * @param mm Distance in millimetres
  * @param cellPx Width of a grid cell in pixels
+ * @param gap Inter-cell gap in pixels (default 1, the gridline gap)
  * @returns Distance in pixels
  */
-export function mmToPx(mm: number, cellPx: number): number {
-	return (mm / GRID_CELL_MM) * (cellPx + 1); // +1 for gap
+export function mmToPx(mm: number, cellPx: number, gap = 1): number {
+	return (mm / GRID_CELL_MM) * (cellPx + gap);
 }
 
 /**
- * Convert px delta back to mm.
+ * Convert a px delta back to mm.
+ *
+ * Assumes the 1px gridline gap (pitch `cellPx + 1`). Unlike `mmToPx`, this
+ * deliberately takes no `gap` argument: its only callers are the drag/resize
+ * helpers (`clampFurnitureMove`, `computeFurnitureResize`), and every grid that
+ * wires furniture dragging renders with gridlines (gap=1). The only clean-map
+ * grid (`gap: 0`) is the display-only card, whose overlay is non-interactive,
+ * so no drag ever converts against a 0px gap. If a plain-mode *draggable*
+ * surface is ever added, thread the grid's real gap here like `mmToPx` does.
  *
  * @param px Distance in pixels
  * @param cellPx Width of a grid cell in pixels

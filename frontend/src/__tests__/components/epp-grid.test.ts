@@ -810,6 +810,31 @@ describe("epp-grid furniture overlay", () => {
 		document.body.removeChild(el);
 	});
 
+	// The overlay must scale on the SAME inter-cell pitch as the grid it sits
+	// over: in clean-map (plain) mode the grid gap collapses to 0, otherwise
+	// it's the 1px gridline gap. The grid threads its own gap down as `gapPx`.
+	for (const [plain, expectedGap] of [
+		[true, 0],
+		[false, 1],
+	] as const) {
+		it(`passes gapPx=${expectedGap} to the overlay when plain=${plain}`, async () => {
+			const el = createGrid({
+				furniture: [SAMPLE_FURNITURE],
+				sidebarTab: "furniture",
+				plain,
+			});
+			document.body.appendChild(el);
+			await el.updateComplete;
+
+			const overlay = el.shadowRoot!.querySelector(
+				"epp-furniture-overlay",
+			) as any;
+			expect(overlay.gapPx).toBe(expectedGap);
+
+			document.body.removeChild(el);
+		});
+	}
+
 	it("re-emits furniture-select event", async () => {
 		const el = createGrid({
 			furniture: [SAMPLE_FURNITURE],

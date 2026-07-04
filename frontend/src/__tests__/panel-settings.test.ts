@@ -107,6 +107,21 @@ describe("mmToPx and pxToMm (lib/furniture)", () => {
 		const mm = pxToMm(29, 28);
 		expect(mm).toBeCloseTo(300, 0);
 	});
+
+	// The 1px gap mmToPx adds is the grid's inter-cell gap. In the clean-map
+	// card the grid collapses that gap to 0 (gap: 0), so the true per-cell pitch
+	// is cellPx, not cellPx+1. The `gap` argument lets the overlay convert
+	// against the grid's actual pitch instead of assuming 1px. (pxToMm has no
+	// gap arg — its drag-path callers are editor-only, always gridlined.)
+	it("mmToPx scales by cellPx alone when gap is 0 (clean-map pitch)", () => {
+		// gap=0: 300mm at cellPx=28 -> (300/300) * 28 = 28
+		expect(mmToPx(300, 28, 0)).toBeCloseTo(28, 5);
+	});
+
+	it("defaults to a 1px gap when gap is omitted (back-compat)", () => {
+		expect(mmToPx(300, 28)).toBeCloseTo(29, 5);
+		expect(pxToMm(29, 28)).toBeCloseTo(300, 5);
+	});
 });
 
 describe("_onCellMouseEnter", () => {

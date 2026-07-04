@@ -536,7 +536,7 @@ export class EppGrid extends LitElement {
 				>
 					${this._renderVisibleCells(scan.status, minCol, maxCol, minRow, maxRow, cellPx, scan.rawBounds)}
 				</div>
-				${this._renderFurnitureOverlay(cellPx, minCol, minRow, visCols, visRows)}
+				${this._renderFurnitureOverlay(cellPx, gapPx, minCol, minRow, visCols, visRows)}
 				${this._renderTargetDots(minCol, maxCol, minRow, maxRow, visCols, visRows)}
 				${this._renderHeatmap(cellPx, minCol, minRow, visCols, visRows)}
 			</div>
@@ -1034,6 +1034,7 @@ export class EppGrid extends LitElement {
 
 	private _renderFurnitureOverlay(
 		cellPx: number,
+		gapPx: number,
 		minCol: number,
 		minRow: number,
 		visCols: number,
@@ -1044,12 +1045,15 @@ export class EppGrid extends LitElement {
 		// The overlay's furniture-* events are `composed: true` and bubble
 		// straight through this component's shadow boundary to the panel —
 		// no stopPropagation/re-dispatch pass-through wrappers needed.
+		// gapPx is the grid's inter-cell gap (0 in clean-map mode) so furniture
+		// maps mm on the same pitch as the cells it overlays.
 		return html`
 			<epp-furniture-overlay
 				.furniture=${this.furniture}
 				.selectedFurnitureId=${this.selectedFurnitureId}
 				.roomWidth=${this.roomWidth}
 				.cellPx=${cellPx}
+				.gapPx=${gapPx}
 				.minCol=${minCol}
 				.minRow=${minRow}
 				.visCols=${visCols}

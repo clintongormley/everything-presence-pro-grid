@@ -24,6 +24,10 @@ export class EppFurnitureOverlay extends LitElement {
 	@property({ attribute: false }) selectedFurnitureId: string | null = null;
 	@property({ type: Number }) roomWidth = 3000;
 	@property({ type: Number }) cellPx = 28;
+	// The grid's inter-cell gap in px. Furniture maps a cell to `cellPx + gapPx`
+	// so it stays on the grid's pitch: 1px with gridlines, 0 in the clean-map
+	// card (grid `gap: 0`). Defaults to 1 to match gridline mode.
+	@property({ type: Number }) gapPx = 1;
 	@property({ type: Number }) minCol = 0;
 	@property({ type: Number }) minRow = 0;
 	@property({ type: Number }) visCols = 20;
@@ -239,7 +243,7 @@ export class EppFurnitureOverlay extends LitElement {
 	`;
 
 	private _mmToPx(mm: number): number {
-		return mmToPx(mm, this.cellPx);
+		return mmToPx(mm, this.cellPx, this.gapPx);
 	}
 
 	private _fireEvent(name: string, detail?: any): void {
@@ -306,7 +310,7 @@ export class EppFurnitureOverlay extends LitElement {
 		if (!this.furniture.length) return nothing;
 
 		const startCol = roomStartCol(this.roomWidth);
-		const step = this.cellPx + 1;
+		const step = this.cellPx + this.gapPx;
 
 		const interactive = this.sidebarTab === "furniture";
 		return html`

@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import "../../components/epp-furniture-overlay.js";
 import type { EppFurnitureOverlay } from "../../components/epp-furniture-overlay.js";
 import type { FurnitureItem } from "../../lib/furniture.js";
+import { roomStartCol } from "../../lib/grid.js";
 
 function renderTo(tpl: any): HTMLDivElement {
 	const container = document.createElement("div");
@@ -279,6 +280,55 @@ describe("epp-furniture-overlay DOM rendering", () => {
 			expect(item.style.transform).toContain("rotate(0deg)");
 		}
 
+		document.body.removeChild(c);
+	});
+});
+
+describe("epp-furniture-overlay gap-aware scaling (clean-map plain mode)", () => {
+	// The grid maps a real-world cell to `cellPx + gap` pixels: gap is 1px in
+	// gridline mode but 0 in the clean-map card (grid gap: 0). The overlay must
+	// use the SAME pitch as the grid it sits over, else furniture is scaled by
+	// (cellPx+1)/cellPx — an error of 1/cellPx that grows on small cards and
+	// makes furniture "scale differently" as the card resizes.
+	it("sizes furniture by cellPx alone when gapPx is 0", () => {
+		const el = createOverlay({
+			furniture: [SAMPLE_FURNITURE],
+			cellPx: 28,
+			gapPx: 0,
+		});
+		const c = renderTo((el as any).render());
+		const item = c.querySelector(".furniture-item") as HTMLElement;
+		// 800mm / 300 * 28 = 74.6667 (NOT * 29 = 77.33)
+		expect(parseFloat(item.style.width)).toBeCloseTo((800 / 300) * 28, 1);
+		expect(parseFloat(item.style.height)).toBeCloseTo((800 / 300) * 28, 1);
+		document.body.removeChild(c);
+	});
+
+	it("positions furniture on the cellPx pitch (step + mm offset) when gapPx is 0", () => {
+		// left = (startCol - minCol) * step + mmToPx(item.x); with gapPx=0 BOTH
+		// the step term and the in-room mm term must use pitch cellPx (28), not 29.
+		const startCol = roomStartCol(3000);
+		const el = createOverlay({
+			furniture: [{ ...SAMPLE_FURNITURE, x: 600, y: 0 }],
+			cellPx: 28,
+			gapPx: 0,
+			minCol: 0,
+			minRow: 0,
+			roomWidth: 3000,
+		});
+		const c = renderTo((el as any).render());
+		const item = c.querySelector(".furniture-item") as HTMLElement;
+		// step = 28; mmToPx(600, 28, 0) = (600/300) * 28 = 56
+		expect(parseFloat(item.style.left)).toBeCloseTo(startCol * 28 + 56, 1);
+		document.body.removeChild(c);
+	});
+
+	it("defaults to a 1px gap (cellPx+1 pitch) when gapPx is unset", () => {
+		const el = createOverlay({ furniture: [SAMPLE_FURNITURE], cellPx: 28 });
+		const c = renderTo((el as any).render());
+		const item = c.querySelector(".furniture-item") as HTMLElement;
+		// 800mm / 300 * 29 = 77.33
+		expect(parseFloat(item.style.width)).toBeCloseTo((800 / 300) * 29, 1);
 		document.body.removeChild(c);
 	});
 });
