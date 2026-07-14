@@ -1980,11 +1980,13 @@ describe("epp-grid cell sizing (measured available width)", () => {
 		expect(measureSpy).not.toHaveBeenCalled();
 	});
 
-	// #338: the live-overview panel grows this reserve while the detection-events
-	// log is expanded so the map shrinks instead of the log being pushed off
-	// the bottom of the viewport. The zone editor never sets it, so the default
-	// must stay the historical 130px reserve every other caller relies on.
-	it("defaults heightReservePx to the desktop reserve constant (kept for the zone editor)", () => {
+	// #338: the live-overview panel and the zone editor both grow this reserve
+	// while the detection-events log is expanded so the map shrinks instead of
+	// the log being pushed off the bottom of the viewport. The default stays
+	// the historical 130px reserve as the sane fallback for a bare `<epp-grid>`
+	// with no caller-supplied budget, and for the overview card, which renders
+	// with `.fill` and so never consults the height budget at all.
+	it("defaults heightReservePx to the desktop reserve constant (fallback for a bare epp-grid / the fill-mode card)", () => {
 		const el = createGrid();
 		expect(el.heightReservePx).toBe(130);
 		expect(el.heightReservePx).toBe(DESKTOP_HEIGHT_RESERVE_PX);

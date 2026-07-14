@@ -129,11 +129,15 @@ export class EppGrid extends LitElement {
 	/**
 	 * Desktop-only: space (px) reserved below the grid for whatever the caller
 	 * renders there — see DESKTOP_HEIGHT_RESERVE_PX above for what the default
-	 * covers. The live-overview panel grows this while the detection-events log
-	 * is expanded (an extra block appears below the grid there), so the map
-	 * shrinks by exactly that amount instead of the log being pushed off the
-	 * bottom of the viewport (#338). The zone editor never sets this, so it
-	 * must keep defaulting to DESKTOP_HEIGHT_RESERVE_PX. Read in `_measureAvail`,
+	 * covers. Both the live-overview panel and the zone editor grow this while
+	 * the detection-events log is expanded (an extra block appears below the
+	 * grid there), so the map shrinks by exactly that amount instead of the
+	 * log being pushed off the bottom of the viewport (#338). The default
+	 * (DESKTOP_HEIGHT_RESERVE_PX) is the sane fallback for a bare `<epp-grid>`
+	 * with no caller-supplied budget, and for the overview card, which renders
+	 * with `.fill` and so never consults the height budget at all (`fill`
+	 * forces `availHeightPx` to 0 regardless of `heightReservePx`) — so the
+	 * default is never actually exercised there. Read in `_measureAvail`,
 	 * which already re-runs from `updated()` on every property change, so
 	 * setting this alone is enough to trigger a re-fit — no extra wiring needed.
 	 */

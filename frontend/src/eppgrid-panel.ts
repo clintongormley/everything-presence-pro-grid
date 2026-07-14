@@ -2395,8 +2395,11 @@ export class EPPGridPanel extends LitElement {
       }
       .debug-log-container {
         /* ~2 log entries (≈4 wrapped lines) before it scrolls — keeps the log
-           from shoving the rest of the panel down on a phone. */
-        max-height: 76px;
+           from shoving the rest of the panel down on a phone. A fixed height
+           (not max-height): this re-fixes the desktop rule's own fixed
+           height (99px) to a smaller mobile value, it doesn't cap a
+           growable box. */
+        height: 76px;
       }
     }
 
@@ -3170,6 +3173,14 @@ export class EPPGridPanel extends LitElement {
 			: toggle;
 	}
 
+	/** Height epp-grid must keep clear below the map: the base chrome, plus the
+	 *  detection log's block when it is expanded AND actually rendered (#338). */
+	private _gridHeightReserve(logRendered: boolean): number {
+		return logRendered
+			? DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX
+			: DESKTOP_HEIGHT_RESERVE_PX;
+	}
+
 	private _renderLiveGrid() {
 		// Pure render: last-in-room-position tracking for the pending-target
 		// display lives in TargetController.handleTargetData (per data frame),
@@ -3182,9 +3193,15 @@ export class EPPGridPanel extends LitElement {
 		// map shrinks instead of pushing the log off the bottom of the viewport.
 		// Collapsing it back returns the reserve to the base and the map
 		// reclaims the space (see epp-grid's heightReservePx property).
-		const heightReservePx = this._showBackendDebugLog
-			? DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX
-			: DESKTOP_HEIGHT_RESERVE_PX;
+		//
+		// `_showBackendDebugLog` alone is a safe "is the log rendered" proxy
+		// here (unlike `_renderEditor`, which needs its own `debugLogRendered`
+		// guard): `_renderLiveGrid` is only ever reached via the
+		// `this._perspective ? this._renderLiveGrid() : <epp-wizard …>` ternary
+		// in `_renderLiveOverview`, and the log there is gated on that same
+		// `this._perspective` check — so this can never run with the log
+		// showing but not actually rendered.
+		const heightReservePx = this._gridHeightReserve(this._showBackendDebugLog);
 		return html`
 			<epp-grid
 				.grid=${this._grid}
@@ -3527,22 +3544,22 @@ export class EPPGridPanel extends LitElement {
 		// `editorSensorState = { ...this._sensorState, occupancy, mmwave }`
 		// and pass it explicitly — never mutate `this._sensorState`.
 
-		// #338: mirrors _renderLiveGrid's heightReservePx fix. The debug log
-		// below the grid claims a fixed block of height when expanded, but is
-		// only actually rendered on desktop, on the zones/overlays tab (see the
-		// identical condition below, where `${...this._renderDebugLog()...}` is
-		// gated). `_showDebugLog` can be true while on the furniture tab (or on
-		// mobile) with the log not rendered there at all — reserving space for
-		// it in that case would shrink the map for nothing, leaving a dead gap.
-		// `debugLogRendered` is computed once and used for both the reserve and
-		// the markup below so the two conditions can never drift apart.
+		// #338: mirrors _renderLiveGrid's heightReservePx fix (see
+		// `_gridHeightReserve`), but unlike it, this needs its own
+		// `debugLogRendered` guard: the debug log is only actually rendered on
+		// desktop, on the zones/overlays tab (see the identical condition below,
+		// where `${...this._renderDebugLog()...}` is gated). `_showDebugLog` can
+		// be true while on the furniture tab (or on mobile) with the log not
+		// rendered there at all — reserving space for it in that case would
+		// shrink the map for nothing, leaving a dead gap. `debugLogRendered` is
+		// computed once and used for both the reserve and the markup below so
+		// the two conditions can never drift apart.
 		const debugLogRendered =
 			!this._isMobile &&
 			(this._sidebarTab === "zones" || this._sidebarTab === "overlays");
-		const heightReservePx =
-			debugLogRendered && this._showDebugLog
-				? DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX
-				: DESKTOP_HEIGHT_RESERVE_PX;
+		const heightReservePx = this._gridHeightReserve(
+			debugLogRendered && this._showDebugLog,
+		);
 
 		// The <epp-grid> element is identical between the desktop and mobile
 		// layouts — extract it once so both branches bind it verbatim. (The
