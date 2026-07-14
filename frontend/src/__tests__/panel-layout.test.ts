@@ -202,6 +202,26 @@ describe("layout styles", () => {
 		expect(rule).toContain("max-width: none");
 	});
 
+	it("grid-column owns its own scroll so the detection log stays reachable (#338)", () => {
+		// .tab-layout > .panel.panel--grid is deliberately overflow:hidden to bound
+		// the grid-hero panel to the viewport (so the sidebar sheet scrolls
+		// internally rather than the whole page growing). But the detection-events
+		// log lives inside .grid-column, below the grid card — NOT inside the
+		// sheet. With nothing between the log and the clipped panel able to
+		// scroll, expanding the log grows .grid-column past the viewport and it
+		// becomes permanently unreachable (measured live: 94px clipped, zero
+		// scrollable ancestors in the chain). overflow-y:auto only takes effect
+		// paired with min-height:0 — without it a flex item's default min-height
+		// is its content size, so it never shrinks enough to need its own
+		// scrollbar. Keep both; do not "simplify" this back to one property.
+		const css = layoutStyles.cssText;
+		const idx = css.indexOf(".editor-shell > .grid-column");
+		expect(idx).toBeGreaterThan(-1);
+		const rule = css.slice(idx, css.indexOf("}", idx));
+		expect(rule).toMatch(/overflow-y:\s*auto/);
+		expect(rule).toMatch(/min-height:\s*0/);
+	});
+
 	it("editor-shell stacks to a column below the breakpoint", () => {
 		const css = layoutStyles.cssText;
 		const mq = css.slice(css.indexOf("@media (max-width: 819px)"));

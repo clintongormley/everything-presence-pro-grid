@@ -522,6 +522,18 @@ export const layoutStyles = css`
     min-height: 0;
     display: flex;
     flex-direction: column;
+    /* .tab-layout > .panel.panel--grid is deliberately overflow:hidden to bound
+       the grid-hero panel to the viewport, so the sidebar sheet can scroll
+       internally instead of the whole page growing. But the detection-events
+       log lives here, in .grid-column below the grid card — not in the sheet.
+       With no scroll container between the log and the clipped panel,
+       expanding the log grows this column past the viewport and it becomes
+       permanently unreachable (#338). Own the scroll here, the same way the
+       sheet already owns its own. Paired with min-height:0 above — without
+       that this column can't shrink below its content height, so it never
+       needs its own scrollbar. Inert on mobile (below), where the media query
+       fixes this column to its natural height instead. */
+    overflow-y: auto;
   }
 
   /* Space the heatmap toggle off the bottom of the grid card. The grid column is
