@@ -6174,7 +6174,9 @@ const Js={},js=si(class extends ri{constructor(){super(...arguments),this.ot=Js}
            from shoving the rest of the panel down on a phone. A fixed height
            (not max-height): this re-fixes the desktop rule's own fixed
            height (99px) to a smaller mobile value, it doesn't cap a
-           growable box. */
+           growable box. NOTE: DETECTION_LOG_BLOCK_HEIGHT_PX assumes THIS
+           rule's desktop 99px, not this 76px — see that constant's comment
+           in the .ts source for why that's currently safe. */
         height: 76px;
       }
     }

@@ -150,6 +150,18 @@ export const DETECTION_LOG_CONTAINER_HEIGHT_PX = 99;
 // fonts): the block's rendered height went from 25px (collapsed, header row
 // only) to 142px (expanded) — a measured delta of 117px, matching
 // DETECTION_LOG_CONTAINER_HEIGHT_PX (99) + 18 exactly.
+//
+// DESKTOP-only value: it's derived from the desktop 99px container height
+// above, not the 76px the mobile media-query re-fixes `.debug-log-container`
+// to below. It is never recomputed for that breakpoint. That's safe today
+// only because heightReservePx (which this constant feeds) is dead on
+// mobile: both `_renderLiveGrid` and `_renderEditor` bind epp-grid's
+// `capHeightToHalfViewport` to `this._isMobile`, and `_measureAvail`'s
+// heightReservePx-based height budget only runs inside an
+// `if (!this.capHeightToHalfViewport)` guard — so on mobile the reserve is
+// never consulted. If mobile ever stops setting capHeightToHalfViewport,
+// this constant must become breakpoint-aware, or it will over-reserve by
+// 23px (99 - 76) on every phone.
 export const DETECTION_LOG_BLOCK_HEIGHT_PX =
 	DETECTION_LOG_CONTAINER_HEIGHT_PX + 18;
 
@@ -2398,7 +2410,9 @@ export class EPPGridPanel extends LitElement {
            from shoving the rest of the panel down on a phone. A fixed height
            (not max-height): this re-fixes the desktop rule's own fixed
            height (99px) to a smaller mobile value, it doesn't cap a
-           growable box. */
+           growable box. NOTE: DETECTION_LOG_BLOCK_HEIGHT_PX assumes THIS
+           rule's desktop 99px, not this 76px — see that constant's comment
+           in the .ts source for why that's currently safe. */
         height: 76px;
       }
     }
@@ -3174,7 +3188,19 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	/** Height epp-grid must keep clear below the map: the base chrome, plus the
-	 *  detection log's block when it is expanded AND actually rendered (#338). */
+	 *  detection log's block when it is expanded AND actually rendered (#338).
+	 *
+	 *  KNOWN PRE-EXISTING OVER-RESERVE (not a #338 regression — the editor
+	 *  used the DESKTOP_HEIGHT_RESERVE_PX default before this branch too):
+	 *  on the editor's Furniture tab, `logRendered` is always false (see the
+	 *  `debugLogRendered` gate in `_renderEditor`, which excludes "furniture"),
+	 *  and that tab renders only the heatmap toggle below the grid — no log
+	 *  toggle row at all. DESKTOP_HEIGHT_RESERVE_PX (130) was sized to also
+	 *  cover the log toggle row, so on the Furniture tab it over-reserves by
+	 *  roughly that row's height (~25px), leaving the map ~25px smaller than
+	 *  it needs to be there. Cosmetic; left alone here as out of scope —
+	 *  fixing it means giving the base reserve its own tab-aware value, which
+	 *  needs its own measurement. */
 	private _gridHeightReserve(logRendered: boolean): number {
 		return logRendered
 			? DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX

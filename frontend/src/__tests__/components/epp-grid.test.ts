@@ -2001,10 +2001,20 @@ describe("epp-grid cell sizing (measured available width)", () => {
 			._availHeightPx;
 		expect(collapsed).toBeGreaterThan(0);
 
-		// Simulate the panel expanding the detection-events log: it passes a
-		// larger heightReservePx (base + the log block's height). The property
-		// change alone must trigger Lit's `updated()` → `_measureAvail()` — no
-		// extra wiring needed on top of the existing lifecycle.
+		// Simulate the panel growing heightReservePx the way it does while the
+		// detection-events log is expanded (base + the log block's height). The
+		// property change alone must trigger Lit's `updated()` → `_measureAvail()`
+		// — no extra wiring needed on top of the existing lifecycle.
+		//
+		// `delta` is deliberately arbitrary, NOT `DETECTION_LOG_BLOCK_HEIGHT_PX`
+		// (defined in eppgrid-panel.ts): this test pins the *mechanism* — that
+		// any change to `heightReservePx` moves `_availHeightPx` by the same
+		// amount — not the constant's current value. Importing the real
+		// constant here would couple this component-level test's module graph
+		// to the whole panel (dialogs, wizard, flasher-view, device-setup, …
+		// all import-reachable from eppgrid-panel.ts), which measurably slows
+		// this file down for no behavioural gain. If the constant's value ever
+		// needs pinning, do it in an eppgrid-panel test instead.
 		const delta = 252;
 		el.heightReservePx = DESKTOP_HEIGHT_RESERVE_PX + delta;
 		await el.updateComplete;
