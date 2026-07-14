@@ -63,8 +63,9 @@ const DESKTOP_MIN_HEIGHT_PX = 200;
 
 // Space (px) reserved below the grid on desktop for the dimensions caption +
 // the detection-log toggle, so a height-bounded grid doesn't push them off the
-// bottom of the viewport.
-const DESKTOP_HEIGHT_RESERVE_PX = 130;
+// bottom of the viewport. Exported as the default for `heightReservePx` below
+// so callers (and tests) can reference it instead of a duplicated literal.
+export const DESKTOP_HEIGHT_RESERVE_PX = 130;
 
 export class EppGrid extends LitElement {
 	@property({ attribute: false }) grid: Uint8Array = new Uint8Array(0);
@@ -125,6 +126,18 @@ export class EppGrid extends LitElement {
 	 * panel below it always has room. Desktop leaves this false → no height cap.
 	 */
 	@property({ type: Boolean }) capHeightToHalfViewport = false;
+	/**
+	 * Desktop-only: space (px) reserved below the grid for whatever the caller
+	 * renders there — see DESKTOP_HEIGHT_RESERVE_PX above for what the default
+	 * covers. The live-overview panel grows this while the detection-events log
+	 * is expanded (an extra block appears below the grid there), so the map
+	 * shrinks by exactly that amount instead of the log being pushed off the
+	 * bottom of the viewport (#338). The zone editor never sets this, so it
+	 * must keep defaulting to DESKTOP_HEIGHT_RESERVE_PX. Read in `_measureAvail`,
+	 * which already re-runs from `updated()` on every property change, so
+	 * setting this alone is enough to trigger a re-fit — no extra wiring needed.
+	 */
+	@property({ type: Number }) heightReservePx = DESKTOP_HEIGHT_RESERVE_PX;
 	/** Map of target index → dismissed cell index (ephemeral, not persisted) */
 	@property({ attribute: false }) dismissedTargets: Map<number, number> =
 		new Map();
@@ -278,9 +291,7 @@ export class EppGrid extends LitElement {
 		// bottom so a tall room can't overflow. Mobile uses capHeightToHalfViewport.
 		if (!this.capHeightToHalfViewport) {
 			const top = this.getBoundingClientRect().top;
-			const avail = Math.floor(
-				window.innerHeight - top - DESKTOP_HEIGHT_RESERVE_PX,
-			);
+			const avail = Math.floor(window.innerHeight - top - this.heightReservePx);
 			if (avail > 0 && Math.abs(avail - this._availHeightPx) >= 1)
 				this._availHeightPx = avail;
 		}

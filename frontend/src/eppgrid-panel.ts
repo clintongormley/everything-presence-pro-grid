@@ -1,4 +1,11 @@
-import { css, html, LitElement, nothing, type PropertyValues } from "lit";
+import {
+	css,
+	html,
+	LitElement,
+	nothing,
+	type PropertyValues,
+	unsafeCSS,
+} from "lit";
 import { property, state } from "lit/decorators.js";
 
 import "./ui/index.js";
@@ -7,6 +14,7 @@ import "./components/epp-device-setup.js";
 import "./components/epp-flasher-view.js";
 import "./components/epp-furniture-sidebar.js";
 import "./components/epp-grid.js";
+import { DESKTOP_HEIGHT_RESERVE_PX } from "./components/epp-grid.js";
 import "./components/epp-kebab-menu.js";
 import "./components/epp-language-banner.js";
 import "./components/epp-live-sidebar.js";
@@ -105,6 +113,28 @@ import { tokens } from "./ui/tokens.js";
 // for the newly added device to appear in the device list.
 const DEVICE_WAIT_MAX_ATTEMPTS = 30;
 const DEVICE_WAIT_DELAY_MS = 1000;
+
+// #338: expanding the detection-events log on the live-overview view rendered
+// it below the grid card in `.grid-column`, but epp-grid's height budget
+// (`_measureAvail`) only ever reserved room for the collapsed toggle — an
+// expanded log landed off the bottom of the viewport with nothing able to
+// scroll to it. The fix: give the log a FIXED (not max-) height so the extra
+// space it claims is exact, and grow epp-grid's `heightReservePx` by that
+// amount while the log is open (see `_renderLiveGrid`) so the map shrinks by
+// exactly the log's height instead.
+//
+// Fixed height (px) of `.debug-log-container` when the log is expanded —
+// single-sourced into the CSS below via `unsafeCSS` so the two can't drift.
+export const DETECTION_LOG_CONTAINER_HEIGHT_PX = 200;
+// Total extra height (px) the detection-events log's block adds below the
+// grid card when expanded: the container above (height + its 1px border ×2 +
+// 6px padding ×2 + its own 4px top margin) plus the block's always-rendered
+// header row (toggle button + copy/clear actions, ~25px) and the block's own
+// 8px top margin. Measured against the real markup/CSS in
+// `_renderDebugLogSection` / `.debug-log-container` in a real browser
+// (Chromium, default fonts): 214 + 4 + 25 + 8 ≈ 251px, rounded up to 252 for
+// headroom. Added on top of epp-grid's base DESKTOP_HEIGHT_RESERVE_PX.
+export const DETECTION_LOG_BLOCK_HEIGHT_PX = 252;
 
 // Content hash of the running bundle, read from its own content-hashed URL
 // (`/eppgrid_static/<hash>/eppgrid-panel.js`). Compared against the server's
@@ -2188,7 +2218,12 @@ export class EPPGridPanel extends LitElement {
 
     .debug-log-container {
       margin-top: 4px;
-      max-height: 200px;
+      /* A fixed height (previously capped, not fixed) so the extra viewport
+         space this claims when expanded is exact rather than approximate
+         (#338) — see DETECTION_LOG_BLOCK_HEIGHT_PX, which epp-grid's
+         heightReservePx is grown by while the log is open. Still scrolls
+         internally via overflow-y below, exactly as it did before. */
+      height: ${unsafeCSS(DETECTION_LOG_CONTAINER_HEIGHT_PX)}px;
       overflow-y: auto;
       overflow-x: hidden;
       background: var(--card-background-color, #1e1e1e);
@@ -3123,6 +3158,16 @@ export class EPPGridPanel extends LitElement {
 		// display lives in TargetController.handleTargetData (per data frame),
 		// and the backend occupancy map is passed through by reference so
 		// epp-grid's dirty-check only fires on real zone-state frames.
+		//
+		// #338: the detection-events log (_renderBackendDebugLog, rendered below
+		// this element in `.grid-column`) claims an extra fixed block of height
+		// when expanded. Grow the grid's reserve by exactly that amount so the
+		// map shrinks instead of pushing the log off the bottom of the viewport.
+		// Collapsing it back returns the reserve to the base and the map
+		// reclaims the space (see epp-grid's heightReservePx property).
+		const heightReservePx = this._showBackendDebugLog
+			? DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX
+			: DESKTOP_HEIGHT_RESERVE_PX;
 		return html`
 			<epp-grid
 				.grid=${this._grid}
@@ -3130,6 +3175,7 @@ export class EPPGridPanel extends LitElement {
 				.targets=${this._targets}
 				.roomWidth=${this._roomWidth}
 				.roomDepth=${this._roomDepth}
+				.heightReservePx=${heightReservePx}
 				.perspective=${this._perspective}
 				.furniture=${this._furniture}
 				.selectedFurnitureId=${this._selectedFurnitureId}

@@ -2,6 +2,10 @@ import { html, nothing, render } from "lit";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
+import {
+	DETECTION_LOG_BLOCK_HEIGHT_PX,
+	DETECTION_LOG_CONTAINER_HEIGHT_PX,
+} from "../eppgrid-panel.js";
 import "../components/epp-live-sidebar.js";
 import "../components/epp-zone-sidebar.js";
 import "../components/epp-furniture-sidebar.js";
@@ -11,6 +15,7 @@ import "../components/epp-grid.js";
 import "../ui/epp-sheet.js";
 import type { EppFurnitureSidebar } from "../components/epp-furniture-sidebar.js";
 import type { EppGrid } from "../components/epp-grid.js";
+import { DESKTOP_HEIGHT_RESERVE_PX } from "../components/epp-grid.js";
 import type { EppSettingsView } from "../components/epp-settings-view.js";
 import type { EppWizard } from "../components/epp-wizard.js";
 import { GRID_CELL_COUNT, initGridFromRoom } from "../lib/grid.js";
@@ -1222,6 +1227,57 @@ describe("_renderLiveGrid", () => {
 		expect(grid).not.toBeNull();
 		expect(grid.grid).toBe(a._grid);
 		expect(grid.targets).toEqual([]);
+	});
+
+	// #338: expanding the detection-events log below the grid card pushed it
+	// off the bottom of the viewport, unreachable. The fix gives epp-grid a
+	// bigger heightReservePx while the log is expanded so the map shrinks by
+	// exactly the log block's height instead — see epp-grid's heightReservePx
+	// property and DESKTOP_HEIGHT_RESERVE_PX.
+	it("passes the base heightReservePx to epp-grid when the detection-events log is collapsed", () => {
+		const a = createPanel() as any;
+		a._showBackendDebugLog = false;
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		// Pinned to the literal too (not just the imported constant) so this
+		// stays red until heightReservePx is a real, wired-up property — an
+		// unexported/undefined constant would otherwise make this pass vacuously.
+		expect(grid.heightReservePx).toBe(130);
+		expect(grid.heightReservePx).toBe(DESKTOP_HEIGHT_RESERVE_PX);
+	});
+
+	it("adds the detection-log block height to heightReservePx when the log is expanded", () => {
+		const a = createPanel() as any;
+		a._showBackendDebugLog = true;
+		const c = renderTo(a._renderLiveGrid());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.heightReservePx).toBe(
+			DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX,
+		);
+	});
+
+	it("collapsing the log after expanding it returns heightReservePx to the base (map reclaims the space)", () => {
+		const a = createPanel() as any;
+		a._showBackendDebugLog = true;
+		const expandedGrid = (
+			renderTo(a._renderLiveGrid()).querySelector("epp-grid") as any
+		).heightReservePx;
+		a._showBackendDebugLog = false;
+		const collapsedGrid = (
+			renderTo(a._renderLiveGrid()).querySelector("epp-grid") as any
+		).heightReservePx;
+		expect(collapsedGrid).toBeLessThan(expandedGrid);
+		expect(collapsedGrid).toBe(DESKTOP_HEIGHT_RESERVE_PX);
+	});
+});
+
+describe("_renderLiveGrid heightReservePx constants (#338)", () => {
+	it("the detection-log block height is bigger than the fixed container alone (accounts for header + margins)", () => {
+		// Guards against someone "simplifying" the block constant down to just
+		// the container height and silently under-reserving again.
+		expect(DETECTION_LOG_BLOCK_HEIGHT_PX).toBeGreaterThan(
+			DETECTION_LOG_CONTAINER_HEIGHT_PX,
+		);
 	});
 });
 

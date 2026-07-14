@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-grid.js";
 import type { EppGrid } from "../../components/epp-grid.js";
+import { DESKTOP_HEIGHT_RESERVE_PX } from "../../components/epp-grid.js";
 import type { FurnitureItem } from "../../lib/furniture.js";
 import { FURNITURE_TONE_CSS } from "../../lib/furniture-contrast.js";
 import {
@@ -1977,6 +1978,47 @@ describe("epp-grid cell sizing (measured available width)", () => {
 		measureSpy.mockClear();
 		window.dispatchEvent(new Event("resize"));
 		expect(measureSpy).not.toHaveBeenCalled();
+	});
+
+	// #338: the live-overview panel grows this reserve while the detection-events
+	// log is expanded so the map shrinks instead of the log being pushed off
+	// the bottom of the viewport. The zone editor never sets it, so the default
+	// must stay the historical 130px reserve every other caller relies on.
+	it("defaults heightReservePx to the desktop reserve constant (kept for the zone editor)", () => {
+		const el = createGrid();
+		expect(el.heightReservePx).toBe(130);
+		expect(el.heightReservePx).toBe(DESKTOP_HEIGHT_RESERVE_PX);
+	});
+
+	it("shrinks the measured height budget by exactly the heightReservePx delta when it grows (log expand), and restores it when it shrinks back (log collapse)", async () => {
+		const el = createGrid();
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const collapsed = (el as unknown as { _availHeightPx: number })
+			._availHeightPx;
+		expect(collapsed).toBeGreaterThan(0);
+
+		// Simulate the panel expanding the detection-events log: it passes a
+		// larger heightReservePx (base + the log block's height). The property
+		// change alone must trigger Lit's `updated()` → `_measureAvail()` — no
+		// extra wiring needed on top of the existing lifecycle.
+		const delta = 252;
+		el.heightReservePx = DESKTOP_HEIGHT_RESERVE_PX + delta;
+		await el.updateComplete;
+		const expanded = (el as unknown as { _availHeightPx: number })
+			._availHeightPx;
+		expect(collapsed - expanded).toBe(delta);
+
+		// Collapsing the log restores the base reserve and the map reclaims
+		// the space.
+		el.heightReservePx = DESKTOP_HEIGHT_RESERVE_PX;
+		await el.updateComplete;
+		const restored = (el as unknown as { _availHeightPx: number })
+			._availHeightPx;
+		expect(restored).toBe(collapsed);
+
+		document.body.removeChild(el);
 	});
 });
 

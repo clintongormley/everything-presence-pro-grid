@@ -1,6 +1,7 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import {
+	DETECTION_LOG_CONTAINER_HEIGHT_PX,
 	type EPPGridPanel,
 	layoutStyles,
 	panelStyles,
@@ -615,5 +616,31 @@ describe("setup wizard layout structure", () => {
 		expect(haSelect.options).toEqual([
 			{ value: "AA:BB:CC:DD:EE:01", label: "Grid (Living Room)" },
 		]);
+	});
+});
+
+describe("detection-events log fixed height (#338)", () => {
+	// Root cause: epp-grid's height budget only ever reserved room for the
+	// collapsed toggle, so expanding the log pushed it below the viewport.
+	// The fix pairs a FIXED (not max-) container height here with a matching
+	// grown reserve on epp-grid (heightReservePx, see panel-render-views.test.ts
+	// and epp-grid.test.ts) so the two stay exact instead of approximate.
+	it(".debug-log-container uses a fixed height (not max-height) matching DETECTION_LOG_CONTAINER_HEIGHT_PX", () => {
+		const styles = (
+			customElements.get("eppgrid-panel") as typeof HTMLElement & {
+				styles: { cssText: string }[];
+			}
+		).styles;
+		const allCss = styles.map((s) => s.cssText).join("\n");
+		const match = allCss.match(/\.debug-log-container\s*\{([^}]*)\}/);
+		expect(match).not.toBeNull();
+		const rule = match![1];
+		// A fixed height, not the old approximate max-height.
+		expect(rule).toMatch(
+			new RegExp(`height:\\s*${DETECTION_LOG_CONTAINER_HEIGHT_PX}px`),
+		);
+		expect(rule).not.toMatch(/max-height/);
+		// Still scrolls internally exactly as it did with max-height.
+		expect(rule).toMatch(/overflow-y:\s*auto/);
 	});
 });
