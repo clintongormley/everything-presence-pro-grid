@@ -132,17 +132,26 @@ const DEVICE_WAIT_DELAY_MS = 1000;
 // of it is taken from the map.
 export const DETECTION_LOG_CONTAINER_HEIGHT_PX = 99;
 // Total extra height (px) the detection-events log's block adds below the
-// grid card when expanded: the container above (height + its 1px border ×2 +
-// 6px padding ×2 + its own 4px top margin) plus the block's always-rendered
-// header row (toggle button + copy/clear actions, ~25px) and the block's own
-// 8px top margin. Measured against the real markup/CSS in
-// `_renderDebugLogSection` / `.debug-log-container` in a real browser
-// (Chromium, default fonts): the container's chrome adds 14px (1px border ×2
-// + 6px padding ×2) and the surrounding rows another 37px (4 + 25 + 8), so the
-// block is CONTAINER + 51, rounded up by 1 for headroom. Added on top of
-// epp-grid's base DESKTOP_HEIGHT_RESERVE_PX.
+// grid card when expanded, ON TOP of epp-grid's base DESKTOP_HEIGHT_RESERVE_PX
+// (130 — introduced in ee09fa1a explicitly "for the dimensions caption + the
+// log toggle"). That base already covers the log's always-rendered header row
+// (toggle button + copy/clear actions, ~25px) and the block's own 8px top
+// margin, so this constant must NOT count them again — doing so previously
+// over-reserved by 34px (double-counting the header + the 8px margin, minus
+// 1px rounding slack), shrinking the map more than the log needs and leaving
+// dead space below it.
+//
+// The only height the container itself adds when it goes from hidden to
+// expanded is its own chrome, all readable off the `.debug-log-container`
+// rule below: 1px border ×2 (2px) + 6px padding ×2 (12px) + its own 4px
+// margin-top (4px) = 18px. So the block is CONTAINER + 18.
+//
+// Confirmed against the real markup/CSS in a real browser (Chromium, default
+// fonts): the block's rendered height went from 25px (collapsed, header row
+// only) to 142px (expanded) — a measured delta of 117px, matching
+// DETECTION_LOG_CONTAINER_HEIGHT_PX (99) + 18 exactly.
 export const DETECTION_LOG_BLOCK_HEIGHT_PX =
-	DETECTION_LOG_CONTAINER_HEIGHT_PX + 52;
+	DETECTION_LOG_CONTAINER_HEIGHT_PX + 18;
 
 // Content hash of the running bundle, read from its own content-hashed URL
 // (`/eppgrid_static/<hash>/eppgrid-panel.js`). Compared against the server's

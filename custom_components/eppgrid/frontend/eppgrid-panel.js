@@ -5696,7 +5696,7 @@ const Js={},js=si(class extends ri{constructor(){super(...arguments),this.ot=Js}
 			.checked=${this._heatmapEnabled&&!t}
 			?disabled=${t}
 			@value-changed=${e=>{this._heatmapEnabled=e.detail.value,function(e,t){try{localStorage.setItem(ar+e,t?"1":"0")}catch{}}(this._selectedMac,e.detail.value),this._deviceCtrl.setHeatmapEnabled(e.detail.value)}}
-		></epp-toggle>`;return t?Y`<epp-tooltip content=${i}>${s}</epp-tooltip>`:s}_renderLiveGrid(){const e=this._showBackendDebugLog?281:Xs;return Y`
+		></epp-toggle>`;return t?Y`<epp-tooltip content=${i}>${s}</epp-tooltip>`:s}_renderLiveGrid(){const e=this._showBackendDebugLog?247:Xs;return Y`
 			<epp-grid
 				.grid=${this._grid}
 				.zoneConfigs=${this._namedZones()}
@@ -5824,7 +5824,7 @@ const Js={},js=si(class extends ri{constructor(){super(...arguments),this.ot=Js}
         ${e}
         </div>
       </div>
-    `}_renderEditor(){const e=this._targetCtrl.editorEngineResult??this._runLocalZoneEngine(),t=e.occupancy,i=this._targets.map((t,i)=>({...t,status:e.targets[i]?.status??t.status})),s=!this._isMobile&&("zones"===this._sidebarTab||"overlays"===this._sidebarTab),r=s&&this._showDebugLog?281:Xs,o=Y`
+    `}_renderEditor(){const e=this._targetCtrl.editorEngineResult??this._runLocalZoneEngine(),t=e.occupancy,i=this._targets.map((t,i)=>({...t,status:e.targets[i]?.status??t.status})),s=!this._isMobile&&("zones"===this._sidebarTab||"overlays"===this._sidebarTab),r=s&&this._showDebugLog?247:Xs,o=Y`
               <epp-grid
                 .grid=${this._grid}
                 .zoneConfigs=${this._namedZones()}

@@ -1279,6 +1279,20 @@ describe("_renderLiveGrid heightReservePx constants (#338)", () => {
 			DETECTION_LOG_CONTAINER_HEIGHT_PX,
 		);
 	});
+
+	it("adds exactly the container's own chrome (border + padding + margin-top = 18px), not the header row again", () => {
+		// Real-browser measurement (Chromium): the block grows 25px -> 142px when
+		// the log expands, a true delta of 117px. The header row (toggle button,
+		// ~25px) and the block's own 8px top margin are already inside
+		// DESKTOP_HEIGHT_RESERVE_PX (added there for exactly that in commit
+		// ee09fa1a) — counting them again here over-reserved by 34px. The only
+		// NEW chrome the container itself adds is its 1px border x2 (2px), 6px
+		// padding x2 (12px), and its own 4px margin-top: 2 + 12 + 4 = 18.
+		expect(DETECTION_LOG_BLOCK_HEIGHT_PX).toBe(
+			DETECTION_LOG_CONTAINER_HEIGHT_PX + 18,
+		);
+		expect(DETECTION_LOG_BLOCK_HEIGHT_PX).toBe(117);
+	});
 });
 
 describe("_renderGridDimensions (via EppGrid)", () => {
