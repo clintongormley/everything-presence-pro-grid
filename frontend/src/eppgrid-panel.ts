@@ -13,7 +13,6 @@ import "./components/epp-configuration-dialogs.js";
 import "./components/epp-device-setup.js";
 import "./components/epp-flasher-view.js";
 import "./components/epp-furniture-sidebar.js";
-import "./components/epp-grid.js";
 import { DESKTOP_HEIGHT_RESERVE_PX } from "./components/epp-grid.js";
 import "./components/epp-kebab-menu.js";
 import "./components/epp-language-banner.js";

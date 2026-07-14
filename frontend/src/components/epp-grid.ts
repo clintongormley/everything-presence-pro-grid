@@ -295,8 +295,19 @@ export class EppGrid extends LitElement {
 		// bottom so a tall room can't overflow. Mobile uses capHeightToHalfViewport.
 		if (!this.capHeightToHalfViewport) {
 			const top = this.getBoundingClientRect().top;
-			const avail = Math.floor(window.innerHeight - top - this.heightReservePx);
-			if (avail > 0 && Math.abs(avail - this._availHeightPx) >= 1)
+			// Clamp to 0 rather than skipping the assignment when the reserve
+			// outgrows the available space (e.g. a short desktop window with the
+			// detection log expanded): 0 is the same "no height budget" value the
+			// render path already falls back to below DESKTOP_MIN_HEIGHT_PX, so
+			// this can't regress into a smaller-but-still-positive stale reading.
+			// Leaving the old `avail > 0` guard in place would instead latch
+			// whatever larger `_availHeightPx` was measured before, height-fitting
+			// the map to space that no longer exists (#339).
+			const avail = Math.max(
+				0,
+				Math.floor(window.innerHeight - top - this.heightReservePx),
+			);
+			if (Math.abs(avail - this._availHeightPx) >= 1)
 				this._availHeightPx = avail;
 		}
 	}

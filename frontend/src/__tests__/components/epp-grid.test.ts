@@ -2032,6 +2032,35 @@ describe("epp-grid cell sizing (measured available width)", () => {
 
 		document.body.removeChild(el);
 	});
+
+	// #339 (Copilot review of #338): heightReservePx growing past the viewport
+	// height (short desktop window + expanded detection log) drives `avail`
+	// non-positive. The old `avail > 0` guard then skipped the assignment
+	// entirely, latching whatever larger `_availHeightPx` had been measured
+	// before — a stale budget above the DESKTOP_MIN_HEIGHT_PX floor that keeps
+	// height-fitting the map to space that no longer exists. A non-positive
+	// budget must clamp to 0 (the same "unmeasured" value the floor already
+	// falls back to), not freeze the previous measurement.
+	it("clamps the height budget to 0 (not the stale previous value) when heightReservePx pushes avail non-positive", async () => {
+		const el = createGrid();
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const measured = (el as unknown as { _availHeightPx: number })
+			._availHeightPx;
+		expect(measured).toBeGreaterThan(0);
+
+		// Grow the reserve well past the (happy-dom default 768px) viewport
+		// height so `innerHeight - top - heightReservePx` goes negative.
+		el.heightReservePx = 1000;
+		await el.updateComplete;
+
+		const afterOverflow = (el as unknown as { _availHeightPx: number })
+			._availHeightPx;
+		expect(afterOverflow).toBe(0);
+
+		document.body.removeChild(el);
+	});
 });
 
 describe("epp-grid furniture auto-contrast", () => {
