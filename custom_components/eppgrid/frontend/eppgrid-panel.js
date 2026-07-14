@@ -5696,7 +5696,7 @@ const Js={},js=si(class extends ri{constructor(){super(...arguments),this.ot=Js}
 			.checked=${this._heatmapEnabled&&!t}
 			?disabled=${t}
 			@value-changed=${e=>{this._heatmapEnabled=e.detail.value,function(e,t){try{localStorage.setItem(or+e,t?"1":"0")}catch{}}(this._selectedMac,e.detail.value),this._deviceCtrl.setHeatmapEnabled(e.detail.value)}}
-		></epp-toggle>`;return t?Y`<epp-tooltip content=${i}>${s}</epp-tooltip>`:s}_renderLiveGrid(){const e=this._showBackendDebugLog?382:130;return Y`
+		></epp-toggle>`;return t?Y`<epp-tooltip content=${i}>${s}</epp-tooltip>`:s}_renderLiveGrid(){const e=this._showBackendDebugLog?281:130;return Y`
 			<epp-grid
 				.grid=${this._grid}
 				.zoneConfigs=${this._namedZones()}
@@ -6015,7 +6015,7 @@ const Js={},js=si(class extends ri{constructor(){super(...arguments),this.ot=Js}
          (#338) — see DETECTION_LOG_BLOCK_HEIGHT_PX, which epp-grid's
          heightReservePx is grown by while the log is open. Still scrolls
          internally via overflow-y below, exactly as it did before. */
-      height: ${a(200)}px;
+      height: ${a(99)}px;
       overflow-y: auto;
       overflow-x: hidden;
       background: var(--card-background-color, #1e1e1e);

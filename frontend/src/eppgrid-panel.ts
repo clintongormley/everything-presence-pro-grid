@@ -125,16 +125,24 @@ const DEVICE_WAIT_DELAY_MS = 1000;
 //
 // Fixed height (px) of `.debug-log-container` when the log is expanded —
 // single-sourced into the CSS below via `unsafeCSS` so the two can't drift.
-export const DETECTION_LOG_CONTAINER_HEIGHT_PX = 200;
+// Sized to show SIX log lines before it scrolls: a line renders at 16.5px
+// (11px monospace x the 1.5 line-height below), and this is a content-box
+// height (the 6px padding sits outside it), so 6 x 16.5 = 99. Six is
+// deliberate: the box is dead space when the room is quiet, and every pixel
+// of it is taken from the map.
+export const DETECTION_LOG_CONTAINER_HEIGHT_PX = 99;
 // Total extra height (px) the detection-events log's block adds below the
 // grid card when expanded: the container above (height + its 1px border ×2 +
 // 6px padding ×2 + its own 4px top margin) plus the block's always-rendered
 // header row (toggle button + copy/clear actions, ~25px) and the block's own
 // 8px top margin. Measured against the real markup/CSS in
 // `_renderDebugLogSection` / `.debug-log-container` in a real browser
-// (Chromium, default fonts): 214 + 4 + 25 + 8 ≈ 251px, rounded up to 252 for
-// headroom. Added on top of epp-grid's base DESKTOP_HEIGHT_RESERVE_PX.
-export const DETECTION_LOG_BLOCK_HEIGHT_PX = 252;
+// (Chromium, default fonts): the container's chrome adds 14px (1px border ×2
+// + 6px padding ×2) and the surrounding rows another 37px (4 + 25 + 8), so the
+// block is CONTAINER + 51, rounded up by 1 for headroom. Added on top of
+// epp-grid's base DESKTOP_HEIGHT_RESERVE_PX.
+export const DETECTION_LOG_BLOCK_HEIGHT_PX =
+	DETECTION_LOG_CONTAINER_HEIGHT_PX + 52;
 
 // Content hash of the running bundle, read from its own content-hashed URL
 // (`/eppgrid_static/<hash>/eppgrid-panel.js`). Compared against the server's
