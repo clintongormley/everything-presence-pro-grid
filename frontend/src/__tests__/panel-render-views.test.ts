@@ -1744,6 +1744,83 @@ describe("_renderEditor", () => {
 	});
 });
 
+// #338: the editor's <epp-grid> had no heightReservePx wiring at all, so it
+// always used epp-grid's default (130) — expanding the debug log on the
+// zones/overlays tab pushed it off the bottom of the viewport exactly like
+// the live-overview bug `_renderLiveGrid` (above) was fixed for. This mirrors
+// that fix for the editor.
+describe("_renderEditor heightReservePx (#338)", () => {
+	it("zones tab, debug log expanded: epp-grid gets the base reserve plus the log block height", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = false;
+		a._grid = initGridFromRoom(3000, 4000);
+		a._sidebarTab = "zones";
+		a._showDebugLog = true;
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.heightReservePx).toBe(
+			DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX,
+		);
+	});
+
+	it("overlays tab, debug log expanded: same larger reserve", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = false;
+		a._grid = initGridFromRoom(3000, 4000);
+		a._sidebarTab = "overlays";
+		a._showDebugLog = true;
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.heightReservePx).toBe(
+			DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX,
+		);
+	});
+
+	it("zones tab, debug log collapsed: base reserve", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = false;
+		a._grid = initGridFromRoom(3000, 4000);
+		a._sidebarTab = "zones";
+		a._showDebugLog = false;
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.heightReservePx).toBe(DESKTOP_HEIGHT_RESERVE_PX);
+	});
+
+	// Regression guard for the subtlety: _showDebugLog can be true while the
+	// log isn't actually rendered (furniture tab, or mobile). The reserve must
+	// not grow in that case, or the map shrinks for a log that isn't there,
+	// leaving a dead gap instead of fixing anything.
+	it("furniture tab with the debug-log flag true: base reserve (log isn't rendered there)", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = false;
+		a._grid = initGridFromRoom(3000, 4000);
+		a._sidebarTab = "furniture";
+		a._showDebugLog = true;
+		const c = renderTo(a._renderEditor());
+		expect(c.querySelector(".debug-log-container")).toBeNull();
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.heightReservePx).toBe(DESKTOP_HEIGHT_RESERVE_PX);
+	});
+
+	it("mobile with the debug-log flag true: base reserve (log isn't rendered on mobile)", () => {
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._isMobile = true;
+		a._grid = initGridFromRoom(3000, 4000);
+		a._sidebarTab = "zones";
+		a._showDebugLog = true;
+		const c = renderTo(a._renderEditor());
+		expect(c.querySelector(".debug-log-container")).toBeNull();
+		const grid = c.querySelector("epp-grid") as any;
+		expect(grid.heightReservePx).toBe(DESKTOP_HEIGHT_RESERVE_PX);
+	});
+});
+
 describe("epp-zone-sidebar renders boundary type controls", () => {
 	function boundarySidebar(type: string) {
 		const el = document.createElement("epp-zone-sidebar") as any;

@@ -3518,6 +3518,23 @@ export class EPPGridPanel extends LitElement {
 		// `editorSensorState = { ...this._sensorState, occupancy, mmwave }`
 		// and pass it explicitly — never mutate `this._sensorState`.
 
+		// #338: mirrors _renderLiveGrid's heightReservePx fix. The debug log
+		// below the grid claims a fixed block of height when expanded, but is
+		// only actually rendered on desktop, on the zones/overlays tab (see the
+		// identical condition below, where `${...this._renderDebugLog()...}` is
+		// gated). `_showDebugLog` can be true while on the furniture tab (or on
+		// mobile) with the log not rendered there at all — reserving space for
+		// it in that case would shrink the map for nothing, leaving a dead gap.
+		// `debugLogRendered` is computed once and used for both the reserve and
+		// the markup below so the two conditions can never drift apart.
+		const debugLogRendered =
+			!this._isMobile &&
+			(this._sidebarTab === "zones" || this._sidebarTab === "overlays");
+		const heightReservePx =
+			debugLogRendered && this._showDebugLog
+				? DESKTOP_HEIGHT_RESERVE_PX + DETECTION_LOG_BLOCK_HEIGHT_PX
+				: DESKTOP_HEIGHT_RESERVE_PX;
+
 		// The <epp-grid> element is identical between the desktop and mobile
 		// layouts — extract it once so both branches bind it verbatim. (The
 		// `.grid-container` wrapper + its furniture-deselect @click are kept per
@@ -3529,6 +3546,7 @@ export class EPPGridPanel extends LitElement {
                 .targets=${editorTargets}
                 .roomWidth=${this._roomWidth}
                 .roomDepth=${this._roomDepth}
+                .heightReservePx=${heightReservePx}
                 .perspective=${this._perspective}
                 .furniture=${this._furniture}
                 .selectedFurnitureId=${this._selectedFurnitureId}
@@ -3625,7 +3643,7 @@ export class EPPGridPanel extends LitElement {
               ${gridTemplate}
             </div>
             ${this._renderHeatmapToggle()}
-            ${!this._isMobile && (this._sidebarTab === "zones" || this._sidebarTab === "overlays") ? this._renderDebugLog() : nothing}
+            ${debugLogRendered ? this._renderDebugLog() : nothing}
           </div>
           <epp-sheet inline open class="editor-controls">
             <div slot="peek">${this._renderSidebarTabs()}</div>
