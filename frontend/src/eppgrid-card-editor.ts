@@ -6,6 +6,8 @@ import { defaultLocalize, type LocalizeFn, setupLocalize } from "./localize.js";
 interface DeviceOption {
 	device_id: string;
 	name: string;
+	room_width?: number;
+	room_depth?: number;
 }
 
 /** Pure: build the ha-form schema for the given device options. Testable. */
@@ -100,6 +102,28 @@ export class EppGridCardEditor extends LitElement {
 			cursor: pointer;
 			font: inherit;
 			text-decoration: underline;
+		}
+		.floor-plan-section {
+			margin-top: var(--epp-space-3, 12px);
+		}
+		.fp-label {
+			font-size: var(--epp-font-sm, 13px);
+			color: var(--epp-text-muted, var(--secondary-text-color));
+			margin-bottom: var(--epp-space-2, 8px);
+		}
+		.fp-ratio-hint {
+			display: flex;
+			align-items: center;
+			gap: var(--epp-space-2, 8px);
+			margin-top: var(--epp-space-2, 8px);
+			font-size: var(--epp-font-xs, 12px);
+			color: var(--epp-text-muted, var(--secondary-text-color));
+		}
+		.fp-ratio-proxy {
+			flex: 0 0 auto;
+			width: 48px;
+			border: 1px solid var(--epp-accent, var(--primary-color));
+			border-radius: var(--epp-radius-sm, 3px);
 		}
 	`;
 
@@ -220,6 +244,38 @@ export class EppGridCardEditor extends LitElement {
 		);
 	};
 
+	private _selectedDevice(): DeviceOption | undefined {
+		return this._devices.find((d) => d.device_id === this._config?.device_id);
+	}
+
+	/** Recommended crop-ratio hint (or a calibrate-first prompt) for the plan. */
+	private _renderRatioHint() {
+		const dev = this._selectedDevice();
+		const w = dev?.room_width ?? 0;
+		const d = dev?.room_depth ?? 0;
+		if (!(w > 0 && d > 0)) {
+			return html`<div class="fp-ratio-hint">
+				${this._localize("card.editor.floor_plan_calibrate_first")}
+			</div>`;
+		}
+		const proxy = `aspect-ratio:${w} / ${d};`;
+		return html`<div class="fp-ratio-hint">
+			<span class="fp-ratio-proxy" style=${proxy}></span>
+			<span>${this._localize("card.editor.floor_plan_ratio", {
+				width: (w / 1000).toFixed(1),
+				depth: (d / 1000).toFixed(1),
+				ratio: (w / d).toFixed(2),
+			})}</span>
+		</div>`;
+	}
+
+	private _renderFloorPlanSection() {
+		return html`<div class="floor-plan-section">
+			<div class="fp-label">${this._localize("card.editor.floor_plan")}</div>
+			${this._renderRatioHint()}
+		</div>`;
+	}
+
 	render() {
 		if (!this.__hass || !this._config) return nothing;
 		return html`
@@ -241,6 +297,7 @@ export class EppGridCardEditor extends LitElement {
 						</button>`
 					: nothing
 			}
+			${this._renderFloorPlanSection()}
 		`;
 	}
 }

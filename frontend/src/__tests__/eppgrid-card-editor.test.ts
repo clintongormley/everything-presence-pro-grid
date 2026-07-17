@@ -415,4 +415,45 @@ describe("eppgrid-card-editor", () => {
 		expect("room_color" in cfg).toBe(false);
 		expect(cfg.primary).toBe("X");
 	});
+
+	it("shows the crop-ratio hint from the selected device's calibration", async () => {
+		const callWS = vi.fn(async () => [
+			{
+				device_id: "d1",
+				name: "Living Room",
+				room_width: 4200,
+				room_depth: 3000,
+			},
+		]);
+		const el = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		el.setConfig({ type: "custom:eppgrid-card", device_id: "d1" } as any);
+		el.hass = { callWS, locale: { language: "en" } } as any;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		await Promise.resolve();
+		await el.updateComplete;
+		const hint = el.shadowRoot!.querySelector(".fp-ratio-hint")!.textContent!;
+		expect(hint).toContain("4.2");
+		expect(hint).toContain("3.0");
+		expect(hint).toContain("1.40");
+	});
+
+	it("prompts to calibrate when the device has no room dimensions", async () => {
+		const callWS = vi.fn(async () => [
+			{ device_id: "d1", name: "Bedroom", room_width: 0, room_depth: 0 },
+		]);
+		const el = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		el.setConfig({ type: "custom:eppgrid-card", device_id: "d1" } as any);
+		el.hass = { callWS, locale: { language: "en" } } as any;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		await Promise.resolve();
+		await el.updateComplete;
+		const hint = el.shadowRoot!.querySelector(".fp-ratio-hint")!.textContent!;
+		expect(hint.toLowerCase()).toContain("calibrate");
+	});
 });
