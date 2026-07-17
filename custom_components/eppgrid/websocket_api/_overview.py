@@ -69,16 +69,27 @@ def websocket_overview_list_devices(
     msg: dict[str, Any],
     manager: Any,
 ) -> None:
-    """List EPP devices (device_id, name) for the card editor's picker.
+    """List EPP devices (device_id, name, room dimensions) for the card editor's picker.
 
     Only devices with a registry device_id are returned — the card stores a
-    device_id and needs it to resolve a mac server-side on subscribe.
+    device_id and needs it to resolve a mac server-side on subscribe. Room
+    dimensions are included from calibration data (0 when uncalibrated).
     """
-    devices = [
-        {"device_id": dev.device_id, "name": dev.name}
-        for mac, dev in manager.devices.items()
-        if dev.device_id is not None
-    ]
+    devices = []
+    for mac, dev in manager.devices.items():
+        if dev.device_id is None:
+            continue
+        cal = manager.store.devices.get(mac, {}).get("calibration", {})
+        devices.append(
+            {
+                "device_id": dev.device_id,
+                "name": dev.name,
+                # mm; 0 when the device has no calibration yet. The card editor
+                # uses these to show the recommended crop ratio for a floor plan.
+                "room_width": cal.get("room_width", 0) or 0,
+                "room_depth": cal.get("room_depth", 0) or 0,
+            }
+        )
     devices.sort(key=lambda d: (d["name"].casefold(), d["device_id"]))
     connection.send_result(msg["id"], devices)
 

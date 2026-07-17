@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -7122,7 +7123,14 @@ class TestOverviewListDevices:
         connection.send_result.assert_called_once()
         sent = connection.send_result.call_args.args
         assert sent[0] == 7
-        assert sent[1] == [{"device_id": "dev1", "name": "Living Room"}]
+        assert sent[1] == [
+            {
+                "device_id": "dev1",
+                "name": "Living Room",
+                "room_width": 0,
+                "room_depth": 0,
+            }
+        ]
 
     async def test_devices_sorted_by_name_case_insensitive(self, hass, config_entry):
         """Devices are returned sorted by name (case-insensitive), device_id as tiebreak."""
@@ -7146,8 +7154,18 @@ class TestOverviewListDevices:
         sent = connection.send_result.call_args.args
         assert sent[0] == 9
         assert sent[1] == [
-            {"device_id": "dev-alpha", "name": "Alpha Room"},
-            {"device_id": "dev-zebra", "name": "Zebra Room"},
+            {
+                "device_id": "dev-alpha",
+                "name": "Alpha Room",
+                "room_width": 0,
+                "room_depth": 0,
+            },
+            {
+                "device_id": "dev-zebra",
+                "name": "Zebra Room",
+                "room_width": 0,
+                "room_depth": 0,
+            },
         ]
 
     async def test_not_loaded_when_manager_absent(self, hass):
@@ -7160,6 +7178,53 @@ class TestOverviewListDevices:
 
         connection.send_error.assert_called_once()
         assert connection.send_error.call_args.args[1] == "not_ready"
+
+
+class TestOverviewListDevicesRoomDims:
+    """eppgrid/overview/list_devices includes calibration room dimensions."""
+
+    async def test_includes_room_dimensions(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.devices = {"AA:BB:CC:DD:EE:FF": SimpleNamespace(device_id="d1", name="Living Room")}
+        mock_dm.store.devices = {"AA:BB:CC:DD:EE:FF": {"calibration": {"room_width": 4200, "room_depth": 3000}}}
+
+        from custom_components.eppgrid.websocket_api._overview import (
+            websocket_overview_list_devices,
+        )
+
+        connection = MagicMock()
+        msg = {"id": 7, "type": "eppgrid/overview/list_devices"}
+        websocket_overview_list_devices(hass, connection, msg)
+
+        connection.send_result.assert_called_once()
+        result = connection.send_result.call_args[0][1]
+        assert result == [
+            {
+                "device_id": "d1",
+                "name": "Living Room",
+                "room_width": 4200,
+                "room_depth": 3000,
+            }
+        ]
+
+    async def test_uncalibrated_device_reports_zero_dims(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.devices = {"AA:BB:CC:DD:EE:FF": SimpleNamespace(device_id="d1", name="Bedroom")}
+        mock_dm.store.devices = {}  # no stored calibration
+
+        from custom_components.eppgrid.websocket_api._overview import (
+            websocket_overview_list_devices,
+        )
+
+        connection = MagicMock()
+        msg = {"id": 8, "type": "eppgrid/overview/list_devices"}
+        websocket_overview_list_devices(hass, connection, msg)
+
+        result = connection.send_result.call_args[0][1]
+        assert result[0]["room_width"] == 0
+        assert result[0]["room_depth"] == 0
 
 
 class TestOverviewSubscribe:
