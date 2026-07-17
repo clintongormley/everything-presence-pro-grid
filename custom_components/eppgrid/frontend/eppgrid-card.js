@@ -1186,7 +1186,7 @@ class it extends rt{}it.directiveName="unsafeSVG",it.resultType=2;const nt=Je(it
 				.maxGridPx=${480}
 				.showOverlays=${e.show_overlays}
 				.showDimensions=${!1}
-				.plain=${!e.show_grid}
+				.plain=${!!e.floor_plan||!e.show_grid}
 				.roomColor=${function(e){if(Ne(e))return`rgb(${e[0]}, ${e[1]}, ${e[2]})`}(e.room_color)}
 				.floorPlan=${e.floor_plan}
 				.floorPlanOpacity=${e.floor_plan_opacity/100}
@@ -1347,7 +1347,7 @@ class it extends rt{}it.directiveName="unsafeSVG",it.resultType=2;const nt=Je(it
 			.value=${this._config?.floor_plan??""}
 			.label=${this._localize("card.editor.floor_plan_url")}
 			@value-changed=${this._onUrlChanged}
-		></epp-field>`}_writeFloorPlan(e){if(!this._config)return;const t={...this._config};e?t.floor_plan=e:(delete t.floor_plan,delete t.floor_plan_opacity),this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:t},bubbles:!0,composed:!0}))}_renderOpacity(){const e=this._config?.floor_plan_opacity??100;return W`<div class="fp-opacity-row">
+		></epp-field>`}_writeFloorPlan(e){if(!this._config)return;const t={...this._config};e?t.floor_plan=e:(delete t.floor_plan,delete t.floor_plan_opacity),this.dispatchEvent(new CustomEvent("config-changed",{detail:{config:t},bubbles:!0,composed:!0}))}_renderOpacity(){const e=fr(this._config?.floor_plan_opacity);return W`<div class="fp-opacity-row">
 			<label class="fp-label">${this._localize("card.editor.floor_plan_opacity")}</label>
 			<input
 				class="fp-opacity"
@@ -1356,6 +1356,7 @@ class it extends rt{}it.directiveName="unsafeSVG",it.resultType=2;const nt=Je(it
 				max="100"
 				step="5"
 				.value=${String(e)}
+				aria-label=${this._localize("card.editor.floor_plan_opacity")}
 				@input=${this._onOpacityInput}
 			/>
 			<span class="fp-opacity-val">${e}%</span>
@@ -1368,7 +1369,7 @@ class it extends rt{}it.directiveName="unsafeSVG",it.resultType=2;const nt=Je(it
 			<ha-form
 				.hass=${this.__hass}
 				.data=${gr(this._config)}
-				.schema=${e=this._devices,[{name:"device_id",required:!0,selector:{select:{mode:"dropdown",options:e.map(e=>({value:e.device_id,label:e.name}))}}},{name:"primary",selector:{template:{}}},{name:"secondary",selector:{template:{}}},{name:"layout",selector:{select:{mode:"dropdown",options:[{value:"horizontal",label:"Horizontal"},{value:"vertical",label:"Vertical"}]}}},{name:"show_map",selector:{boolean:{}}},{name:"show_grid",selector:{boolean:{}}},{name:"show_furniture",selector:{boolean:{}}},{name:"show_overlays",selector:{boolean:{}}},{name:"show_heatmap",selector:{select:{mode:"dropdown",options:[{value:"off",label:"Off"},{value:"on",label:"On"},{value:"toggle",label:"Toggle on card"}]}}},{name:"show_sensors",selector:{boolean:{}}},{name:"sensors",type:"expandable",title:"Sensors",schema:[{name:"presence",type:"expandable",title:"Presence",schema:[{name:"occupancy",selector:{boolean:{}}},{name:"static_presence",selector:{boolean:{}}},{name:"motion_presence",selector:{boolean:{}}},{name:"target_presence",selector:{boolean:{}}},{name:"mmwave",selector:{boolean:{}}}]},{name:"zones",selector:{boolean:{}}},{name:"environmental",type:"expandable",title:"Environmental",schema:[{name:"temperature",selector:{boolean:{}}},{name:"humidity",selector:{boolean:{}}},{name:"illuminance",selector:{boolean:{}}},{name:"co2",selector:{boolean:{}}}]}]},{name:"room_color",selector:{color_rgb:{}}}]}
+				.schema=${function(e,t=!1){return[{name:"device_id",required:!0,selector:{select:{mode:"dropdown",options:e.map(e=>({value:e.device_id,label:e.name}))}}},{name:"primary",selector:{template:{}}},{name:"secondary",selector:{template:{}}},{name:"layout",selector:{select:{mode:"dropdown",options:[{value:"horizontal",label:"Horizontal"},{value:"vertical",label:"Vertical"}]}}},{name:"show_map",selector:{boolean:{}}},...t?[]:[{name:"show_grid",selector:{boolean:{}}}],{name:"show_furniture",selector:{boolean:{}}},{name:"show_overlays",selector:{boolean:{}}},{name:"show_heatmap",selector:{select:{mode:"dropdown",options:[{value:"off",label:"Off"},{value:"on",label:"On"},{value:"toggle",label:"Toggle on card"}]}}},{name:"show_sensors",selector:{boolean:{}}},{name:"sensors",type:"expandable",title:"Sensors",schema:[{name:"presence",type:"expandable",title:"Presence",schema:[{name:"occupancy",selector:{boolean:{}}},{name:"static_presence",selector:{boolean:{}}},{name:"motion_presence",selector:{boolean:{}}},{name:"target_presence",selector:{boolean:{}}},{name:"mmwave",selector:{boolean:{}}}]},{name:"zones",selector:{boolean:{}}},{name:"environmental",type:"expandable",title:"Environmental",schema:[{name:"temperature",selector:{boolean:{}}},{name:"humidity",selector:{boolean:{}}},{name:"illuminance",selector:{boolean:{}}},{name:"co2",selector:{boolean:{}}}]}]},{name:"room_color",selector:{color_rgb:{}}}]}(this._devices,!!this._config?.floor_plan)}
 				.computeLabel=${this._computeLabel}
 				@value-changed=${this._valueChanged}
 			></ha-form>
@@ -1380,7 +1381,7 @@ class it extends rt{}it.directiveName="unsafeSVG",it.resultType=2;const nt=Je(it
 							${this._localize("card.editor.reset_room_color")}
 						</button>`:V}
 			${this._renderFloorPlanSection()}
-		`:V;var e}}Tr.styles=s`
+		`:V}}Tr.styles=s`
 		.reset-room-color {
 			margin-top: var(--epp-space-2, 8px);
 			background: none;
@@ -1411,7 +1412,7 @@ class it extends rt{}it.directiveName="unsafeSVG",it.resultType=2;const nt=Je(it
 			flex: 0 0 auto;
 			width: 48px;
 			border: 1px solid var(--epp-accent, var(--primary-color));
-			border-radius: var(--epp-radius-sm, 3px);
+			border-radius: var(--epp-radius-sm, 6px);
 		}
 		.fp-opacity-row {
 			display: flex;
