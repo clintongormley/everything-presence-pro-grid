@@ -166,6 +166,10 @@ export class EppGridCardEditor extends LitElement {
 
 	setConfig(config: EppGridCardConfig): void {
 		this._config = config;
+		// React to config changes (e.g. our own upload → floor_plan set) so the
+		// opacity row and the hidden "Show grid" toggle update without waiting for
+		// the next hass tick.
+		this.requestUpdate();
 	}
 
 	set hass(hass: {
@@ -175,6 +179,8 @@ export class EppGridCardEditor extends LitElement {
 		this.__hass = hass;
 		this._localize = setupLocalize(hass);
 		this._loadDevices();
+		// Order-independent, like _loadDevices: HA may set hass after connecting.
+		void this._ensurePictureUpload();
 		this.requestUpdate();
 	}
 
@@ -206,9 +212,13 @@ export class EppGridCardEditor extends LitElement {
 
 	private async _ensurePictureUpload(): Promise<void> {
 		if (this._pictureUploadRequested || this._hasPictureUpload) return;
+		// Need both a live DOM connection (so the probe upgrades and imports) and
+		// hass. If either is missing, don't latch — connectedCallback and `set hass`
+		// both re-invoke, so the attempt isn't lost whichever order HA uses.
+		if (!this.isConnected || !this.__hass) return;
 		this._pictureUploadRequested = true;
 		try {
-			if (this.__hass && customElements.get("ha-selector")) {
+			if (customElements.get("ha-selector")) {
 				const probe = document.createElement("ha-selector");
 				(probe as unknown as { hass: unknown }).hass = this.__hass;
 				(probe as unknown as { selector: unknown }).selector = { media: {} };
@@ -280,13 +290,7 @@ export class EppGridCardEditor extends LitElement {
 			// Never let the user end up with nothing to show — re-enable the map.
 			config = { ...config, show_map: true };
 		}
-		this.dispatchEvent(
-			new CustomEvent("config-changed", {
-				detail: { config },
-				bubbles: true,
-				composed: true,
-			}),
-		);
+		this._emitConfigChanged(config);
 	}
 
 	// Reset the room colour back to "auto" (the theme default). HA's color_rgb
@@ -297,6 +301,11 @@ export class EppGridCardEditor extends LitElement {
 		if (!this._config) return;
 		const config = { ...this._config };
 		delete config.room_color;
+		this._emitConfigChanged(config);
+	};
+
+	/** Dispatch a `config-changed` event carrying the updated card config. */
+	private _emitConfigChanged(config: EppGridCardConfig): void {
 		this.dispatchEvent(
 			new CustomEvent("config-changed", {
 				detail: { config },
@@ -304,17 +313,14 @@ export class EppGridCardEditor extends LitElement {
 				composed: true,
 			}),
 		);
-	};
+	}
 
 	private _selectedDevice(): DeviceOption | undefined {
 		return this._devices.find((d) => d.device_id === this._config?.device_id);
 	}
 
 	/** Recommended crop-ratio hint (or a calibrate-first prompt) for the plan. */
-	private _renderRatioHint() {
-		const dev = this._selectedDevice();
-		const w = dev?.room_width ?? 0;
-		const d = dev?.room_depth ?? 0;
+	private _renderRatioHint(w: number, d: number) {
 		if (!(w > 0 && d > 0)) {
 			return html`<div class="fp-ratio-hint">
 				${this._localize("card.editor.floor_plan_calibrate_first")}
@@ -341,10 +347,7 @@ export class EppGridCardEditor extends LitElement {
 		return !!customElements.get("ha-picture-upload");
 	}
 
-	private _renderUpload() {
-		const dev = this._selectedDevice();
-		const w = dev?.room_width ?? 0;
-		const d = dev?.room_depth ?? 0;
+	private _renderUpload(w: number, d: number) {
 		const aspectRatio = w > 0 && d > 0 ? w / d : undefined;
 		if (this._hasPictureUpload) {
 			// HA's native upload → stores the image in image_upload and yields a
@@ -372,6 +375,9 @@ export class EppGridCardEditor extends LitElement {
 	}
 
 	private _onPictureChanged = (e: Event): void => {
+		// ha-picture-upload's `change` is composed — stop it crossing our boundary
+		// into HA's editor host (matches _onUrlChanged / _valueChanged).
+		e.stopPropagation();
 		const val = (e.target as unknown as { value: string | null }).value;
 		this._writeFloorPlan(val || undefined);
 	};
@@ -392,13 +398,7 @@ export class EppGridCardEditor extends LitElement {
 			delete config.floor_plan;
 			delete config.floor_plan_opacity;
 		}
-		this.dispatchEvent(
-			new CustomEvent("config-changed", {
-				detail: { config },
-				bubbles: true,
-				composed: true,
-			}),
-		);
+		this._emitConfigChanged(config);
 	}
 
 	private _renderOpacity() {
@@ -422,20 +422,17 @@ export class EppGridCardEditor extends LitElement {
 	private _onOpacityInput = (e: Event): void => {
 		if (!this._config) return;
 		const v = Number((e.target as HTMLInputElement).value);
-		this.dispatchEvent(
-			new CustomEvent("config-changed", {
-				detail: { config: { ...this._config, floor_plan_opacity: v } },
-				bubbles: true,
-				composed: true,
-			}),
-		);
+		this._emitConfigChanged({ ...this._config, floor_plan_opacity: v });
 	};
 
 	private _renderFloorPlanSection() {
+		const dev = this._selectedDevice();
+		const w = dev?.room_width ?? 0;
+		const d = dev?.room_depth ?? 0;
 		return html`<div class="floor-plan-section">
 			<div class="fp-label">${this._localize("card.editor.floor_plan")}</div>
-			${this._renderUpload()}
-			${this._renderRatioHint()}
+			${this._renderUpload(w, d)}
+			${this._renderRatioHint(w, d)}
 			${this._config?.floor_plan ? this._renderOpacity() : nothing}
 		</div>`;
 	}

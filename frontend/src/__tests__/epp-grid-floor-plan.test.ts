@@ -57,4 +57,31 @@ describe("epp-grid floor plan", () => {
 		expect(el.shadowRoot!.querySelector(".floor-plan")).toBeNull();
 		document.body.replaceChildren();
 	});
+
+	it("restores the plan layer + transparency when the URL changes after a load error", async () => {
+		const el = await mountGrid("/api/image/serve/broken/original");
+		const img = el.shadowRoot!.querySelector(
+			".floor-plan img",
+		) as HTMLImageElement;
+		img.dispatchEvent(new Event("error"));
+		await el.updateComplete;
+		expect(el.shadowRoot!.querySelector(".floor-plan")).toBeNull();
+
+		// Swapping in a new URL resets the error latch (willUpdate) → the layer and
+		// the transparent in-room cells both come back.
+		el.floorPlan = "/api/image/serve/fixed/original";
+		await el.updateComplete;
+		const layer = el.shadowRoot!.querySelector(".floor-plan") as HTMLElement;
+		expect(layer).toBeTruthy();
+		expect(
+			(layer.querySelector("img") as HTMLImageElement).getAttribute("src"),
+		).toBe("/api/image/serve/fixed/original");
+		const cells = Array.from(
+			el.shadowRoot!.querySelectorAll<HTMLElement>(".cell"),
+		);
+		expect(cells.some((c) => c.style.background.includes("transparent"))).toBe(
+			true,
+		);
+		document.body.replaceChildren();
+	});
 });

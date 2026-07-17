@@ -86,8 +86,8 @@ def websocket_overview_list_devices(
                 "name": dev.name,
                 # mm; 0 when the device has no calibration yet. The card editor
                 # uses these to show the recommended crop ratio for a floor plan.
-                "room_width": cal.get("room_width", 0) or 0,
-                "room_depth": cal.get("room_depth", 0) or 0,
+                "room_width": cal.get("room_width") or 0,
+                "room_depth": cal.get("room_depth") or 0,
             }
         )
     devices.sort(key=lambda d: (d["name"].casefold(), d["device_id"]))

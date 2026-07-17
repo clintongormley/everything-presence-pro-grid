@@ -796,7 +796,7 @@ export class EppGrid extends LitElement {
 		// Overview fade is a wash of the room colour — the same for every cell,
 		// so build it once here rather than per cell in the loop below.
 		const faded = this.fadeUncovered ? fadedRoomColor(this.roomColor) : "";
-		const planActive = !!this.floorPlan && !this._planError;
+		const planActive = this._planActive;
 		// fadeUncovered fills the room's bounding RECTANGLE (rawBounds), keyed on
 		// the rectangle rather than each cell's room bit: a footprint that drops
 		// the out-of-cone cells still has them inside the rectangle, so they read
@@ -815,6 +815,7 @@ export class EppGrid extends LitElement {
 				const cellStatus = status[idx];
 				const inRange = cellStatus === "in_range";
 				const inside = cellIsInside(cellVal);
+				const inRoom = inRoomRect(c, r);
 				let bg: string;
 				if (inRange) {
 					bg = cellBg(cellVal);
@@ -823,7 +824,7 @@ export class EppGrid extends LitElement {
 					// cone / beyond max range) fade to a wash of the room colour so the
 					// room reads as a clean rectangle; cells beyond the rectangle keep
 					// the plain outside colour.
-					bg = inRoomRect(c, r) ? faded : cellBg(cellVal);
+					bg = inRoom ? faded : cellBg(cellVal);
 				} else if (cellStatus === "beyond_max_range" && inside) {
 					// Only inside-room cells get the hatch-on-white "configured out"
 					// decoration; outside-room padding rendered as plain outside so
@@ -839,7 +840,7 @@ export class EppGrid extends LitElement {
 				// below the grid) shows through and blends against the card, not the
 				// room colour. Out-of-rectangle cells keep their outside shading; the
 				// plan layer is clipped to the same rectangle.
-				if (planActive && plain && inRoomRect(c, r)) {
+				if (planActive && plain && inRoom) {
 					bg = "transparent";
 				}
 				let occupancyStyle = "";
@@ -1087,6 +1088,11 @@ export class EppGrid extends LitElement {
 		this._planError = true;
 	};
 
+	/** A floor plan is set and its image hasn't failed to load. */
+	private get _planActive(): boolean {
+		return !!this.floorPlan && !this._planError;
+	}
+
 	private _renderFloorPlan(
 		rawBounds: {
 			minCol: number;
@@ -1099,7 +1105,11 @@ export class EppGrid extends LitElement {
 		visCols: number,
 		visRows: number,
 	) {
-		if (!this.floorPlan || this._planError) return nothing;
+		// Gated on `plain` to match the transparent-cell override in
+		// _renderVisibleCells: the plan only shows through in clean mode, so both
+		// gates agree (the card forces `plain` whenever a floor plan is set). This
+		// keeps the component self-consistent — no plan drawn behind opaque cells.
+		if (!this._planActive || !this.plain) return nothing;
 		// No room rectangle (uncalibrated / empty grid) → nothing to anchor to.
 		if (rawBounds.minCol > rawBounds.maxCol) return nothing;
 		const r = planRectPct(rawBounds, minCol, minRow, visCols, visRows);
