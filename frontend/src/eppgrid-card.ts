@@ -73,6 +73,10 @@ export interface EppGridCardConfig {
 	show_grid?: boolean;
 	/** Custom fill for the unpainted rest-of-room area, as an [r, g, b] triple. */
 	room_color?: [number, number, number];
+	/** URL of the floor-plan background image (uploaded serve URL or any user URL). */
+	floor_plan?: string;
+	/** Floor-plan opacity, 0–100 (%). */
+	floor_plan_opacity?: number;
 	layout?: "horizontal" | "vertical";
 	sensors?: {
 		presence?: Partial<Record<PresenceKey, boolean>>;
@@ -107,6 +111,8 @@ type ResolvedCardConfig = Omit<EppGridCardConfig, "sensors"> & {
 	show_sensors: boolean;
 	show_grid: boolean;
 	room_color?: [number, number, number];
+	floor_plan?: string;
+	floor_plan_opacity: number;
 	layout: "horizontal" | "vertical";
 	show_furniture: boolean;
 	show_overlays: boolean;
@@ -135,6 +141,12 @@ export function rgbCss(
 	return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
 }
 
+/** Clamp a config opacity (0–100) to range; undefined/NaN → 100 (fully opaque). */
+export function clampOpacity(v: number | undefined): number {
+	if (typeof v !== "number" || Number.isNaN(v)) return 100;
+	return Math.max(0, Math.min(100, v));
+}
+
 export function applyCardDefaults(
 	config: Partial<EppGridCardConfig>,
 ): ResolvedCardConfig {
@@ -154,6 +166,8 @@ export function applyCardDefaults(
 		show_sensors: config.show_sensors !== false,
 		show_grid: config.show_grid !== false,
 		room_color: config.room_color,
+		floor_plan: config.floor_plan,
+		floor_plan_opacity: clampOpacity(config.floor_plan_opacity),
 		layout: config.layout ?? "vertical",
 		show_furniture: config.show_furniture !== false,
 		show_overlays: config.show_overlays !== false,

@@ -3,6 +3,7 @@ import "../eppgrid-card.js";
 import {
 	__resetEntitySuggestionCache,
 	applyCardDefaults,
+	clampOpacity,
 	EppGridCard,
 	getEntitySuggestion,
 	rgbCss,
@@ -193,6 +194,36 @@ describe("applyCardDefaults", () => {
 		expect(applyCardDefaults({ show_heatmap: "toggle" }).show_heatmap).toBe(
 			"toggle",
 		);
+	});
+
+	it("defaults floor_plan to undefined and opacity to 100", () => {
+		const result = applyCardDefaults({});
+		expect(result.floor_plan).toBeUndefined();
+		expect(result.floor_plan_opacity).toBe(100);
+	});
+
+	it("passes floor_plan through and clamps opacity", () => {
+		expect(
+			applyCardDefaults({ floor_plan: "/api/image/serve/x/original" })
+				.floor_plan,
+		).toBe("/api/image/serve/x/original");
+		expect(
+			applyCardDefaults({ floor_plan_opacity: 60 }).floor_plan_opacity,
+		).toBe(60);
+		expect(
+			applyCardDefaults({ floor_plan_opacity: 250 }).floor_plan_opacity,
+		).toBe(100);
+		expect(
+			applyCardDefaults({ floor_plan_opacity: -5 }).floor_plan_opacity,
+		).toBe(0);
+	});
+
+	it("clampOpacity clamps and defaults", () => {
+		expect(clampOpacity(undefined)).toBe(100);
+		expect(clampOpacity(50)).toBe(50);
+		expect(clampOpacity(999)).toBe(100);
+		expect(clampOpacity(-1)).toBe(0);
+		expect(clampOpacity(Number.NaN)).toBe(100);
 	});
 });
 
