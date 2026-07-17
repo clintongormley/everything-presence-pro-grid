@@ -7188,9 +7188,7 @@ class TestOverviewListDevicesRoomDims:
         mock_dm.devices = {"AA:BB:CC:DD:EE:FF": SimpleNamespace(device_id="d1", name="Living Room")}
         mock_dm.store.devices = {"AA:BB:CC:DD:EE:FF": {"calibration": {"room_width": 4200, "room_depth": 3000}}}
 
-        from custom_components.eppgrid.websocket_api._overview import (
-            websocket_overview_list_devices,
-        )
+        from custom_components.eppgrid.websocket_api._overview import websocket_overview_list_devices
 
         connection = MagicMock()
         msg = {"id": 7, "type": "eppgrid/overview/list_devices"}
@@ -7214,9 +7212,7 @@ class TestOverviewListDevicesRoomDims:
         mock_dm.devices = {"AA:BB:CC:DD:EE:FF": SimpleNamespace(device_id="d1", name="Bedroom")}
         mock_dm.store.devices = {}  # no stored calibration
 
-        from custom_components.eppgrid.websocket_api._overview import (
-            websocket_overview_list_devices,
-        )
+        from custom_components.eppgrid.websocket_api._overview import websocket_overview_list_devices
 
         connection = MagicMock()
         msg = {"id": 8, "type": "eppgrid/overview/list_devices"}
