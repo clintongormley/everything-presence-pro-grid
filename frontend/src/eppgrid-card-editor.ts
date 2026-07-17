@@ -1,6 +1,10 @@
 import { css, html, LitElement, nothing } from "lit";
 import { state } from "lit/decorators.js";
-import { applyCardDefaults, type EppGridCardConfig } from "./eppgrid-card.js";
+import {
+	applyCardDefaults,
+	clampOpacity,
+	type EppGridCardConfig,
+} from "./eppgrid-card.js";
 import { defaultLocalize, type LocalizeFn, setupLocalize } from "./localize.js";
 import "./ui/epp-field.js";
 
@@ -11,8 +15,16 @@ interface DeviceOption {
 	room_depth?: number;
 }
 
-/** Pure: build the ha-form schema for the given device options. Testable. */
-export function buildSchema(devices: DeviceOption[]): unknown[] {
+/**
+ * Pure: build the ha-form schema for the given device options. Testable.
+ * `hideShowGrid` omits the "Show grid" toggle — it has no effect once a floor
+ * plan is set (the map always renders the clean look then), so the editor
+ * hides the now-inert control rather than leave it silently ignored.
+ */
+export function buildSchema(
+	devices: DeviceOption[],
+	hideShowGrid = false,
+): unknown[] {
 	return [
 		{
 			name: "device_id",
@@ -39,7 +51,7 @@ export function buildSchema(devices: DeviceOption[]): unknown[] {
 			},
 		},
 		{ name: "show_map", selector: { boolean: {} } },
-		{ name: "show_grid", selector: { boolean: {} } },
+		...(hideShowGrid ? [] : [{ name: "show_grid", selector: { boolean: {} } }]),
 		{ name: "show_furniture", selector: { boolean: {} } },
 		{ name: "show_overlays", selector: { boolean: {} } },
 		{
@@ -124,7 +136,7 @@ export class EppGridCardEditor extends LitElement {
 			flex: 0 0 auto;
 			width: 48px;
 			border: 1px solid var(--epp-accent, var(--primary-color));
-			border-radius: var(--epp-radius-sm, 3px);
+			border-radius: var(--epp-radius-sm, 6px);
 		}
 		.fp-opacity-row {
 			display: flex;
@@ -350,7 +362,7 @@ export class EppGridCardEditor extends LitElement {
 	}
 
 	private _renderOpacity() {
-		const val = this._config?.floor_plan_opacity ?? 100;
+		const val = clampOpacity(this._config?.floor_plan_opacity);
 		return html`<div class="fp-opacity-row">
 			<label class="fp-label">${this._localize("card.editor.floor_plan_opacity")}</label>
 			<input
@@ -360,6 +372,7 @@ export class EppGridCardEditor extends LitElement {
 				max="100"
 				step="5"
 				.value=${String(val)}
+				aria-label=${this._localize("card.editor.floor_plan_opacity")}
 				@input=${this._onOpacityInput}
 			/>
 			<span class="fp-opacity-val">${val}%</span>
@@ -393,7 +406,7 @@ export class EppGridCardEditor extends LitElement {
 			<ha-form
 				.hass=${this.__hass}
 				.data=${applyCardDefaults(this._config)}
-				.schema=${buildSchema(this._devices)}
+				.schema=${buildSchema(this._devices, !!this._config?.floor_plan)}
 				.computeLabel=${this._computeLabel}
 				@value-changed=${this._valueChanged}
 			></ha-form>

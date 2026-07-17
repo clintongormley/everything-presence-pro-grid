@@ -642,7 +642,7 @@ export class EppGridCard extends LitElement {
 				.maxGridPx=${480}
 				.showOverlays=${cfg.show_overlays}
 				.showDimensions=${false}
-				.plain=${!cfg.show_grid}
+				.plain=${!!cfg.floor_plan || !cfg.show_grid}
 				.roomColor=${rgbCss(cfg.room_color)}
 				.floorPlan=${cfg.floor_plan}
 				.floorPlanOpacity=${cfg.floor_plan_opacity / 100}

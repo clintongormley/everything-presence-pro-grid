@@ -433,6 +433,20 @@ describe("eppgrid-card rendering", () => {
 		expect(grid.plain).toBe(true);
 	});
 
+	it("forces the clean map (epp-grid plain) when a floor plan is set, even with show_grid defaulted on", async () => {
+		const el = await mount({
+			type: "custom:eppgrid-card",
+			device_id: "card-grid-floorplan",
+			floor_plan: "/api/image/serve/xyz/original",
+			// show_grid intentionally omitted — defaults to true.
+		});
+		const grid = el.shadowRoot!.querySelector("epp-grid") as unknown as {
+			plain: boolean;
+		};
+		expect(grid).toBeTruthy();
+		expect(grid.plain).toBe(true);
+	});
+
 	it("tells epp-grid to fill the available width", async () => {
 		const el = await mount({
 			type: "custom:eppgrid-card",

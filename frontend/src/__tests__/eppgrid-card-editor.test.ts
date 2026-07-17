@@ -223,6 +223,16 @@ describe("eppgrid-card-editor", () => {
 		expect(entry.selector).toEqual({ boolean: {} });
 	});
 
+	it("buildSchema omits show_grid when hideShowGrid is true (floor plan makes it inert)", () => {
+		const schema = buildSchema([], true) as any[];
+		expect(schema.find((s) => s.name === "show_grid")).toBeUndefined();
+	});
+
+	it("buildSchema includes show_grid by default (hideShowGrid omitted)", () => {
+		const schema = buildSchema([]) as any[];
+		expect(schema.find((s) => s.name === "show_grid")).toBeTruthy();
+	});
+
 	it("buildSchema has a show_heatmap mode dropdown (off/on/toggle)", () => {
 		const schema = buildSchema([]) as any[];
 		const entry = schema.find((s) => s.name === "show_heatmap");
@@ -563,5 +573,36 @@ describe("eppgrid-card-editor", () => {
 		expect(got).toHaveBeenCalledWith(
 			expect.objectContaining({ floor_plan_opacity: 40 }),
 		);
+	});
+
+	it("clamps an out-of-range floor_plan_opacity for display (hand-edited YAML)", async () => {
+		const callWS = vi.fn(async () => [
+			{
+				device_id: "d1",
+				name: "Living Room",
+				room_width: 4200,
+				room_depth: 3000,
+			},
+		]);
+		const el = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		el.setConfig({
+			type: "custom:eppgrid-card",
+			device_id: "d1",
+			floor_plan: "/local/plan.png",
+			floor_plan_opacity: 250,
+		} as any);
+		el.hass = { callWS, locale: { language: "en" } } as any;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		await Promise.resolve();
+		await el.updateComplete;
+		const valEl = el.shadowRoot!.querySelector(".fp-opacity-val");
+		expect(valEl!.textContent).toBe("100%");
+		const slider = el.shadowRoot!.querySelector(
+			"input.fp-opacity",
+		) as HTMLInputElement;
+		expect(slider.value).toBe("100");
 	});
 });

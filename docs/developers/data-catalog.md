@@ -375,10 +375,10 @@ Errors: `device_not_found` when the `device_id` doesn't match a known device.
 
 `custom:eppgrid-card` config keys (in addition to `device_id`):
 
-| Key                  | Type   | Default   | Description                                                                                                                                                                                  |
-| -------------------- | ------ | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `floor_plan`         | string | *(unset)* | Floor-plan background image URL (uploaded `/api/image/serve/{id}/original`, or any user URL such as `/local/plan.png`). Rendered behind the map, stretched to the calibrated room rectangle. |
-| `floor_plan_opacity` | number | `100`     | Floor-plan opacity, 0–100 (%).                                                                                                                                                               |
+| Key                  | Type   | Default   | Description                                                                                                                                                                                                                                                                                                                                    |
+| -------------------- | ------ | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `floor_plan`         | string | *(unset)* | Floor-plan background image URL (uploaded `/api/image/serve/{id}/original`, or any user URL such as `/local/plan.png`). Rendered behind the map, stretched to the calibrated room rectangle. While a floor plan is set, the map always renders the clean look (no gridlines/cell fills) so the plan stays visible — `show_grid` has no effect. |
+| `floor_plan_opacity` | number | `100`     | Floor-plan opacity, 0–100 (%).                                                                                                                                                                                                                                                                                                                 |
 
 ______________________________________________________________________
 
