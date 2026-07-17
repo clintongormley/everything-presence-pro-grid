@@ -190,6 +190,40 @@ export class EppGridCardEditor extends LitElement {
 	connectedCallback(): void {
 		super.connectedCallback();
 		this._loadDevices();
+		void this._ensurePictureUpload();
+	}
+
+	// HA lazy-loads <ha-picture-upload> only through a handful of consumers (the
+	// media selector, the person/area dialogs) — none of which a fresh dashboard
+	// has opened, so our editor would find it unregistered and fall back to the URL
+	// field. Nudge HA to import it by briefly mounting a media <ha-selector>
+	// (ha-selector-media statically imports ha-picture-upload), wait for the
+	// element to define, then re-render so the real upload control replaces the
+	// fallback. Best-effort: any failure (older HA, no ha-selector) simply leaves
+	// the URL fallback in place. `_preloadTimeoutMs` is overridable in tests.
+	private _pictureUploadRequested = false;
+	protected _preloadTimeoutMs = 4000;
+
+	private async _ensurePictureUpload(): Promise<void> {
+		if (this._pictureUploadRequested || this._hasPictureUpload) return;
+		this._pictureUploadRequested = true;
+		try {
+			if (this.__hass && customElements.get("ha-selector")) {
+				const probe = document.createElement("ha-selector");
+				(probe as unknown as { hass: unknown }).hass = this.__hass;
+				(probe as unknown as { selector: unknown }).selector = { media: {} };
+				probe.style.display = "none";
+				(this.shadowRoot ?? this).appendChild(probe);
+				await Promise.race([
+					customElements.whenDefined("ha-picture-upload"),
+					new Promise((resolve) => setTimeout(resolve, this._preloadTimeoutMs)),
+				]);
+				probe.remove();
+			}
+		} catch {
+			// Leave the URL fallback in place.
+		}
+		this.requestUpdate();
 	}
 
 	private async _loadDevices(): Promise<void> {
@@ -286,13 +320,19 @@ export class EppGridCardEditor extends LitElement {
 				${this._localize("card.editor.floor_plan_calibrate_first")}
 			</div>`;
 		}
+		// Normalise so the shorter side is 1 → the ratio is always >= 1 (e.g.
+		// "1.40 : 1") regardless of whether the room is landscape or portrait; the
+		// metres (width × depth) already convey the orientation. The proxy box keeps
+		// the true w/d aspect so it looks the right shape.
+		const big = Math.max(w, d);
+		const small = Math.min(w, d);
 		const proxy = `aspect-ratio:${w} / ${d};`;
 		return html`<div class="fp-ratio-hint">
 			<span class="fp-ratio-proxy" style=${proxy}></span>
 			<span>${this._localize("card.editor.floor_plan_ratio", {
 				width: (w / 1000).toFixed(1),
 				depth: (d / 1000).toFixed(1),
-				ratio: (w / d).toFixed(2),
+				ratio: (big / small).toFixed(2),
 			})}</span>
 		</div>`;
 	}

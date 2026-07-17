@@ -467,6 +467,25 @@ describe("eppgrid-card-editor", () => {
 		expect(hint.toLowerCase()).toContain("calibrate");
 	});
 
+	it("normalises the crop ratio so the smaller side is 1 (portrait room)", async () => {
+		const callWS = vi.fn(async () => [
+			{ device_id: "d1", name: "Hallway", room_width: 3000, room_depth: 4200 },
+		]);
+		const el = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		el.setConfig({ type: "custom:eppgrid-card", device_id: "d1" } as any);
+		el.hass = { callWS, locale: { language: "en" } } as any;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		await Promise.resolve();
+		await el.updateComplete;
+		const hint = el.shadowRoot!.querySelector(".fp-ratio-hint")!.textContent!;
+		// larger/smaller = 4200/3000 = 1.40, always >= 1 regardless of orientation
+		expect(hint).toContain("1.40");
+		expect(hint).not.toContain("0.71");
+	});
+
 	it("falls back to a URL field when ha-picture-upload is unavailable and writes floor_plan", async () => {
 		const callWS = vi.fn(async () => [
 			{
