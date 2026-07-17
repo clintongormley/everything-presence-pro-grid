@@ -513,4 +513,55 @@ describe("eppgrid-card-editor", () => {
 		expect(cfg.floor_plan).toBeUndefined();
 		expect(cfg.floor_plan_opacity).toBeUndefined();
 	});
+
+	it("shows an opacity slider only when a plan is set, and writes floor_plan_opacity", async () => {
+		const callWS = vi.fn(async () => [
+			{
+				device_id: "d1",
+				name: "Living Room",
+				room_width: 4200,
+				room_depth: 3000,
+			},
+		]);
+		// No plan set → no slider.
+		const noPlan = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		noPlan.setConfig({ type: "custom:eppgrid-card", device_id: "d1" } as any);
+		noPlan.hass = { callWS, locale: { language: "en" } } as any;
+		document.body.appendChild(noPlan);
+		await noPlan.updateComplete;
+		await Promise.resolve();
+		await noPlan.updateComplete;
+		expect(noPlan.shadowRoot!.querySelector("input.fp-opacity")).toBeNull();
+
+		// Plan set → slider present and writes opacity.
+		const withPlan = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		withPlan.setConfig({
+			type: "custom:eppgrid-card",
+			device_id: "d1",
+			floor_plan: "/local/plan.png",
+		} as any);
+		withPlan.hass = { callWS, locale: { language: "en" } } as any;
+		document.body.appendChild(withPlan);
+		await withPlan.updateComplete;
+		await Promise.resolve();
+		await withPlan.updateComplete;
+		const slider = withPlan.shadowRoot!.querySelector(
+			"input.fp-opacity",
+		) as HTMLInputElement;
+		expect(slider).toBeTruthy();
+
+		const got = vi.fn();
+		withPlan.addEventListener("config-changed", (e: any) =>
+			got(e.detail.config),
+		);
+		slider.value = "40";
+		slider.dispatchEvent(new Event("input"));
+		expect(got).toHaveBeenCalledWith(
+			expect.objectContaining({ floor_plan_opacity: 40 }),
+		);
+	});
 });

@@ -564,7 +564,8 @@
 			"floor_plan": "Imagen del plano",
 			"floor_plan_url": "URL de la imagen del plano",
 			"floor_plan_ratio": "Tu habitación mide {width} m × {depth} m — recorta el plano a {ratio} : 1 para que encaje sin estirarse.",
-			"floor_plan_calibrate_first": "Calibra primero la habitación para obtener la proporción de recorte recomendada."
+			"floor_plan_calibrate_first": "Calibra primero la habitación para obtener la proporción de recorte recomendada.",
+			"floor_plan_opacity": "Opacidad del plano"
 		}
 	}
 }

@@ -126,6 +126,21 @@ export class EppGridCardEditor extends LitElement {
 			border: 1px solid var(--epp-accent, var(--primary-color));
 			border-radius: var(--epp-radius-sm, 3px);
 		}
+		.fp-opacity-row {
+			display: flex;
+			align-items: center;
+			gap: var(--epp-space-2, 8px);
+			margin-top: var(--epp-space-2, 8px);
+		}
+		.fp-opacity {
+			flex: 1;
+		}
+		.fp-opacity-val {
+			font-size: var(--epp-font-xs, 12px);
+			color: var(--epp-text-muted, var(--secondary-text-color));
+			width: 3em;
+			text-align: right;
+		}
 	`;
 
 	private __hass?: {
@@ -334,11 +349,41 @@ export class EppGridCardEditor extends LitElement {
 		);
 	}
 
+	private _renderOpacity() {
+		const val = this._config?.floor_plan_opacity ?? 100;
+		return html`<div class="fp-opacity-row">
+			<label class="fp-label">${this._localize("card.editor.floor_plan_opacity")}</label>
+			<input
+				class="fp-opacity"
+				type="range"
+				min="0"
+				max="100"
+				step="5"
+				.value=${String(val)}
+				@input=${this._onOpacityInput}
+			/>
+			<span class="fp-opacity-val">${val}%</span>
+		</div>`;
+	}
+
+	private _onOpacityInput = (e: Event): void => {
+		if (!this._config) return;
+		const v = Number((e.target as HTMLInputElement).value);
+		this.dispatchEvent(
+			new CustomEvent("config-changed", {
+				detail: { config: { ...this._config, floor_plan_opacity: v } },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+	};
+
 	private _renderFloorPlanSection() {
 		return html`<div class="floor-plan-section">
 			<div class="fp-label">${this._localize("card.editor.floor_plan")}</div>
 			${this._renderUpload()}
 			${this._renderRatioHint()}
+			${this._config?.floor_plan ? this._renderOpacity() : nothing}
 		</div>`;
 	}
 
