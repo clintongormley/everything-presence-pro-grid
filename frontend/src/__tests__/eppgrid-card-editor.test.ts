@@ -456,4 +456,61 @@ describe("eppgrid-card-editor", () => {
 		const hint = el.shadowRoot!.querySelector(".fp-ratio-hint")!.textContent!;
 		expect(hint.toLowerCase()).toContain("calibrate");
 	});
+
+	it("falls back to a URL field when ha-picture-upload is unavailable and writes floor_plan", async () => {
+		const callWS = vi.fn(async () => [
+			{
+				device_id: "d1",
+				name: "Living Room",
+				room_width: 4200,
+				room_depth: 3000,
+			},
+		]);
+		const el = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		el.setConfig({ type: "custom:eppgrid-card", device_id: "d1" } as any);
+		el.hass = { callWS, locale: { language: "en" } } as any;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		await Promise.resolve();
+		await el.updateComplete;
+
+		const field = el.shadowRoot!.querySelector(
+			"epp-field.fp-url",
+		) as HTMLElement;
+		expect(field).toBeTruthy();
+
+		const got = vi.fn();
+		el.addEventListener("config-changed", (e: any) => got(e.detail.config));
+		field.dispatchEvent(
+			new CustomEvent("value-changed", {
+				detail: { value: "/local/plan.png" },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+		expect(got).toHaveBeenCalledWith(
+			expect.objectContaining({ floor_plan: "/local/plan.png" }),
+		);
+	});
+
+	it("clearing the URL removes floor_plan and floor_plan_opacity", () => {
+		const el = document.createElement(
+			"eppgrid-card-editor",
+		) as EppGridCardEditor;
+		el.setConfig({
+			type: "custom:eppgrid-card",
+			device_id: "d1",
+			floor_plan: "/local/plan.png",
+			floor_plan_opacity: 50,
+		} as any);
+		const got = vi.fn();
+		el.addEventListener("config-changed", (e: any) => got(e.detail.config));
+		// Simulate the upload/URL control emitting an empty value.
+		(el as any)._writeFloorPlan(undefined);
+		const cfg = got.mock.calls[0][0];
+		expect(cfg.floor_plan).toBeUndefined();
+		expect(cfg.floor_plan_opacity).toBeUndefined();
+	});
 });

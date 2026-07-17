@@ -562,6 +562,7 @@
 			"illuminance": "Illuminance",
 			"co2": "CO₂",
 			"floor_plan": "Floor plan image",
+			"floor_plan_url": "Floor plan image URL",
 			"floor_plan_ratio": "Your room is {width} m × {depth} m — crop your plan to {ratio} : 1 so it lines up without stretching.",
 			"floor_plan_calibrate_first": "Calibrate the room first to get the recommended crop ratio."
 		}

@@ -2,6 +2,7 @@ import { css, html, LitElement, nothing } from "lit";
 import { state } from "lit/decorators.js";
 import { applyCardDefaults, type EppGridCardConfig } from "./eppgrid-card.js";
 import { defaultLocalize, type LocalizeFn, setupLocalize } from "./localize.js";
+import "./ui/epp-field.js";
 
 interface DeviceOption {
 	device_id: string;
@@ -269,9 +270,80 @@ export class EppGridCardEditor extends LitElement {
 		</div>`;
 	}
 
+	private get _hasPictureUpload(): boolean {
+		return !!customElements.get("ha-picture-upload");
+	}
+
+	private _renderUpload() {
+		const dev = this._selectedDevice();
+		const w = dev?.room_width ?? 0;
+		const d = dev?.room_depth ?? 0;
+		const aspectRatio = w > 0 && d > 0 ? w / d : undefined;
+		/* v8 ignore start — ha-picture-upload is the panel path; happy-dom leaves
+		   it unregistered, so tests exercise the epp-field fallback below. */
+		if (this._hasPictureUpload) {
+			// HA's native upload → stores the image in image_upload and yields a
+			// /api/image/serve/{id}/original URL. `crop` locks the cropper to the
+			// room ratio so uploads never distort under stretch.
+			return html`<ha-picture-upload
+				.hass=${this.__hass}
+				.value=${this._config?.floor_plan ?? null}
+				original
+				?crop=${aspectRatio !== undefined}
+				.cropOptions=${aspectRatio !== undefined ? { round: false, aspectRatio } : undefined}
+				@change=${this._onPictureChanged}
+			></ha-picture-upload>`;
+		}
+		/* v8 ignore stop */
+		// Fallback: the epp-field primitive (design-system input that carries its
+		// own ha-input/ha-textfield/native registration guard and tokens — never
+		// hand-roll an input when a primitive exists). Also lets power users point
+		// at a self-hosted /local/… image.
+		return html`<epp-field
+			class="fp-url"
+			.value=${this._config?.floor_plan ?? ""}
+			.label=${this._localize("card.editor.floor_plan_url")}
+			@value-changed=${this._onUrlChanged}
+		></epp-field>`;
+	}
+
+	/* v8 ignore start — only reachable from the ha-picture-upload panel path
+	   above, which happy-dom never registers. */
+	private _onPictureChanged = (e: Event): void => {
+		const val = (e.target as unknown as { value: string | null }).value;
+		this._writeFloorPlan(val || undefined);
+	};
+	/* v8 ignore stop */
+
+	private _onUrlChanged = (e: Event): void => {
+		// epp-field is composed:true — stop the event re-crossing our boundary.
+		e.stopPropagation();
+		const val = String((e as CustomEvent).detail?.value ?? "").trim();
+		this._writeFloorPlan(val || undefined);
+	};
+
+	private _writeFloorPlan(url: string | undefined): void {
+		if (!this._config) return;
+		const config = { ...this._config };
+		if (url) {
+			config.floor_plan = url;
+		} else {
+			delete config.floor_plan;
+			delete config.floor_plan_opacity;
+		}
+		this.dispatchEvent(
+			new CustomEvent("config-changed", {
+				detail: { config },
+				bubbles: true,
+				composed: true,
+			}),
+		);
+	}
+
 	private _renderFloorPlanSection() {
 		return html`<div class="floor-plan-section">
 			<div class="fp-label">${this._localize("card.editor.floor_plan")}</div>
+			${this._renderUpload()}
 			${this._renderRatioHint()}
 		</div>`;
 	}
