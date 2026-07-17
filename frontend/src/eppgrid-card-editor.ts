@@ -279,8 +279,6 @@ export class EppGridCardEditor extends LitElement {
 		const w = dev?.room_width ?? 0;
 		const d = dev?.room_depth ?? 0;
 		const aspectRatio = w > 0 && d > 0 ? w / d : undefined;
-		/* v8 ignore start — ha-picture-upload is the panel path; happy-dom leaves
-		   it unregistered, so tests exercise the epp-field fallback below. */
 		if (this._hasPictureUpload) {
 			// HA's native upload → stores the image in image_upload and yields a
 			// /api/image/serve/{id}/original URL. `crop` locks the cropper to the
@@ -294,7 +292,6 @@ export class EppGridCardEditor extends LitElement {
 				@change=${this._onPictureChanged}
 			></ha-picture-upload>`;
 		}
-		/* v8 ignore stop */
 		// Fallback: the epp-field primitive (design-system input that carries its
 		// own ha-input/ha-textfield/native registration guard and tokens — never
 		// hand-roll an input when a primitive exists). Also lets power users point
@@ -307,13 +304,10 @@ export class EppGridCardEditor extends LitElement {
 		></epp-field>`;
 	}
 
-	/* v8 ignore start — only reachable from the ha-picture-upload panel path
-	   above, which happy-dom never registers. */
 	private _onPictureChanged = (e: Event): void => {
 		const val = (e.target as unknown as { value: string | null }).value;
 		this._writeFloorPlan(val || undefined);
 	};
-	/* v8 ignore stop */
 
 	private _onUrlChanged = (e: Event): void => {
 		// epp-field is composed:true — stop the event re-crossing our boundary.
