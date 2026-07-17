@@ -478,6 +478,21 @@ describe("eppgrid-card rendering", () => {
 		expect(grid.roomColor).toBeUndefined();
 	});
 
+	it("passes floor_plan and normalised opacity to epp-grid", async () => {
+		const el = await mount({
+			type: "custom:eppgrid-card",
+			device_id: "d1",
+			floor_plan: "/api/image/serve/xyz/original",
+			floor_plan_opacity: 40,
+		} as any);
+		const grid = el.shadowRoot!.querySelector("epp-grid") as unknown as {
+			floorPlan?: string;
+			floorPlanOpacity: number;
+		};
+		expect(grid.floorPlan).toBe("/api/image/serve/xyz/original");
+		expect(grid.floorPlanOpacity).toBeCloseTo(0.4);
+	});
+
 	it("stacks map over sensors by default (vertical layout)", async () => {
 		const el = await mount({
 			type: "custom:eppgrid-card",

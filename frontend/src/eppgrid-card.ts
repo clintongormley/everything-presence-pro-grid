@@ -644,6 +644,8 @@ export class EppGridCard extends LitElement {
 				.showDimensions=${false}
 				.plain=${!cfg.show_grid}
 				.roomColor=${rgbCss(cfg.room_color)}
+				.floorPlan=${cfg.floor_plan}
+				.floorPlanOpacity=${cfg.floor_plan_opacity / 100}
 				.fill=${true}
 				.fadeUncovered=${true}
 				.heatmapCells=${heatmapVisible ? this._heatmapCells : []}
