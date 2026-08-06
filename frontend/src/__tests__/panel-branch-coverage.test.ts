@@ -403,6 +403,31 @@ describe("_renderEditor target rendering branches", () => {
 		expect(grid.editable).toBe(true);
 	});
 
+	it("keeps the signal badge on the editor grid (signal stays off the card only)", async () => {
+		// The card suppresses the per-target signal badge via showSignal=false;
+		// every panel grid must leave showSignal at its default so signal keeps
+		// showing here. Guards against .showSignal=${false} creeping onto a panel
+		// <epp-grid> call site.
+		const a = createPanel() as any;
+		a._view = "editor";
+		a._targets = [
+			{
+				x: 1500,
+				y: 2000,
+				status: "active" as const,
+				signal: 7,
+			},
+		];
+
+		const c = renderTo(a._renderEditor());
+		const grid = c.querySelector("epp-grid") as any;
+		await grid.updateComplete;
+		const overlay = grid.shadowRoot.querySelector(
+			".targets-overlay",
+		) as HTMLElement;
+		expect(overlay.textContent?.trim()).toBe("7");
+	});
+
 	it("binds the editor occupancy from the local zone engine", () => {
 		const a = createPanel() as any;
 		a._view = "editor";

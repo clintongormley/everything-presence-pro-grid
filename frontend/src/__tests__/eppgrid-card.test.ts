@@ -458,6 +458,17 @@ describe("eppgrid-card rendering", () => {
 		expect(grid.fill).toBe(true);
 	});
 
+	it("tells epp-grid not to show target signal strength on the card", async () => {
+		const el = await mount({
+			type: "custom:eppgrid-card",
+			device_id: "card-no-signal",
+		});
+		const grid = el.shadowRoot!.querySelector("epp-grid") as unknown as {
+			showSignal: boolean;
+		};
+		expect(grid.showSignal).toBe(false);
+	});
+
 	it("tells epp-grid to fade uncovered cells (clean room rectangle)", async () => {
 		const el = await mount({
 			type: "custom:eppgrid-card",

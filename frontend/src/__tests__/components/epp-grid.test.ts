@@ -455,6 +455,24 @@ describe("epp-grid target rendering", () => {
 		document.body.removeChild(el);
 	});
 
+	it("omits the signal badge when showSignal is false, keeping the dot", async () => {
+		const targets: Target[] = [
+			{ x: 1500, y: 2000, status: "active", signal: 7 },
+		];
+		const el = createGrid({ targets, showSignal: false });
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const overlay = el.shadowRoot!.querySelector(
+			".targets-overlay",
+		) as HTMLElement;
+		// The dot still renders — only the numeric signal badge is suppressed.
+		expect(overlay.querySelectorAll(".target-dot").length).toBe(1);
+		expect(overlay.textContent).not.toContain("7");
+
+		document.body.removeChild(el);
+	});
+
 	it("falls back to targetPrevXY for pending targets off-grid", async () => {
 		const targets: Target[] = [
 			{ x: 999999, y: 999999, status: "pending", signal: 5 },

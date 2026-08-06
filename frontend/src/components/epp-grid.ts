@@ -82,6 +82,13 @@ export class EppGrid extends LitElement {
 	/** When false, the dimensions + furthest-point caption below the grid is hidden. */
 	@property({ type: Boolean }) showDimensions = true;
 	/**
+	 * When false, the per-target signal-strength badge floating above each active
+	 * dot is hidden. The dashboard card turns this off (signal is a diagnostic
+	 * detail for the panel's live/editor views, not the card); the panel leaves
+	 * it at the default so signal keeps showing there.
+	 */
+	@property({ type: Boolean }) showSignal = true;
+	/**
 	 * Clean-map mode (overview card "Show grid" off). Drops the gridlines (gap →
 	 * 0 via the reflected [plain] attribute), zone colouring, occupancy glow and
 	 * overlay stripes — keeping only the in/out-of-range shading, targets and
@@ -1073,7 +1080,7 @@ export class EppGrid extends LitElement {
 				}}
 			></div>
 			${
-				t.status === "active" && t.signal > 0
+				this.showSignal && t.status === "active" && t.signal > 0
 					? html`
 						<div style="position: absolute; left: ${xPct}%; top: ${yPct}%; transform: translate(-50%, -280%); background: rgba(0,0,0,0.7); color: #fff; font-size: 10px; font-weight: bold; padding: 0 4px; border-radius: 6px; pointer-events: none;">
 							${t.signal}
