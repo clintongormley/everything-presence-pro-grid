@@ -15,16 +15,14 @@ recorder — the live UI keeps working.
 
 from pathlib import Path
 
-import yaml
-
-from tests.esphome_yaml import ESPHomeLoader
+from tests.esphome_yaml import WIFI_VARIANT_YAML
+from tests.esphome_yaml import load_variant
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_base_yaml() -> dict:
-    text = (REPO_ROOT / "firmware" / "common" / "everything-presence-pro-base.yaml").read_text()
-    return yaml.load(text, Loader=ESPHomeLoader)
+    return load_variant(WIFI_VARIANT_YAML)
 
 
 def _find_sensor_by_id(sensors: list, sensor_id: str) -> dict | None:

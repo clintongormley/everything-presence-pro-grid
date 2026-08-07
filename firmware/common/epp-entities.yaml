@@ -1,0 +1,220 @@
+# Model-agnostic `epp:` entity definitions, shared by both model bases.
+#
+# Every zone / target / occupancy entity the zone engine publishes is identical
+# across the Pro and the Lite — the engine itself is the same code. Inputs that
+# only one board has (`static_presence`, `motion_presence`, their outputs, and
+# `relay_switch`) are wired up in that board's own base, where the hardware
+# they point at is defined.
+
+epp:
+  id: epp_component
+  device_tracking:
+    name: "Target Presence"
+    device_class: occupancy
+    disabled_by_default: true
+  # Connectivity of the LD2450 tracker itself — ON while frames are arriving
+  # (even in an empty room, the LD2450 streams ~10Hz), OFF if it goes silent or
+  # never comes up after boot. Distinct from Target Presence (targets seen): a
+  # dead/disconnected tracker reads Disconnected here instead of looking like an
+  # empty room (#407). Enabled by default so the fault is visible without
+  # hunting through hidden entities.
+  tracking_health:
+    name: "Tracking Sensor"
+    device_class: connectivity
+    entity_category: diagnostic
+  firmware_version:
+    name: "Firmware Version"
+    entity_category: diagnostic
+  zone_occupancy:
+    zone_0:
+      name: "Zone 0 Presence"
+      device_class: occupancy
+      disabled_by_default: true
+    zone_1:
+      name: "Zone 1 Presence"
+      device_class: occupancy
+      disabled_by_default: true
+    zone_2:
+      name: "Zone 2 Presence"
+      device_class: occupancy
+      disabled_by_default: true
+    zone_3:
+      name: "Zone 3 Presence"
+      device_class: occupancy
+      disabled_by_default: true
+    zone_4:
+      name: "Zone 4 Presence"
+      device_class: occupancy
+      disabled_by_default: true
+    zone_5:
+      name: "Zone 5 Presence"
+      device_class: occupancy
+      disabled_by_default: true
+    zone_6:
+      name: "Zone 6 Presence"
+      device_class: occupancy
+      disabled_by_default: true
+    zone_7:
+      name: "Zone 7 Presence"
+      device_class: occupancy
+      disabled_by_default: true
+  target_positions:
+    target_0:
+      name: "Target 1 Position"
+      disabled_by_default: true
+      entity_category: diagnostic
+    target_1:
+      name: "Target 2 Position"
+      disabled_by_default: true
+      entity_category: diagnostic
+    target_2:
+      name: "Target 3 Position"
+      disabled_by_default: true
+      entity_category: diagnostic
+  raw_target_positions:
+    target_0:
+      name: "Raw Target 1"
+      disabled_by_default: true
+      entity_category: diagnostic
+    target_1:
+      name: "Raw Target 2"
+      disabled_by_default: true
+      entity_category: diagnostic
+    target_2:
+      name: "Raw Target 3"
+      disabled_by_default: true
+      entity_category: diagnostic
+  zone_state:
+    name: "Zone State"
+    disabled_by_default: true
+    entity_category: diagnostic
+  target_entities:
+    target_1:
+      x:
+        name: "Target 1 X"
+        disabled_by_default: true
+        unit_of_measurement: "mm"
+        accuracy_decimals: 0
+      y:
+        name: "Target 1 Y"
+        disabled_by_default: true
+        unit_of_measurement: "mm"
+        accuracy_decimals: 0
+      signal:
+        name: "Target 1 Signal"
+        disabled_by_default: true
+        accuracy_decimals: 0
+        state_class: measurement
+      active:
+        name: "Target 1 Active"
+        device_class: occupancy
+        disabled_by_default: true
+      zone:
+        name: "Target 1 Zone"
+        disabled_by_default: true
+        accuracy_decimals: 0
+        state_class: measurement
+    target_2:
+      x:
+        name: "Target 2 X"
+        disabled_by_default: true
+        unit_of_measurement: "mm"
+        accuracy_decimals: 0
+      y:
+        name: "Target 2 Y"
+        disabled_by_default: true
+        unit_of_measurement: "mm"
+        accuracy_decimals: 0
+      signal:
+        name: "Target 2 Signal"
+        disabled_by_default: true
+        accuracy_decimals: 0
+        state_class: measurement
+      active:
+        name: "Target 2 Active"
+        device_class: occupancy
+        disabled_by_default: true
+      zone:
+        name: "Target 2 Zone"
+        disabled_by_default: true
+        accuracy_decimals: 0
+        state_class: measurement
+    target_3:
+      x:
+        name: "Target 3 X"
+        disabled_by_default: true
+        unit_of_measurement: "mm"
+        accuracy_decimals: 0
+      y:
+        name: "Target 3 Y"
+        disabled_by_default: true
+        unit_of_measurement: "mm"
+        accuracy_decimals: 0
+      signal:
+        name: "Target 3 Signal"
+        disabled_by_default: true
+        accuracy_decimals: 0
+        state_class: measurement
+      active:
+        name: "Target 3 Active"
+        device_class: occupancy
+        disabled_by_default: true
+      zone:
+        name: "Target 3 Zone"
+        disabled_by_default: true
+        accuracy_decimals: 0
+        state_class: measurement
+  zone_target_counts:
+    zone_0:
+      name: "Zone 0 Target Count"
+      disabled_by_default: true
+      accuracy_decimals: 0
+      state_class: measurement
+    zone_1:
+      name: "Zone 1 Target Count"
+      disabled_by_default: true
+      accuracy_decimals: 0
+      state_class: measurement
+    zone_2:
+      name: "Zone 2 Target Count"
+      disabled_by_default: true
+      accuracy_decimals: 0
+      state_class: measurement
+    zone_3:
+      name: "Zone 3 Target Count"
+      disabled_by_default: true
+      accuracy_decimals: 0
+      state_class: measurement
+    zone_4:
+      name: "Zone 4 Target Count"
+      disabled_by_default: true
+      accuracy_decimals: 0
+      state_class: measurement
+    zone_5:
+      name: "Zone 5 Target Count"
+      disabled_by_default: true
+      accuracy_decimals: 0
+      state_class: measurement
+    zone_6:
+      name: "Zone 6 Target Count"
+      disabled_by_default: true
+      accuracy_decimals: 0
+      state_class: measurement
+    zone_7:
+      name: "Zone 7 Target Count"
+      disabled_by_default: true
+      accuracy_decimals: 0
+      state_class: measurement
+  target_count:
+    name: "Target Count"
+    disabled_by_default: true
+    accuracy_decimals: 0
+    state_class: measurement
+  occupancy_output:
+    id: epp_occupancy
+    name: "Occupancy"
+    device_class: occupancy
+  mmwave_output:
+    name: "mmWave Presence"
+    device_class: occupancy
+    disabled_by_default: true

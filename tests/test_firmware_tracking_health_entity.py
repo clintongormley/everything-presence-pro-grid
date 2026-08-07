@@ -10,23 +10,24 @@ binary_sensor entity ESPHome publishes to HA.
 
 from pathlib import Path
 
-import yaml
-
-from tests.esphome_yaml import ESPHomeLoader
+from tests.esphome_yaml import WIFI_VARIANT_YAML
+from tests.esphome_yaml import load_variant
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 
 def _load_base_yaml() -> dict:
-    text = (REPO_ROOT / "firmware" / "common" / "everything-presence-pro-base.yaml").read_text()
-    return yaml.load(text, Loader=ESPHomeLoader)
+    # tracking_health lives in the shared epp-entities.yaml (both models run an
+    # LD2450), so assert against the merged variant config rather than a single
+    # base file — see tests/esphome_yaml.load_variant.
+    return load_variant(WIFI_VARIANT_YAML)
 
 
 def test_tracking_health_present_in_epp_block():
     doc = _load_base_yaml()
     tracking_health = doc.get("epp", {}).get("tracking_health")
     assert tracking_health is not None, (
-        "epp.tracking_health must be configured in everything-presence-pro-base.yaml — "
+        "epp.tracking_health must be configured in the shared epp-entities.yaml — "
         "this is the connectivity binary_sensor that surfaces a silent/dead tracker (#407)."
     )
 
