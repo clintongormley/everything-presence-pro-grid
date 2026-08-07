@@ -31,6 +31,7 @@ from pathlib import Path
 
 from tests.esphome_yaml import BASE_YAML
 from tests.esphome_yaml import CORE_YAML
+from tests.esphome_yaml import LITE_BASE_YAML
 from tests.esphome_yaml import load_yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -73,7 +74,7 @@ def test_no_model_base_overrides_the_shared_project_version():
     version forever while the integration's Repairs flow kept offering it an
     upgrade it already had.
     """
-    for base in (BASE_YAML,):
+    for base in (BASE_YAML, LITE_BASE_YAML):
         project = (load_yaml(base) or {}).get("esphome", {}).get("project", {})
         assert "version" not in project, (
             f"{base.name} sets esphome.project.version. Remove it — the version is "

@@ -225,6 +225,19 @@ api:
               root["firmware_channel"]  = "${ device_config.firmware_channel }";
               root["model"]             = "${ device_config.model }";
               root["heatmap"]           = EPP_HEATMAP_ENABLED != 0;
+              // Hardware capability flags. The panel hides the controls for
+              // anything a board does not have, so these describe the PCB and
+              // must match what the model's base actually wires up — a flag
+              // that overstates the hardware leaves the user a control whose
+              // service the firmware never declared, which pushes silently
+              // nowhere. Defined per model in {lite-,}variant-defaults.yaml.
+              root["has_temperature"]      = ${ device_config.has_temperature | lower };
+              root["has_humidity"]         = ${ device_config.has_humidity | lower };
+              root["has_illuminance"]      = ${ device_config.has_illuminance | lower };
+              root["has_motion_presence"]  = ${ device_config.has_motion_presence | lower };
+              root["has_static_presence"]  = ${ device_config.has_static_presence | lower };
+              root["has_led"]              = ${ device_config.has_led | lower };
+              root["has_relay"]            = ${ device_config.has_relay | lower };
     - action: epp_clear_heatmap
       then:
         - lambda: 'id(epp_component).clear_heatmap();'

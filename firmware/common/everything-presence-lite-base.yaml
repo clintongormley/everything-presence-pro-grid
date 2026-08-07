@@ -1,0 +1,68 @@
+# Everything Presence Lite — board-specific firmware.
+#
+# The zone engine, its entities, the API surface the integration drives,
+# logging, OTA and diagnostics all come from the shared packages
+# (epp-core.yaml / epp-entities.yaml / bh1750-base.yaml). What is left here is
+# the handful of things the Lite does differently from the Pro.
+#
+# What the Lite does NOT have, and therefore what is deliberately absent:
+#
+#   - SEN0609 static-presence radar  -> no `epp.static_presence`, no
+#                                       epp_set_static_presence / _static_timeout
+#   - PIR                            -> no `epp.motion_presence`, no
+#                                       epp_set_motion_timeout
+#   - SHTC3                          -> no temperature / humidity sensors
+#   - relay                          -> no `epp.relay_switch`, no epp_set_relay
+#   - addressable RGB LED            -> a plain status LED, no LED modes, no
+#                                       epp_set_led
+#
+# The integration handles all of these by absence: every push in
+# DeviceConnection.async_push_config is guarded on the service existing, so a
+# Lite simply skips the ones it does not expose. The panel hides the matching
+# controls from the capability flags in `get_build_flags` (see
+# lite-variant-defaults.yaml).
+#
+# Occupancy on a Lite therefore comes from LD2450 target tracking alone, which
+# is what `sensor_variant: ld2450` records.
+
+esphome:
+  project:
+    name: EverythingSmartTechnology.Everything Presence Lite
+
+api:
+  actions:
+    # Declared per model rather than shared because the Pro's copy also pokes
+    # the SHTC3. The variable list must stay identical on both: the integration
+    # sends all three offsets in one call (see _connection.py), and ESPHome
+    # matches a user action by name AND argument list — dropping the two the
+    # Lite has no hardware for would make the call fail outright rather than
+    # ignore them.
+    - action: epp_set_env_calibration
+      variables:
+        temperature_offset: float
+        humidity_offset: float
+        illuminance_offset: float
+      then:
+        - lambda: |-
+            ESP_LOGI("epp", "epp_set_env_calibration: illuminance_offset=%.1f (no temperature/humidity sensor on this model)",
+                     illuminance_offset);
+            id(env_illuminance_offset) = illuminance_offset;
+            id(illuminance_sensor).update();
+
+i2c:
+  - id: bus_a
+    scl: GPIO22
+    sda: GPIO21
+    scan: true
+
+light:
+  # The Lite's only indicator is the ESP32's own LED. It is not addressable and
+  # has no colour, so none of the Pro's LED modes / effects / presence colours
+  # apply — `epp_set_led` is intentionally not declared, and the panel hides the
+  # LED controls via `has_led: false`.
+  - platform: status_led
+    name: ESP32 LED
+    id: esp32_led
+    pin: GPIO14
+    internal: False
+    restore_mode: ALWAYS_OFF
