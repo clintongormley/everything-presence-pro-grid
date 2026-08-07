@@ -194,6 +194,22 @@ def test_lite_illuminance_offset_reaches_the_sensor() -> None:
     )
 
 
+def test_lite_led_stays_reachable_as_a_home_assistant_entity() -> None:
+    """`has_led: false` hides the panel's LED controls, so the entity is the only control.
+
+    The Lite's LED is a single fixed-colour status LED — none of the Pro's
+    modes, brightness or presence colour mean anything to it, so the panel
+    offers nothing for it on purpose. That makes the HA light entity the sole
+    way to turn it on or off: marking it `internal` or `disabled_by_default`
+    would leave the LED with no control anywhere at all.
+    """
+    lights = load_variant(LITE_VARIANT_YAML)["light"]
+    led = next(light for light in lights if light.get("id") == "esp32_led")
+    assert led.get("internal") is False, "the Lite's LED must be exposed to HA, not internal"
+    assert not led.get("disabled_by_default"), "the Lite's LED entity must be enabled by default"
+    assert led.get("name"), "the Lite's LED entity needs a name to show up in HA"
+
+
 def test_lite_declares_no_pro_only_services() -> None:
     """Absent hardware must mean an absent service, not a service that no-ops.
 
