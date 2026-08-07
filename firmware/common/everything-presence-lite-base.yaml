@@ -56,12 +56,19 @@ i2c:
     scan: true
 
 light:
-  # The Lite's only indicator is the ESP32's own LED. It is not addressable and
-  # has no colour, so none of the Pro's LED modes / effects / presence colours
-  # apply — `epp_set_led` is intentionally not declared, and the panel hides the
-  # LED controls via `has_led: false`.
+  # The Lite's only indicator is the ESP32's own LED: a single fixed-colour LED,
+  # not the Pro's addressable SK6812. None of the Pro's modes, effects, presence
+  # colours or brightness apply to it, so `epp_set_led` is deliberately not
+  # declared and the panel hides its LED controls (`has_led: false`) rather than
+  # offering settings that would push nowhere.
+  #
+  # It is still a plain HA light entity — not internal, not disabled by default —
+  # so turning it on and off stays a one-click job from the device page or an
+  # automation. That entity is the only control for it, which is why the two
+  # flags below matter: making it internal would leave the LED unreachable from
+  # anywhere, since the panel intentionally offers nothing.
   - platform: status_led
-    name: ESP32 LED
+    name: "LED"
     id: esp32_led
     pin: GPIO14
     internal: False
