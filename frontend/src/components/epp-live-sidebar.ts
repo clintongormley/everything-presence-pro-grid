@@ -3,6 +3,7 @@ import { property } from "lit/decorators.js";
 import { MAX_ZONES } from "../lib/grid.js";
 import type { ZoneConfig } from "../lib/zone-defaults.js";
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
+import { type DeviceCapabilities, hasCapability } from "../types.js";
 import "./epp-info-tip.js";
 
 export interface SensorState {
@@ -64,6 +65,13 @@ export class EppLiveSidebar extends LitElement {
 				| "mmwave"
 		  )[]
 		| null = null;
+
+	/**
+	 * Which optional hardware the device has. Presence rows for absent sensors
+	 * are dropped: the firmware never publishes them, so the row would sit at
+	 * "Clear" forever and read as a sensor that simply never triggers.
+	 */
+	@property({ attribute: false }) capabilities: DeviceCapabilities = {};
 
 	@property({ type: Boolean }) showZones = true;
 
@@ -203,6 +211,8 @@ export class EppLiveSidebar extends LitElement {
 			label: string;
 			on: boolean;
 			info: string;
+			/** Omitted where every model has the sensor. */
+			capability?: keyof DeviceCapabilities;
 		}[] = [
 			{
 				id: "occupancy",
@@ -212,12 +222,14 @@ export class EppLiveSidebar extends LitElement {
 			},
 			{
 				id: "static_presence",
+				capability: "has_static_presence",
 				label: this.localize("live.static_presence"),
 				on: ss.static_state ? ss.static_state !== "I" : ss.static_presence,
 				info: this.localize("info.static_presence"),
 			},
 			{
 				id: "motion_presence",
+				capability: "has_motion_presence",
 				label: this.localize("live.motion_presence"),
 				on: ss.motion_state ? ss.motion_state !== "I" : ss.motion_presence,
 				info: this.localize("info.motion_presence"),
@@ -236,9 +248,14 @@ export class EppLiveSidebar extends LitElement {
 			},
 		];
 
+		// Capability first, then the caller's explicit selection: a row the board
+		// does not have must stay hidden even if presenceKeys names it.
+		const supported = sensorDefs.filter(
+			(s) => !s.capability || hasCapability(this.capabilities, s.capability),
+		);
 		const filteredPresence = this.presenceKeys
-			? sensorDefs.filter((s) => this.presenceKeys?.includes(s.id as never))
-			: sensorDefs;
+			? supported.filter((s) => this.presenceKeys?.includes(s.id as never))
+			: supported;
 
 		// Zone occupancy entries: rest-of-room (slot 0) first to match editor
 		// ordering, then configured named zones in slot order.

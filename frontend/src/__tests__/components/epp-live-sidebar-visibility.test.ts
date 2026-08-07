@@ -139,3 +139,58 @@ describe("epp-live-sidebar visibility props", () => {
 		).toBeGreaterThan(0);
 	});
 });
+
+describe("epp-live-sidebar hardware capability gating", () => {
+	const rowLabels = (el: EppLiveSidebar): string[] =>
+		[...el.shadowRoot!.querySelectorAll(".live-sensor-label")].map((n) =>
+			(n.textContent ?? "").trim(),
+		);
+
+	it("shows both presence rows when the board has both sensors", async () => {
+		const el = await mount({});
+		expect(rowLabels(el)).toContain("live.static_presence");
+		expect(rowLabels(el)).toContain("live.motion_presence");
+	});
+
+	it("hides the static row on a board with no static radar", async () => {
+		// The row is a boolean that defaults to false, so without gating it would
+		// sit at "Clear" forever and read as a sensor that never triggers.
+		const el = await mount({ capabilities: { has_static_presence: false } });
+		expect(rowLabels(el)).not.toContain("live.static_presence");
+		expect(rowLabels(el)).toContain("live.motion_presence");
+	});
+
+	it("hides the motion row on a board with no PIR", async () => {
+		const el = await mount({ capabilities: { has_motion_presence: false } });
+		expect(rowLabels(el)).not.toContain("live.motion_presence");
+		expect(rowLabels(el)).toContain("live.static_presence");
+	});
+
+	it("keeps occupancy, target and mmwave, which every model reports", async () => {
+		const el = await mount({
+			capabilities: { has_static_presence: false, has_motion_presence: false },
+		});
+		const labels = rowLabels(el);
+		expect(labels).toContain("live.occupancy");
+		expect(labels).toContain("live.target_presence");
+		expect(labels).toContain("live.mmwave");
+	});
+
+	it("shows everything when capabilities are absent", async () => {
+		// Older firmware reports no has_* flags at all; a Pro must not lose rows.
+		const el = await mount({ capabilities: {} });
+		expect(rowLabels(el)).toContain("live.static_presence");
+		expect(rowLabels(el)).toContain("live.motion_presence");
+	});
+
+	it("capability wins over an explicit presenceKeys request", async () => {
+		// The card passes presenceKeys from its own config, which knows nothing
+		// about the device — asking for a row the board lacks must not resurrect it.
+		const el = await mount({
+			capabilities: { has_static_presence: false },
+			presenceKeys: ["occupancy", "static_presence"],
+		});
+		expect(rowLabels(el)).not.toContain("live.static_presence");
+		expect(rowLabels(el)).toContain("live.occupancy");
+	});
+});
