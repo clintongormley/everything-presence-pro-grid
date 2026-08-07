@@ -1409,7 +1409,9 @@ describe("USB flash view — state-driven", () => {
 		await el.updateComplete;
 
 		const root = el.shadowRoot!;
-		const variantBtns = root.querySelectorAll(".variant-selector epp-button");
+		const variantBtns = root.querySelectorAll(
+			'[data-selector="network"] epp-button',
+		);
 		// Second button is ethernet
 		(variantBtns[1] as HTMLElement).click();
 
@@ -1425,7 +1427,9 @@ describe("USB flash view — state-driven", () => {
 		await el.updateComplete;
 
 		const root = el.shadowRoot!;
-		const variantBtns = root.querySelectorAll(".variant-selector epp-button");
+		const variantBtns = root.querySelectorAll(
+			'[data-selector="network"] epp-button',
+		);
 		// First button is wifi
 		(variantBtns[0] as HTMLElement).click();
 
@@ -1487,7 +1491,7 @@ describe("variant selector styling", () => {
 		await el.updateComplete;
 
 		const root = el.shadowRoot!;
-		const btns = root.querySelectorAll(".variant-selector epp-button");
+		const btns = root.querySelectorAll('[data-selector="network"] epp-button');
 		expect((btns[0] as any).getAttribute("variant")).toBe("neutral");
 		expect((btns[1] as any).getAttribute("variant")).toBe("primary");
 	});
@@ -2463,5 +2467,112 @@ describe("Upgrade all button", () => {
 		});
 		const c = renderTo((el as any).render());
 		expect(c.querySelector(".upgrade-all-btn")).toBeNull();
+	});
+});
+
+describe("USB flash — model selection", () => {
+	afterEach(() => {
+		document.body.innerHTML = "";
+	});
+
+	const usbIdleView = async (model: "pro" | "lite" = "pro") => {
+		const el = createView();
+		(el as any)._showUsbFlash = true;
+		(el as any).usbFlashState = null;
+		(el as any)._selectedModel = model;
+		document.body.appendChild(el);
+		await el.updateComplete;
+		return el;
+	};
+
+	it("offers the network choice for the Pro, which has both builds", async () => {
+		const el = await usbIdleView("pro");
+		expect(
+			el.shadowRoot!.querySelector('[data-selector="network"]'),
+		).not.toBeNull();
+	});
+
+	it("hides the network choice for the Lite, which is WiFi-only", async () => {
+		// There is no ethernet-ble-lite firmware, so offering the choice would
+		// let the user pick a build that does not exist.
+		const el = await usbIdleView("lite");
+		expect(
+			el.shadowRoot!.querySelector('[data-selector="network"]'),
+		).toBeNull();
+	});
+
+	it("selecting Lite switches the model", async () => {
+		const el = await usbIdleView("pro");
+		const btns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="model"] epp-button',
+		);
+		(btns[1] as HTMLElement).click();
+		expect((el as any)._selectedModel).toBe("lite");
+	});
+
+	it("flashes Lite firmware even after ethernet was chosen for a Pro", async () => {
+		// Regression guard: _selectedVariant survives the model switch, so the
+		// model has to win the variant lookup outright. Otherwise a user who
+		// looked at the Pro's ethernet option first would flash a Lite with the
+		// Pro ethernet image — different I2C, UART and LED pins.
+		const el = await usbIdleView("pro");
+		(el as any)._selectedVariant = "ethernet";
+		await el.updateComplete;
+
+		const btns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="model"] epp-button',
+		);
+		(btns[1] as HTMLElement).click();
+		await el.updateComplete;
+
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-lite");
+	});
+
+	it("maps each model and network to its firmware variant", async () => {
+		const el = await usbIdleView("pro");
+		const variantFor = (model: string, network: string) => {
+			(el as any)._selectedModel = model;
+			(el as any)._selectedVariant = network;
+			return (el as any)._getFirmwareVariant();
+		};
+		expect(variantFor("pro", "wifi")).toBe("wifi-ble-co2");
+		expect(variantFor("pro", "ethernet")).toBe("ethernet-ble-co2");
+		expect(variantFor("lite", "wifi")).toBe("wifi-ble-lite");
+	});
+
+	it("dispatches usb-flash with the selected model's variant", async () => {
+		const el = await usbIdleView("lite");
+		const events: CustomEvent[] = [];
+		el.addEventListener("usb-flash", ((e: CustomEvent) => {
+			events.push(e);
+		}) as EventListener);
+
+		(el as any)._dispatchUsbFlash();
+
+		expect(events.length).toBe(1);
+		expect(events[0].detail.variant).toBe("wifi-ble-lite");
+	});
+
+	it("switches back to the Pro, restoring the network choice", async () => {
+		// Correcting a mis-selection has to bring the WiFi/Ethernet row back, or
+		// the user is stuck on whichever variant was last set.
+		const el = await usbIdleView("lite");
+		const btns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="model"] epp-button',
+		);
+		(btns[0] as HTMLElement).click();
+		await el.updateComplete;
+
+		expect((el as any)._selectedModel).toBe("pro");
+		expect(
+			el.shadowRoot!.querySelector('[data-selector="network"]'),
+		).not.toBeNull();
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-co2");
+	});
+
+	it("defaults to the Pro so the existing flow is unchanged", () => {
+		const el = createView();
+		expect((el as any)._selectedModel).toBe("pro");
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-co2");
 	});
 });

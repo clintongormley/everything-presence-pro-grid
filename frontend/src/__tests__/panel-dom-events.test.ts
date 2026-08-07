@@ -1386,3 +1386,193 @@ describe("_renderEnvOffset DOM events", () => {
 		}
 	});
 });
+
+describe("settings view — hardware capability gating", () => {
+	/**
+	 * Render the whole settings view with one accordion open.
+	 *
+	 * Goes through `render()` rather than calling a section method directly, so
+	 * the tests exercise the same path the panel does — including whether the
+	 * accordion is offered at all, which is half of what gating means here.
+	 */
+	function renderSettings(
+		capabilities: Record<string, boolean>,
+		openSection?: string,
+	): HTMLDivElement {
+		const sv = createSettingsView({ capabilities });
+		if (openSection) sv.openAccordions = new Set([openSection]);
+		return renderTo(sv.render());
+	}
+
+	const accordionTitles = (c: HTMLElement): string[] =>
+		Array.from(c.querySelectorAll(".accordion-title")).map(
+			(el) => el.textContent?.trim() ?? "",
+		);
+
+	describe("the LED and relay accordion", () => {
+		it("is titled for both when the board has both", () => {
+			expect(accordionTitles(renderSettings({}))).toContain(
+				"settings.led_and_relay",
+			);
+		});
+
+		it("names only the LED when there is no relay", () => {
+			const titles = accordionTitles(renderSettings({ has_relay: false }));
+			expect(titles).toContain("settings.led");
+			expect(titles).not.toContain("settings.led_and_relay");
+		});
+
+		it("names only the relay when there is no configurable LED", () => {
+			const titles = accordionTitles(renderSettings({ has_led: false }));
+			expect(titles).toContain("settings.relay");
+			expect(titles).not.toContain("settings.led_and_relay");
+		});
+
+		it("disappears entirely when the board has neither", () => {
+			// The Lite's case: a plain status LED and no relay. An accordion that
+			// opens onto an empty body is worse than no accordion.
+			const titles = accordionTitles(
+				renderSettings({ has_led: false, has_relay: false }),
+			);
+			expect(titles).not.toContain("settings.led_and_relay");
+			expect(titles).not.toContain("settings.led");
+			expect(titles).not.toContain("settings.relay");
+		});
+
+		it("leaves the other sections in place when it is dropped", () => {
+			const titles = accordionTitles(
+				renderSettings({ has_led: false, has_relay: false }),
+			);
+			expect(titles).toEqual([
+				"settings.entities",
+				"settings.detection_ranges",
+				"settings.sensor_calibration",
+				"settings.logging",
+			]);
+		});
+
+		it("keeps its place in the order when it is kept", () => {
+			expect(accordionTitles(renderSettings({}))).toEqual([
+				"settings.entities",
+				"settings.detection_ranges",
+				"settings.sensor_calibration",
+				"settings.led_and_relay",
+				"settings.logging",
+			]);
+		});
+	});
+
+	describe("sensor calibration groups", () => {
+		const calibrationHtml = (capabilities: Record<string, boolean>) =>
+			renderSettings(capabilities, "sensitivity").innerHTML;
+
+		it("shows the motion and static groups on a board with both sensors", () => {
+			const html = calibrationHtml({});
+			expect(html).toContain("settings.motion_sensor");
+			expect(html).toContain("settings.static_sensor");
+		});
+
+		it("drops the motion group without a PIR", () => {
+			expect(calibrationHtml({ has_motion_presence: false })).not.toContain(
+				"settings.motion_sensor",
+			);
+		});
+
+		it("drops the static group without the static radar", () => {
+			expect(calibrationHtml({ has_static_presence: false })).not.toContain(
+				"settings.static_sensor",
+			);
+		});
+
+		it("always keeps the target group — every model tracks targets", () => {
+			// The LD2450 is the one sensor both boards share, and the zone engine
+			// runs on its data, so this group can never be gated away.
+			expect(
+				calibrationHtml({
+					has_motion_presence: false,
+					has_static_presence: false,
+				}),
+			).toContain("settings.target_sensor");
+		});
+	});
+
+	describe("environmental offsets", () => {
+		const envHtml = (capabilities: Record<string, boolean>) =>
+			renderSettings(capabilities, "sensitivity").innerHTML;
+
+		it("shows all three on a board with all three sensors", () => {
+			const html = envHtml({});
+			expect(html).toContain("settings.illuminance_offset");
+			expect(html).toContain("settings.humidity_offset");
+			expect(html).toContain("settings.temperature_offset");
+		});
+
+		it("hides temperature and humidity but keeps illuminance on the Lite", () => {
+			// The Lite has a BH1750 but no SHTC3. Keeping the illuminance offset is
+			// the point of gating per sensor rather than per model.
+			const html = envHtml({ has_temperature: false, has_humidity: false });
+			expect(html).toContain("settings.illuminance_offset");
+			expect(html).not.toContain("settings.humidity_offset");
+			expect(html).not.toContain("settings.temperature_offset");
+		});
+
+		it("hides the illuminance offset when there is no light sensor", () => {
+			expect(envHtml({ has_illuminance: false })).not.toContain(
+				"settings.illuminance_offset",
+			);
+		});
+	});
+
+	describe("entity reporting toggles", () => {
+		const reportingHtml = (capabilities: Record<string, boolean>) =>
+			renderSettings(capabilities, "reporting").innerHTML;
+
+		it("offers every toggle on a fully equipped board", () => {
+			const html = reportingHtml({});
+			expect(html).toContain("room_static_presence");
+			expect(html).toContain("room_motion_presence");
+			expect(html).toContain("env_temperature");
+		});
+
+		it("drops toggles for entities the firmware never publishes", () => {
+			const html = reportingHtml({
+				has_static_presence: false,
+				has_motion_presence: false,
+				has_temperature: false,
+				has_humidity: false,
+			});
+			expect(html).not.toContain("room_static_presence");
+			expect(html).not.toContain("room_motion_presence");
+			expect(html).not.toContain("env_temperature");
+			expect(html).not.toContain("env_humidity");
+		});
+
+		it("keeps the toggles that do not depend on optional hardware", () => {
+			const html = reportingHtml({
+				has_static_presence: false,
+				has_motion_presence: false,
+				has_temperature: false,
+				has_humidity: false,
+				has_illuminance: false,
+			});
+			expect(html).toContain("room_occupancy");
+			expect(html).toContain("room_target_presence");
+			expect(html).toContain("target_count");
+		});
+	});
+
+	describe("firmware that predates the capability flags", () => {
+		it("shows everything when no flags are present at all", () => {
+			// `get_build_flags` on older firmware returns no has_* keys, and the
+			// flags are also undefined on first render before they are fetched.
+			// Treating undefined as absent would strip controls off working Pros.
+			const titles = accordionTitles(renderSettings({}));
+			expect(titles).toContain("settings.led_and_relay");
+
+			const html = renderSettings({}, "sensitivity").innerHTML;
+			expect(html).toContain("settings.motion_sensor");
+			expect(html).toContain("settings.static_sensor");
+			expect(html).toContain("settings.temperature_offset");
+		});
+	});
+});
