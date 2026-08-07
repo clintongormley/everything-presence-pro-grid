@@ -268,20 +268,42 @@ ESPHome-based, with a custom C++ component and two host-testable C++ libraries.
 The shipping firmware variants — each is a thin top-level YAML that includes the
 `common/` fragments it needs.
 
-- `wifi-ble-co2.yaml` — Wi-Fi, with BLE and CO2.
-- `ethernet-ble-co2.yaml` — Ethernet, with BLE and CO2.
+- `wifi-ble-co2.yaml` — Everything Presence Pro, Wi-Fi, with BLE and CO2.
+- `ethernet-ble-co2.yaml` — Everything Presence Pro, Ethernet, with BLE and CO2.
+- `wifi-ble-lite.yaml` — Everything Presence Lite, with BLE and CO2. The Lite is
+    Wi-Fi-only, so it has no Ethernet counterpart.
 
 ### `common/`
 
 Shared YAML fragments. Variants `!include` the ones they want.
 
-- `everything-presence-pro-base.yaml` — entity declarations, device config,
-    update component, custom-action wiring.
-- `ld2450-base.yaml` — LD2450 mmWave radar UART parsing.
-- `sen0609-base.yaml` — SEN0609 static-presence GPIO sensor.
-- `co2-base.yaml` — SCD4x CO2 sensor snippet.
+Model-agnostic, included by every variant:
+
+- `epp-core.yaml` — `esphome` min_version and `project.version`, logging, the
+    zone-engine API actions, OTA/update wiring, and the diagnostic sensors.
+    `project.version` lives here so no model can report a different firmware
+    version; `bin/release.sh` and `validate-release.sh` both read it from here.
+- `epp-entities.yaml` — the `epp:` zone / target / occupancy entity block.
+- `bh1750-base.yaml` — ambient light sensor (same part on both models).
 - `bluetooth-base.yaml` — `esp32_ble_tracker` + `bluetooth_proxy` block.
-- `ethernet-base.yaml` — `ethernet:` block (W5500 SPI Ethernet).
+
+Per model — each declares only its own hardware and merges into the blocks
+above:
+
+- `everything-presence-pro-base.yaml` — the Pro's SK6812 LED and its modes,
+    relay, PIR, SHTC3, DFRobot SEN0609 wiring, and I2C pinout.
+- `everything-presence-lite-base.yaml` — the Lite's I2C pinout, status LED, and
+    its illuminance-only environmental calibration action.
+- `variant-defaults.yaml` / `lite-variant-defaults.yaml` — substitutions and the
+    `device_config` block, including the `has_*` capability flags the panel uses
+    to hide controls for absent hardware.
+- `ld2450-base.yaml` / `ld2450-lite-base.yaml` — LD2450 mmWave radar UART
+    parsing. Separate files: the two boards differ in UART pins and in the X-axis
+    sign, because the Lite mounts the module inverted.
+- `co2-base.yaml` / `co2-lite-base.yaml` — SCD4x CO2 sensor. Separate because
+    the Pro's copy also drives its RGB LED from the CO2 level.
+- `sen0609-base.yaml` — SEN0609 static-presence GPIO sensor (Pro only).
+- `ethernet-base.yaml` — `ethernet:` block, W5500 SPI Ethernet (Pro only).
 
 ### `components/epp/`
 

@@ -1268,7 +1268,7 @@ looking at it:
     overwrite the persisted NVS blob too (rather than waiting for the hourly
     persist), and logs `Heatmap cleared (RAM + NVS)`. Invoked by the
     `epp_clear_heatmap` ESPHome API action
-    (`firmware/common/everything-presence-pro-base.yaml`), which both the HA
+    (`firmware/common/epp-core.yaml`), which both the HA
     action `eppgrid.clear_heatmap` and the WS command `eppgrid/clear_heatmap`
     call via `DeviceConnection.async_clear_heatmap()` — see *HA Actions
     (Services)* and *Overview Card Commands* in section 3 above. Because it also

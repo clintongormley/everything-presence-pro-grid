@@ -220,7 +220,7 @@ Headers (under `firmware/lib/epp_zone_engine/include/`):
 
 See `firmware/lib/epp_zone_engine/` for the implementation and tests.
 
-**Diagnostic sensors** (in `firmware/common/everything-presence-pro-base.yaml`):
+**Diagnostic sensors** (in `firmware/common/epp-core.yaml`):
 `Heap Free`, `Heap Largest Block`, `Heap Min Free`, `Loop Time`, `Uptime`, and
 `Reset Reason`. All are `entity_category: diagnostic`. `Heap Min Free` is the
 monotonically-decreasing low-water mark (resets only on reboot), so
