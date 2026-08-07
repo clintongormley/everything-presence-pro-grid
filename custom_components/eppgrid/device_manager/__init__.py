@@ -800,7 +800,7 @@ class DeviceManager:
                 f"No firmware variant for model {model!r} on network type: {network}",
                 translation_domain=_DOMAIN,
                 translation_key="no_firmware_variant",
-                translation_placeholders={"network": network},
+                translation_placeholders={"model": model, "network": network},
             )
         return variant
 
