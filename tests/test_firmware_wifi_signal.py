@@ -22,17 +22,15 @@ in the base fails the ethernet config with
 
 from pathlib import Path
 
-import yaml
-
-from tests.esphome_yaml import ESPHomeLoader
+from tests.esphome_yaml import ETHERNET_VARIANT_YAML
+from tests.esphome_yaml import WIFI_VARIANT_YAML
+from tests.esphome_yaml import load_variant
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BASE_YAML = REPO_ROOT / "firmware" / "common" / "everything-presence-pro-base.yaml"
-WIFI_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-ble-co2.yaml"
 
 
 def _load(path: Path) -> dict:
-    return yaml.load(path.read_text(), Loader=ESPHomeLoader)
+    return load_variant(path)
 
 
 def _find_sensor_by_platform(sensors: list | None, platform: str) -> dict | None:
@@ -79,14 +77,16 @@ def test_wifi_signal_sensor_enabled_by_default():
     )
 
 
-def test_wifi_signal_absent_from_shared_base():
+def test_wifi_signal_absent_from_the_ethernet_build():
     """Regression guard: the shared base is included by the ethernet variant,
     which has no `wifi:` component. A `wifi_signal` sensor there fails the
     ethernet config with `sensor.wifi_signal requires component wifi`, so it
     must never live in the base."""
-    base_sensor = _find_sensor_by_platform(_load(BASE_YAML).get("sensor"), "wifi_signal")
-    assert base_sensor is None, (
-        "wifi_signal must not be in everything-presence-pro-base.yaml — the "
-        "ethernet-ble-co2 variant includes the base but has no `wifi:` "
-        "component, so ESPHome fails its config. Keep it in the wifi variant."
+    # Checked against the ethernet variant's merged config: what breaks the
+    # build is the sensor reaching a build with no `wifi:` component, and that
+    # holds wherever the shared packages put it.
+    ethernet_sensor = _find_sensor_by_platform(_load(ETHERNET_VARIANT_YAML).get("sensor"), "wifi_signal")
+    assert ethernet_sensor is None, (
+        "wifi_signal must not reach the ethernet build — it has no `wifi:` "
+        "component, so ESPHome fails its config with `requires component wifi`."
     )

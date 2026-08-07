@@ -534,6 +534,12 @@ export class EppFlasherView extends LitElement {
 	 * choice (see `_renderUsbIdle` / `_dispatchUsbFlash`).
 	 */
 	@state() private _selectedModel: "pro" | "lite" | null = null;
+	/**
+	 * Whether the Lite has the SCD40 add-on fitted. Defaults to false — the
+	 * module is an optional expansion, and flashing a CO2 build to a board
+	 * without one fails the scd4x component and parks the device in error state.
+	 */
+	@state() private _liteHasCo2 = false;
 	@property() firmwareVersion = "";
 	@property() integrationVersion = "";
 	@property({ attribute: false }) usbFlashState: UsbFlashState | null = null;
@@ -1239,7 +1245,8 @@ export class EppFlasherView extends LitElement {
 		// The Lite is WiFi-only — there is no ethernet build for it — so the model
 		// decides first and a stale `_selectedVariant` from a previous Pro
 		// selection cannot route it to firmware that does not exist.
-		if (this._selectedModel === "lite") return "wifi-ble-lite";
+		if (this._selectedModel === "lite")
+			return this._liteHasCo2 ? "wifi-ble-lite-co2" : "wifi-ble-lite";
 		// Never guess "Pro" for an unset model: callers must gate on
 		// `_selectedModel` first (the flash button is disabled and
 		// `_dispatchUsbFlash` early-returns until it is set). Returning "" keeps
@@ -1493,6 +1500,29 @@ export class EppFlasherView extends LitElement {
 								}}
 							>${this.localize("flasher.model_lite")}</epp-button>
 						</div>
+						${
+							this._selectedModel === "lite"
+								? html`
+									<p class="usb-select-label">${this.localize("flasher.select_co2")}</p>
+									<div class="variant-selector" data-selector="co2">
+										<epp-button
+											class="${!this._liteHasCo2 ? "selected" : "unselected"}"
+											variant="${!this._liteHasCo2 ? "primary" : "neutral"}"
+											@click=${() => {
+												this._liteHasCo2 = false;
+											}}
+										>${this.localize("flasher.co2_absent")}</epp-button>
+										<epp-button
+											class="${this._liteHasCo2 ? "selected" : "unselected"}"
+											variant="${this._liteHasCo2 ? "primary" : "neutral"}"
+											@click=${() => {
+												this._liteHasCo2 = true;
+											}}
+										>${this.localize("flasher.co2_fitted")}</epp-button>
+									</div>
+								`
+								: nothing
+						}
 						${
 							this._selectedModel === "pro"
 								? html`

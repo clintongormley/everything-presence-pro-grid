@@ -1,0 +1,18 @@
+# The Pro's LED reacts to the WiFi link coming up and going down.
+#
+# Separate from wifi-base.yaml because `control_leds` only exists on the Pro,
+# and separate from everything-presence-pro-base.yaml because that is included
+# by the ethernet build too — declaring `wifi:` there would give the ethernet
+# variant a WiFi component it has no business having.
+#
+# Included *before* wifi-base so these run ahead of the diagnostics lambda, as
+# they did when both lived in the variant file. The two are independent (one
+# recomputes LED state, the other publishes drop sensors), but keeping the order
+# means the merged config is unchanged.
+wifi:
+  on_connect:
+    then:
+      - script.execute: control_leds
+  on_disconnect:
+    then:
+      - script.execute: control_leds

@@ -25,7 +25,7 @@ from urllib.parse import urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / ".github" / "scripts" / "stage-firmware.sh"
-VARIANTS = ("wifi-ble-co2", "ethernet-ble-co2", "wifi-ble-lite")
+VARIANTS = ("wifi-ble-co2", "ethernet-ble-co2", "wifi-ble-lite", "wifi-ble-lite-co2")
 
 
 def _make_artifacts(artifacts_dir: Path) -> None:

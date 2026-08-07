@@ -2547,7 +2547,49 @@ class TestAsyncTriggerOta:
         self._setup_device(manager)
         manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
             "bluetooth_enabled": True,
+            "co2_enabled": False,
+            "model": "everything-presence-lite",
+        }
+        mock_conn = self._make_mock_conn()
+
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        _name, payload = mock_conn.async_execute_service.await_args.args
+        assert payload["url"].endswith("/wifi-ble-lite.json"), payload["url"]
+
+    async def test_routes_lite_with_co2_addon_to_the_co2_build(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """A Lite reporting the add-on must get the build that includes it.
+
+        The bare build omits scd4x entirely, so a board with the module would
+        silently lose its CO2 sensor.
+        """
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
             "co2_enabled": True,
+            "model": "everything-presence-lite",
+        }
+        mock_conn = self._make_mock_conn()
+
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        _name, payload = mock_conn.async_execute_service.await_args.args
+        assert payload["url"].endswith("/wifi-ble-lite-co2.json"), payload["url"]
+
+    async def test_bare_lite_is_never_offered_the_co2_build(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """The failure this prevents is silent and confusing.
+
+        scd4x on a board with no module cannot reach its I2C device, so ESPHome
+        fails the component and parks the app in error state: the status LED
+        blinks forever and stops honouring manual control, with nothing in HA
+        saying why.
+        """
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
+            "co2_enabled": False,
             "model": "everything-presence-lite",
         }
         mock_conn = self._make_mock_conn()

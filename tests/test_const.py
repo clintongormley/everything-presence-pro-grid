@@ -80,14 +80,15 @@ def test_epp_models_are_plain_strings() -> None:
     assert all(isinstance(model, str) for model in EPP_MODELS)
 
 
-def test_firmware_variants_are_keyed_by_model_then_network() -> None:
-    """`_ota_manifest_url` looks up (model, network) in that order."""
+def test_firmware_variants_are_keyed_by_model_network_and_co2() -> None:
+    """`_ota_manifest_url` looks up all three axes at once."""
     from custom_components.eppgrid.const import FIRMWARE_VARIANTS
 
-    assert set(FIRMWARE_VARIANTS) == {"everything-presence-pro", "everything-presence-lite"}
-    for networks in FIRMWARE_VARIANTS.values():
-        assert set(networks) <= {"wifi", "ethernet"}
-        assert "wifi" in networks
+    for key in FIRMWARE_VARIANTS:
+        model, network, co2 = key
+        assert model in {"everything-presence-pro", "everything-presence-lite"}
+        assert network in {"wifi", "ethernet"}
+        assert isinstance(co2, bool)
 
 
 def test_lite_has_no_ethernet_variant() -> None:
@@ -98,7 +99,26 @@ def test_lite_has_no_ethernet_variant() -> None:
     """
     from custom_components.eppgrid.const import FIRMWARE_VARIANTS
 
-    assert "ethernet" not in FIRMWARE_VARIANTS["everything-presence-lite"]
+    assert not [k for k in FIRMWARE_VARIANTS if k[0] == "everything-presence-lite" and k[1] == "ethernet"]
+
+
+def test_lite_has_both_co2_shapes() -> None:
+    """The SCD40 is an add-on on the Lite, so both builds must exist.
+
+    A board without the module needs a build that omits scd4x entirely —
+    compiling it in fails the component and parks the device in error state.
+    """
+    from custom_components.eppgrid.const import FIRMWARE_VARIANTS
+
+    lite = {k[2]: v for k, v in FIRMWARE_VARIANTS.items() if k[0] == "everything-presence-lite"}
+    assert lite == {False: "wifi-ble-lite", True: "wifi-ble-lite-co2"}
+
+
+def test_every_pro_variant_has_co2() -> None:
+    """CO2 is on the Pro board, so there is no CO2-less Pro build to route to."""
+    from custom_components.eppgrid.const import FIRMWARE_VARIANTS
+
+    assert all(k[2] is True for k in FIRMWARE_VARIANTS if k[0] == "everything-presence-pro")
 
 
 def test_default_firmware_model_is_a_known_model() -> None:
@@ -107,7 +127,7 @@ def test_default_firmware_model_is_a_known_model() -> None:
     from custom_components.eppgrid.const import DEFAULT_FIRMWARE_MODEL
     from custom_components.eppgrid.const import FIRMWARE_VARIANTS
 
-    assert DEFAULT_FIRMWARE_MODEL in FIRMWARE_VARIANTS
+    assert any(k[0] == DEFAULT_FIRMWARE_MODEL for k in FIRMWARE_VARIANTS)
 
 
 def test_every_firmware_variant_file_exists() -> None:
@@ -121,9 +141,7 @@ def test_every_firmware_variant_file_exists() -> None:
     from custom_components.eppgrid.const import FIRMWARE_VARIANTS
 
     variants_dir = Path(__file__).resolve().parents[1] / "firmware" / "variants"
-    for model, networks in FIRMWARE_VARIANTS.items():
-        for network, variant in networks.items():
-            assert (variants_dir / f"{variant}.yaml").is_file(), (
-                f"FIRMWARE_VARIANTS[{model!r}][{network!r}] = {variant!r} but "
-                f"firmware/variants/{variant}.yaml does not exist."
-            )
+    for key, variant in FIRMWARE_VARIANTS.items():
+        assert (variants_dir / f"{variant}.yaml").is_file(), (
+            f"FIRMWARE_VARIANTS[{key!r}] = {variant!r} but firmware/variants/{variant}.yaml does not exist."
+        )

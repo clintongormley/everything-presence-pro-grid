@@ -2575,11 +2575,64 @@ describe("USB flash — model selection", () => {
 		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-co2");
 	});
 
+	it("offers the CO2 choice only for the Lite", async () => {
+		// The Pro has CO2 on the board; the Lite's is an add-on, so only the Lite
+		// has two builds to choose between.
+		const lite = await usbIdleView("lite");
+		expect(
+			lite.shadowRoot!.querySelector('[data-selector="co2"]'),
+		).not.toBeNull();
+
+		const pro = await usbIdleView("pro");
+		expect(pro.shadowRoot!.querySelector('[data-selector="co2"]')).toBeNull();
+	});
+
+	it("defaults the Lite to no CO2 module", async () => {
+		// Wrong-way-round matters: a CO2 build on a board without the module
+		// fails the scd4x component and parks the device in error state, while a
+		// bare build on a board with one merely omits the sensor.
+		const el = await usbIdleView("lite");
+		expect((el as any)._liteHasCo2).toBe(false);
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-lite");
+	});
+
+	it("selects the CO2 build when the add-on is declared", async () => {
+		const el = await usbIdleView("lite");
+		const btns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="co2"] epp-button',
+		);
+		(btns[1] as HTMLElement).click();
+		await el.updateComplete;
+
+		expect((el as any)._liteHasCo2).toBe(true);
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-lite-co2");
+	});
+
+	it("returns to the bare build when the add-on is deselected", async () => {
+		const el = await usbIdleView("lite");
+		(el as any)._liteHasCo2 = true;
+		await el.updateComplete;
+
+		const btns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="co2"] epp-button',
+		);
+		(btns[0] as HTMLElement).click();
+		await el.updateComplete;
+
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-lite");
+	});
+
+	it("never routes a Pro to a Lite build via the CO2 flag", async () => {
+		const el = await usbIdleView("pro");
+		(el as any)._liteHasCo2 = true;
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-co2");
+	});
+
 	it("selects no model by default, so nothing is flashed until the user chooses", () => {
-		// Regression guard (#361 review): defaulting to Pro silently flashed Pro
-		// firmware onto a Lite for anyone who didn't notice the selector. The
-		// Lite's I2C/UART/LED pins differ, so the wrong image leaves a
-		// non-functional device — the model has to be a deliberate choice.
+		// Defaulting to Pro silently flashes Pro firmware onto a Lite for anyone
+		// who doesn't notice the selector. The Lite's I2C/UART/LED pins differ, so
+		// the wrong image leaves a non-functional device — the model has to be a
+		// deliberate choice.
 		const el = createView();
 		expect((el as any)._selectedModel).toBeNull();
 		// The variant helper must not guess "Pro" for an unset model.

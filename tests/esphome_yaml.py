@@ -28,7 +28,9 @@ BASE_YAML = REPO_ROOT / "firmware" / "common" / "everything-presence-pro-base.ya
 LITE_BASE_YAML = REPO_ROOT / "firmware" / "common" / "everything-presence-lite-base.yaml"
 CORE_YAML = REPO_ROOT / "firmware" / "common" / "epp-core.yaml"
 WIFI_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-ble-co2.yaml"
+ETHERNET_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "ethernet-ble-co2.yaml"
 LITE_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-ble-lite.yaml"
+LITE_CO2_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-ble-lite-co2.yaml"
 
 
 class ESPHomeLoader(yaml.SafeLoader):
