@@ -25,3 +25,10 @@ substitutions:
     sensor_variant: "ld2450+sen0609"
     firmware_channel: "stable"
     model: "everything-presence-pro"
+    has_temperature: true
+    has_humidity: true
+    has_illuminance: true
+    has_motion_presence: true
+    has_static_presence: true
+    has_led: true
+    has_relay: true
