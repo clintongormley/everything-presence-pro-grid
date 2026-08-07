@@ -5,7 +5,7 @@ substitutions:
     ethernet_enabled: true
 
 dashboard_import:
-  package_import_url: github://clintongormley/everything-presence-pro-grid/firmware/variants/ethernet-ble-co2.yaml@main
+  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/ethernet-ble-co2.yaml@main
   import_full_config: false
 
 esp32:
@@ -35,7 +35,7 @@ update:
   - platform: http_request
     id: update_http_request
     name: Firmware Update
-    source: https://clintongormley.github.io/everything-presence-pro-grid/fw/latest/ethernet-ble-co2.json
+    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/ethernet-ble-co2.json
     # The eppgrid integration pins FIRMWARE_VERSION and surfaces version
     # mismatches via HA Repairs, so device-side polling (default 6h) is
     # redundant. set_update_manifest action and the OTA button still drive

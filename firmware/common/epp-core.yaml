@@ -11,6 +11,23 @@
 # `project.version` lives here so the two models can never report different
 # firmware versions; `project.name` is set per model.
 
+# Which repository this firmware belongs to. Every variant builds its
+# `dashboard_import.package_import_url` and its `update:` manifest URL from
+# these, so a fork's firmware points at the fork's own releases rather than
+# fetching updates from upstream.
+#
+# The defaults are upstream. CI overrides them from the repository it is
+# actually running in (see firmware.yml / firmware-release.yml), so a fork needs
+# no edit here at all — its Actions builds target its own GitHub Pages
+# automatically.
+#
+# NOTE for anyone overriding by hand: `-s` is a *global* esphome option and must
+# come before the subcommand. `esphome compile x.yaml -s key value` is silently
+# ignored; `esphome -s key value compile x.yaml` is what works.
+substitutions:
+  epp_repo_owner: "clintongormley"
+  epp_repo_name: "everything-presence-pro-grid"
+
 esphome:
   # Floor for DIY adopters who build from package_import_url with their own
   # ESPHome — the CI pin (firmware/requirements.txt) can't reach them. Set to
