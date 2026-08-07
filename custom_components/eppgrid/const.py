@@ -52,9 +52,12 @@ def empty_zone_slots() -> list[dict[str, str] | None]:
 # Bump when releasing new firmware. GitHub release tag is v{FIRMWARE_VERSION}.
 FIRMWARE_VERSION = "1.8.0-rc.4"
 
-# Original EPP firmware identifiers (for device discovery)
+# Original EPP firmware identifiers (for device discovery). The model string is
+# whatever the device reports as its ESPHome project name, so each supported
+# board contributes one entry — a board missing from here is invisible to
+# discovery even with our firmware on it.
 EPP_MANUFACTURER = "EverythingSmartTechnology"
-EPP_MODEL = "Everything Presence Pro"
+EPP_MODELS = ("Everything Presence Pro", "Everything Presence Lite")
 
 # Browser-side firmware artifacts (ESP Web Flasher) — GitHub release
 # assets for v{FIRMWARE_VERSION}. The ESP Web Tools manifest there has
@@ -83,11 +86,27 @@ MANIFEST_BASE_URL = (
 # the "always-newest" channel; this URL is the per-version pin.
 OTA_MANIFEST_BASE_URL = f"https://clintongormley.github.io/everything-presence-pro-grid/fw/v{FIRMWARE_VERSION}"
 
-# Map UI network choice to firmware variant filename (matches fw/ filenames)
+# Map a device's (model, network) to its firmware variant filename, which is
+# what `fw/v{V}/{variant}.json` and the release assets are named.
+#
+# Keyed by model first because the models do not offer the same networks: the
+# Lite has no ethernet hardware, so it has no ethernet variant to build and a
+# lookup for one must fail rather than fall through to the Pro's. Both keys
+# come from `get_build_flags` — `model` verbatim, `network` derived from
+# `ethernet_enabled`.
 FIRMWARE_VARIANTS = {
-    "wifi": "wifi-ble-co2",
-    "ethernet": "ethernet-ble-co2",
+    "everything-presence-pro": {
+        "wifi": "wifi-ble-co2",
+        "ethernet": "ethernet-ble-co2",
+    },
+    "everything-presence-lite": {
+        "wifi": "wifi-ble-lite",
+    },
 }
+
+# Model reported by firmware that predates the `model` build flag. Those builds
+# are all Pro — the Lite was only ever supported by firmware that reports it.
+DEFAULT_FIRMWARE_MODEL = "everything-presence-pro"
 
 # -- Device Groups -----------------------------------------------------------
 # Binary presence slots a source EPP device may expose. Order is the order

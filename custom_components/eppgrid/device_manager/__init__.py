@@ -735,6 +735,7 @@ class DeviceManager:
         Shared by `_ota_manifest_url` and the local-serving path. Raises
         HomeAssistantError with a translation_key on every failure path.
         """
+        from ..const import DEFAULT_FIRMWARE_MODEL
         from ..const import DOMAIN as _DOMAIN
         from ..const import FIRMWARE_VARIANTS
 
@@ -758,11 +759,17 @@ class DeviceManager:
                 translation_domain=_DOMAIN,
                 translation_key="build_flags_unavailable",
             )
+        # Firmware from before the `model` flag existed is all Pro; the Lite has
+        # only ever run builds that report it.
+        model = flags.get("model") or DEFAULT_FIRMWARE_MODEL
         network = "ethernet" if flags.get("ethernet_enabled") else "wifi"
-        variant = FIRMWARE_VARIANTS.get(network)
+        variant = FIRMWARE_VARIANTS.get(model, {}).get(network)
         if variant is None:
+            # Sending the wrong model's manifest would flash firmware built for
+            # different pins, so an unknown pairing has to stop here rather than
+            # fall back to a default variant.
             raise HomeAssistantError(
-                f"No firmware variant for network type: {network}",
+                f"No firmware variant for model {model!r} on network type: {network}",
                 translation_domain=_DOMAIN,
                 translation_key="no_firmware_variant",
                 translation_placeholders={"network": network},
