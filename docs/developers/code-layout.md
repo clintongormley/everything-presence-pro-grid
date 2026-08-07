@@ -298,8 +298,8 @@ above:
     `device_config` block, including the `has_*` capability flags the panel uses
     to hide controls for absent hardware.
 - `ld2450-base.yaml` / `ld2450-lite-base.yaml` — LD2450 mmWave radar UART
-    parsing. Separate files: the two boards differ in UART pins and in the X-axis
-    sign, because the Lite mounts the module inverted.
+    parsing. Separate files: the two boards differ in UART pins and in the
+    X-axis sign, because the Lite mounts the module inverted.
 - `co2-base.yaml` / `co2-lite-base.yaml` — SCD4x CO2 sensor. Separate because
     the Pro's copy also drives its RGB LED from the CO2 level.
 - `sen0609-base.yaml` — SEN0609 static-presence GPIO sensor (Pro only).
