@@ -1,0 +1,37 @@
+# SCD40 CO2 sensor on the Everything Presence Lite's expansion header.
+#
+# Kept separate from co2-base.yaml (the Pro's) because that file is half LED
+# code: the Pro drives its RGB LED from the CO2 reading, so its `co2.on_value`
+# runs `control_leds` and it `!extend`s the LED scripts to colour the ring by
+# air quality. None of that exists on a Lite, whose only indicator is a plain
+# status LED. What is left once the LED coupling is removed is the sensor and
+# its calibration button.
+#
+# Bus pins differ too: the Lite puts the header on GPIO26/GPIO27, the Pro on
+# GPIO4/GPIO16.
+
+i2c:
+  - id: bus_b
+    sda: GPIO26
+    scl: GPIO27
+    scan: true
+
+sensor:
+  - platform: scd4x
+    i2c_id: bus_b
+    id: scd40
+    co2:
+      name: "CO2"
+      id: "co2"
+      disabled_by_default: true
+    automatic_self_calibration: false
+
+button:
+  - platform: template
+    name: "Calibrate CO2"
+    id: calibrate_scd40
+    disabled_by_default: true
+    on_press:
+      - scd4x.perform_forced_calibration:
+          value: 419
+          id: scd40
