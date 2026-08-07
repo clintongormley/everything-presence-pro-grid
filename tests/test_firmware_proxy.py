@@ -14,6 +14,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.setup import async_setup_component
 
 from custom_components.eppgrid.const import FIRMWARE_VERSION
+from custom_components.eppgrid.const import GITHUB_OWNER
+from custom_components.eppgrid.const import GITHUB_REPO
 from custom_components.eppgrid.firmware_proxy import FirmwareProxyView
 
 _UPSTREAM_SESSION = "custom_components.eppgrid.firmware_proxy.async_get_clientsession"
@@ -358,7 +360,5 @@ class TestFirmwareProxyE2E:
             assert resp.status == 200
 
         call_url = session.get.call_args[0][0]
-        assert (
-            f"github.com/clintongormley/everything-presence-pro-grid/releases/download/v{FIRMWARE_VERSION}/" in call_url
-        )
+        assert f"github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/download/v{FIRMWARE_VERSION}/" in call_url
         assert call_url.endswith("everything-presence-pro-wifi-ble-co2-manifest.json")

@@ -27,6 +27,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.eppgrid.const import EPP_MANUFACTURER
 from custom_components.eppgrid.const import EPP_MODELS
 from custom_components.eppgrid.const import FIRMWARE_VERSION
+from custom_components.eppgrid.const import GITHUB_OWNER
+from custom_components.eppgrid.const import GITHUB_REPO
 from custom_components.eppgrid.const import MAX_ZONES
 from custom_components.eppgrid.device_manager import DeviceConnection
 from custom_components.eppgrid.device_manager import DeviceManager
@@ -2533,7 +2535,7 @@ class TestAsyncTriggerOta:
         # Pinned-version manifest on GitHub Pages — same origin as the OTA bin
         # so the ESP32 only opens one TLS context.
         assert url.endswith("/wifi-ble-co2.json"), url
-        assert "clintongormley.github.io/everything-presence-pro-grid/fw/v" in url, url
+        assert f"{GITHUB_OWNER}.github.io/{GITHUB_REPO}/fw/v" in url, url
         mock_conn.async_disconnect.assert_awaited_once()
 
     async def test_routes_lite_model_to_the_lite_variant(self, hass: HomeAssistant, manager: DeviceManager) -> None:
