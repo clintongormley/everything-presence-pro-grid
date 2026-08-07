@@ -17,6 +17,7 @@ jobs:
           - wifi-ble-co2
           - ethernet-ble-co2
           - wifi-ble-lite
+          - wifi-ble-lite-co2
     name: "Build ${{ matrix.variant }}"
     steps:
       - uses: actions/checkout@v5

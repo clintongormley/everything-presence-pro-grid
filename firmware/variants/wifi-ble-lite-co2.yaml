@@ -1,15 +1,17 @@
-# Everything Presence Lite, bare board — no CO2 add-on fitted.
+# Everything Presence Lite with the SCD40 CO2 add-on fitted.
 #
-# The SCD40 sits on the Lite's expansion header and is genuinely optional, so
-# it must not be compiled in unconditionally: ESPHome marks a component that
-# cannot reach its I2C device as failed, which parks the whole app in error
-# state. Visibly that means the status LED blinks forever and stops honouring
-# manual control. Boards with the add-on use wifi-ble-lite-co2.yaml.
-#
-# The Lite is WiFi-only, so unlike the Pro there is no ethernet counterpart.
+# Identical to wifi-ble-lite.yaml plus the CO2 package. Flashing this to a board
+# without the module leaves the scd4x component unable to reach its I2C device,
+# which fails it and parks the app in error state — a permanently blinking
+# status LED that ignores manual control. Use wifi-ble-lite.yaml for a bare
+# board.
 dashboard_import:
-  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-ble-lite.yaml@main
+  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-ble-lite-co2.yaml@main
   import_full_config: false
+
+substitutions:
+  device_config:
+    co2_enabled: true
 
 esp32:
   board: esp32dev
@@ -25,6 +27,7 @@ packages:
    lite_base: !include ../common/everything-presence-lite-base.yaml
    ld2450_lite_base: !include ../common/ld2450-lite-base.yaml
    bluetooth_base: !include ../common/bluetooth-base.yaml
+   co2_lite_base: !include ../common/co2-lite-base.yaml
    wifi_base: !include ../common/wifi-base.yaml
 
 esphome:
@@ -36,7 +39,7 @@ update:
   - platform: http_request
     id: update_http_request
     name: Firmware Update
-    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/wifi-ble-lite.json
+    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/wifi-ble-lite-co2.json
     # The eppgrid integration pins FIRMWARE_VERSION and surfaces version
     # mismatches via HA Repairs, so device-side polling (default 6h) is
     # redundant. set_update_manifest action and the OTA button still drive

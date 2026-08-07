@@ -95,22 +95,27 @@ MANIFEST_BASE_URL = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/d
 # the "always-newest" channel; this URL is the per-version pin.
 OTA_MANIFEST_BASE_URL = f"https://{GITHUB_OWNER}.github.io/{GITHUB_REPO}/fw/v{FIRMWARE_VERSION}"
 
-# Map a device's (model, network) to its firmware variant filename, which is
-# what `fw/v{V}/{variant}.json` and the release assets are named.
+# Map a device's build flags to its firmware variant filename, which is what
+# `fw/v{V}/{variant}.json` and the release assets are named.
 #
-# Keyed by model first because the models do not offer the same networks: the
-# Lite has no ethernet hardware, so it has no ethernet variant to build and a
-# lookup for one must fail rather than fall through to the Pro's. Both keys
-# come from `get_build_flags` — `model` verbatim, `network` derived from
-# `ethernet_enabled`.
-FIRMWARE_VARIANTS = {
-    "everything-presence-pro": {
-        "wifi": "wifi-ble-co2",
-        "ethernet": "ethernet-ble-co2",
-    },
-    "everything-presence-lite": {
-        "wifi": "wifi-ble-lite",
-    },
+# Keyed by (model, network, co2) because a variant is exactly the combination of
+# hardware a build was compiled for, and the models differ on both axes:
+#   - the Lite has no ethernet hardware, so no ethernet build exists for it
+#   - the Lite's SCD40 is an add-on, so it has both a CO2 and a bare build,
+#     while every Pro build includes CO2
+#
+# A missing combination raises rather than falling back. Sending the wrong
+# variant is not a cosmetic error: flashing a CO2 build onto a board with no
+# SCD40 leaves that component unable to reach its I2C device, which fails it and
+# parks the whole app in error state.
+#
+# All three keys come from `get_build_flags` — `model` verbatim, `network`
+# derived from `ethernet_enabled`, `co2` from `co2_enabled`.
+FIRMWARE_VARIANTS: dict[tuple[str, str, bool], str] = {
+    ("everything-presence-pro", "wifi", True): "wifi-ble-co2",
+    ("everything-presence-pro", "ethernet", True): "ethernet-ble-co2",
+    ("everything-presence-lite", "wifi", True): "wifi-ble-lite-co2",
+    ("everything-presence-lite", "wifi", False): "wifi-ble-lite",
 }
 
 # Model reported by firmware that predates the `model` build flag. Those builds

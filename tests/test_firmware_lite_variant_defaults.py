@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import pytest
 
+from tests.esphome_yaml import LITE_CO2_VARIANT_YAML
 from tests.esphome_yaml import LITE_VARIANT_YAML
 from tests.esphome_yaml import WIFI_VARIANT_YAML
 from tests.esphome_yaml import load_variant
@@ -32,7 +33,7 @@ from tests.esphome_yaml import load_yaml
 LITE_DEFAULTS = "firmware/common/lite-variant-defaults.yaml"
 PRO_DEFAULTS = "firmware/common/variant-defaults.yaml"
 
-VARIANTS = {"pro": WIFI_VARIANT_YAML, "lite": LITE_VARIANT_YAML}
+VARIANTS = {"pro": WIFI_VARIANT_YAML, "lite": LITE_VARIANT_YAML, "lite-co2": LITE_CO2_VARIANT_YAML}
 
 
 def _device_config(variant_yaml) -> dict:
@@ -249,3 +250,54 @@ def test_defaults_files_are_not_cross_wired() -> None:
     assert pro["device_config"]["model"] == "everything-presence-pro"
     assert lite["name"] == "everything-presence-lite"
     assert pro["name"] == "everything-presence-pro"
+
+
+# ---------------------------------------------------------------------------
+# The SCD40 is an add-on on the Lite, so it needs a build that omits it
+# ---------------------------------------------------------------------------
+
+
+def _sensor_platforms(variant) -> set[str]:
+    return {s["platform"] for s in load_variant(variant).get("sensor", []) if isinstance(s, dict)}
+
+
+def _i2c_bus_ids(variant) -> set[str]:
+    return {b["id"] for b in load_variant(variant).get("i2c", []) if isinstance(b, dict) and "id" in b}
+
+
+def test_bare_lite_compiles_no_scd4x() -> None:
+    """A board without the module must not compile the component in at all.
+
+    ESPHome marks a component that cannot reach its I2C device as failed, which
+    parks the whole app in error state — the status LED blinks continuously and
+    stops honouring manual control, and the failure is otherwise silent.
+    """
+    assert "scd4x" not in _sensor_platforms(LITE_VARIANT_YAML)
+    assert "bus_b" not in _i2c_bus_ids(LITE_VARIANT_YAML), "the bare Lite declares the CO2 I2C bus with nothing on it"
+
+
+def test_lite_co2_variant_compiles_scd4x() -> None:
+    assert "scd4x" in _sensor_platforms(LITE_CO2_VARIANT_YAML)
+    assert "bus_b" in _i2c_bus_ids(LITE_CO2_VARIANT_YAML)
+
+
+def test_co2_enabled_flag_matches_what_each_build_contains() -> None:
+    """`co2_enabled` is what the OTA router keys on to pick between the two
+    Lite builds, so a flag that disagrees with the build sends a device the
+    firmware that breaks it."""
+    for variant in (LITE_VARIANT_YAML, LITE_CO2_VARIANT_YAML, WIFI_VARIANT_YAML):
+        claimed = _device_config(variant)["co2_enabled"]
+        present = "scd4x" in _sensor_platforms(variant)
+        assert claimed is present, (
+            f"{variant.name}: co2_enabled={claimed} but scd4x {'is missing' if claimed else 'is compiled in'}"
+        )
+
+
+def test_both_lite_builds_are_otherwise_identical() -> None:
+    """The CO2 add-on is the only difference; anything else has drifted."""
+    bare = load_variant(LITE_VARIANT_YAML)
+    co2 = load_variant(LITE_CO2_VARIANT_YAML)
+    assert _epp_keys(LITE_VARIANT_YAML) == _epp_keys(LITE_CO2_VARIANT_YAML)
+    assert _i2c_bus_ids(LITE_VARIANT_YAML) | {"bus_b"} == _i2c_bus_ids(LITE_CO2_VARIANT_YAML)
+    assert _sensor_platforms(LITE_VARIANT_YAML) | {"scd4x"} == _sensor_platforms(LITE_CO2_VARIANT_YAML)
+    assert bare["substitutions"]["name"] == co2["substitutions"]["name"]
