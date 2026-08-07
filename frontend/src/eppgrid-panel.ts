@@ -3597,6 +3597,11 @@ export class EPPGridPanel extends LitElement {
 	}
 
 	private _renderSettings(statusBanner: unknown = nothing) {
+		// DeviceInfo extends DeviceCapabilities, so the device entry is the
+		// capability set. Undefined while devices are still loading, which
+		// `hasCapability` reads as "present" — the settings view renders as it
+		// always did rather than flickering controls in as flags arrive.
+		const activeDevice = this._devices.find((d) => d.mac === this._selectedMac);
 		return html`
       <div class="panel panel--settings">
         ${this._renderHeader()}
@@ -3630,6 +3635,7 @@ export class EPPGridPanel extends LitElement {
           .staticOnDelay=${this._staticOnDelay}
           .logLevels=${this._logLevels}
           .co2Enabled=${this._co2Enabled}
+          .capabilities=${activeDevice ?? {}}
           .ledMode=${this._ledMode}
           .ledBrightness=${this._ledBrightness}
           .ledPresenceColor=${this._ledPresenceColor}
