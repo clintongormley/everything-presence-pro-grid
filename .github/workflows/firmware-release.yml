@@ -16,6 +16,7 @@ jobs:
         variant:
           - wifi-ble-co2
           - ethernet-ble-co2
+          - wifi-ble-lite
     name: "Build ${{ matrix.variant }}"
     steps:
       - uses: actions/checkout@v5
@@ -35,7 +36,15 @@ jobs:
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          BUILD_DIR="firmware/variants/.esphome/build/everything-presence-pro/.pioenvs/everything-presence-pro"
+          # ESPHome names the build dir after the config's resolved `name`,
+          # which is per model (everything-presence-pro / -lite), not per
+          # variant. Ask ESPHome rather than hardcoding it: this path was
+          # pinned to the Pro's name, so the Lite job built successfully and
+          # then failed on the copy below.
+          DEVICE_NAME=$(esphome config "firmware/variants/${{ matrix.variant }}.yaml" \
+            | awk '/^esphome:/{f=1} f && /^  name:/{print $2; exit}')
+          test -n "$DEVICE_NAME" || { echo "::error::could not resolve device name"; exit 1; }
+          BUILD_DIR="firmware/variants/.esphome/build/${DEVICE_NAME}/.pioenvs/${DEVICE_NAME}"
           VARIANT="everything-presence-pro-${{ matrix.variant }}"
           cp "$BUILD_DIR/firmware.ota.bin" "dist/${VARIANT}.ota.bin"
           cp "$BUILD_DIR/bootloader.bin" "dist/${VARIANT}-bootloader.bin"
@@ -46,9 +55,16 @@ jobs:
           VER="${{ steps.version.outputs.version }}"
           VARIANT="everything-presence-pro-${{ matrix.variant }}"
           OTA_MD5=$(md5sum "dist/${VARIANT}.ota.bin" | cut -d' ' -f1)
+          # The asset filenames keep one prefix (it is the project slug, not a
+          # model claim), but `name` is what ESP Web Tools shows the user in the
+          # flash dialog, so it has to name the board they are holding.
+          case "${{ matrix.variant }}" in
+            *-lite) MODEL="Everything Presence Lite" ;;
+            *)      MODEL="Everything Presence Pro" ;;
+          esac
           cat > "dist/${VARIANT}-manifest.json" << EOF
           {
-            "name": "Everything Presence Pro (${{ matrix.variant }})",
+            "name": "${MODEL} (${{ matrix.variant }})",
             "version": "$VER",
             "builds": [
               {
