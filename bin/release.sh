@@ -153,10 +153,11 @@ if [ "$FIRMWARE_CHANGED" = "true" ]; then
   rm -f custom_components/eppgrid/const.py.bak
   grep -q "^FIRMWARE_VERSION = \"$VERSION\"" custom_components/eppgrid/const.py
 
-  # Bump version in firmware base YAML.
-  sed -i.bak "s/^    version: \".*\"/    version: \"$VERSION\"/" firmware/common/everything-presence-pro-base.yaml
-  rm -f firmware/common/everything-presence-pro-base.yaml.bak
-  grep -q "^    version: \"$VERSION\"" firmware/common/everything-presence-pro-base.yaml
+  # Bump version in the shared firmware core. Both models take their
+  # esphome.project.version from here, so this is the only place to bump.
+  sed -i.bak "s/^    version: \".*\"/    version: \"$VERSION\"/" firmware/common/epp-core.yaml
+  rm -f firmware/common/epp-core.yaml.bak
+  grep -q "^    version: \"$VERSION\"" firmware/common/epp-core.yaml
 
   # epp_component.h derives FIRMWARE_VERSION_STR from the ESPHOME_PROJECT_VERSION
   # macro (ESPHome populates it from esphome.project.version at compile time),

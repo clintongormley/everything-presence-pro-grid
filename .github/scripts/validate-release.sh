@@ -7,7 +7,7 @@
 # Invariants:
 #   (1) custom_components/eppgrid/manifest.json version == <tag-version>
 #   (2) custom_components/eppgrid/const.py FIRMWARE_VERSION ==
-#       firmware/common/everything-presence-pro-base.yaml esphome.project.version
+#       firmware/common/epp-core.yaml esphome.project.version
 #
 # The firmware C++ header (epp_component.h) derives FIRMWARE_VERSION_STR from
 # the ESPHOME_PROJECT_VERSION preprocessor macro, which ESPHome populates from
@@ -50,19 +50,19 @@ fi
 
 YAML_FW=$(python3 -c "
 import re
-text = open('firmware/common/everything-presence-pro-base.yaml').read()
+text = open('firmware/common/epp-core.yaml').read()
 m = re.search(r'^ {4}version:\s*\"([^\"]+)\"', text, re.M)
 print(m.group(1) if m else '')
 ")
 if [ -z "$YAML_FW" ]; then
-  echo "::error::Could not extract version from firmware/common/everything-presence-pro-base.yaml" >&2
+  echo "::error::Could not extract version from firmware/common/epp-core.yaml" >&2
   exit 1
 fi
 
 if [ "$CONST_FW" != "$YAML_FW" ]; then
   echo "::error::Firmware versions disagree:" >&2
   echo "  const.py FIRMWARE_VERSION = $CONST_FW" >&2
-  echo "  base.yaml version = $YAML_FW" >&2
+  echo "  epp-core.yaml version = $YAML_FW" >&2
   exit 1
 fi
 
