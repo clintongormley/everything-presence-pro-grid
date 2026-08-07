@@ -2536,9 +2536,7 @@ class TestAsyncTriggerOta:
         assert "clintongormley.github.io/everything-presence-pro-grid/fw/v" in url, url
         mock_conn.async_disconnect.assert_awaited_once()
 
-    async def test_routes_lite_model_to_the_lite_variant(
-        self, hass: HomeAssistant, manager: DeviceManager
-    ) -> None:
+    async def test_routes_lite_model_to_the_lite_variant(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """A Lite must be offered Lite firmware, not the Pro build.
 
         The two models differ in pinout (I2C, LD2450 UART, LED), so flashing a
@@ -2558,9 +2556,7 @@ class TestAsyncTriggerOta:
         _name, payload = mock_conn.async_execute_service.await_args.args
         assert payload["url"].endswith("/wifi-ble-lite.json"), payload["url"]
 
-    async def test_lite_ignores_a_stale_ethernet_flag(
-        self, hass: HomeAssistant, manager: DeviceManager
-    ) -> None:
+    async def test_lite_ignores_a_stale_ethernet_flag(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """No ethernet variant exists for the Lite, so the lookup must fail loudly.
 
         Falling through to the network-only mapping would hand a Lite the

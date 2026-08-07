@@ -103,8 +103,7 @@ def test_capability_flag_matches_what_the_firmware_declares(model: str, flag: st
     for key in expect.get("epp_keys", set()):
         present = key in _epp_keys(variant)
         assert present is claimed, (
-            f"{model}: device_config.{flag}={claimed} but epp.{key} "
-            f"{'is missing' if claimed else 'is declared'}."
+            f"{model}: device_config.{flag}={claimed} but epp.{key} {'is missing' if claimed else 'is declared'}."
         )
 
 
@@ -171,6 +170,7 @@ def test_lite_env_calibration_takes_the_same_arguments_as_the_pro() -> None:
     (`_connection.py`), so a Lite that declared only `illuminance_offset` would
     fail the call outright rather than ignore the two it cannot use.
     """
+
     def variables(variant):
         for action in load_variant(variant)["api"]["actions"]:
             if isinstance(action, dict) and action.get("action") == "epp_set_env_calibration":
