@@ -102,3 +102,23 @@ def network_unblocked() -> Iterator[None]:
 def test_probe_source_ip_returns_loopback_for_loopback_target(network_unblocked: None) -> None:
     ip = firmware_cache.probe_source_ip("127.0.0.1")
     assert isinstance(ip, str) and ip
+
+
+def test_probe_source_ip_stays_fail_soft_when_connect_raises() -> None:
+    """Any address-shape rejection on connect (e.g. a platform demanding a
+    4-tuple for AF_INET6) must fall through to None, never propagate."""
+
+    class _Boom:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def connect(self, *args: object) -> None:
+            raise TypeError("bad address tuple")
+
+        def close(self) -> None:
+            pass
+
+    # Patching socket.socket itself means no real socket is created, so the
+    # pytest-socket guard never triggers (no network_unblocked needed).
+    with patch.object(firmware_cache.socket, "socket", return_value=_Boom()):
+        assert firmware_cache.probe_source_ip("fe80::1") is None

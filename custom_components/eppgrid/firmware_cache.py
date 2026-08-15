@@ -45,7 +45,12 @@ def probe_source_ip(host: str) -> str | None:
             sock = socket.socket(family, socket.SOCK_DGRAM)
             sock.connect((host, 9))
             return sock.getsockname()[0]
-        except OSError:
+        except (OSError, TypeError):
+            # OSError: no route to the host / blocked socket (e.g. a link-local
+            # IPv6 address given without a scope id). TypeError: defensive — a
+            # 2-tuple works for AF_INET6 connect on CPython, but treat any
+            # address-shape rejection as "this family didn't work" and stay
+            # fail-soft by trying the next family / returning None.
             continue
         finally:
             if sock is not None:
