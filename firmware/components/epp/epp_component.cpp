@@ -498,13 +498,6 @@ void EPPComponent::loop() {
     heatmap_.decay(std::pow(0.5f, 1.0f / (float) HEATMAP_HALF_LIFE_TICKS));
   }
 
-  // Timer 7: Heatmap publish (base64 of encode_normalized(), user Hz)
-  if (heatmap_interval_ms_ > 0 && heatmap_sensor_ != nullptr &&
-      now - last_heatmap_publish_ms_ >= heatmap_interval_ms_) {
-    last_heatmap_publish_ms_ = now;
-    heatmap_sensor_->publish_state(get_heatmap_base64());
-  }
-
   // Timer 8: Heatmap NVS save — hourly, so accumulated activity survives
   // reboot/OTA without wearing flash on every decay/publish tick.
   static constexpr uint32_t HEATMAP_NVS_INTERVAL_MS = 60u * 60u * 1000u;
@@ -531,7 +524,6 @@ void EPPComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "    device_tracking:  %s", device_tracking_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    firmware_version: %s", firmware_version_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    zone_state:       %s", zone_state_sensor_ ? "yes" : "no");
-  ESP_LOGCONFIG(TAG, "    heatmap:          %s", heatmap_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    static_input:     %s", static_presence_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    motion_input:     %s", motion_presence_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    target_count:     %s", target_count_sensor_ ? "yes" : "no");
