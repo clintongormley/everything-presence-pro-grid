@@ -591,6 +591,11 @@ api:
         - api.respond:
             data: !lambda |-
               root["cleared"] = true;
+    - action: epp_get_heatmap
+      then:
+        - api.respond:
+            data: !lambda |-
+              root["b64"] = id(epp_component).get_heatmap_base64();
 
   on_client_connected:
     then:

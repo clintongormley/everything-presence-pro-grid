@@ -87,6 +87,11 @@ class EPPComponent : public esphome::Component {
   // so the clear survives a reboot (the hourly saver would otherwise only
   // overwrite once an hour). Invoked by the epp_clear_heatmap API action.
   void clear_heatmap();
+  // Encode the current heatmap accumulator to base64 on demand (the pull
+  // transport's counterpart of the removed publish timer). Returns the base64
+  // of encode_normalized() (400 bytes -> 536 chars), or "" on encode failure.
+  // Served by the epp_get_heatmap API action.
+  std::string get_heatmap_base64();
   void set_static_presence_sensor(esphome::binary_sensor::BinarySensor *sensor) {
     static_presence_sensor_ = sensor;
   }
