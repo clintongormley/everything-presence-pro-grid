@@ -4853,8 +4853,33 @@ class TestUpdateFirmware:
 
         await call_async_handler(hass, websocket_update_firmware, connection, msg)
 
-        mock_dm.async_trigger_ota.assert_awaited_once_with("AA:BB:CC:DD:EE:FF")
+        # Default source: prefer HA-local serving.
+        mock_dm.async_trigger_ota.assert_awaited_once_with("AA:BB:CC:DD:EE:FF", prefer_local=True)
         connection.send_result.assert_called_once_with(20)
+        connection.send_error.assert_not_called()
+
+    async def test_update_firmware_github_source_forces_direct(
+        self, hass: HomeAssistant, config_entry: MockConfigEntry
+    ) -> None:
+        """source='github' forces GitHub-direct (prefer_local=False) — the panel's
+        'Download from GitHub' retry after a local-serving fetch failure."""
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.async_trigger_ota = AsyncMock()
+
+        from custom_components.eppgrid.websocket_api import websocket_update_firmware
+
+        connection = MagicMock()
+        msg = {
+            "id": 22,
+            "type": "eppgrid/update_firmware",
+            "mac": "AA:BB:CC:DD:EE:FF",
+            "source": "github",
+        }
+
+        await call_async_handler(hass, websocket_update_firmware, connection, msg)
+
+        mock_dm.async_trigger_ota.assert_awaited_once_with("AA:BB:CC:DD:EE:FF", prefer_local=False)
+        connection.send_result.assert_called_once_with(22)
         connection.send_error.assert_not_called()
 
     async def test_update_firmware_propagates_home_assistant_error_translation(

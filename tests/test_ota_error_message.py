@@ -18,6 +18,7 @@ import pytest
 from custom_components.eppgrid.websocket_api._firmware import _classify_ota_error_key
 
 _UNREACHABLE = "flasher.errors.ota_download_unreachable"
+_UNREACHABLE_DIRECT = "flasher.errors.ota_download_unreachable_direct"
 _GENERIC = "flasher.errors.ota_device_error"
 
 
@@ -29,8 +30,19 @@ _GENERIC = "flasher.errors.ota_device_error"
         "OTA failed: ESP_ERR_NO_MEM",
     ],
 )
-def test_download_or_connect_failure_is_classified_unreachable(message: str) -> None:
-    assert _classify_ota_error_key(message) == _UNREACHABLE
+@pytest.mark.parametrize(
+    ("served_locally", "expected"),
+    [
+        # HA served it (LAN) → the GitHub-direct retry is the remedy.
+        (True, _UNREACHABLE),
+        # Already GitHub-direct → a different key (no HA framing, no GitHub retry).
+        (False, _UNREACHABLE_DIRECT),
+    ],
+)
+def test_download_or_connect_failure_is_classified_unreachable(
+    message: str, served_locally: bool, expected: str
+) -> None:
+    assert _classify_ota_error_key(message, served_locally=served_locally) == expected
 
 
 @pytest.mark.parametrize(
@@ -44,4 +56,6 @@ def test_download_or_connect_failure_is_classified_unreachable(message: str) -> 
     ],
 )
 def test_non_memory_failure_stays_generic(message: str) -> None:
-    assert _classify_ota_error_key(message) == _GENERIC
+    # served_locally is irrelevant for a non-download failure.
+    assert _classify_ota_error_key(message, served_locally=True) == _GENERIC
+    assert _classify_ota_error_key(message, served_locally=False) == _GENERIC

@@ -62,6 +62,21 @@ your LAN, so the device only needs to reach the HA host (not the internet). The
 native ESPHome **Firmware Update** entity is the exception — it downloads
 directly from the internet, so use Repairs or the panel on restricted networks.
 
+!!! note "Home Assistant in Docker"
+
+    For a device to download from Home Assistant, it has to reach the Home Assistant
+    host over your LAN. If Home Assistant runs in a Docker container on a **bridge**
+    network, it can hand the device its internal container address (e.g.
+    `172.x.x.x`), which devices on your LAN can't reach — the update then fails with
+    "couldn't reach the download server". Run the Home Assistant container with
+    **host networking** (`network_mode: host`, and drop the `ports:` mapping) so it
+    uses the host's LAN address, which devices can reach.
+
+If a device can't download from Home Assistant but *does* have its own internet
+access, the panel shows a **Download from GitHub** button next to Retry on that
+error. It re-runs the update fetching the firmware straight from GitHub instead
+of from Home Assistant, bypassing the LAN-serving path entirely.
+
 ## When OTA fails
 
 The panel reports a specific error and offers Retry. Common causes:

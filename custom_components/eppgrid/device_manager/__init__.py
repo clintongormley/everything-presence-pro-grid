@@ -31,6 +31,7 @@ from homeassistant.helpers.event import async_call_later
 from ..const import FIRMWARE_VERSION
 from ..const import MAX_ZONES
 from ..const import empty_zone_slots
+from ..firmware_cache import FW_CACHE_URL_PREFIX
 from ..firmware_cache import async_local_ota_manifest_url
 from ..storage import EPPGridStore
 from ._connection import DeviceConnection
@@ -803,7 +804,7 @@ class DeviceManager:
         except Exception:
             _LOGGER.warning("Failed to re-issue OTA manifest for %s", mac, exc_info=True)
 
-    async def async_trigger_ota(self, mac: str) -> None:
+    async def async_trigger_ota(self, mac: str, *, prefer_local: bool = True) -> None:
         """Trigger firmware OTA update on a device.
 
         Derives the firmware variant from cached build flags and constructs
@@ -817,6 +818,13 @@ class DeviceManager:
         `set_update_manifest` API action over a temporary connection. Shared
         by the panel's `update_firmware` websocket handler and the Repairs
         framework's `FirmwareUpdateRepairFlow`.
+
+        `prefer_local=False` skips HA-local serving entirely and hands the
+        device the GitHub-direct URL. This is the panel's "Download from
+        GitHub" retry: HA can advertise a URL the device can't reach (e.g. HA
+        in a Docker bridge network hands out its container IP), and HA has no
+        way to detect that device-side failure — so the user can force the
+        direct path, which an internet-connected device can always fetch.
 
         Raises HomeAssistantError with a translation_key on every failure
         path so callers can map the failure to a user-facing message.
@@ -869,19 +877,23 @@ class DeviceManager:
         # Prefer serving the firmware from HA over the LAN so a device with no
         # internet access can still update. Falls back to the GitHub-direct URL
         # (already in `manifest_url`) if HA has no device-reachable URL or the
-        # download/verify fails. Reused by async_resend_ota_manifest.
+        # download/verify fails. Reused by async_resend_ota_manifest. Skipped
+        # when the caller forces GitHub-direct (`prefer_local=False`).
         from ..const import OTA_MANIFEST_BASE_URL
 
-        dev = self.devices.get(mac)
-        local_url = await async_local_ota_manifest_url(
-            self._hass,
-            dev.host if dev else None,
-            OTA_MANIFEST_BASE_URL,
-            self._ota_variant(mac),
-        )
-        if local_url:
-            _LOGGER.info("OTA for %s will be served locally from HA (%s)", mac, local_url)
-            manifest_url = local_url
+        if prefer_local:
+            dev = self.devices.get(mac)
+            local_url = await async_local_ota_manifest_url(
+                self._hass,
+                dev.host if dev else None,
+                OTA_MANIFEST_BASE_URL,
+                self._ota_variant(mac),
+            )
+            if local_url:
+                _LOGGER.info("OTA for %s will be served locally from HA (%s)", mac, local_url)
+                manifest_url = local_url
+        else:
+            _LOGGER.info("OTA for %s will be served GitHub-direct (local serving bypassed by request)", mac)
         self._ota_manifest_urls[mac] = manifest_url
 
         async with lock:
@@ -942,6 +954,15 @@ class DeviceManager:
                     translation_key="ota_trigger_failed",
                     translation_placeholders={"mac": mac, "error": str(err)},
                 ) from err
+
+    def ota_was_locally_served(self, mac: str) -> bool:
+        """Whether the OTA manifest URL last handed to `mac` is an HA-local
+        served URL (contains the `/eppgrid_fw/` cache path) rather than
+        GitHub-direct. Drives the download-failure error message and the
+        "Download from GitHub" retry, which only help when HA was the source the
+        device couldn't reach — not when the manifest was already GitHub-direct.
+        """
+        return f"{FW_CACHE_URL_PREFIX}/" in (self._ota_manifest_urls.get(mac) or "")
 
     async def async_reboot_and_wait(self, mac: str) -> None:
         """Reboot a device and block until it has rebooted and reconnected.

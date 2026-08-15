@@ -67,6 +67,46 @@ async def test_trigger_falls_back_to_github_when_no_local_url(manager: DeviceMan
     assert url.endswith("/wifi-ble-co2.json")
 
 
+async def test_trigger_forces_github_when_prefer_local_false(manager: DeviceManager) -> None:
+    """A caller can force the GitHub-direct URL, bypassing HA-local serving
+    entirely — the panel's 'Download from GitHub' retry after a local-serving
+    fetch failure (e.g. HA in Docker advertising an unreachable container IP)."""
+    session = MagicMock()
+    session.async_execute_service = AsyncMock()
+    local_mock = AsyncMock(return_value="http://192.168.1.10:8123/eppgrid_fw/tok/wifi-ble-co2.json")
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "get_session", return_value=session),
+        patch("custom_components.eppgrid.device_manager.async_local_ota_manifest_url", new=local_mock),
+    ):
+        await manager.async_trigger_ota(MAC, prefer_local=False)
+    # Local serving must not even be attempted.
+    local_mock.assert_not_awaited()
+    _name, payload = session.async_execute_service.await_args.args
+    assert payload["url"].startswith("https://clintongormley.github.io/")
+    assert payload["url"].endswith("/wifi-ble-co2.json")
+
+
+def test_ota_was_locally_served(manager: DeviceManager) -> None:
+    """`ota_was_locally_served` distinguishes an HA-local served URL (the
+    `/eppgrid_fw/` cache path) from a GitHub-direct one — so the download-failure
+    UX only offers the GitHub retry when HA was the (unreachable) source."""
+    manager._ota_manifest_urls[MAC] = "http://192.168.1.10:8123/eppgrid_fw/tok/wifi-ble-co2.json"
+    assert manager.ota_was_locally_served(MAC) is True
+
+    manager._ota_manifest_urls[MAC] = (
+        "https://clintongormley.github.io/everything-presence-pro-grid/fw/v1.8.0/wifi-ble-co2.json"
+    )
+    assert manager.ota_was_locally_served(MAC) is False
+
+    # Unknown mac (no stored URL) → not locally served.
+    assert manager.ota_was_locally_served("FF:FF:FF:FF:FF:FF") is False
+
+
 async def test_resend_reuses_the_resolved_url(manager: DeviceManager) -> None:
     local = "http://192.168.1.10:8123/eppgrid_fw/tok/wifi-ble-co2.json"
     await _run_trigger(manager, local)

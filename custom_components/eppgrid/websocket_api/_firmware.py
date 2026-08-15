@@ -57,11 +57,28 @@ _OTA_EMPTY_URL_RETRY_MAX = 3
 # answered, so it falls through to the generic key.
 _OTA_DOWNLOAD_FAIL_RE = re.compile(r"ESP_ERR_HTTP_CONNECT|ESP_ERR_NO_MEM|Code: -1(?!\d)")
 
+# ESPHome delivers coloured log lines; strip ANSI CSI escape sequences (colour
+# codes etc.) before parsing so terminal control codes never reach the panel
+# popover — and so a reset code sitting between `]` and `: ` can't defeat the
+# component-tag split below.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
-def _classify_ota_error_key(message: str) -> str:
-    """Map a device OTA-error log line to the panel error_key it should raise."""
+
+def _classify_ota_error_key(message: str, *, served_locally: bool) -> str:
+    """Map a device OTA-error log line to the panel error_key it should raise.
+
+    A download/connect failure splits on whether HA served the firmware over the
+    LAN: `ota_download_unreachable` (HA may have advertised an address the device
+    can't reach — the GitHub-direct retry helps) vs `ota_download_unreachable_direct`
+    (the manifest was already GitHub-direct, so retrying GitHub won't help and the
+    "from Home Assistant" framing would be wrong — it's the device's own
+    connectivity)."""
     if _OTA_DOWNLOAD_FAIL_RE.search(message):
-        return "flasher.errors.ota_download_unreachable"
+        return (
+            "flasher.errors.ota_download_unreachable"
+            if served_locally
+            else "flasher.errors.ota_download_unreachable_direct"
+        )
     return "flasher.errors.ota_device_error"
 
 
@@ -72,6 +89,11 @@ def _classify_ota_error_key(message: str) -> str:
     {
         vol.Required("type"): "eppgrid/update_firmware",
         vol.Required("mac"): MAC_SCHEMA,
+        # "auto" (default) prefers HA-local serving with a GitHub-direct
+        # fallback; "github" forces the GitHub-direct URL, skipping local
+        # serving — the panel's "Download from GitHub" retry for when HA
+        # advertised a URL the device can't reach (e.g. HA in Docker).
+        vol.Optional("source", default="auto"): vol.In(["auto", "github"]),
     }
 )
 @websocket_api.require_admin
@@ -85,7 +107,9 @@ async def websocket_update_firmware(
 ) -> None:
     """Trigger firmware OTA update — delegates to DeviceManager.async_trigger_ota."""
     try:
-        await manager.async_trigger_ota(msg["mac"])
+        # Any source other than "github" (including missing) prefers HA-local
+        # serving — the schema defaults it to "auto".
+        await manager.async_trigger_ota(msg["mac"], prefer_local=msg.get("source") != "github")
     except HomeAssistantError as err:
         _send_exception(connection, msg["id"], "update_failed", err)
         return
@@ -313,7 +337,7 @@ async def websocket_subscribe_ota_progress(
         text = log_msg.message
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="replace")
-        text = text.rstrip()
+        text = _ANSI_RE.sub("", text).rstrip()
         if not text:
             return
         # Drop noise: recovery transitions and the vague unspecified flag.
@@ -369,7 +393,7 @@ async def websocket_subscribe_ota_progress(
                 {
                     "state": "error",
                     "message": clean_msg,
-                    "error_key": _classify_ota_error_key(clean_msg),
+                    "error_key": _classify_ota_error_key(clean_msg, served_locally=manager.ota_was_locally_served(mac)),
                 },
             )
         )

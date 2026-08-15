@@ -373,7 +373,22 @@ describe("epp-flasher-view inline event handlers", () => {
 		);
 
 		expect(dismissSpy).toHaveBeenCalledWith("aa:bb:cc");
-		expect(startSpy).toHaveBeenCalledWith("aa:bb:cc");
+		// No source on a plain retry — the backend prefers HA-local serving.
+		expect(startSpy).toHaveBeenCalledWith("aa:bb:cc", undefined);
+	});
+
+	it("@retry-ota forwards source:github to startOta (Download from GitHub)", () => {
+		const ctrl = (panel as any)._flasherCtrl;
+		const startSpy = vi.spyOn(ctrl, "startOta").mockResolvedValue(undefined);
+
+		getFlasherView().dispatchEvent(
+			new CustomEvent("retry-ota", {
+				detail: { mac: "aa:bb:cc", source: "github" },
+				bubbles: true,
+			}),
+		);
+
+		expect(startSpy).toHaveBeenCalledWith("aa:bb:cc", { source: "github" });
 	});
 
 	it("@retry-ota issues an eppgrid/update_firmware WS call", () => {

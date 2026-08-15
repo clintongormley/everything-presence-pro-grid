@@ -572,7 +572,17 @@ GitHub Pages URL built from `FIRMWARE_VERSION`
 which the device fetches directly. Prefers the live session, falling back to a
 temporary connection when none is open.
 
-**Request:** `{ "type": "eppgrid/update_firmware", "mac": str }`
+The optional `source` selects the manifest URL: `"auto"` (default) does the
+prefer-local-then-GitHub resolution above; `"github"` forces the GitHub-direct
+URL and skips HA-local serving entirely
+(`async_trigger_ota(prefer_local=False)`). The panel sends `"github"` from its
+**Download from GitHub** retry — HA can advertise a URL the device can't reach
+(e.g. HA on a Docker bridge network hands out its container IP) and can't detect
+that device-side failure, so the user can force the direct path, which an
+internet-connected device can always fetch.
+
+**Request:**
+`{ "type": "eppgrid/update_firmware", "mac": str, "source": "auto"|"github" }`
 
 ### `subscribe_ota_progress`
 

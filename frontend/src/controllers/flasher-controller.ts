@@ -142,7 +142,7 @@ export class FlasherController implements ReactiveController {
 		this.otaStates = rest;
 	}
 
-	async startOta(mac: string): Promise<void> {
+	async startOta(mac: string, opts?: { source?: "github" }): Promise<void> {
 		// Already updating — a second click (or a retry race) must not fire
 		// a duplicate update_firmware call / progress subscription.
 		if (this.otaStates[mac]?.state === "updating") return;
@@ -154,6 +154,10 @@ export class FlasherController implements ReactiveController {
 			await this._hass!.callWS({
 				type: "eppgrid/update_firmware",
 				mac,
+				// Force GitHub-direct only when explicitly requested (the
+				// "Download from GitHub" retry). Omitted otherwise so the
+				// backend prefers HA-local serving.
+				...(opts?.source ? { source: opts.source } : {}),
 			});
 		} catch (err) {
 			if (this._otaGen !== token) return;

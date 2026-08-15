@@ -626,11 +626,14 @@ export class EppFlasherView extends LitElement {
 		}
 	}
 
-	private _dispatchRetryOta(device: FlashableDevice): void {
+	private _dispatchRetryOta(device: FlashableDevice, source?: "github"): void {
 		this._closeErrorPopover();
 		this.dispatchEvent(
 			new CustomEvent("retry-ota", {
-				detail: { mac: device.mac },
+				// `source` is undefined on a plain retry — every reader guards
+				// with `?`, and the WS-boundary in startOta omits it from the
+				// wire, so it's safe to always include here.
+				detail: { mac: device.mac, source },
 				bubbles: true,
 				composed: true,
 			}),
@@ -665,6 +668,18 @@ export class EppFlasherView extends LitElement {
 			case "success":
 				return html`<ha-icon class="ota-success" icon="mdi:check-circle"></ha-icon>`;
 			case "error": {
+				// When HA-local serving handed the device a URL it couldn't
+				// reach (e.g. HA in a Docker bridge network advertised its
+				// container IP), offer a direct-from-GitHub retry alongside the
+				// normal one — an internet-connected device can always fetch it.
+				const showGithub =
+					ota.errorKey === "flasher.errors.ota_download_unreachable";
+				const otaBtn = (key: string, source?: "github") => html`
+					<epp-button
+						variant="neutral"
+						@click=${() => this._dispatchRetryOta(device, source)}>
+						${this.localize(key)}
+					</epp-button>`;
 				return html`
 					<div class="ota-error">
 						<ha-icon class="ota-error-icon"
@@ -673,11 +688,9 @@ export class EppFlasherView extends LitElement {
 						></ha-icon>
 						${
 							device.available
-								? html`<epp-button
-									variant="neutral"
-									@click=${() => this._dispatchRetryOta(device)}>
-									${this.localize("flasher.ota_retry")}
-								</epp-button>`
+								? html`
+									${otaBtn("flasher.ota_retry")}
+									${showGithub ? otaBtn("flasher.ota_download_github", "github") : nothing}`
 								: nothing
 						}
 					</div>`;
