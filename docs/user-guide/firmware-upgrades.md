@@ -62,6 +62,13 @@ your LAN, so the device only needs to reach the HA host (not the internet). The
 native ESPHome **Firmware Update** entity is the exception — it downloads
 directly from the internet, so use Repairs or the panel on restricted networks.
 
+If Home Assistant can't serve the firmware itself — it can't download and stage
+that version, or can't work out a LAN address to offer the device — those paths
+fall back to fetching it straight from GitHub automatically, so an
+internet-connected device still updates with no extra step. (The **Download from
+GitHub** button below is the manual version of that, for when Home Assistant
+*does* serve an address but the device can't reach it — see the Docker note.)
+
 !!! note "Home Assistant in Docker"
 
     For a device to download from Home Assistant, it has to reach the Home Assistant

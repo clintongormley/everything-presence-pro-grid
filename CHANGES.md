@@ -31,6 +31,13 @@ firmware downloads, see the
     while flashing, and the panel was giving up during that reboot. It now waits
     for the device to come back on the new firmware before reporting success or
     failure, so what you see matches what actually happened.
+- **Failed or interrupted firmware updates fail fast.** An update that can't
+    reach the download server, or that's interrupted — the device loses power or
+    drops off mid-update and comes back on its old firmware — now reports within
+    seconds to a minute with a clear message, instead of spinning for several
+    minutes. When Home Assistant can't serve the firmware over your LAN, an
+    internet-connected device downloads from GitHub automatically, and a
+    **Download from GitHub** button lets you force that when needed.
 
 ## v1.7.0 — 2026-08-07
 
