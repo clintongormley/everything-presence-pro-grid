@@ -1830,14 +1830,21 @@ describe("OTA inline rendering", () => {
 			btns.some((b) => b.textContent?.includes("flasher.ota_download_github")),
 		).toBe(true);
 
-		// Any other error → Retry only, no GitHub button.
-		c = renderTo(
-			(makeView("flasher.errors.update_failed_generic") as any).render(),
-		);
-		btns = Array.from(c.querySelectorAll(".ota-error epp-button"));
-		expect(
-			btns.some((b) => b.textContent?.includes("flasher.ota_download_github")),
-		).toBe(false);
+		// Any other error → Retry only, no GitHub button. Crucially, the
+		// *_direct variant (the download was ALREADY GitHub-direct) must NOT
+		// offer it — retrying GitHub wouldn't help.
+		for (const key of [
+			"flasher.errors.update_failed_generic",
+			"flasher.errors.ota_download_unreachable_direct",
+		]) {
+			c = renderTo((makeView(key) as any).render());
+			btns = Array.from(c.querySelectorAll(".ota-error epp-button"));
+			expect(
+				btns.some((b) =>
+					b.textContent?.includes("flasher.ota_download_github"),
+				),
+			).toBe(false);
+		}
 	});
 
 	it("hides retry button for error state on unavailable device", () => {

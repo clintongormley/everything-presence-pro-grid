@@ -468,6 +468,7 @@
 			"ota_timeout": "La actualización OTA ha agotado el tiempo de espera",
 			"ota_device_error": "Error en la actualización: {message}",
 			"ota_download_unreachable": "El dispositivo no pudo descargar el firmware desde Home Assistant: no pudo conectarse al servidor de descargas ({message}). Normalmente esto significa que Home Assistant le dio al dispositivo una dirección que no puede alcanzar (habitual cuando Home Assistant se ejecuta en Docker sin modo host de red), o que el dispositivo está bloqueado para acceder al host de Home Assistant. Prueba «Descargar desde GitHub» o comprueba el acceso de red del dispositivo.",
+			"ota_download_unreachable_direct": "El dispositivo no pudo descargar el firmware: no pudo conectarse al servidor de descargas ({message}). Aquí descarga directamente desde GitHub, así que comprueba que este dispositivo tenga acceso a internet.",
 			"flash_cancelled": "Instalación cancelada",
 			"timeout": "Tiempo de espera agotado",
 			"aborted": "Cancelado",

@@ -468,6 +468,7 @@
 			"ota_timeout": "Vypršel časový limit aktualizace OTA",
 			"ota_device_error": "Aktualizace se nezdařila: {message}",
 			"ota_download_unreachable": "Zařízení nemohlo stáhnout firmware z Home Assistanta — nepodařilo se mu spojit se serverem pro stahování ({message}). Obvykle to znamená, že Home Assistant předal zařízení adresu, na kterou nedosáhne (časté, když Home Assistant běží v Dockeru bez režimu host), nebo je zařízení blokováno z hostitele Home Assistant. Zkuste místo toho „Stáhnout z GitHubu“ nebo zkontrolujte síťový přístup zařízení.",
+			"ota_download_unreachable_direct": "Zařízení nemohlo stáhnout firmware — nepodařilo se mu spojit se serverem pro stahování ({message}). Zde stahuje přímo z GitHubu, zkontrolujte proto, že má zařízení funkční přístup k internetu.",
 			"flash_cancelled": "Nahrávání zrušeno",
 			"timeout": "Časový limit vypršel",
 			"aborted": "Zrušeno",

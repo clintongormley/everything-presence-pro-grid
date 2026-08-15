@@ -64,10 +64,21 @@ _OTA_DOWNLOAD_FAIL_RE = re.compile(r"ESP_ERR_HTTP_CONNECT|ESP_ERR_NO_MEM|Code: -
 _ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 
 
-def _classify_ota_error_key(message: str) -> str:
-    """Map a device OTA-error log line to the panel error_key it should raise."""
+def _classify_ota_error_key(message: str, *, served_locally: bool) -> str:
+    """Map a device OTA-error log line to the panel error_key it should raise.
+
+    A download/connect failure splits on whether HA served the firmware over the
+    LAN: `ota_download_unreachable` (HA may have advertised an address the device
+    can't reach — the GitHub-direct retry helps) vs `ota_download_unreachable_direct`
+    (the manifest was already GitHub-direct, so retrying GitHub won't help and the
+    "from Home Assistant" framing would be wrong — it's the device's own
+    connectivity)."""
     if _OTA_DOWNLOAD_FAIL_RE.search(message):
-        return "flasher.errors.ota_download_unreachable"
+        return (
+            "flasher.errors.ota_download_unreachable"
+            if served_locally
+            else "flasher.errors.ota_download_unreachable_direct"
+        )
     return "flasher.errors.ota_device_error"
 
 
@@ -382,7 +393,7 @@ async def websocket_subscribe_ota_progress(
                 {
                     "state": "error",
                     "message": clean_msg,
-                    "error_key": _classify_ota_error_key(clean_msg),
+                    "error_key": _classify_ota_error_key(clean_msg, served_locally=manager.ota_was_locally_served(mac)),
                 },
             )
         )

@@ -31,6 +31,7 @@ from homeassistant.helpers.event import async_call_later
 from ..const import FIRMWARE_VERSION
 from ..const import MAX_ZONES
 from ..const import empty_zone_slots
+from ..firmware_cache import FW_CACHE_URL_PREFIX
 from ..firmware_cache import async_local_ota_manifest_url
 from ..storage import EPPGridStore
 from ._connection import DeviceConnection
@@ -953,6 +954,15 @@ class DeviceManager:
                     translation_key="ota_trigger_failed",
                     translation_placeholders={"mac": mac, "error": str(err)},
                 ) from err
+
+    def ota_was_locally_served(self, mac: str) -> bool:
+        """Whether the OTA manifest URL last handed to `mac` is an HA-local
+        served URL (contains the `/eppgrid_fw/` cache path) rather than
+        GitHub-direct. Drives the download-failure error message and the
+        "Download from GitHub" retry, which only help when HA was the source the
+        device couldn't reach — not when the manifest was already GitHub-direct.
+        """
+        return f"{FW_CACHE_URL_PREFIX}/" in (self._ota_manifest_urls.get(mac) or "")
 
     async def async_reboot_and_wait(self, mac: str) -> None:
         """Reboot a device and block until it has rebooted and reconnected.

@@ -91,6 +91,22 @@ async def test_trigger_forces_github_when_prefer_local_false(manager: DeviceMana
     assert payload["url"].endswith("/wifi-ble-co2.json")
 
 
+def test_ota_was_locally_served(manager: DeviceManager) -> None:
+    """`ota_was_locally_served` distinguishes an HA-local served URL (the
+    `/eppgrid_fw/` cache path) from a GitHub-direct one — so the download-failure
+    UX only offers the GitHub retry when HA was the (unreachable) source."""
+    manager._ota_manifest_urls[MAC] = "http://192.168.1.10:8123/eppgrid_fw/tok/wifi-ble-co2.json"
+    assert manager.ota_was_locally_served(MAC) is True
+
+    manager._ota_manifest_urls[MAC] = (
+        "https://clintongormley.github.io/everything-presence-pro-grid/fw/v1.8.0/wifi-ble-co2.json"
+    )
+    assert manager.ota_was_locally_served(MAC) is False
+
+    # Unknown mac (no stored URL) → not locally served.
+    assert manager.ota_was_locally_served("FF:FF:FF:FF:FF:FF") is False
+
+
 async def test_resend_reuses_the_resolved_url(manager: DeviceManager) -> None:
     local = "http://192.168.1.10:8123/eppgrid_fw/tok/wifi-ble-co2.json"
     await _run_trigger(manager, local)
