@@ -31,6 +31,7 @@ from custom_components.eppgrid.const import MAX_ZONES
 from custom_components.eppgrid.device_manager import DeviceConnection
 from custom_components.eppgrid.device_manager import DeviceManager
 from custom_components.eppgrid.device_manager import ManagedDevice
+from custom_components.eppgrid.device_manager import OtaOutcome
 from custom_components.eppgrid.device_manager import _compare_firmware_version
 from custom_components.eppgrid.device_manager import _extract_host
 from custom_components.eppgrid.device_manager import _extract_mac
@@ -3464,6 +3465,162 @@ class TestAsyncWaitForOtaOutcome:
             lambda: True,
         )
         assert outcome == "timeout"
+
+    async def test_listener_catches_offline_blip_the_poll_misses(
+        self, hass: HomeAssistant, manager: DeviceManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A hard unplug shows up as a sub-poll `unavailable` blip. The poll never
+        sees it (here read_firmware_version is stubbed to ALWAYS return the old
+        version), so only the state-change listener can latch went_offline → abort.
+        Regression for: on real hardware the 2s poll missed the <1s blip and the
+        OTA hung to the timeout instead of fast-failing."""
+        import custom_components.eppgrid.device_manager as dm_mod
+
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        esphome_entry = MockConfigEntry(
+            domain="esphome",
+            data={"host": "192.168.1.50"},
+            title="EPP OTA",
+        )
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP OTA",
+            manufacturer="EverythingSmartTechnology",
+            model="Everything Presence Pro",
+        )
+        entry = ent_reg.async_get_or_create(
+            "sensor",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FF-sensor-firmware_version",
+            suggested_object_id="epp_firmware_version",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+        entity_id = entry.entity_id
+
+        dev = MagicMock()
+        dev.device_id = device.id
+        manager.devices["AA:BB:CC:DD:EE:FF"] = dev
+
+        hass.states.async_set(entity_id, "1.8.0")
+        # Poll NEVER sees offline — only the listener can:
+        monkeypatch.setattr(manager, "read_firmware_version", lambda *a, **k: "1.8.0")
+        monkeypatch.setattr(dm_mod, "_REBOOT_POLL_INTERVAL_S", 0.01)
+        task = asyncio.create_task(
+            manager.async_wait_for_ota_outcome("AA:BB:CC:DD:EE:FF", "1.9.0", 1.0, 0.05, lambda: True)
+        )
+        await asyncio.sleep(0.03)  # let it arm and poll "1.8.0" a few times
+        hass.states.async_set(entity_id, STATE_UNAVAILABLE)  # the fleeting blip…
+        hass.states.async_set(entity_id, "1.8.0")  # …and back, same tick
+        await hass.async_block_till_done()  # listener runs → went_offline
+        outcome = await asyncio.wait_for(task, 2.0)
+        assert outcome == OtaOutcome.ABORTED
+
+    async def test_transient_blip_does_not_prematurely_abort_a_completing_download(
+        self, hass: HomeAssistant, manager: DeviceManager, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A transient offline blip mid-download must not abort a download that
+        then completes. HA holds the stale old version through the outage, so
+        `old_stable_since` is already older than `abort_stable_s` when the listener
+        flips `went_offline`; without resetting the clock on the blip the abort
+        debounce would be satisfied immediately and false-abort. The listener
+        resets it, so a version that reaches target shortly after the blip is
+        SUCCESS, not a false ABORTED."""
+        import custom_components.eppgrid.device_manager as dm_mod
+
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.51"}, title="EPP OTA2")
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:fe")},
+            name="EPP OTA2",
+            manufacturer="EverythingSmartTechnology",
+            model="Everything Presence Pro",
+        )
+        entry = ent_reg.async_get_or_create(
+            "sensor",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FE-sensor-firmware_version",
+            suggested_object_id="epp_firmware_version_2",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+        entity_id = entry.entity_id
+
+        dev = MagicMock()
+        dev.device_id = device.id
+        manager.devices["AA:BB:CC:DD:EE:FE"] = dev
+
+        version = {"v": "1.8.0"}
+        hass.states.async_set(entity_id, "1.8.0")
+        monkeypatch.setattr(manager, "read_firmware_version", lambda *a, **k: version["v"])
+        monkeypatch.setattr(dm_mod, "_REBOOT_POLL_INTERVAL_S", 0.01)
+        # Sit on the old version well past abort_stable_s (0.1) so a non-reset
+        # clock would already read "stable" the instant the blip flips went_offline.
+        task = asyncio.create_task(
+            manager.async_wait_for_ota_outcome("AA:BB:CC:DD:EE:FE", "1.9.0", 2.0, 0.1, lambda: True)
+        )
+        await asyncio.sleep(0.3)  # old_stable_since accumulates >> abort_stable_s
+        hass.states.async_set(entity_id, STATE_UNAVAILABLE)  # transient blip…
+        hass.states.async_set(entity_id, "1.8.0")  # …recovers
+        await hass.async_block_till_done()  # listener: went_offline + RESET old_stable_since
+        await asyncio.sleep(0.02)  # brief — well within abort_stable_s
+        version["v"] = "1.9.0"  # download completes
+        outcome = await asyncio.wait_for(task, 2.0)
+        assert outcome == OtaOutcome.SUCCESS
+
+
+class TestFirmwareVersionEntityId:
+    """_firmware_version_entity_id: resolve the FW-version sensor's entity_id."""
+
+    async def test_none_device_id_returns_none(self, manager: DeviceManager) -> None:
+        """No device_id → None (nothing to subscribe to)."""
+        assert manager._firmware_version_entity_id(None) is None
+
+    async def test_looks_up_entity_when_entries_not_supplied(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """With entries omitted, it scans the registry itself and returns the
+        firmware-version sensor's entity_id."""
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.50"}, title="EPP")
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP",
+            manufacturer="EverythingSmartTechnology",
+            model="Everything Presence Pro",
+        )
+        entry = ent_reg.async_get_or_create(
+            "sensor",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FF-sensor-firmware_version",
+            suggested_object_id="epp_firmware_version",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+        assert manager._firmware_version_entity_id(device.id) == entry.entity_id
+
+    async def test_no_matching_entity_returns_none(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A device with no firmware-version sensor → None (self-lookup path)."""
+        dev_reg = dr.async_get(hass)
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.50"}, title="EPP")
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP",
+            manufacturer="EverythingSmartTechnology",
+            model="Everything Presence Pro",
+        )
+        assert manager._firmware_version_entity_id(device.id) is None
 
 
 # ---------------------------------------------------------------------------
