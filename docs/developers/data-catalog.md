@@ -554,10 +554,15 @@ entity IDs are regenerated from the new name's slug. Admin only.
 
 Triggers OTA firmware update on a device via the `set_update_manifest` API
 action. Derives the firmware variant (`wifi-ble-co2` or `ethernet-ble-co2`) from
-build flags and constructs the manifest URL from `FIRMWARE_VERSION` using GitHub
-Pages
-(`https://clintongormley.github.io/everything-presence-pro-grid/fw/v{VERSION}/{variant}.json`).
-Uses a temporary connection (not the persistent session).
+build flags. By default Home Assistant downloads and md5-verifies the firmware
+and serves it to the device over the LAN (the unauthenticated
+`/eppgrid_fw/<token>/` path), then hands the device that HA-local manifest URL —
+so a device with no internet access can still update. When HA can't determine a
+device-reachable URL, or the download/verify fails, it falls back to the pinned
+GitHub Pages URL built from `FIRMWARE_VERSION`
+(`https://clintongormley.github.io/everything-presence-pro-grid/fw/v{VERSION}/{variant}.json`),
+which the device fetches directly. Prefers the live session, falling back to a
+temporary connection when none is open.
 
 **Request:** `{ "type": "eppgrid/update_firmware", "mac": str }`
 
