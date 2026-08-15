@@ -5271,7 +5271,7 @@ class TestEventCallbacks:
         pipeline = mock_conn.async_execute_service.await_args.args[1]
         assert pipeline["display_interval"] == 200
         assert pipeline["zone_state_interval"] == 1000
-        assert pipeline["heatmap_interval"] == 2000
+        assert pipeline["heatmap_interval"] == 0
 
     async def test_push_config_temp_and_session_paths_push_the_same_pipeline(
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
@@ -11568,11 +11568,12 @@ class TestOverviewStreamRecovery:
             ]
 
         assert len(pipelines) == 1
-        # The final counts, not the mid-mount ones: grid drives display/zone_state,
-        # heatmap drives heatmap_interval — an inline push would carry heatmap 0.
+        # The final counts, not the mid-mount ones: grid drives display/zone_state.
+        # heatmap_interval no longer varies with heatmap_subs (pull transport,
+        # issue #365) — it stays 0 regardless of the heatmap subscription.
         assert pipelines[0]["display_interval"] == 200
         assert pipelines[0]["zone_state_interval"] == 1000
-        assert pipelines[0]["heatmap_interval"] == 2000
+        assert pipelines[0]["heatmap_interval"] == 0
 
         connection.subscriptions[1]()
         connection.subscriptions[2]()
