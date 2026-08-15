@@ -11369,6 +11369,91 @@ class TestStateStreams:
         assert manager._state_streams == {}
         assert all(t.done() for t in manager._pending_tasks), "a task escaped teardown"
 
+    async def test_poll_arm_rollback_releases_session_when_make_on_state_raises(self, hass, manager):
+        """A raise in the poll branch rolls back all-or-nothing, like the push path.
+
+        The poll branch calls `make_on_state` and spawns the poller — either can raise
+        (a `make_on_state` bug, task creation during shutdown). An unprotected failure
+        would leak the session `async_open_session` just took and leave the stream
+        half-armed, breaking `async_add_state_stream`'s all-or-nothing invariant. The
+        arm must return False, give the ref back via `release_session`, and leave the
+        stream unarmed.
+        """
+        mac, conn = self._armable(manager)
+
+        def make_on_state(_mac, _conn):
+            raise RuntimeError("callback build failed")
+
+        async def poll_fn(c):
+            return None  # never reached — make_on_state raises first
+
+        stream = StateStream(
+            mac=mac,
+            counter_attr="heatmap_subs",
+            make_on_state=make_on_state,
+            on_availability=lambda a: None,
+            poll_fn=poll_fn,
+            poll_interval=0.01,
+        )
+        manager._state_streams.setdefault(mac, []).append(stream)
+
+        assert await manager._arm_stream(stream) is False
+        # Left unarmed: no connection bound, no poller spawned.
+        assert stream.conn is None
+        assert stream.poll_task is None
+        assert stream.armed is False
+        # The session ref `async_open_session` took is given back, not pinned open.
+        manager.release_session.assert_called_once_with(mac, conn)
+        # No poller ever ran, so the push subscription path stays untouched too.
+        conn.subscribe_states.assert_not_called()
+
+    async def test_poll_emit_failure_does_not_kill_the_poller(self, hass, manager):
+        """A `cb(item)` raise skips that emit but keeps the poller alive for later ticks.
+
+        Unlike a `poll_fn` failure (which just skips a tick), an unguarded emit raise
+        would kill the poll task permanently with no re-arm. The emit is isolated to
+        match the PUSH path's per-callback `_fan_out`: the first delivery raises, and a
+        LATER successful delivery proves the loop survived and kept ticking.
+        """
+        mac, _conn = self._armable(manager)
+        recorded: list[Any] = []
+        recorded_after_raise = asyncio.Event()
+        calls = {"n": 0}
+
+        def cb(item):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("emit boom")  # first emit dies
+            recorded.append(item)
+            recorded_after_raise.set()  # a later emit succeeded -> poller survived
+
+        async def poll_fn(c):
+            return [1]
+
+        stream = StateStream(
+            mac=mac,
+            counter_attr="heatmap_subs",
+            make_on_state=lambda m, c: cb,
+            on_availability=lambda a: None,
+            poll_fn=poll_fn,
+            poll_interval=0.01,
+        )
+        manager._state_streams.setdefault(mac, []).append(stream)
+
+        assert await manager._arm_stream(stream) is True
+        task = stream.poll_task
+        assert task is not None
+
+        # Bounded wait: only a LATER successful emit fires this event, so reaching it
+        # proves the poller did not die on the first emit's raise.
+        await asyncio.wait_for(recorded_after_raise.wait(), timeout=2.0)
+        assert calls["n"] >= 2
+        assert recorded and recorded[0] == [1]
+        assert not task.done()  # still looping
+
+        manager._disarm_stream(stream)
+        await asyncio.gather(task, return_exceptions=True)
+
 
 class TestOverviewStreamRecovery:
     """The card's stream must survive a device flap — issue #334.

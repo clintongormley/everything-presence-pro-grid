@@ -2105,15 +2105,44 @@ class DeviceManager:
             return False
         if stream.poll_fn is not None:
             # Poll-source stream (heatmap): drive a periodic poller instead of a PUSH
-            # `subscribe_states` subscription. `stream.conn`/`poll_task` are set
+            # `subscribe_states` subscription. `stream.conn`/`cb`/`poll_task` are set
             # synchronously here — there is NO await between the `closed_now()` check
             # above and returning — so the push path's second `closed_now()` re-check
             # stays push-only, and `_run_poll_stream`'s `stream.conn is conn` guard is
             # already valid on its first iteration.
-            cb = stream.make_on_state(mac, conn)
-            stream.conn = conn
-            stream.cb = cb
-            stream.poll_task = self._spawn(self._run_poll_stream(stream, conn, cb, stream.poll_fn))
+            #
+            # This mirrors the push path's all-or-nothing rollback — `make_on_state`
+            # or the spawn can raise (a `make_on_state` bug, task creation during
+            # shutdown), and a bare failure would leak the session `async_open_session`
+            # just took and leave the stream half-armed. The one deliberate difference:
+            # `stream.conn`/`cb` are committed BEFORE the spawn, not after. HA runs
+            # `_spawn`'s coroutine EAGERLY, so `_run_poll_stream` reads
+            # `stream.conn is conn` synchronously inside `_spawn` on its first tick;
+            # committing them afterwards would make that first tick see `conn is None`
+            # and exit at once (freezing the poller). The except paths roll all three
+            # fields back and hand the ref to `_abandon` (which reads the SAME outer
+            # `cb`, so a callback that got built is unsubscribed too — a no-op for a
+            # poll stream, defence in depth as on the push path), so a failed arm still
+            # leaves nothing armed and no ref leaked.
+            try:
+                cb = stream.make_on_state(mac, conn)
+                stream.conn = conn
+                stream.cb = cb
+                stream.poll_task = self._spawn(self._run_poll_stream(stream, conn, cb, stream.poll_fn))
+            except Exception as err:
+                _LOGGER.debug("State stream: poll arm failed for %s: %s", mac, err)
+                stream.conn = None
+                stream.cb = None
+                stream.poll_task = None
+                _abandon()
+                stream.notify(False)
+                return False
+            except BaseException:
+                stream.conn = None
+                stream.cb = None
+                stream.poll_task = None
+                _abandon()
+                raise
             stream.notify(True)
             return True
         try:
@@ -2166,7 +2195,17 @@ class DeviceManager:
                     _LOGGER.debug("Poll fetch failed for %s (%s): %s", stream.mac, stream.counter_attr, err)
                     item = None
                 if item is not None and not stream.closed:
-                    cb(item)
+                    # Isolate the emit the same way the PUSH path does via `_fan_out`:
+                    # a `poll_fn` failure only skips a tick (handled above), but an
+                    # unguarded `cb(item)` raise would kill the poll task permanently
+                    # with no re-arm. `CancelledError` (a BaseException) still
+                    # propagates to the outer handler.
+                    try:
+                        cb(item)
+                    except Exception as err:
+                        # An emit failure must not kill the poller — drop this frame
+                        # and keep ticking, same policy as the push path's `_fan_out`.
+                        _LOGGER.debug("Poll emit failed for %s (%s): %s", stream.mac, stream.counter_attr, err)
                 await asyncio.sleep(stream.poll_interval)
         except asyncio.CancelledError:
             return

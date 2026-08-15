@@ -1003,9 +1003,9 @@ def _make_heatmap_on_state(connection: websocket_api.ActiveConnection, msg_id: i
     Under the poll transport (issue #365) the delivered item is the decoded cells
     list from `DeviceConnection.async_fetch_heatmap` — not a device state — so
     there is no entity-key filtering here. An empty firmware read already comes
-    back as an all-zero list (see `_decode_heatmap_b64`), so it is emitted like
-    any other frame and deterministically clears the overlay rather than leaving
-    stale heat on the panel/card.
+    back as an all-zero list (decoded in `async_fetch_heatmap`), so it is emitted
+    like any other frame and deterministically clears the overlay rather than
+    leaving stale heat on the panel/card.
     """
 
     @callback

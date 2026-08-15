@@ -386,6 +386,10 @@ class DeviceConnection:
             raise RuntimeError("DeviceConnection is not connected")
         svc = self._services.get(service_name)
         if svc is None:
+            # `None` means EXCLUSIVELY "the firmware doesn't expose this action". It
+            # stays an unambiguous sentinel only because the firmware always
+            # `api.respond`s a JSON OBJECT (never a bare `null`), so a present action
+            # can never itself decode to `None` and collide with this signal.
             return None
         resp = await asyncio.wait_for(
             self._client.execute_service(svc, {}, return_response=True),

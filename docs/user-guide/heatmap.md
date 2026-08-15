@@ -50,7 +50,7 @@ firmware.
 
 ## Requirements
 
-The Heatmap layer needs firmware **1.3.0 or newer**. If your device is on older
+The Heatmap layer needs firmware **1.8.0 or newer**. If your device is on older
 firmware, the toggle is disabled with a note to update — see
 [Firmware upgrades](firmware-upgrades.md).
 
