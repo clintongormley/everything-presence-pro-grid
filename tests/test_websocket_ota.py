@@ -21,6 +21,7 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,

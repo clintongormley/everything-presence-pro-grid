@@ -1,0 +1,208 @@
+"""Download + md5-verify firmware into a locally-served cache dir."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
+import aiohttp
+import pytest
+from homeassistant.core import HomeAssistant
+
+from custom_components.eppgrid import firmware_cache
+
+_SOURCE = "https://example.test/fw/v1.7.0"
+_VARIANT = "wifi-ble-co2"
+_BIN = b"\x00\x01\x02\x03firmware-bytes"
+_MD5 = hashlib.md5(_BIN).hexdigest()
+
+
+def _manifest(md5: str = _MD5, path: str = f"{_VARIANT}.ota.bin") -> bytes:
+    return json.dumps(
+        {
+            "name": "EPP Grid",
+            "version": "1.7.0",
+            "builds": [{"chipFamily": "ESP32", "ota": {"path": path, "md5": md5}}],
+        }
+    ).encode()
+
+
+def _fake_get(bodies: dict[str, bytes], status: dict[str, int] | None = None) -> MagicMock:
+    """A fake aiohttp session whose .get(url) yields the mapped body/status."""
+    status = status or {}
+
+    def _get(url, *_a, **_k):
+        resp = MagicMock()
+        resp.status = status.get(url, 200)
+        body = bodies.get(url, b"")
+        resp.read = AsyncMock(return_value=body)
+
+        async def _iter(_n):
+            yield body
+
+        resp.content.iter_chunked = _iter
+        cm = MagicMock()
+        cm.__aenter__ = AsyncMock(return_value=resp)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        return cm
+
+    session = MagicMock()
+    session.get = MagicMock(side_effect=_get)
+    return session
+
+
+@pytest.fixture
+def cache_dir(hass: HomeAssistant, tmp_path) -> str:
+    d = str(tmp_path / "fw_cache")
+    with patch.object(firmware_cache, "firmware_cache_dir", return_value=d):
+        yield d
+
+
+async def test_stage_writes_manifest_and_verified_bin(hass: HomeAssistant, cache_dir: str) -> None:
+    bodies = {
+        f"{_SOURCE}/{_VARIANT}.json": _manifest(),
+        f"{_SOURCE}/{_VARIANT}.ota.bin": _BIN,
+    }
+    with patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)):
+        served = await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+    assert served.startswith(f"{firmware_cache.FW_CACHE_URL_PREFIX}/")
+    token = served.rsplit("/", 1)[1]
+    assert os.path.isfile(os.path.join(cache_dir, token, f"{_VARIANT}.json"))
+    assert os.path.isfile(os.path.join(cache_dir, token, f"{_VARIANT}.ota.bin"))
+
+
+async def test_stage_raises_on_md5_mismatch(hass: HomeAssistant, cache_dir: str) -> None:
+    bodies = {
+        f"{_SOURCE}/{_VARIANT}.json": _manifest(md5="deadbeef" * 4),
+        f"{_SOURCE}/{_VARIANT}.ota.bin": _BIN,
+    }
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_stage_raises_on_missing_release(hass: HomeAssistant, cache_dir: str) -> None:
+    bodies = {f"{_SOURCE}/{_VARIANT}.json": b""}
+    status = {f"{_SOURCE}/{_VARIANT}.json": 404}
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies, status)),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_stage_rejects_non_relative_ota_path(hass: HomeAssistant, cache_dir: str) -> None:
+    bodies = {
+        f"{_SOURCE}/{_VARIANT}.json": _manifest(path="https://evil.test/x.ota.bin"),
+        f"{_SOURCE}/{_VARIANT}.ota.bin": _BIN,
+    }
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_stage_cleans_up_stale_token_dirs(hass: HomeAssistant, cache_dir: str) -> None:
+    os.makedirs(os.path.join(cache_dir, "stale-token"))
+    bodies = {
+        f"{_SOURCE}/{_VARIANT}.json": _manifest(),
+        f"{_SOURCE}/{_VARIANT}.ota.bin": _BIN,
+    }
+    with patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)):
+        served = await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+    token = served.rsplit("/", 1)[1]
+    assert os.listdir(cache_dir) == [token]
+
+
+async def test_register_firmware_cache_is_idempotent(hass: HomeAssistant, cache_dir: str) -> None:
+    """A second call does not re-register the static path (module docstring: 'once')."""
+    hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock()
+
+    await firmware_cache.async_register_firmware_cache(hass)
+    await firmware_cache.async_register_firmware_cache(hass)
+
+    hass.http.async_register_static_paths.assert_awaited_once()
+
+
+def _fake_get_raising(raise_url: str, exc: BaseException) -> MagicMock:
+    """A fake aiohttp session whose .get(raise_url) raises `exc` on __aenter__, and
+    otherwise returns a 200/empty response — used to exercise the transport-error
+    branches (aiohttp.ClientError / TimeoutError) distinct from a bad status code."""
+
+    def _get(url, *_a, **_k):
+        cm = MagicMock()
+        if url == raise_url:
+            cm.__aenter__ = AsyncMock(side_effect=exc)
+        else:
+            resp = MagicMock()
+            resp.status = 200
+            resp.read = AsyncMock(return_value=_manifest())
+            cm.__aenter__ = AsyncMock(return_value=resp)
+        cm.__aexit__ = AsyncMock(return_value=False)
+        return cm
+
+    session = MagicMock()
+    session.get = MagicMock(side_effect=_get)
+    return session
+
+
+async def test_stage_raises_on_manifest_network_error(hass: HomeAssistant, cache_dir: str) -> None:
+    session = _fake_get_raising(f"{_SOURCE}/{_VARIANT}.json", aiohttp.ClientConnectionError("boom"))
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=session),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_stage_raises_on_malformed_manifest_json(hass: HomeAssistant, cache_dir: str) -> None:
+    bodies = {f"{_SOURCE}/{_VARIANT}.json": b"not-json"}
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_stage_raises_on_binary_non_200_status(hass: HomeAssistant, cache_dir: str) -> None:
+    bodies = {
+        f"{_SOURCE}/{_VARIANT}.json": _manifest(),
+        f"{_SOURCE}/{_VARIANT}.ota.bin": b"",
+    }
+    status = {f"{_SOURCE}/{_VARIANT}.ota.bin": 500}
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies, status)),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_stage_raises_when_binary_exceeds_size_cap(hass: HomeAssistant, cache_dir: str) -> None:
+    bodies = {
+        f"{_SOURCE}/{_VARIANT}.json": _manifest(),
+        f"{_SOURCE}/{_VARIANT}.ota.bin": _BIN,
+    }
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)),
+        patch.object(firmware_cache, "_MAX_FIRMWARE_BYTES", 4),
+        pytest.raises(firmware_cache.FirmwareStageError, match="size cap"),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_stage_raises_on_binary_network_error(hass: HomeAssistant, cache_dir: str) -> None:
+    session = _fake_get_raising(f"{_SOURCE}/{_VARIANT}.ota.bin", aiohttp.ClientConnectionError("boom"))
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=session),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)

@@ -11,12 +11,22 @@ tells the caller to fall back to the GitHub-direct URL.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
+import os
+import secrets
+import shutil
 import socket
 
+import aiohttp
+from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import NoURLAvailableError
 from homeassistant.helpers.network import get_url
+
+from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -63,3 +73,97 @@ async def resolve_reachable_base_url(hass: HomeAssistant, device_host: str | Non
     except NoURLAvailableError:
         return None
     return internal.rstrip("/") if internal else None
+
+
+FW_CACHE_URL_PREFIX = f"/{DOMAIN}_fw"
+_FW_CACHE_REGISTERED_KEY = f"{DOMAIN}_fw_cache_registered"
+
+# Real firmware artifacts are ~1-2 MiB; 16 MiB leaves plenty of headroom while
+# bounding the memory cost of a hostile or misconfigured upstream (mirrors
+# firmware_proxy.py's _MAX_RESPONSE_BYTES).
+_MAX_FIRMWARE_BYTES = 16 * 1024 * 1024
+
+# Bound the upstream fetch to keep a stalled host from holding an HA event-loop
+# slot indefinitely. total covers the whole exchange; sock_read guards against
+# slow-loris bodies (mirrors firmware_proxy.py's _UPSTREAM_TIMEOUT).
+_STAGE_TIMEOUT = aiohttp.ClientTimeout(total=60, sock_read=15)
+
+
+class FirmwareStageError(Exception):
+    """Staging firmware into the local cache failed; fall back to GitHub-direct."""
+
+
+def firmware_cache_dir(hass: HomeAssistant) -> str:
+    """Absolute path of the firmware cache directory."""
+    return hass.config.path(f"{DOMAIN}/firmware_cache")
+
+
+async def async_register_firmware_cache(hass: HomeAssistant) -> None:
+    """Create + register the cache dir for unauthenticated static serving (once)."""
+    if hass.data.get(_FW_CACHE_REGISTERED_KEY):
+        return
+    cache_dir = firmware_cache_dir(hass)
+    await hass.async_add_executor_job(lambda: os.makedirs(cache_dir, exist_ok=True))
+    await hass.http.async_register_static_paths(
+        [StaticPathConfig(url_path=FW_CACHE_URL_PREFIX, path=cache_dir, cache_headers=False)]
+    )
+    hass.data[_FW_CACHE_REGISTERED_KEY] = True
+
+
+async def async_stage_firmware(hass: HomeAssistant, source_base: str, variant: str) -> str:
+    """Download+verify {variant}.json and {variant}.ota.bin from `source_base` into
+    a fresh token dir under the cache and return the served path segment. Raises
+    FirmwareStageError on any failure so the caller can fall back."""
+    session = async_get_clientsession(hass)
+    manifest_url = f"{source_base}/{variant}.json"
+    try:
+        async with session.get(manifest_url, timeout=_STAGE_TIMEOUT) as resp:
+            if resp.status != 200:
+                raise FirmwareStageError(f"manifest {manifest_url} returned {resp.status}")
+            manifest_bytes = await resp.read()
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise FirmwareStageError(f"manifest fetch failed: {err}") from err
+
+    try:
+        manifest = json.loads(manifest_bytes)
+        build = next(b for b in manifest["builds"] if isinstance(b.get("ota"), dict))
+        rel_path = build["ota"]["path"]
+        expected_md5 = build["ota"]["md5"].lower()
+    except (ValueError, KeyError, TypeError, StopIteration) as err:
+        raise FirmwareStageError(f"bad manifest: {err}") from err
+    if "/" in rel_path or not rel_path.endswith(".ota.bin"):
+        raise FirmwareStageError(f"unexpected ota path {rel_path!r}")
+
+    bin_url = f"{source_base}/{rel_path}"
+    buf = bytearray()
+    try:
+        async with session.get(bin_url, timeout=_STAGE_TIMEOUT) as resp:
+            if resp.status != 200:
+                raise FirmwareStageError(f"binary {bin_url} returned {resp.status}")
+            async for chunk in resp.content.iter_chunked(64 * 1024):
+                buf += chunk
+                if len(buf) > _MAX_FIRMWARE_BYTES:
+                    raise FirmwareStageError("firmware exceeds size cap")
+    except (aiohttp.ClientError, TimeoutError) as err:
+        raise FirmwareStageError(f"binary fetch failed: {err}") from err
+
+    if hashlib.md5(buf).hexdigest() != expected_md5:
+        raise FirmwareStageError("firmware md5 mismatch")
+
+    token = secrets.token_hex(8)
+    cache_dir = firmware_cache_dir(hass)
+
+    def _commit() -> None:
+        dest = os.path.join(cache_dir, token)
+        os.makedirs(dest, exist_ok=True)
+        with open(os.path.join(dest, rel_path), "wb") as f:
+            f.write(bytes(buf))
+        with open(os.path.join(dest, f"{variant}.json"), "wb") as f:
+            f.write(manifest_bytes)
+        for name in os.listdir(cache_dir):
+            path = os.path.join(cache_dir, name)
+            if name != token and os.path.isdir(path):
+                shutil.rmtree(path, ignore_errors=True)
+
+    await hass.async_add_executor_job(_commit)
+    return f"{FW_CACHE_URL_PREFIX}/{token}"
