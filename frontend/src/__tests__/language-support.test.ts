@@ -24,6 +24,19 @@ describe("getLanguageSupport", () => {
 		});
 	});
 
+	it("marks Czech available once its catalogue ships", () => {
+		expect(getLanguageSupport({ locale: { language: "cs" } })).toEqual({
+			available: true,
+			code: "cs",
+			baseCode: "cs",
+		});
+		expect(getLanguageSupport({ locale: { language: "cs-CZ" } })).toEqual({
+			available: true,
+			code: "cs-CZ",
+			baseCode: "cs",
+		});
+	});
+
 	it("marks an unshipped language unavailable and keeps the full locale", () => {
 		expect(getLanguageSupport({ locale: { language: "pt-BR" } })).toEqual({
 			available: false,
