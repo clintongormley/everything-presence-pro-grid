@@ -2763,6 +2763,12 @@ const js={},Ws=ii(class extends si{constructor(){super(...arguments),this.ot=js}
 		.trail {
 			position: absolute;
 			inset: 0;
+			/* A viewBox'd svg is a replaced element with a 1:1 intrinsic ratio:
+			   inset:0 pins only its WIDTH and it derives a square HEIGHT, so in a
+			   non-square box the trail points map too far down and detach from
+			   their dots (#377). Size both axes so the polyline fills the box. */
+			width: 100%;
+			height: 100%;
 			overflow: visible;
 		}
 
