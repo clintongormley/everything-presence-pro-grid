@@ -28,6 +28,7 @@ from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.event import async_call_later
+from homeassistant.helpers.event import async_track_state_change_event
 
 from ..const import FIRMWARE_VERSION
 from ..const import MAX_ZONES
@@ -519,8 +520,6 @@ class DeviceManager:
         managed device, and registers ``async_track_state_change_event``
         for that set. Called on start and whenever managed devices change.
         """
-        from homeassistant.helpers.event import async_track_state_change_event
-
         if self._state_track_unsub is not None:
             self._state_track_unsub()
             self._state_track_unsub = None
@@ -1064,27 +1063,21 @@ class DeviceManager:
             await asyncio.sleep(_REBOOT_POLL_INTERVAL_S)
         return False
 
-    def _read_sensor_state(
+    def _find_esphome_entry(
         self, device_id: str | None, suffix: str, *, entries: list[er.RegistryEntry] | None = None
-    ) -> str | None:
-        """Read the live state of the ESPHome sensor whose object_id is
-        ``suffix`` on a device.
+    ) -> er.RegistryEntry | None:
+        """The registry entry for the ESPHome sensor whose object_id is
+        ``suffix`` on a device, or ``None``.
 
-        Shared matcher for `read_firmware_version` and
-        `read_current_connection_count`. Matches by exact object_id equality
-        (via `_esphome_object_id`, which normalises every HA unique_id format),
-        so an unrelated object_id that merely *contains* the suffix (e.g.
-        ``max_current_connections`` vs ``current_connections``) can't
-        false-match.
-
-        Returns the state string, or ``None`` when:
-          * ``device_id`` is unknown (caller has no device to look up)
-          * the entity is unavailable / unknown / empty
-          * the entity does not exist at all
+        Shared matcher for `_read_sensor_state` (reads its state) and
+        `_firmware_version_entity_id` (returns its entity_id). Matches by exact
+        object_id equality (via `_esphome_object_id`, which normalises every HA
+        unique_id format), so an unrelated object_id that merely *contains* the
+        suffix (e.g. ``max_current_connections`` vs ``current_connections``)
+        can't false-match.
 
         ``entries`` lets the caller pass pre-fetched device entries so callers
-        looping over many devices don't re-scan the entity registry per
-        helper call.
+        looping over many devices don't re-scan the entity registry per call.
         """
         if device_id is None:
             return None
@@ -1093,10 +1086,25 @@ class DeviceManager:
             entries = er.async_entries_for_device(ent_reg, device_id, include_disabled_entities=True)
         for entry in entries:
             if _is_esphome_entity(entry, "sensor", suffix):
-                state = self._hass.states.get(entry.entity_id)
-                if state is not None and state.state not in (None, "unknown", "unavailable", ""):
-                    return state.state
-                return None
+                return entry
+        return None
+
+    def _read_sensor_state(
+        self, device_id: str | None, suffix: str, *, entries: list[er.RegistryEntry] | None = None
+    ) -> str | None:
+        """Read the live state of the ESPHome sensor whose object_id is
+        ``suffix`` on a device.
+
+        Returns the state string, or ``None`` when the device is unknown, the
+        entity is unavailable / unknown / empty, or it doesn't exist. See
+        `_find_esphome_entry` for the match rule.
+        """
+        entry = self._find_esphome_entry(device_id, suffix, entries=entries)
+        if entry is None:
+            return None
+        state = self._hass.states.get(entry.entity_id)
+        if state is not None and state.state not in (None, "unknown", "unavailable", ""):
+            return state.state
         return None
 
     def read_firmware_version(
@@ -1112,6 +1120,15 @@ class DeviceManager:
         firmware version and trigger a fake ``firmware_behind`` Repairs issue.
         """
         return self._read_sensor_state(device_id, "firmware_version", entries=entries)
+
+    def _firmware_version_entity_id(
+        self, device_id: str | None, *, entries: list[er.RegistryEntry] | None = None
+    ) -> str | None:
+        """The entity_id of the device's Firmware Version sensor, or None — so
+        callers can subscribe to its state-change events (a hard unplug shows up
+        as a sub-poll `unavailable` blip a periodic read can miss)."""
+        entry = self._find_esphome_entry(device_id, "firmware_version", entries=entries)
+        return entry.entity_id if entry is not None else None
 
     async def async_wait_for_firmware_version(self, mac: str, target: str, timeout_s: float) -> bool:
         """Poll until the device's Firmware Version entity reads ``target``.
@@ -1168,6 +1185,15 @@ class DeviceManager:
         ``download_started`` gates all of this so the pre-OTA reboot
         (`async_trigger_ota` reboots before flashing, which also reads as
         offline->back-on-old) is never mistaken for a started download.
+
+        Alongside the 2s poll, a scoped `async_track_state_change_event`
+        listener on this device's firmware-version entity latches
+        ``went_offline`` on any transition into an offline state — catching the
+        sub-poll `unavailable` blip a hard unplug produces (HA holds the stale
+        old value through the outage, then surfaces `unavailable` for a fraction
+        of a second once it notices the disconnect, by which point the device is
+        already back — too brief for the poll to sample). The listener is gated
+        on ``download_started()`` so the pre-OTA reboot stays excluded.
         """
         dev = self.devices.get(mac)
         if dev is None or dev.device_id is None:
@@ -1176,34 +1202,65 @@ class DeviceManager:
         ent_reg = er.async_get(self._hass)
         entries = er.async_entries_for_device(ent_reg, device_id, include_disabled_entities=True)
 
-        deadline = time.monotonic() + timeout_s
+        # Edge-triggered offline catch (see the docstring): the poll below only
+        # samples every 2s and misses the sub-second `unavailable` blip a real
+        # unplug produces, so listen for the transition too. Gated on
+        # `download_started()` directly — not the poll's lagged `armed` latch —
+        # so a blip in the first ~2s of the download isn't dropped, while the
+        # pre-OTA reboot (no download bytes yet) stays excluded.
         armed = False
         went_offline = False
         old_stable_since: float | None = None
-        while time.monotonic() < deadline:
-            now = time.monotonic()
-            version = self.read_firmware_version(device_id, entries=entries)
-            if version == target:
-                return OtaOutcome.SUCCESS
-            if not armed:
-                # Ignore everything (incl. the pre-OTA reboot) until real download
-                # bytes have flowed.
-                if download_started():
-                    armed = True
-            elif version is None:
-                # Offline: the blocking fetch, the apply reboot, or genuinely
-                # gone — not a verdict on its own. Reset the stable-old clock so a
-                # brief blip can't accumulate toward an abort.
+
+        @callback
+        def _on_fw_change(event: Any) -> None:
+            nonlocal went_offline, old_stable_since
+            if not download_started():
+                return
+            new_state = event.data.get("new_state")
+            if new_state is None or new_state.state in _FW_OFFLINE_STATES:
+                # Latch offline AND reset the stability clock — mirrors the poll's
+                # `version is None` path — so `abort_stable_s` is measured from the
+                # device settling back on the old version *after* the outage. HA
+                # holds the stale old value through the outage, so without this a
+                # brief blip would find `old_stable_since` already older than the
+                # window and abort immediately, false-failing a still-downloading
+                # device.
                 went_offline = True
                 old_stable_since = None
-            else:
-                # Online on a non-target (old) version.
-                if old_stable_since is None:
-                    old_stable_since = now
-                if went_offline and now - old_stable_since >= abort_stable_s:
-                    return OtaOutcome.ABORTED
-            await asyncio.sleep(_REBOOT_POLL_INTERVAL_S)
-        return OtaOutcome.TIMEOUT
+
+        entity_id = self._firmware_version_entity_id(device_id, entries=entries)
+        unsub = (
+            async_track_state_change_event(self._hass, [entity_id], _on_fw_change) if entity_id is not None else None
+        )
+        try:
+            deadline = time.monotonic() + timeout_s
+            while time.monotonic() < deadline:
+                now = time.monotonic()
+                version = self.read_firmware_version(device_id, entries=entries)
+                if version == target:
+                    return OtaOutcome.SUCCESS
+                if not armed:
+                    if download_started():
+                        armed = True
+                elif version is None:
+                    # Offline (blocking fetch / reboot / genuinely gone). The
+                    # level-triggered path — catches a sustained offline the edge
+                    # listener can't — and it resets the stability clock so a brief
+                    # blip can't accumulate toward an abort.
+                    went_offline = True
+                    old_stable_since = None
+                else:
+                    # Online on a non-target (old) version.
+                    if old_stable_since is None:
+                        old_stable_since = now
+                    if went_offline and now - old_stable_since >= abort_stable_s:
+                        return OtaOutcome.ABORTED
+                await asyncio.sleep(_REBOOT_POLL_INTERVAL_S)
+            return OtaOutcome.TIMEOUT
+        finally:
+            if unsub is not None:
+                unsub()
 
     def read_current_connection_count(
         self, device_id: str | None, *, entries: list[er.RegistryEntry] | None = None
