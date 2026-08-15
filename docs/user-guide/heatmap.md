@@ -35,6 +35,19 @@ keeps building in the background whether or not the layer is switched on —
 turning the layer on just starts streaming the picture to your screen. It also
 survives a device reboot, so you won't lose weeks of build-up over a power cut.
 
+## No Home Assistant entity
+
+The heatmap streams straight to the panel and card — it isn't a Home Assistant
+sensor. Earlier versions published it as a hidden `sensor.*_heatmap` entity; if
+you'd enabled it, it could show as *unknown* and log a warning about its state
+being too long. Updating clears that up.
+
+Update the device's firmware and the old entity disappears on its own — Home
+Assistant removes it automatically the next time the device reconnects. Want it
+gone sooner, before reflashing? Either disable the entity yourself, or just
+update the integration — that alone stops it being published, even on older
+firmware.
+
 ## Requirements
 
 The Heatmap layer needs firmware **1.3.0 or newer**. If your device is on older

@@ -84,7 +84,6 @@ appropriate. The integration manages enable/disable/rename.
 | Target 1-3 Position   | text_sensor   | "x,y,status" post-transform                                                                                             |
 | Raw Target 1-3        | text_sensor   | "x,y" pre-transform (sensor-space)                                                                                      |
 | Zone State            | text_sensor   | JSON with zone engine tick results                                                                                      |
-| Heatmap               | text_sensor   | base64 of 400 normalized activity bytes (0-255, row-major) — see [Activity Heatmap](#activity-heatmap-firmware)         |
 | Target 1-3 X          | sensor (mm)   | per-target X position post-transform                                                                                    |
 | Target 1-3 Y          | sensor (mm)   | per-target Y position post-transform                                                                                    |
 | Target 1-3 Signal     | sensor        | per-target signal strength                                                                                              |
@@ -257,18 +256,23 @@ no `no_session` error.
 
 ### `subscribe_heatmap` — activity heatmap overlay
 
-Streams the on-device activity heatmap for the panel's Heatmap layer. Decodes
-the firmware `Heatmap` text sensor (base64 of 400 normalized bytes, row-major,
-0-255) into a dense array; any malformed/wrong-length payload decodes to 400
-zeroes rather than erroring. Admin only (`@require_admin`), like the panel's
-other device-session streams (`subscribe_raw_targets` /
-`subscribe_grid_targets`). Registers a durable state stream exactly like those
-two — same `availability` opt-in (default `false`), same two protocol events, no
-`no_session` error. Unlike the card's `overview/subscribe_heatmap`, the panel's
-heatmap stream carries live `available` events when opted in, the same as the
-panel's other two streams — there is no deployed-bundle wire-contract constraint
-holding it back, since the opt-in flag itself is what protects an old panel
-bundle.
+Streams the on-device activity heatmap for the panel's Heatmap layer. Registers
+a durable state stream with a `poll_fn`
+(`lambda conn: conn.async_fetch_heatmap()`) instead of a PUSH `subscribe_states`
+subscription (issue #365): while the stream is armed, `_run_poll_stream` calls
+the `epp_get_heatmap` request/response action roughly every 2s (`poll_interval`)
+and decodes the returned base64 into a dense 400-int array (any
+malformed/wrong-length payload decodes to 400 zeroes rather than erroring),
+feeding it to the same callback a PUSH stream would use — see architecture.md →
+*Durable frontend state streams* for the poll delivery seam, and
+[Activity Heatmap](#activity-heatmap-firmware) for what the action returns.
+Admin only (`@require_admin`), like the panel's other device-session streams
+(`subscribe_raw_targets` / `subscribe_grid_targets`). Same `availability` opt-in
+(default `false`), same two protocol events, no `no_session` error as those two
+streams. Unlike the card's `overview/subscribe_heatmap`, the panel's heatmap
+stream carries live `available` events when opted in, the same as the panel's
+other two streams — there is no deployed-bundle wire-contract constraint holding
+it back, since the opt-in flag itself is what protects an old panel bundle.
 
 **Request:**
 `{ "type": "eppgrid/subscribe_heatmap", "mac": str, "availability"?: bool }`
@@ -283,9 +287,10 @@ bundle.
 subscription increments the same per-MAC subscriber counter family as
 `subscribe_raw_targets` / `subscribe_grid_targets` (`heatmap_subs`, tracked
 alongside `raw_target_subs` / `grid_target_subs` — see *Pipeline intervals*
-below), which is what causes the firmware to start publishing the `Heatmap`
-sensor at all: see [Activity Heatmap](#activity-heatmap-firmware) for the full
-firmware-side accumulator and gating.
+below), but unlike those two the count no longer drives anything on the firmware
+side: `heatmap_interval` is a retained-but-unused pipeline arg that stays `0`
+regardless of subscriber count. What actually starts the polling above is this
+stream being armed, not the counter.
 
 ## 3. Commands
 
@@ -385,12 +390,15 @@ Streams the on-device activity heatmap for one device — the non-admin,
 `device_id`-based counterpart of the admin `subscribe_heatmap` command, used by
 the dashboard card's **Heatmap** option. Like `overview/subscribe` it registers
 a durable state stream (so it also recovers automatically after the device
-flaps) and counts under `heatmap_subs` (the subscriber counter that turns on the
-firmware's `heatmap_interval` emission). Its wire contract is deliberately
-unchanged from before durable streams, though: it never relays live `available`
-events, because already-deployed card bundles treat any message without a
-`cells` field as an empty heatmap — see architecture.md → *Durable frontend
-state streams*.
+flaps) and counts under `heatmap_subs` — but, unlike `overview/subscribe`, it
+passes a `poll_fn` (`lambda conn: conn.async_fetch_heatmap()`), so the stream
+polls the `epp_get_heatmap` request/response action roughly every 2s instead of
+being pushed via `subscribe_states` (issue #365); `heatmap_subs` no longer
+drives any firmware-side emission (see `heatmap_interval` in *Pipeline
+intervals* below). Its wire contract is deliberately unchanged from before
+durable streams, though: it never relays live `available` events, because
+already-deployed card bundles treat any message without a `cells` field as an
+empty heatmap — see architecture.md → *Durable frontend state streams*.
 
 **Request:**
 `{ "type": "eppgrid/overview/subscribe_heatmap", "device_id": str }`
@@ -828,22 +836,30 @@ ESPHome service. Backend-internal — not a WS command surface.
 | `entity_zone_interval`   | `settings.zone_update_rate_ms` if any zone entity is enabled, else `0`     |
 | `display_interval`       | `200` when a frontend raw or grid subscription is open, else `0`           |
 | `zone_state_interval`    | `1000` when a frontend grid subscription is open, else `0`                 |
-| `heatmap_interval`       | `2000` when a frontend heatmap subscription is open, else `0`              |
+| `heatmap_interval`       | always `0` — retained-but-unused (see below)                               |
 
-The subscriber counts that gate `display_interval` / `zone_state_interval` /
-`heatmap_interval` are held on the `DeviceManager` keyed by MAC
-(`_target_subs`), incremented/decremented by the `subscribe_raw_targets` /
-`subscribe_grid_targets` / `subscribe_heatmap` handlers via
-`note_target_subscribe` / `note_target_unsubscribe`. They deliberately do
-**not** live on the `DeviceConnection`: a device flap tears the connection down
-and reopens a fresh one whose own counters would reset to zero, so a pipeline
-recomputed from those would tell the device "no subscribers" and silence
-target/zone emission while clients are still subscribed — the v1.1.0 "target
-disappears in the editor" freeze. Keyed by MAC the counts survive connection
-replacement, the decrement floors at zero (a stray unsubscribe whose increment
-landed on a since-replaced connection can't drive it negative), and
-`async_open_session` re-pushes the pipeline on reopen so emission resumes
-without a page refresh.
+The subscriber counts that gate `display_interval` / `zone_state_interval` are
+held on the `DeviceManager` keyed by MAC (`_target_subs`),
+incremented/decremented by the `subscribe_raw_targets` /
+`subscribe_grid_targets` handlers via `note_target_subscribe` /
+`note_target_unsubscribe`. They deliberately do **not** live on the
+`DeviceConnection`: a device flap tears the connection down and reopens a fresh
+one whose own counters would reset to zero, so a pipeline recomputed from those
+would tell the device "no subscribers" and silence target/zone emission while
+clients are still subscribed — the v1.1.0 "target disappears in the editor"
+freeze. Keyed by MAC the counts survive connection replacement, the decrement
+floors at zero (a stray unsubscribe whose increment landed on a since-replaced
+connection can't drive it negative), and `async_open_session` re-pushes the
+pipeline on reopen so emission resumes without a page refresh.
+
+`subscribe_heatmap` also increments/decrements a `heatmap_subs` counter in the
+same `_target_subs` map, for bookkeeping symmetry, but `_compute_pipeline`
+ignores it: `heatmap_interval` is always pushed as `0` (issue #365) — the
+heatmap is now fetched on demand via the `epp_get_heatmap` action (see
+[Activity Heatmap](#activity-heatmap-firmware)) rather than published on a
+timer, so there is nothing left for a subscriber-driven interval to gate. The
+field stays in the pipeline dict purely because old firmware's
+`epp_set_pipeline` action still declares it as a required argument.
 
 `heatmap_interval` is stripped from the pushed pipeline dict entirely
 (`pipeline.pop("heatmap_interval", None)`) for devices whose firmware predates
@@ -1114,13 +1130,15 @@ looking at it:
     decay with a ~14-day half-life (`HEATMAP_HALF_LIFE_TICKS = 4032` — the
     number of 5-minute ticks in 14 days). This is what makes the heatmap track
     "where people spend time lately" rather than accumulating forever.
-- **Publish** — gated by `heatmap_interval_ms_` (see `heatmap_interval` in
-    *Pipeline intervals* above; `0` = don't publish). When non-zero, every
-    interval the accumulator is normalized to the peak cell
+- **Serve** — the accumulator is normalized to the peak cell
     (`encode_normalized`: each cell scaled to 0-255 against the current max) and
-    base64-encoded onto the `Heatmap` text sensor. Normalizing against the live
-    peak (rather than a fixed scale) keeps the colour ramp meaningful whether
-    the room has light or heavy traffic.
+    base64-encoded on demand by `EPPComponent::get_heatmap_base64()`, returned
+    via the `epp_get_heatmap` API action (`api.respond {"b64": ...}`). The
+    integration polls this action every ~2 s while a heatmap subscriber is
+    connected and streams the decoded `{cells}` over the WebSocket API — the
+    firmware no longer publishes a `Heatmap` text_sensor (issue #365).
+    Normalizing against the live peak (rather than a fixed scale) keeps the
+    colour ramp meaningful whether the room has light or heavy traffic.
 - **Persist** — every hour, the raw (pre-normalization) float array is
     serialized (`serialize()`/`blob_size()`) and written to NVS under the key
     `"heatmap"` (schema/format version 3 — see the NVS layout notes in
@@ -1146,13 +1164,16 @@ looking at it:
     zeroes RAM (a subsequent geometry-change reset is always followed by the
     normal hourly persist).
 
-**Build flag:** the accumulator (and the `Heatmap` sensor/`heatmap_interval`
-pipeline field) can be compiled out entirely via `EPP_HEATMAP_ENABLED` (default
-`1`) for variants that can't spare the ~1.6 KB. The component reports this at
-runtime through `get_build_flags` as the `heatmap` field (see `list_devices` in
-*Commands* above) — the panel uses it, together with `firmware_status`, to
-distinguish "firmware too old to know about heatmap at all" from "this build
-compiled it out."
+**Build flag:** `EPP_HEATMAP_ENABLED` (default `1`) now gates only the reported
+`heatmap` capability flag — there's no `Heatmap` sensor left for it to gate
+publishing on, since the firmware never publishes one (the accumulator and the
+`epp_get_heatmap` action are always compiled in regardless of this value; a
+future memory-constrained variant that needs to reclaim the ~1.6 KB accumulator
+would still need to add the `#if` guarding to actually compile it out). The
+component reports the flag at runtime through `get_build_flags` as the `heatmap`
+field (see `list_devices` in *Commands* above) — the panel uses it, together
+with `firmware_status`, to distinguish "firmware too old to know about heatmap
+at all" from "this build compiled it out."
 
 ## 5. Configuration Storage
 

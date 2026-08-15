@@ -186,10 +186,15 @@ All signal processing runs on-device in the C++ zone engine:
     half-life), and persists to NVS hourly so accumulated activity survives a
     reboot. Always running — cheap enough to leave on regardless of whether a
     frontend is looking at it. It resets on calibration/room-layout change (old
-    activity has no meaning against a different room mapping) and publishes
-    only while a frontend has the heatmap layer open (see `heatmap_interval` in
-    data-catalog.md). Some variants compile it out via `EPP_HEATMAP_ENABLED` to
-    save the ~1.6 KB; the device reports this via the `heatmap` build flag.
+    activity has no meaning against a different room mapping). It is not
+    published on a timer: the integration pulls it on demand via the
+    `epp_get_heatmap` request/response action, polling roughly every 2s while a
+    frontend has the heatmap layer open (issue #365 — see *Durable frontend
+    state streams* below and data-catalog.md → *Activity Heatmap*).
+    `EPP_HEATMAP_ENABLED` gates the reported `heatmap` build flag (so the panel
+    can show/hide the overlay); the accumulator itself is always compiled in
+    today, pending a future memory-constrained variant guarding it out to
+    reclaim the ~1.6 KB.
 1. **Publishing**: raw targets (5Hz), grid targets (5Hz), zone state (1Hz). A
     composite `mmWave Presence` binary sensor combines static presence with
     target tracking (motion-independent), useful for follow-on automations.
@@ -343,6 +348,20 @@ in `websocket_api/_durable_stream.py` (`start_durable_stream`): the card's
 `websocket_api/_overview.py` (`_start_overview_stream`) and the panel's
 `websocket_api/_devices.py` (`_start_panel_stream`, backing
 `subscribe_raw_targets` / `subscribe_grid_targets` / `subscribe_heatmap`).
+
+Delivery is normally **PUSH**: `_arm_stream` opens a `subscribe_states`
+subscription on the connection and feeds the stream's `on_state` callback from
+device state events. Since issue #365, a stream can instead be registered with a
+`poll_fn` — the heatmap streams (`subscribe_heatmap` /
+`overview/subscribe_heatmap`) are the only ones that do. For those,
+`_arm_stream` spawns `_run_poll_stream` instead of a PUSH subscription: it calls
+`poll_fn(conn)` (`DeviceConnection.async_fetch_heatmap()`, a request/response
+`epp_get_heatmap` action call) on a fixed cadence (`poll_interval`, 2s) and
+feeds each result to the same `on_state` callback a PUSH stream would use. Every
+other part of the machinery — arm/disarm, session-loss re-arm,
+`available`/`closed` signalling, subscriber counting — is identical between the
+two delivery modes; only the source of the data frame differs. See
+data-catalog.md → *Activity Heatmap (firmware)* for what's being polled.
 
 The card relays the notification as `{"available": …}` events, but only for
 `eppgrid/overview/subscribe`. `eppgrid/overview/subscribe_heatmap` deliberately
