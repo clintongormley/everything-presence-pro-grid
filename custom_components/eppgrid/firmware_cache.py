@@ -18,6 +18,7 @@ import os
 import secrets
 import shutil
 import socket
+import time
 
 import aiohttp
 from homeassistant.components.http import StaticPathConfig
@@ -93,6 +94,11 @@ _MAX_FIRMWARE_BYTES = 16 * 1024 * 1024
 # slot indefinitely. total covers the whole exchange; sock_read guards against
 # slow-loris bodies (mirrors firmware_proxy.py's _UPSTREAM_TIMEOUT).
 _STAGE_TIMEOUT = aiohttp.ClientTimeout(total=60, sock_read=15)
+
+# Keep recently-staged token dirs so a concurrent multi-device OTA (each stage
+# runs before its own pre-OTA reboot + device fetch) never deletes another
+# device's in-flight firmware. Only sweep dirs older than this.
+_STALE_TOKEN_AGE_S = 3600
 
 
 class FirmwareStageError(Exception):
@@ -180,10 +186,16 @@ async def async_stage_firmware(hass: HomeAssistant, source_base: str, variant: s
             f.write(bytes(buf))
         with open(os.path.join(dest, f"{variant}.json"), "wb") as f:
             f.write(manifest_bytes)
+        now = time.time()
         for name in os.listdir(cache_dir):
             path = os.path.join(cache_dir, name)
-            if name != token and os.path.isdir(path):
-                shutil.rmtree(path, ignore_errors=True)
+            if name == token or not os.path.isdir(path):
+                continue
+            try:
+                if now - os.path.getmtime(path) > _STALE_TOKEN_AGE_S:
+                    shutil.rmtree(path, ignore_errors=True)
+            except OSError:
+                continue
 
     try:
         await hass.async_add_executor_job(_commit)
@@ -203,7 +215,11 @@ async def async_local_ota_manifest_url(
         # rather than pay its cost (and, in a device-facing socket call, its
         # failure surface) for an outcome that's already decided.
         return None
-    base = await resolve_reachable_base_url(hass, device_host)
+    try:
+        base = await resolve_reachable_base_url(hass, device_host)
+    except Exception:
+        _LOGGER.debug("Reachable-URL resolution failed; using GitHub-direct", exc_info=True)
+        return None
     if base is None:
         return None
     try:

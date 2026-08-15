@@ -796,8 +796,14 @@ class DeviceManager:
     async def async_trigger_ota(self, mac: str) -> None:
         """Trigger firmware OTA update on a device.
 
-        Derives the firmware variant from cached build flags, constructs the
-        manifest URL from `OTA_MANIFEST_BASE_URL`, and calls the device's
+        Derives the firmware variant from cached build flags and constructs
+        the manifest URL from `OTA_MANIFEST_BASE_URL`. Before handing that URL
+        to the device, first attempts HA-local serving (`firmware_cache`): if
+        HA can download+verify the firmware and reach the device over the
+        LAN, the device fetches it from HA instead, so devices with no
+        internet access can still update; this falls back to the
+        GitHub-direct `OTA_MANIFEST_BASE_URL` URL whenever local serving isn't
+        possible or fails. Either way, calls the device's
         `set_update_manifest` API action over a temporary connection. Shared
         by the panel's `update_firmware` websocket handler and the Repairs
         framework's `FirmwareUpdateRepairFlow`.

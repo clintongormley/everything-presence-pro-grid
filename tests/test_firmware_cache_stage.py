@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import time
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -118,8 +119,21 @@ async def test_stage_rejects_non_relative_ota_path(hass: HomeAssistant, cache_di
         await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
 
 
-async def test_stage_cleans_up_stale_token_dirs(hass: HomeAssistant, cache_dir: str) -> None:
-    os.makedirs(os.path.join(cache_dir, "stale-token"))
+async def test_stage_cleans_up_only_stale_token_dirs(hass: HomeAssistant, cache_dir: str) -> None:
+    """Cleanup is age-based, not delete-all-others: staging runs before the
+    per-mac OTA lock and the device's ~10-30s pre-OTA reboot, so a concurrent
+    device's just-staged token dir must survive until it fetches its binary.
+    Only dirs older than _STALE_TOKEN_AGE_S are swept; a recent dir (standing
+    in for another device's in-flight OTA) is retained.
+    """
+    stale_dir = os.path.join(cache_dir, "stale-token")
+    os.makedirs(stale_dir)
+    old_mtime = time.time() - 7200
+    os.utime(stale_dir, (old_mtime, old_mtime))
+
+    recent_dir = os.path.join(cache_dir, "recent-token")
+    os.makedirs(recent_dir)  # default mtime: "now", like another device's in-flight stage
+
     bodies = {
         f"{_SOURCE}/{_VARIANT}.json": _manifest(),
         f"{_SOURCE}/{_VARIANT}.ota.bin": _BIN,
@@ -127,7 +141,10 @@ async def test_stage_cleans_up_stale_token_dirs(hass: HomeAssistant, cache_dir: 
     with patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)):
         served = await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
     token = served.rsplit("/", 1)[1]
-    assert os.listdir(cache_dir) == [token]
+
+    remaining = set(os.listdir(cache_dir))
+    assert remaining == {token, "recent-token"}
+    assert "stale-token" not in remaining
 
 
 async def test_register_firmware_cache_is_idempotent(hass: HomeAssistant, tmp_path) -> None:
@@ -304,6 +321,17 @@ async def test_local_url_none_when_cache_not_registered(hass: HomeAssistant) -> 
 async def test_local_url_none_when_no_reachable_base(hass: HomeAssistant) -> None:
     hass.data[firmware_cache._FW_CACHE_REGISTERED_KEY] = True
     with patch.object(firmware_cache, "resolve_reachable_base_url", AsyncMock(return_value=None)):
+        url = await firmware_cache.async_local_ota_manifest_url(hass, "192.168.1.50", _SOURCE, _VARIANT)
+    assert url is None
+
+
+async def test_local_url_none_when_resolve_reachable_base_url_raises_unexpectedly(hass: HomeAssistant) -> None:
+    """The design invariant is "local serving must NEVER break OTA": even an
+    exception type resolve_reachable_base_url() isn't documented to raise
+    (a bug, an unusual environment, ...) must still yield the GitHub-direct
+    fallback (None), not propagate out of async_local_ota_manifest_url."""
+    hass.data[firmware_cache._FW_CACHE_REGISTERED_KEY] = True
+    with patch.object(firmware_cache, "resolve_reachable_base_url", AsyncMock(side_effect=RuntimeError("boom"))):
         url = await firmware_cache.async_local_ota_manifest_url(hass, "192.168.1.50", _SOURCE, _VARIANT)
     assert url is None
 

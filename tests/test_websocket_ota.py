@@ -494,8 +494,8 @@ class TestSubscribeOtaProgress:
         client layer, the actionable log line is tagged http_request.idf,
         not http_request.ota / .update. Captured live during the heap
         exhaustion that motivated this PR — so it must surface as the
-        low-memory error, which explains the cause and the reboot-and-retry
-        remedy rather than echoing the bare ESP_ERR.
+        unreachable-download error, which points at network reachability
+        rather than echoing the bare ESP_ERR.
         """
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()

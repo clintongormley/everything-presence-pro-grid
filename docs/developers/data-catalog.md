@@ -521,6 +521,12 @@ separate bundle with its own hash). **Not admin-gated** — the dashboard card
 renders for non-admin viewers, and the payload is just non-sensitive content
 hashes. See `frontend/src/lib/version-check.ts`.
 
+Separately, `/eppgrid_fw/<token>/{variant}.json` + `.../{variant}.ota.bin` is
+another unauthenticated served path: the firmware cache HA downloads and
+md5-verifies GitHub's public firmware into, then serves over the LAN so an
+internet-restricted device can still fetch its OTA (`token` is
+`secrets.token_hex(8)`). See `custom_components/eppgrid/firmware_cache.py`.
+
 **Request:** `{ "type": "eppgrid/frontend_version" }` **Response:**
 `{ "hash": str | null, "card_hash": str | null }` — each is `null` until that
 bundle has been hashed (e.g. before the panel/card resources are first
