@@ -573,6 +573,19 @@ describe("epp-device-groups-view", () => {
 		};
 		expect(Object.keys(editor.sourcesByMac).sort()).toEqual(["AA", "ZZ"]);
 	});
+
+	// Regression for issue #366: re-evaluating a module whose element is already
+	// registered (two bundles / the scoped-custom-element-registry swap) must not
+	// throw a DOMException. Guard the define like every other epp-* element. Kept
+	// last because vi.resetModules() clears the module cache for the rest of the
+	// file.
+	it("does not throw when re-evaluated while already registered", async () => {
+		expect(customElements.get("epp-device-groups-view")).toBeDefined();
+		vi.resetModules();
+		await expect(
+			import("../../views/epp-device-groups-view.js"),
+		).resolves.toHaveProperty("EppDeviceGroupsView");
+	});
 });
 
 describe("desktop max-width centering", () => {

@@ -71,7 +71,9 @@ export class EppConfirmDialog extends LitElement {
 	}
 }
 
-customElements.define("epp-confirm-dialog", EppConfirmDialog);
+if (!customElements.get("epp-confirm-dialog")) {
+	customElements.define("epp-confirm-dialog", EppConfirmDialog);
+}
 
 declare global {
 	interface HTMLElementTagNameMap {

@@ -425,7 +425,9 @@ export class EppDeviceGroupsView extends LitElement {
 	}
 }
 
-customElements.define("epp-device-groups-view", EppDeviceGroupsView);
+if (!customElements.get("epp-device-groups-view")) {
+	customElements.define("epp-device-groups-view", EppDeviceGroupsView);
+}
 
 declare global {
 	interface HTMLElementTagNameMap {

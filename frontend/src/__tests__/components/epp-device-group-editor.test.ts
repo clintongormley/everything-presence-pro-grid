@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-device-group-editor.js";
 import type { EppDeviceGroupEditor } from "../../components/epp-device-group-editor.js";
 import type {
@@ -722,6 +722,19 @@ describe("epp-device-group-editor", () => {
 		await (field as HTMLElement & { updateComplete: Promise<unknown> })
 			.updateComplete;
 		expect(field.shadowRoot!.querySelector("ha-input")).not.toBeNull();
+	});
+
+	// Regression for issue #366: re-evaluating a module whose element is already
+	// registered (two bundles / the scoped-custom-element-registry swap) must not
+	// throw a DOMException. Guard the define like every other epp-* element. Kept
+	// last because vi.resetModules() clears the module cache for the rest of the
+	// file.
+	it("does not throw when re-evaluated while already registered", async () => {
+		expect(customElements.get("epp-device-group-editor")).toBeDefined();
+		vi.resetModules();
+		await expect(
+			import("../../components/epp-device-group-editor.js"),
+		).resolves.toHaveProperty("EppDeviceGroupEditor");
 	});
 });
 
