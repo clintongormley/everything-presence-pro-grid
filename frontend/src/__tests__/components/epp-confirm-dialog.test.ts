@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-confirm-dialog.js";
 import type { EppConfirmDialog } from "../../components/epp-confirm-dialog.js";
 import type { EppDialog } from "../../ui/epp-dialog.js";
@@ -130,5 +130,20 @@ describe("epp-confirm-dialog", () => {
 		el.remove();
 		document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
 		expect(fired).toBe(false);
+	});
+
+	// Regression for issue #366: the panel and card bundles each contain a copy
+	// of this module. When the card (loaded as a Lovelace resource, after HA
+	// swaps in the scoped-custom-element-registry) registers the element first,
+	// re-evaluating this module from the panel bundle must NOT throw a
+	// DOMException — an uncaught throw here blanks the whole panel.
+	it("does not throw when re-evaluated while already registered", async () => {
+		expect(customElements.get("epp-confirm-dialog")).toBeDefined();
+		vi.resetModules();
+		// Re-evaluating must resolve (re-exporting the class), not reject with a
+		// "already used with this registry" DOMException from an unguarded define.
+		await expect(
+			import("../../components/epp-confirm-dialog.js"),
+		).resolves.toHaveProperty("EppConfirmDialog");
 	});
 });

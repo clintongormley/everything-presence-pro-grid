@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-device-group-editor.js";
 import type { EppDeviceGroupEditor } from "../../components/epp-device-group-editor.js";
 import type {
@@ -751,5 +751,20 @@ describe("desktop scroll + pinned actions", () => {
 			/\.save-cancel-bar\s*{[^}]*border-top:\s*1px solid/,
 		);
 		expect(cssText).not.toContain("@media (max-width: 819px)");
+	});
+});
+
+// Regression for issue #366: re-evaluating a module whose element is already
+// registered (two bundles / the scoped-custom-element-registry swap) must not
+// throw a DOMException. Guard the define like every other epp-* element. Kept
+// in a final describe because vi.resetModules() clears the module cache for
+// everything that runs after it.
+describe("registration guard (issue #366)", () => {
+	it("does not throw when re-evaluated while already registered", async () => {
+		expect(customElements.get("epp-device-group-editor")).toBeDefined();
+		vi.resetModules();
+		await expect(
+			import("../../components/epp-device-group-editor.js"),
+		).resolves.toHaveProperty("EppDeviceGroupEditor");
 	});
 });

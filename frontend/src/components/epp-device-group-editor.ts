@@ -349,7 +349,9 @@ export class EppDeviceGroupEditor extends LitElement {
 	}
 }
 
-customElements.define("epp-device-group-editor", EppDeviceGroupEditor);
+if (!customElements.get("epp-device-group-editor")) {
+	customElements.define("epp-device-group-editor", EppDeviceGroupEditor);
+}
 
 declare global {
 	interface HTMLElementTagNameMap {

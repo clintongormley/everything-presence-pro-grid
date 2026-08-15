@@ -4,6 +4,16 @@ User-facing changes to Everything Presence Pro Grid. For full release assets and
 firmware downloads, see the
 [GitHub releases page](https://github.com/clintongormley/everything-presence-pro-grid/releases).
 
+## v1.8.0 — unreleased
+
+### Fixes
+
+- **The panel opens reliably from the sidebar again.** Opening Everything
+    Presence Pro Grid from the Home Assistant sidebar could show a blank screen,
+    leaving you to refresh the page or type the panel's address by hand to get
+    in — and in the mobile app, where there is no refresh, the panel was
+    effectively unreachable. It now loads correctly however you open it.
+
 ## v1.7.0 — 2026-08-07
 
 ### New features
