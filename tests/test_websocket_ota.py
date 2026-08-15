@@ -524,7 +524,7 @@ class TestSubscribeOtaProgress:
             {
                 "state": "error",
                 "message": "HTTP Request failed: ESP_ERR_HTTP_CONNECT",
-                "error_key": "flasher.errors.ota_low_memory",
+                "error_key": "flasher.errors.ota_download_unreachable",
             },
         )
 
