@@ -85,12 +85,21 @@ const flasherStyles = css`
     overflow-y: auto;
   }
 
+  /* One flex child per device: the row plus (when open) its OTA error detail.
+     The list's 8px gap is thus BETWEEN devices, while the tighter intra-item
+     gap keeps the error message visually hanging off its own row rather than
+     floating equidistant between two rows. */
+  .device-item {
+    display: flex;
+    flex-direction: column;
+    gap: var(--epp-space-1, 4px);
+  }
+
   .device-row {
     display: flex;
     align-items: center;
-    /* Let the OTA error detail (flex-basis: 100%) wrap onto its own full-width
-       line below the row, in normal flow — so it can't be clipped by the
-       scrolling .device-list the way an absolute popover was. */
+    /* Wrap the row's own controls (badges + action buttons) onto a second line
+       on narrow screens rather than overflowing. */
     flex-wrap: wrap;
     gap: var(--epp-space-3, 12px);
     padding: var(--epp-space-3, 12px) var(--epp-space-4, 16px);
@@ -222,15 +231,19 @@ const flasherStyles = css`
     cursor: pointer;
   }
   .ota-error-detail {
-    /* Full-width line below the row content (wraps via the row's flex-wrap),
-       so the message flows in-document and is never clipped. */
-    flex-basis: 100%;
+    /* Last child of its .device-item, after the row (see _renderOtaErrorDetail
+       for why it's a sibling, not a row child). align-self makes the full-width
+       spanning explicit rather than leaning on the flex default. */
+    align-self: stretch;
     background: var(--epp-danger, var(--error-color, #f44336));
     color: white;
     padding: var(--epp-space-2, 8px) var(--epp-space-3, 12px);
     border-radius: var(--epp-radius-sm, 6px);
     font-size: var(--epp-font-xs, 12px);
     line-height: 1.4;
+    /* The interpolated device error is unbounded and may be a single
+       unbreakable token (a URL/hash) — break it rather than overflow sideways. */
+    overflow-wrap: anywhere;
   }
 
   .integration-version {
@@ -698,18 +711,32 @@ export class EppFlasherView extends LitElement {
 		}
 	}
 
-	// The OTA error message renders in the device row's flow (below its main
-	// line, via the row's flex-wrap), toggled by the error icon. Kept OUT of
-	// `.ota-error`: an absolute popover there was clipped by the scrolling
-	// `.device-list` for a device at the top of the list.
+	// The OTA error message, toggled by the error icon.
+	//
+	// It renders as the second child of the device's `.device-item` (after the
+	// row), NOT inside the `.device-row`. Two earlier placements each had a bug:
+	// an absolute popover was clipped by the scrolling `.device-list` for a
+	// device at the top; and a bar wrapped into the row via flex-wrap overflowed
+	// the row (flex-wrap doesn't grow it) so the next row's opaque background
+	// painted over it. As a sibling in the flex-column layout the list reserves
+	// its space, so no row can overlap it. The list's 40vh cap can still hide a
+	// message opened past the fold — updated() scrolls it into the viewport,
+	// top-first so a message longer than the viewport shows its start.
+	//
+	// A null errorKey (state is error but no key) renders nothing rather than an
+	// empty `role="alert"` bar.
 	private _renderOtaErrorDetail(
 		device: FlashableDevice,
 	): typeof nothing | ReturnType<typeof html> {
 		const ota = this.otaStates[device.mac];
-		if (ota?.state !== "error" || this._errorPopoverMac !== device.mac) {
+		if (
+			ota?.state !== "error" ||
+			this._errorPopoverMac !== device.mac ||
+			!ota.errorKey
+		) {
 			return nothing;
 		}
-		return html`<div class="ota-error-detail" role="alert">${ota.errorKey ? this.localize(ota.errorKey, ota.errorParams) : ""}</div>`;
+		return html`<div class="ota-error-detail" role="alert">${this.localize(ota.errorKey, ota.errorParams)}</div>`;
 	}
 
 	private _onUsbConnect(): void {
@@ -773,25 +800,34 @@ export class EppFlasherView extends LitElement {
 			this._cancelling = false;
 		}
 
-		// When an OTA error opens, its message renders in the row's flow — but
-		// the device list is a `max-height: 40vh; overflow-y: auto` scroll box,
-		// so a message opened past the fold is clipped (an in-flow bar is NOT
-		// immune to a scroll cap). Scroll `.device-list` itself to reveal the
-		// whole detail. We move the inner list directly rather than
-		// `detail.scrollIntoView()` (which would also scroll whichever ancestors
-		// it needed): confining the scroll to this shadow root keeps it
-		// non-composed, so it can't reach — and so can't trip — the window-scroll
-		// dismissal, with no dependency on any ancestor's overflow behaviour.
+		// When an OTA error opens, the device list's `max-height: 40vh;
+		// overflow-y: auto` cap can hide a message opened past the fold. Scroll
+		// `.device-list` itself to reveal the detail. We move the inner list
+		// directly rather than `detail.scrollIntoView()` (which would also scroll
+		// whichever ancestors it needed): confining the scroll to this shadow root
+		// keeps it non-composed, so it can't reach — and so can't trip — the
+		// window-scroll dismissal, with no dependency on any ancestor's overflow.
+		//
+		// Alignment is top-first: the interpolated device error is unbounded, and
+		// for a message taller than the viewport we show its START (the actionable
+		// sentence), not bottom-align it and leave only the tail readable.
 		if (changed.has("_errorPopoverMac") && this._errorPopoverMac !== null) {
 			const list = this.shadowRoot?.querySelector(".device-list");
 			const detail = this.shadowRoot?.querySelector(".ota-error-detail");
 			if (list && detail) {
 				const listBox = list.getBoundingClientRect();
 				const detailBox = detail.getBoundingClientRect();
-				if (detailBox.bottom > listBox.bottom) {
-					list.scrollTop += detailBox.bottom - listBox.bottom;
-				} else if (detailBox.top < listBox.top) {
+				if (detailBox.top < listBox.top) {
+					// Start is above the viewport — bring it down to the top edge.
 					list.scrollTop -= listBox.top - detailBox.top;
+				} else if (detailBox.bottom > listBox.bottom) {
+					// Ends below the viewport. Reveal the bottom, but never push the
+					// start above the top (min clamps it): a message taller than the
+					// viewport keeps its start visible and scrolls for the rest.
+					list.scrollTop += Math.min(
+						detailBox.bottom - listBox.bottom,
+						detailBox.top - listBox.top,
+					);
 				}
 			}
 		}
@@ -1082,22 +1118,24 @@ export class EppFlasherView extends LitElement {
 											const { badges, action } =
 												this._deviceRowDescriptor(device);
 											return html`
-                      <div class="device-row">
-                        <div class="device-info${isFaded ? " device-info-faded" : ""}">
-                          <div class="device-name">${device.name} <span class="device-mac">(${device.mac.replace(/:/g, "").slice(-6).toLowerCase()})</span></div>
-                          <div class="device-host">${device.host ?? this.localize("flasher.offline")}${
-														device.firmware_type === "eppgrid" &&
-														device.firmware_version &&
-														device.firmware_version !== "unknown"
-															? ` - v${device.firmware_version}`
-															: ""
-													}</div>
+                      <div class="device-item">
+                        <div class="device-row">
+                          <div class="device-info${isFaded ? " device-info-faded" : ""}">
+                            <div class="device-name">${device.name} <span class="device-mac">(${device.mac.replace(/:/g, "").slice(-6).toLowerCase()})</span></div>
+                            <div class="device-host">${device.host ?? this.localize("flasher.offline")}${
+															device.firmware_type === "eppgrid" &&
+															device.firmware_version &&
+															device.firmware_version !== "unknown"
+																? ` - v${device.firmware_version}`
+																: ""
+														}</div>
+                          </div>
+                          ${badges.map(
+														(b) =>
+															html`<span class="firmware-badge ${b.cls}">${this.localize(b.labelKey)}</span>`,
+													)}
+                          ${action}
                         </div>
-                        ${badges.map(
-													(b) =>
-														html`<span class="firmware-badge ${b.cls}">${this.localize(b.labelKey)}</span>`,
-												)}
-                        ${action}
                         ${this._renderOtaErrorDetail(device)}
                       </div>
                     `;

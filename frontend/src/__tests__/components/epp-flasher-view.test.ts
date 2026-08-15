@@ -1719,14 +1719,16 @@ describe("OTA inline rendering", () => {
 		expect(detail!.textContent).toContain("flasher.errors.connection_lost");
 	});
 
-	it("renders the OTA error message in the device-row flow, not a clipped popover", () => {
+	it("renders the OTA error message as the device-item's second child, not inside a row", () => {
 		// Regression: the error text used to be an absolutely-positioned popover
-		// (bottom: 100%) that the scrolling .device-list (overflow-y: auto)
-		// clipped for a device at the top of the list. It now renders in normal
-		// flow inside the row. (The list's 40vh scroll cap can still clip an
-		// opened message past the fold; updated() scrolls it into view — see
-		// flasher-ota-error-visibility.browser.test.ts, since clipping needs a
-		// real layout engine happy-dom lacks.)
+		// (bottom: 100%) clipped by the scrolling list, then a wrapped-in-row bar
+		// that overflowed its row so the next row painted over it. It now renders
+		// as the second child of the device's `.device-item` (after the row, not
+		// inside it) — so the list reserves its space and no row can clip or
+		// overlap it. (The list's 40vh scroll cap can still clip an opened message
+		// past the fold; updated() scrolls it into view — see
+		// flasher-ota-error-visibility.browser.test.ts, since layout needs a real
+		// engine happy-dom lacks.)
 		const el = createView({
 			flashableDevices: [updatableDevice],
 			otaStates: {
@@ -1744,10 +1746,30 @@ describe("OTA inline rendering", () => {
 		expect(detail).not.toBeNull();
 		// The old clipped absolute popover is gone.
 		expect(c.querySelector(".ota-error-popover")).toBeNull();
-		// The detail lives in the row flow, not inside the narrow right-aligned
-		// .ota-error action cluster it would overflow out of.
+		// The detail lives in the device-item, NOT nested inside a device row
+		// (which can't grow to contain it) nor the narrow .ota-error action cluster.
 		expect(detail!.closest(".ota-error")).toBeNull();
-		expect(detail!.closest(".device-row")).not.toBeNull();
+		expect(detail!.closest(".device-row")).toBeNull();
+		expect(detail!.closest(".device-item")).not.toBeNull();
+	});
+
+	it("renders no error bar when the error has no key (avoids a blank alert)", () => {
+		// errorKey is typed string | null; a null key in an error state used to
+		// render an empty red role="alert" bar. It now renders nothing.
+		const el = createView({
+			flashableDevices: [updatableDevice],
+			otaStates: {
+				[updatableDevice.mac]: {
+					state: "error",
+					progress: null,
+					errorKey: null,
+				},
+			},
+		});
+		(el as any)._errorPopoverMac = updatableDevice.mac;
+		const c = renderTo((el as any).render());
+
+		expect(c.querySelector(".ota-error-detail")).toBeNull();
 	});
 
 	it("does not render error popover when _errorPopoverMac does not match", () => {
