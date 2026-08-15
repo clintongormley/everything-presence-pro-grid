@@ -62,6 +62,16 @@ async def test_base_url_none_when_probe_and_get_url_both_fail(hass: HomeAssistan
     assert url is None
 
 
+async def test_base_url_falls_back_to_get_url_when_probe_raises(hass: HomeAssistant) -> None:
+    hass.http = _fake_http()
+    with (
+        patch.object(firmware_cache, "probe_source_ip", side_effect=RuntimeError("blocked")),
+        patch.object(firmware_cache, "get_url", return_value="http://homeassistant.local:8123/"),
+    ):
+        url = await firmware_cache.resolve_reachable_base_url(hass, "192.168.1.50")
+    assert url == "http://homeassistant.local:8123"
+
+
 async def test_base_url_none_when_no_host(hass: HomeAssistant) -> None:
     hass.http = _fake_http()
     with (

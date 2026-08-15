@@ -56,7 +56,13 @@ async def resolve_reachable_base_url(hass: HomeAssistant, device_host: str | Non
     """Resolve an absolute base URL (no trailing slash) the device can use to
     reach HA, or None to signal the caller to use the GitHub-direct fallback."""
     if device_host:
-        ip = await hass.async_add_executor_job(probe_source_ip, device_host)
+        try:
+            ip = await hass.async_add_executor_job(probe_source_ip, device_host)
+        except Exception:
+            # Best-effort probe: a blocked or unusual socket must never break
+            # OTA — fall through to get_url / GitHub-direct.
+            _LOGGER.debug("Source-IP probe for %s failed; falling back", device_host, exc_info=True)
+            ip = None
         if ip:
             scheme = "https" if getattr(hass.http, "ssl_certificate", None) else "http"
             port = hass.http.server_port
@@ -191,6 +197,12 @@ async def async_local_ota_manifest_url(
 ) -> str | None:
     """Return an HA-local manifest URL the device can fetch, or None to fall back
     to GitHub-direct. Fails soft: any resolution/staging error returns None."""
+    if not hass.data.get(_FW_CACHE_REGISTERED_KEY):
+        # Local serving can never succeed without the static path registered
+        # (see async_stage_firmware below) — skip the network probe entirely
+        # rather than pay its cost (and, in a device-facing socket call, its
+        # failure surface) for an outcome that's already decided.
+        return None
     base = await resolve_reachable_base_url(hass, device_host)
     if base is None:
         return None

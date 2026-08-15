@@ -290,13 +290,26 @@ async def test_local_url_composes_base_and_served_manifest(hass: HomeAssistant, 
     assert url == f"http://192.168.1.10:8123/eppgrid_fw/abc123/{_VARIANT}.json"
 
 
+async def test_local_url_none_when_cache_not_registered(hass: HomeAssistant) -> None:
+    """Without a registered static path, local serving can never succeed —
+    async_local_ota_manifest_url must short-circuit before even probing the
+    device's reachability, so it never pays for (or risks) a network call
+    whose result is already moot."""
+    with patch.object(firmware_cache, "resolve_reachable_base_url", AsyncMock()) as mock_resolve:
+        url = await firmware_cache.async_local_ota_manifest_url(hass, "192.168.1.50", _SOURCE, _VARIANT)
+    assert url is None
+    mock_resolve.assert_not_called()
+
+
 async def test_local_url_none_when_no_reachable_base(hass: HomeAssistant) -> None:
+    hass.data[firmware_cache._FW_CACHE_REGISTERED_KEY] = True
     with patch.object(firmware_cache, "resolve_reachable_base_url", AsyncMock(return_value=None)):
         url = await firmware_cache.async_local_ota_manifest_url(hass, "192.168.1.50", _SOURCE, _VARIANT)
     assert url is None
 
 
 async def test_local_url_none_when_staging_fails(hass: HomeAssistant) -> None:
+    hass.data[firmware_cache._FW_CACHE_REGISTERED_KEY] = True
     with (
         patch.object(firmware_cache, "resolve_reachable_base_url", AsyncMock(return_value="http://192.168.1.10:8123")),
         patch.object(
