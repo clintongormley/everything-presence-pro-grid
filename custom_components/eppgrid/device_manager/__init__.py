@@ -1759,6 +1759,7 @@ class DeviceManager:
         make_on_state: Callable[[str, Any], Callable[[Any], None]],
         on_availability: Callable[[bool], None],
         on_closed: Callable[[], None] | None = None,
+        poll_fn: Callable[[Any], Any] | None = None,
     ) -> Callable[[], None] | None:
         """Register a durable state stream for `mac` and arm it if possible.
 
@@ -1782,6 +1783,12 @@ class DeviceManager:
         decrementing it on connection loss would silence the device's pipeline
         for a client that is still subscribed.
 
+        `poll_fn`, when given, switches the stream to the POLL delivery seam
+        (issue #365, heatmap): `_arm_stream` drives a periodic poller instead of a
+        PUSH `subscribe_states` subscription, feeding `make_on_state`'s callback
+        each item `poll_fn` fetches rather than a device state. `None` (the
+        default) is the ordinary PUSH stream every other caller uses.
+
         Registration is all-or-nothing: if the arm pass below raises or is
         cancelled, the stream is rolled back before the exception propagates.
         """
@@ -1794,6 +1801,7 @@ class DeviceManager:
             make_on_state=make_on_state,
             on_availability=on_availability,
             on_closed=on_closed,
+            poll_fn=poll_fn,
         )
         self._state_streams.setdefault(mac, []).append(stream)
         self.note_target_subscribe(mac, counter_attr)

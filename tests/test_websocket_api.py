@@ -114,6 +114,11 @@ def register_managed_device(
     mock_dm.devices[mac] = ManagedDevice(mac=mac, name="EPP", host=host)
 
 
+def _last_event(connection: MagicMock) -> dict:
+    """Return the `event` payload of the last message sent on `connection`."""
+    return connection.send_message.call_args[0][0]["event"]
+
+
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
@@ -4247,7 +4252,7 @@ class TestWebSocketSubscriptions:
         connection.subscriptions = {}
         msg = {"id": 36, "type": "eppgrid/subscribe_grid_targets", "mac": "AA:BB:CC:DD:EE:FF"}
 
-        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed):
+        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed, poll_fn=None):
             # Simulate HA's handle_unsubscribe_events landing while the arm is
             # still in flight: it looks up (and removes) whatever is registered
             # under this id right now, calling it only if something is there —
@@ -4382,7 +4387,7 @@ class TestWebSocketSubscriptions:
         mock_dm = await setup_integration(hass, config_entry)
         register_managed_device(mock_dm)
 
-        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed):
+        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed, poll_fn=None):
             on_availability(False)  # a stale on_stop lands mid-registration
             return MagicMock()  # ...and the arm pass still succeeds
 
@@ -4604,6 +4609,7 @@ class TestSubscribeHeatmap:
         connection.send_result.assert_called_once_with(50)
         assert mock_dm.async_add_state_stream.await_args.args[0] == "AA:BB:CC:DD:EE:FF"
         assert mock_dm.async_add_state_stream.await_args.kwargs["counter_attr"] == "heatmap_subs"
+        assert mock_dm.async_add_state_stream.await_args.kwargs["poll_fn"] is not None
         mock_dm.get_session.assert_not_called()
         mock_dm.note_target_subscribe.assert_not_called()
 
@@ -4613,18 +4619,20 @@ class TestSubscribeHeatmap:
     async def test_subscribe_heatmap_emits_cells_on_state(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
-        """A matching TextSensorState update on the Heatmap entity emits {"cells": [...]}."""
-        import base64
+        """Under the poll transport, the callback `make_on_state` builds is fed the
+        polled cells list directly (decoded by `DeviceConnection.async_fetch_heatmap`,
+        not filtered from a device state) and emits {"cells": [...]}."""
+        captured = {}
 
-        from aioesphomeapi import TextSensorInfo
-        from aioesphomeapi import TextSensorState
+        async def fake_add_state_stream(
+            mac, *, counter_attr, make_on_state, on_availability, on_closed=None, poll_fn=None
+        ):
+            captured["poll_fn"] = poll_fn
+            captured["cb"] = make_on_state(mac, object())
+            return MagicMock()
 
         mock_dm = await setup_integration(hass, config_entry)
-        mock_device_conn = MagicMock()
-        mock_device_conn.entities = [
-            TextSensorInfo(object_id="heatmap", key=42, name="Heatmap"),
-        ]
-        mock_dm.async_add_state_stream = AsyncMock(return_value=MagicMock())
+        mock_dm.async_add_state_stream = AsyncMock(side_effect=fake_add_state_stream)
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_heatmap
 
@@ -4633,37 +4641,29 @@ class TestSubscribeHeatmap:
         msg = {"id": 32, "type": "eppgrid/subscribe_heatmap", "mac": "AA:BB:CC:DD:EE:FF"}
 
         await call_async_handler(hass, websocket_subscribe_heatmap, connection, msg)
-        make_on_state = mock_dm.async_add_state_stream.await_args.kwargs["make_on_state"]
-        on_state = make_on_state("AA:BB:CC:DD:EE:FF", mock_device_conn)
-        connection.send_message.reset_mock()
+        assert captured["poll_fn"] is not None
 
-        raw = bytearray(400)
-        raw[5] = 200
-        encoded = base64.b64encode(bytes(raw)).decode("ascii")
-        on_state(TextSensorState(key=42, state=encoded, missing_state=False))
+        captured["cb"]([1, 2, 3])
 
-        connection.send_message.assert_called_once()
-        payload = connection.send_message.call_args[0][0]
-        cells = payload.get("event", {}).get("cells")
-        assert cells is not None
-        assert len(cells) == 400
-        assert cells[5] == 200
+        assert _last_event(connection) == {"cells": [1, 2, 3]}
 
     async def test_subscribe_heatmap_emits_zeroed_cells_on_empty_state(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
-        """An empty Heatmap state clears the overlay: emits an all-zero cells frame
-        rather than being dropped (which would leave the frontend showing stale
-        heat). `_decode_heatmap_b64` already maps empty -> all-zeros."""
-        from aioesphomeapi import TextSensorInfo
-        from aioesphomeapi import TextSensorState
+        """An empty firmware read clears the overlay: the poll callback emits an
+        all-zero cells frame rather than being dropped (which would leave the
+        frontend showing stale heat). `async_fetch_heatmap` already maps an empty
+        firmware payload to an all-zeros list before it ever reaches this callback."""
+        captured = {}
+
+        async def fake_add_state_stream(
+            mac, *, counter_attr, make_on_state, on_availability, on_closed=None, poll_fn=None
+        ):
+            captured["cb"] = make_on_state(mac, object())
+            return MagicMock()
 
         mock_dm = await setup_integration(hass, config_entry)
-        mock_device_conn = MagicMock()
-        mock_device_conn.entities = [
-            TextSensorInfo(object_id="heatmap", key=42, name="Heatmap"),
-        ]
-        mock_dm.async_add_state_stream = AsyncMock(return_value=MagicMock())
+        mock_dm.async_add_state_stream = AsyncMock(side_effect=fake_add_state_stream)
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_heatmap
 
@@ -4672,29 +4672,29 @@ class TestSubscribeHeatmap:
         msg = {"id": 33, "type": "eppgrid/subscribe_heatmap", "mac": "AA:BB:CC:DD:EE:FF"}
 
         await call_async_handler(hass, websocket_subscribe_heatmap, connection, msg)
-        make_on_state = mock_dm.async_add_state_stream.await_args.kwargs["make_on_state"]
-        on_state = make_on_state("AA:BB:CC:DD:EE:FF", mock_device_conn)
-        connection.send_message.reset_mock()
 
-        on_state(TextSensorState(key=42, state="", missing_state=False))
+        captured["cb"]([0] * 400)
 
-        connection.send_message.assert_called_once()
-        payload = connection.send_message.call_args[0][0]
-        cells = payload.get("event", {}).get("cells")
-        assert cells is not None
-        assert len(cells) == 400
-        assert all(c == 0 for c in cells)
+        assert _last_event(connection) == {"cells": [0] * 400}
 
-    async def test_subscribe_heatmap_ignores_unrelated_state(
+    async def test_subscribe_heatmap_poll_fn_calls_async_fetch_heatmap(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
-        """State updates for other entities (or no Heatmap entity present) don't emit."""
-        from aioesphomeapi import TextSensorState
+        """Repurposed from the pre-poll `_ignores_unrelated_state` test: its premise
+        (filtering a TextSensorState by entity key) no longer exists under the poll
+        transport — there is no device state and no key map here at all. What still
+        matters under the poll model is that the stream's `poll_fn` is wired to the
+        live connection's `async_fetch_heatmap`, and nothing else."""
+        captured = {}
+
+        async def fake_add_state_stream(
+            mac, *, counter_attr, make_on_state, on_availability, on_closed=None, poll_fn=None
+        ):
+            captured["poll_fn"] = poll_fn
+            return MagicMock()
 
         mock_dm = await setup_integration(hass, config_entry)
-        mock_device_conn = MagicMock()
-        mock_device_conn.entities = []
-        mock_dm.async_add_state_stream = AsyncMock(return_value=MagicMock())
+        mock_dm.async_add_state_stream = AsyncMock(side_effect=fake_add_state_stream)
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_heatmap
 
@@ -4703,12 +4703,15 @@ class TestSubscribeHeatmap:
         msg = {"id": 33, "type": "eppgrid/subscribe_heatmap", "mac": "AA:BB:CC:DD:EE:FF"}
 
         await call_async_handler(hass, websocket_subscribe_heatmap, connection, msg)
-        make_on_state = mock_dm.async_add_state_stream.await_args.kwargs["make_on_state"]
-        on_state = make_on_state("AA:BB:CC:DD:EE:FF", mock_device_conn)
-        connection.send_message.reset_mock()
+        assert captured["poll_fn"] is not None
 
-        on_state(TextSensorState(key=99, state="anything", missing_state=False))
-        connection.send_message.assert_not_called()
+        mock_conn = MagicMock()
+        mock_conn.async_fetch_heatmap = AsyncMock(return_value=[7] * 400)
+
+        result = await captured["poll_fn"](mock_conn)
+
+        mock_conn.async_fetch_heatmap.assert_called_once_with()
+        assert result == [7] * 400
 
     async def test_subscribe_heatmap_opted_out_silence(
         self, hass: HomeAssistant, config_entry: MockConfigEntry
@@ -4735,6 +4738,7 @@ class TestSubscribeHeatmap:
         await call_async_handler(hass, websocket_subscribe_heatmap, connection, msg)
 
         kwargs = mock_dm.async_add_state_stream.await_args.kwargs
+        assert kwargs["poll_fn"] is not None
         kwargs["on_availability"](False)
         kwargs["on_closed"]()
 
@@ -7371,7 +7375,7 @@ class TestOverviewSubscribe:
         mock_dm.mac_for_device_id = MagicMock(return_value="AA:BB:CC:DD:EE:01")
         mock_dm.store.devices = {"AA:BB:CC:DD:EE:01": {}}
 
-        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed):
+        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed, poll_fn=None):
             on_availability(False)  # manager could not arm it — device is offline
             return MagicMock()
 
@@ -7529,6 +7533,7 @@ class TestOverviewSubscribeHeatmap:
         mock_dm.async_add_state_stream.assert_awaited_once()
         assert mock_dm.async_add_state_stream.await_args.args[0] == mac
         assert mock_dm.async_add_state_stream.await_args.kwargs["counter_attr"] == "heatmap_subs"
+        assert mock_dm.async_add_state_stream.await_args.kwargs["poll_fn"] is not None
 
         assert 22 in connection.subscriptions
         connection.subscriptions[22]()
@@ -7579,7 +7584,7 @@ class TestOverviewSubscribeHeatmap:
         mock_dm = await setup_integration(hass, config_entry)
         mock_dm.mac_for_device_id = MagicMock(return_value="AA:BB:CC:DD:EE:01")
 
-        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed):
+        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed, poll_fn=None):
             on_availability(False)
             return MagicMock()
 
@@ -7620,7 +7625,7 @@ class TestOverviewSubscribeHeatmap:
         mock_dm = await setup_integration(hass, config_entry)
         mock_dm.mac_for_device_id = MagicMock(return_value="AA:BB:CC:DD:EE:01")
 
-        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed):
+        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed, poll_fn=None):
             on_availability(False)  # a stale on_stop lands mid-registration
             on_availability(True)  # ...and the arm pass still succeeds
             return MagicMock()
@@ -7647,7 +7652,7 @@ class TestOverviewSubscribeHeatmap:
         mock_dm = await setup_integration(hass, config_entry)
         mock_dm.mac_for_device_id = MagicMock(return_value="AA:BB:CC:DD:EE:01")
 
-        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed):
+        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed, poll_fn=None):
             on_availability(False)  # session lost while the stream was still unarmed
             on_availability(False)  # ...and the arm pass finds the device offline too
             return MagicMock()
@@ -7674,7 +7679,7 @@ class TestOverviewSubscribeHeatmap:
         mock_dm = await setup_integration(hass, config_entry)
         mock_dm.mac_for_device_id = MagicMock(return_value="AA:BB:CC:DD:EE:01")
 
-        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed):
+        async def _add_stream(mac, *, counter_attr, make_on_state, on_availability, on_closed, poll_fn=None):
             on_availability(False)
             return None  # mac no longer managed — nothing was registered
 
@@ -7722,20 +7727,25 @@ class TestOverviewSubscribeHeatmap:
     async def test_subscribe_heatmap_emits_cells_on_state(self, hass, config_entry):
         """The callback the manager builds from `make_on_state` emits {"cells": [...]}.
 
-        The manager rebuilds it against the REPLACEMENT connection after a flap,
-        so the heatmap entity key is re-read from whatever connection it is given.
+        Under the poll transport there is no device state / entity key to re-read
+        from the (possibly replacement) connection — `make_on_state` is fed the
+        polled cells list directly, already decoded by `DeviceConnection.async_fetch_heatmap`.
         """
-        import base64
-
-        from aioesphomeapi import TextSensorInfo
-        from aioesphomeapi import TextSensorState
-
         from custom_components.eppgrid.websocket_api import websocket_overview_subscribe_heatmap
 
         mac = "AA:BB:CC:DD:EE:01"
+        captured = {}
+
+        async def fake_add_state_stream(
+            mac_arg, *, counter_attr, make_on_state, on_availability, on_closed=None, poll_fn=None
+        ):
+            captured["poll_fn"] = poll_fn
+            captured["cb"] = make_on_state(mac_arg, object())
+            return MagicMock()
+
         mock_dm = await setup_integration(hass, config_entry)
         mock_dm.mac_for_device_id = MagicMock(return_value=mac)
-        mock_dm.async_add_state_stream = AsyncMock(return_value=MagicMock())
+        mock_dm.async_add_state_stream = AsyncMock(side_effect=fake_add_state_stream)
 
         connection = MagicMock()
         connection.subscriptions = {}
@@ -7743,23 +7753,13 @@ class TestOverviewSubscribeHeatmap:
         await call_async_handler(hass, websocket_overview_subscribe_heatmap, connection, msg)
 
         connection.send_result.assert_called_once_with(22)
-        make_on_state = mock_dm.async_add_state_stream.await_args.kwargs["make_on_state"]
-        device_conn = MagicMock()
-        device_conn.entities = [TextSensorInfo(object_id="heatmap", key=42, name="Heatmap")]
-        on_state = make_on_state(mac, device_conn)
+        assert captured["poll_fn"] is not None
 
-        connection.send_message.reset_mock()
-        raw = bytearray(400)
-        raw[5] = 200
-        encoded = base64.b64encode(bytes(raw)).decode("ascii")
-        on_state(TextSensorState(key=42, state=encoded, missing_state=False))
+        captured["cb"]([1, 2, 3])
+        assert _last_event(connection) == {"cells": [1, 2, 3]}
 
-        connection.send_message.assert_called_once()
-        payload = connection.send_message.call_args[0][0]
-        cells = payload.get("event", {}).get("cells")
-        assert cells is not None
-        assert len(cells) == 400
-        assert cells[5] == 200
+        captured["cb"]([0] * 400)
+        assert _last_event(connection) == {"cells": [0] * 400}
 
     async def test_unsub_tears_the_stream_down_and_is_idempotent(self, hass, config_entry):
         """Symmetric unsub: the durable stream is torn down exactly once, even if

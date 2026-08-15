@@ -35,8 +35,13 @@ async def _start_overview_stream(
     make_on_state: Callable[[str, Any], Callable[[Any], None]],
     send_snapshot: bool,
     protocol: Literal["frames_only", "closed_only", "full"],
+    poll_fn: Callable[[Any], Any] | None = None,
 ) -> None:
-    """Resolve the card's `device_id` to a mac, then start a durable stream."""
+    """Resolve the card's `device_id` to a mac, then start a durable stream.
+
+    `poll_fn`, when given, switches the stream to the POLL delivery seam (issue
+    #365, heatmap) — forwarded unchanged to `start_durable_stream`.
+    """
     mac = manager.mac_for_device_id(msg["device_id"])
     if mac is None:
         _send_device_not_found(connection, msg["id"])
@@ -50,6 +55,7 @@ async def _start_overview_stream(
         make_on_state=make_on_state,
         send_snapshot=send_snapshot,
         protocol=protocol,
+        poll_fn=poll_fn,
     )
 
 
@@ -143,7 +149,8 @@ async def websocket_overview_subscribe_heatmap(
     lifecycle as websocket_overview_subscribe, but never sends a config snapshot —
     this command only streams heatmap cells — and never relays the manager's live
     availability notifications, which deployed card bundles would mistake for an
-    empty heatmap frame (see `_on_availability`).
+    empty heatmap frame (see `_on_availability`). Polled from the device (issue
+    #365) rather than pushed via `subscribe_states`.
     """
     await _start_overview_stream(
         connection,
@@ -153,6 +160,7 @@ async def websocket_overview_subscribe_heatmap(
         make_on_state=lambda mac, dc: _make_heatmap_on_state(connection, msg["id"], mac, dc),
         send_snapshot=False,
         protocol="closed_only",
+        poll_fn=lambda conn: conn.async_fetch_heatmap(),
     )
 
 

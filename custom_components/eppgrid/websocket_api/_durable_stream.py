@@ -30,6 +30,7 @@ async def start_durable_stream(
     make_on_state: Callable[[str, Any], Callable[[Any], None]],
     send_snapshot: bool,
     protocol: Literal["frames_only", "closed_only", "full"],
+    poll_fn: Callable[[Any], Any] | None = None,
 ) -> None:
     """Shared scaffolding for the durable-stream subscribe commands — the
     non-admin overview commands (`_overview.py`) and the panel's three
@@ -67,6 +68,9 @@ async def start_durable_stream(
 
     `protocol` is transitional alongside the `availability` opt-in flag it backs
     for the panel's commands — see the note on that flag in data-catalog.md.
+
+    `poll_fn` is forwarded to `manager.async_add_state_stream` unchanged — see
+    that method's docstring for the POLL delivery seam it selects (issue #365).
     """
     # Derived from the message type rather than passed in: every caller's log_prefix
     # was exactly `msg["type"]` minus the domain, so a separate parameter only
@@ -183,6 +187,7 @@ async def start_durable_stream(
             make_on_state=make_on_state,
             on_availability=_on_availability,
             on_closed=_on_closed,
+            poll_fn=poll_fn,
         )
     except Exception as err:
         _LOGGER.warning("%s: stream registration failed for %s: %s", log_prefix, mac, err)
