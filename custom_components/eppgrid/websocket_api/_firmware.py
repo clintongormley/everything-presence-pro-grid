@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import re
 from typing import Any
@@ -13,6 +14,7 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 
+from ..const import FIRMWARE_VERSION
 from ..const import GRID_COLS
 from ..const import GRID_ROWS
 from . import _LOGGER
@@ -140,6 +142,7 @@ async def websocket_subscribe_ota_progress(
     url_retries = 0  # empty-URL-race re-issues fired so far (see _OTA_EMPTY_URL_*)
     done = False  # shared guard: once a terminal event is sent, stop
     timer_cancel: Any = None  # async_call_later cancel handle for the outer timeout
+    version_task: Any = None  # reboot-proof completion watch (firmware-version return)
 
     # Ensure device logs are subscribed so _on_log callbacks fire
     from aioesphomeapi import LogLevel as ESPLogLevel
@@ -187,6 +190,7 @@ async def websocket_subscribe_ota_progress(
         if done:
             return
         done = True
+        _cancel_version_task()
         connection.send_message(
             websocket_api.event_message(
                 msg["id"],
@@ -204,6 +208,34 @@ async def websocket_subscribe_ota_progress(
         if timer_cancel is not None:
             timer_cancel()
             timer_cancel = None
+
+    @callback
+    def _cancel_version_task() -> None:
+        """Stop the firmware-version completion poll — the OTA has settled.
+
+        Any terminal event (success, error, timeout) makes the poll pointless:
+        on failure the device never reaches the target version, so it would
+        otherwise spin the full `_OTA_OUTER_TIMEOUT_S` (pinning its captured
+        `entries` closure the whole time — one dangling poll per failed device
+        under "update all"). Skips self-cancellation when the version task is
+        itself the caller (via `_report_success`), which would raise
+        CancelledError into a task that is already finishing.
+        """
+        nonlocal version_task
+        if version_task is not None and version_task is not asyncio.current_task():
+            version_task.cancel()
+            version_task = None
+
+    @callback
+    def _report_success(version: str | None) -> None:
+        """Send the terminal success event once (idempotent via `done`)."""
+        nonlocal done
+        if done:
+            return
+        done = True
+        _cancel_timer()
+        _cancel_version_task()
+        connection.send_message(websocket_api.event_message(msg["id"], {"state": "success", "version": version}))
 
     @callback
     def _on_state(state: Any) -> None:
@@ -246,17 +278,7 @@ async def websocket_subscribe_ota_progress(
             return  # baseline / pre-OTA — nothing to report
 
         if state.current_version and state.current_version == state.latest_version:
-            done = True
-            _cancel_timer()
-            connection.send_message(
-                websocket_api.event_message(
-                    msg["id"],
-                    {
-                        "state": "success",
-                        "version": state.current_version,
-                    },
-                )
-            )
+            _report_success(state.current_version)
         elif ever_active:
             # We saw in_progress=True earlier and now it's False with the
             # version unchanged. If no bytes ever downloaded (has_progress
@@ -268,6 +290,7 @@ async def websocket_subscribe_ota_progress(
                 return
             done = True
             _cancel_timer()
+            _cancel_version_task()
             connection.send_message(
                 websocket_api.event_message(
                     msg["id"],
@@ -332,6 +355,7 @@ async def websocket_subscribe_ota_progress(
 
         done = True
         _cancel_timer()
+        _cancel_version_task()
         # The frontend renders error events exclusively via `error_key`
         # (flasher-controller falls back to update_failed_generic when the
         # key is absent) — without it, the extracted device message never
@@ -408,6 +432,30 @@ async def websocket_subscribe_ota_progress(
         _send_no_session(connection, msg["id"])
         return
     device_conn.add_log_callback(_on_log)
+
+    async def _await_version_return() -> None:
+        """Report success once the device returns on the target firmware version.
+
+        The `_on_state` path only sees success when the terminal
+        `current==latest` UpdateState arrives before the flash reboot tears down
+        the connection it's subscribed to — a race the panel usually loses
+        (fast local serving, concurrent multi-device updates). This watches the
+        durable firmware-version entity instead, so completion is confirmed the
+        same way a page refresh does: the device coming back on the new version.
+        """
+        try:
+            reached = await manager.async_wait_for_firmware_version(mac, FIRMWARE_VERSION, _OTA_OUTER_TIMEOUT_S)
+        except Exception:
+            _LOGGER.debug("Firmware-version completion watch failed for %s", mac, exc_info=True)
+            return
+        # Only treat "on target version" as success if we actually saw an OTA
+        # start (`was_in_progress` — mirrors the `_on_state` guard). Otherwise a
+        # device already on FIRMWARE_VERSION when OTA is (re-)triggered would
+        # report instant success off the first poll without any flash happening.
+        if reached and was_in_progress:
+            _report_success(FIRMWARE_VERSION)
+
+    version_task = hass.async_create_task(_await_version_return())
     connection.send_result(msg["id"])
 
     released = False
@@ -421,6 +469,7 @@ async def websocket_subscribe_ota_progress(
             return
         released = True
         _cancel_timer()
+        _cancel_version_task()
         device_conn.unsubscribe_states(_on_state)
         device_conn.remove_log_callback(_on_log)
         _release_watcher()

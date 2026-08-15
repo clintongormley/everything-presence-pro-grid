@@ -278,10 +278,10 @@ async def test_failed_step_retry_resets_and_returns_to_progress(hass: HomeAssist
 
 
 async def test_run_ota_task_triggers_then_waits_for_version_match(hass: HomeAssistant) -> None:
-    """The background task must trigger the OTA *and then* wait for the
-    device's firmware_version sensor to report the new version. Returning
-    immediately after set_update_manifest would tell the user "done" before
-    the device has even finished downloading.
+    """The background task must trigger the OTA *and then* wait for the device
+    to come back on the new firmware (via `async_wait_for_firmware_version`)
+    before reporting done. Returning immediately after set_update_manifest would
+    tell the user "done" before the device has even finished downloading.
     """
     from custom_components.eppgrid.device_manager import DeviceManager
     from custom_components.eppgrid.device_manager import ManagedDevice
@@ -293,25 +293,20 @@ async def test_run_ota_task_triggers_then_waits_for_version_match(hass: HomeAssi
     hass.data[DOMAIN] = manager
 
     trigger_called = AsyncMock()
-    read_calls = [0]
-
-    def fake_read(_device_id):
-        read_calls[0] += 1
-        if read_calls[0] == 1:
-            return _bump(FIRMWARE_VERSION, kind="behind")
-        return FIRMWARE_VERSION
+    wait_called = AsyncMock(return_value=True)
 
     flow = _make_flow(hass, mac=mac)
 
     with (
         patch.object(manager, "async_trigger_ota", new=trigger_called),
-        patch.object(manager, "read_firmware_version", side_effect=fake_read),
-        patch("custom_components.eppgrid.repairs.asyncio.sleep", new=AsyncMock()),
+        patch.object(manager, "async_wait_for_firmware_version", new=wait_called),
     ):
         await flow._run_ota_task()
 
     trigger_called.assert_awaited_once_with(mac)
-    assert read_calls[0] >= 2, "task must keep polling until the firmware_version matches the required version"
+    # Must wait for completion, and target the pinned version.
+    wait_called.assert_awaited_once()
+    assert wait_called.await_args.args[:2] == (mac, FIRMWARE_VERSION)
 
 
 async def test_progress_step_handles_cancelled_task_as_failed(hass: HomeAssistant) -> None:
@@ -334,11 +329,9 @@ async def test_progress_step_handles_cancelled_task_as_failed(hass: HomeAssistan
 
 async def test_run_ota_task_fails_fast_when_device_unknown(hass: HomeAssistant) -> None:
     """If the device is no longer in `manager.devices` after the trigger,
-    the task must fail immediately with a curated error — not burn the full
-    OTA-completion poll (180 s) against a device_id of None.
+    the task must fail immediately with a curated error — not delegate to the
+    completion wait (which would report a misleading timeout instead).
     """
-    from unittest.mock import MagicMock
-
     from custom_components.eppgrid.device_manager import DeviceManager
     from custom_components.eppgrid.storage import EPPGridStore
 
@@ -346,21 +339,17 @@ async def test_run_ota_task_fails_fast_when_device_unknown(hass: HomeAssistant) 
     hass.data[DOMAIN] = manager  # no devices registered
     flow = _make_flow(hass, mac="AA:BB:CC:DD:EE:62")
 
-    # `times` makes the poll loop terminate even on pre-fix code so the
-    # test fails by assertion, not by spinning for 180 real seconds.
-    times = iter([0, 0, 999_999])
+    wait_called = AsyncMock(return_value=True)
     with (
         patch.object(manager, "async_trigger_ota", new=AsyncMock()),
-        patch.object(manager, "read_firmware_version", new=MagicMock(return_value=None)) as mock_read,
-        patch("custom_components.eppgrid.repairs.asyncio.sleep", new=AsyncMock()),
-        patch("custom_components.eppgrid.repairs.time.monotonic", side_effect=lambda: next(times)),
+        patch.object(manager, "async_wait_for_firmware_version", new=wait_called),
         pytest.raises(HomeAssistantError) as excinfo,
     ):
         await flow._run_ota_task()
 
-    # Fail-fast: the version poll never ran, and the error carries the
+    # Fail-fast: the completion wait never ran, and the error carries the
     # curated device_not_found translation key (not the timeout message).
-    mock_read.assert_not_called()
+    wait_called.assert_not_awaited()
     assert excinfo.value.translation_key == "device_not_found"
 
 
@@ -389,15 +378,52 @@ async def test_run_ota_task_times_out_when_firmware_never_matches(hass: HomeAssi
     manager.devices[mac] = ManagedDevice(mac=mac, name="X", host="192.168.1.99", device_id="dev1")
     hass.data[DOMAIN] = manager
 
-    behind = _bump(FIRMWARE_VERSION, kind="behind")
     flow = _make_flow(hass, mac=mac)
-    times = iter([0, 0, 999_999])
 
     with (
         patch.object(manager, "async_trigger_ota", new=AsyncMock()),
-        patch.object(manager, "read_firmware_version", return_value=behind),
-        patch("custom_components.eppgrid.repairs.asyncio.sleep", new=AsyncMock()),
-        patch("custom_components.eppgrid.repairs.time.monotonic", side_effect=lambda: next(times)),
+        # The device never comes back on the new version within the window.
+        patch.object(manager, "async_wait_for_firmware_version", new=AsyncMock(return_value=False)),
         pytest.raises(HomeAssistantError),
     ):
         await flow._run_ota_task()
+
+
+async def test_format_error_localises_via_cached_translation(hass: HomeAssistant) -> None:
+    """A HomeAssistantError with translation metadata renders from HA's cached
+    translation template (not the English str(exc)), so non-English UIs keep
+    their localised OTA-failure copy."""
+    from custom_components.eppgrid.repairs import _format_error
+
+    exc = HomeAssistantError(
+        "english fallback",
+        translation_domain=DOMAIN,
+        translation_key="ota_trigger_failed",
+        translation_placeholders={"mac": "AA:BB", "error": "boom"},
+    )
+    template = {f"component.{DOMAIN}.exceptions.ota_trigger_failed.message": "OTA failed for {mac}: {error}"}
+    with patch("homeassistant.helpers.translation.async_get_cached_translations", return_value=template):
+        assert _format_error(hass, exc) == "OTA failed for AA:BB: boom"
+
+
+async def test_format_error_falls_back_to_template_on_bad_placeholders(hass: HomeAssistant) -> None:
+    """If the template references a placeholder the exception didn't provide,
+    return the raw template rather than crashing on the format() KeyError."""
+    from custom_components.eppgrid.repairs import _format_error
+
+    exc = HomeAssistantError(
+        "english fallback",
+        translation_domain=DOMAIN,
+        translation_key="ota_trigger_failed",
+        translation_placeholders={},
+    )
+    template = {f"component.{DOMAIN}.exceptions.ota_trigger_failed.message": "OTA failed for {mac}"}
+    with patch("homeassistant.helpers.translation.async_get_cached_translations", return_value=template):
+        assert _format_error(hass, exc) == "OTA failed for {mac}"
+
+
+async def test_format_error_uses_str_for_plain_exception(hass: HomeAssistant) -> None:
+    """An exception without translation metadata renders via str()."""
+    from custom_components.eppgrid.repairs import _format_error
+
+    assert _format_error(hass, HomeAssistantError("plain message")) == "plain message"

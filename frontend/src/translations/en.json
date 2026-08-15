@@ -462,7 +462,6 @@
 			"connect_failed": "Failed to connect to device",
 			"connection_lost": "Connection lost during update",
 			"update_timeout": "Update timed out",
-			"device_offline": "Device went offline during update",
 			"update_failed_generic": "Update failed",
 			"ota_failed_version_unchanged": "Update failed — firmware version unchanged",
 			"ota_timeout": "OTA update timed out",

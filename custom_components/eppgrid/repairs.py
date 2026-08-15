@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import Any
 
 import voluptuous as vol
@@ -46,10 +45,6 @@ _FIRMWARE_BEHIND_PREFIX = "firmware_behind_"
 # Repairs issue auto-clears via _on_state_changed, and the failed step
 # offers a retry button anyway.
 _OTA_COMPLETION_TIMEOUT_S = 3 * 60
-
-# Poll interval while waiting for the firmware_version sensor to flip to the
-# new value.
-_OTA_POLL_INTERVAL_S = 2
 
 
 def _format_error(hass: HomeAssistant, exc: BaseException) -> str:
@@ -207,18 +202,15 @@ class FirmwareUpdateRepairFlow(RepairsFlow):
                 translation_domain=DOMAIN,
                 translation_key="device_not_found",
             )
-        deadline = time.monotonic() + _OTA_COMPLETION_TIMEOUT_S
-        while time.monotonic() < deadline:
-            fw_ver = manager.read_firmware_version(dev.device_id)
-            if fw_ver == FIRMWARE_VERSION:
-                return
-            await asyncio.sleep(_OTA_POLL_INTERVAL_S)
-
-        raise HomeAssistantError(
-            f"OTA started but {self._mac} did not come back on firmware "
-            f"{FIRMWARE_VERSION} within {_OTA_COMPLETION_TIMEOUT_S}s — check "
-            "the device manually."
-        )
+        # Poll the durable firmware_version entity until the device returns on
+        # the new version — the same reboot-proof completion signal the panel's
+        # OTA watcher uses (`websocket_api/_firmware.py`), so both paths agree.
+        if not await manager.async_wait_for_firmware_version(self._mac, FIRMWARE_VERSION, _OTA_COMPLETION_TIMEOUT_S):
+            raise HomeAssistantError(
+                f"OTA started but {self._mac} did not come back on firmware "
+                f"{FIRMWARE_VERSION} within {_OTA_COMPLETION_TIMEOUT_S}s — check "
+                "the device manually."
+            )
 
     def _issue_placeholders(self) -> dict[str, str]:
         """Return the original issue's translation placeholders.

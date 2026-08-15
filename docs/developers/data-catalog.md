@@ -583,6 +583,19 @@ changes and device log messages to forward progress, success, and error events
 to the frontend. Uses a shared `done` flag so only one terminal event (success
 or error) is sent.
 
+Success is confirmed two ways, whichever lands first: the `UpdateState` reaching
+`current == latest`, OR — the reboot-proof path — the manager's
+`async_wait_for_firmware_version` seeing the device return on `FIRMWARE_VERSION`
+via the durable firmware-version entity. The second path matters because the OTA
+reboots the device (to free heap, and again after flashing), replacing the
+connection this watcher's `UpdateState` subscription is bound to; the terminal
+`current == latest` state then arrives on a successor connection the raw
+subscription can't see. Confirming off the durable entity — the same signal a
+page refresh reads, and the same one the Repairs flow polls — keeps completion
+detection from being lost to the reboot (previously a fast local-served or
+concurrent "update all" would report a false failure even though the device had
+updated).
+
 N concurrent OTA watchers on the same device share ONE device log subscription
 and ONE `epp_set_log_level` bump (tracked in the `OtaWatcherState` dataclass on
 the `DeviceConnection`); the bump is reverted to the stored level — and the log

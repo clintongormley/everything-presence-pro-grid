@@ -1077,6 +1077,29 @@ class DeviceManager:
         """
         return self._read_sensor_state(device_id, "firmware_version", entries=entries)
 
+    async def async_wait_for_firmware_version(self, mac: str, target: str, timeout_s: float) -> bool:
+        """Poll until the device's Firmware Version entity reads ``target``.
+
+        Returns True once it matches within ``timeout_s``, else False. Reads the
+        durable HA entity state (via `read_firmware_version`), NOT a device
+        connection — so it confirms an OTA completed by observing the device
+        return on the new version across the flash reboot, exactly the signal a
+        page refresh reads. This is the OTA watcher's reboot-proof completion
+        path: its per-connection `subscribe_states` callback is torn down when
+        the flash reboot replaces the connection, so the terminal
+        `current==latest` UpdateState never reaches it.
+        """
+        dev = self.devices.get(mac)
+        if dev is None or dev.device_id is None:
+            return False
+        device_id = dev.device_id
+        ent_reg = er.async_get(self._hass)
+        entries = er.async_entries_for_device(ent_reg, device_id, include_disabled_entities=True)
+        return await self._poll_until(
+            lambda: self.read_firmware_version(device_id, entries=entries) == target,
+            timeout_s,
+        )
+
     def read_current_connection_count(
         self, device_id: str | None, *, entries: list[er.RegistryEntry] | None = None
     ) -> int | None:

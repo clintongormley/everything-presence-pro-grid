@@ -1806,7 +1806,7 @@ describe("OTA inline rendering", () => {
 			[offlineEppDevice.mac]: {
 				state: "error",
 				progress: null,
-				errorKey: "flasher.errors.device_offline",
+				errorKey: "flasher.errors.connection_lost",
 			},
 		};
 		const el = createView({

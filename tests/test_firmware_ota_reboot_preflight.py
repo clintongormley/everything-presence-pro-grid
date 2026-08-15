@@ -251,3 +251,39 @@ async def test_trigger_ota_proceeds_when_reboot_fails(hass: HomeAssistant, manag
     conn.async_execute_service.assert_awaited_once()
     name, _payload = conn.async_execute_service.await_args.args
     assert name == "set_update_manifest"
+
+
+class TestWaitForFirmwareVersion:
+    """`async_wait_for_firmware_version` is the OTA watcher's reboot-proof
+    completion path: it confirms an update by watching the durable
+    firmware_version entity return on the target version across the flash
+    reboot (the same signal a page refresh reads), not a per-connection
+    state subscription that the reboot tears down.
+    """
+
+    async def test_returns_true_once_version_reaches_target(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        _setup_device_with_restart_button(hass, manager)
+        # Device is still on the old version, then comes back on the target.
+        versions = iter(["1.7.0", "9.9.9"])
+        with (
+            patch.object(manager, "read_firmware_version", side_effect=lambda *_a, **_k: next(versions)),
+            patch("custom_components.eppgrid.device_manager.asyncio.sleep", new=AsyncMock()),
+        ):
+            reached = await manager.async_wait_for_firmware_version(MAC, "9.9.9", 300)
+        assert reached is True
+
+    async def test_returns_false_on_timeout(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        _setup_device_with_restart_button(hass, manager)
+        clock = iter(i * 1000.0 for i in range(1000))
+        with (
+            patch.object(manager, "read_firmware_version", return_value="1.7.0"),
+            patch("custom_components.eppgrid.device_manager.asyncio.sleep", new=AsyncMock()),
+            patch("custom_components.eppgrid.device_manager.time.monotonic", side_effect=lambda: next(clock)),
+        ):
+            reached = await manager.async_wait_for_firmware_version(MAC, "9.9.9", 300)
+        assert reached is False
+
+    async def test_returns_false_when_device_unknown(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        # No device registered for this mac — nothing to watch.
+        reached = await manager.async_wait_for_firmware_version("00:00:00:00:00:00", "9.9.9", 300)
+        assert reached is False
