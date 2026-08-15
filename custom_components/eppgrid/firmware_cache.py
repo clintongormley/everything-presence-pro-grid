@@ -99,14 +99,26 @@ def firmware_cache_dir(hass: HomeAssistant) -> str:
 
 
 async def async_register_firmware_cache(hass: HomeAssistant) -> None:
-    """Create + register the cache dir for unauthenticated static serving (once)."""
+    """Create + register the cache dir for unauthenticated static serving (once).
+
+    Best-effort: registration failure (disk error, HTTP-layer rejection, ...) is
+    logged and swallowed rather than raised, so it can never fail config-entry
+    setup. The registered flag is only set on success; async_stage_firmware()
+    gates on that flag so a failed registration coherently forces the
+    GitHub-direct fallback instead of handing a device a local URL that would
+    404 because nothing is actually being served there.
+    """
     if hass.data.get(_FW_CACHE_REGISTERED_KEY):
         return
     cache_dir = firmware_cache_dir(hass)
-    await hass.async_add_executor_job(lambda: os.makedirs(cache_dir, exist_ok=True))
-    await hass.http.async_register_static_paths(
-        [StaticPathConfig(url_path=FW_CACHE_URL_PREFIX, path=cache_dir, cache_headers=False)]
-    )
+    try:
+        await hass.async_add_executor_job(lambda: os.makedirs(cache_dir, exist_ok=True))
+        await hass.http.async_register_static_paths(
+            [StaticPathConfig(url_path=FW_CACHE_URL_PREFIX, path=cache_dir, cache_headers=False)]
+        )
+    except Exception as err:  # best-effort registration must never fail config-entry setup
+        _LOGGER.warning("Could not register local firmware cache; OTA will use GitHub-direct: %s", err)
+        return
     hass.data[_FW_CACHE_REGISTERED_KEY] = True
 
 
@@ -114,6 +126,8 @@ async def async_stage_firmware(hass: HomeAssistant, source_base: str, variant: s
     """Download+verify {variant}.json and {variant}.ota.bin from `source_base` into
     a fresh token dir under the cache and return the served path segment. Raises
     FirmwareStageError on any failure so the caller can fall back."""
+    if not hass.data.get(_FW_CACHE_REGISTERED_KEY):
+        raise FirmwareStageError("firmware cache static path not registered")
     session = async_get_clientsession(hass)
     manifest_url = f"{source_base}/{variant}.json"
     try:
@@ -129,7 +143,7 @@ async def async_stage_firmware(hass: HomeAssistant, source_base: str, variant: s
         build = next(b for b in manifest["builds"] if isinstance(b.get("ota"), dict))
         rel_path = build["ota"]["path"]
         expected_md5 = build["ota"]["md5"].lower()
-    except (ValueError, KeyError, TypeError, StopIteration) as err:
+    except (ValueError, KeyError, TypeError, StopIteration, AttributeError) as err:
         raise FirmwareStageError(f"bad manifest: {err}") from err
     if "/" in rel_path or not rel_path.endswith(".ota.bin"):
         raise FirmwareStageError(f"unexpected ota path {rel_path!r}")
@@ -165,5 +179,8 @@ async def async_stage_firmware(hass: HomeAssistant, source_base: str, variant: s
             if name != token and os.path.isdir(path):
                 shutil.rmtree(path, ignore_errors=True)
 
-    await hass.async_add_executor_job(_commit)
+    try:
+        await hass.async_add_executor_job(_commit)
+    except OSError as err:
+        raise FirmwareStageError(f"failed to write staged firmware: {err}") from err
     return f"{FW_CACHE_URL_PREFIX}/{token}"

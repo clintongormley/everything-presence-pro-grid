@@ -57,7 +57,15 @@ def _fake_get(bodies: dict[str, bytes], status: dict[str, int] | None = None) ->
 
 @pytest.fixture
 def cache_dir(hass: HomeAssistant, tmp_path) -> str:
+    """A staging-ready cache dir: patched path + the cache marked registered.
+
+    async_stage_firmware() now gates on _FW_CACHE_REGISTERED_KEY (a failed
+    async_register_firmware_cache() must force the GitHub-direct fallback
+    rather than hand out a URL nothing is serving), so every staging test
+    needs the flag set as if registration had already succeeded.
+    """
     d = str(tmp_path / "fw_cache")
+    hass.data[firmware_cache._FW_CACHE_REGISTERED_KEY] = True
     with patch.object(firmware_cache, "firmware_cache_dir", return_value=d):
         yield d
 
@@ -122,15 +130,41 @@ async def test_stage_cleans_up_stale_token_dirs(hass: HomeAssistant, cache_dir: 
     assert os.listdir(cache_dir) == [token]
 
 
-async def test_register_firmware_cache_is_idempotent(hass: HomeAssistant, cache_dir: str) -> None:
+async def test_register_firmware_cache_is_idempotent(hass: HomeAssistant, tmp_path) -> None:
     """A second call does not re-register the static path (module docstring: 'once')."""
     hass.http = MagicMock()
     hass.http.async_register_static_paths = AsyncMock()
 
-    await firmware_cache.async_register_firmware_cache(hass)
-    await firmware_cache.async_register_firmware_cache(hass)
+    with patch.object(firmware_cache, "firmware_cache_dir", return_value=str(tmp_path / "fw_cache")):
+        await firmware_cache.async_register_firmware_cache(hass)
+        await firmware_cache.async_register_firmware_cache(hass)
 
     hass.http.async_register_static_paths.assert_awaited_once()
+    assert hass.data[firmware_cache._FW_CACHE_REGISTERED_KEY] is True
+
+
+async def test_register_firmware_cache_is_fail_soft_on_registration_error(hass: HomeAssistant, tmp_path) -> None:
+    """A registration failure (HTTP-layer rejection, disk error, ...) is logged and
+    swallowed — never raised — and the registered flag stays unset so the next
+    entry setup retries, and async_stage_firmware() sees "not registered" and
+    forces the GitHub-direct fallback rather than handing out a dead URL."""
+    hass.http = MagicMock()
+    hass.http.async_register_static_paths = AsyncMock(side_effect=RuntimeError("boom"))
+
+    with patch.object(firmware_cache, "firmware_cache_dir", return_value=str(tmp_path / "fw_cache")):
+        await firmware_cache.async_register_firmware_cache(hass)  # must not raise
+
+    assert firmware_cache._FW_CACHE_REGISTERED_KEY not in hass.data
+
+
+async def test_stage_raises_when_cache_not_registered(hass: HomeAssistant, tmp_path) -> None:
+    """If registration never succeeded (flag unset), staging must fail fast
+    rather than write into — and hand out a URL for — an unserved directory."""
+    with (
+        patch.object(firmware_cache, "firmware_cache_dir", return_value=str(tmp_path / "fw_cache")),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
 
 
 def _fake_get_raising(raise_url: str, exc: BaseException) -> MagicMock:
@@ -173,6 +207,20 @@ async def test_stage_raises_on_malformed_manifest_json(hass: HomeAssistant, cach
         await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
 
 
+async def test_stage_raises_on_non_string_md5(hass: HomeAssistant, cache_dir: str) -> None:
+    """A manifest whose md5 isn't a string (`.lower()` -> AttributeError) must
+    surface as FirmwareStageError, not an unhandled AttributeError."""
+    bodies = {
+        f"{_SOURCE}/{_VARIANT}.json": _manifest(md5=12345),  # type: ignore[arg-type]
+        f"{_SOURCE}/{_VARIANT}.ota.bin": _BIN,
+    }
+    with (
+        patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
 async def test_stage_raises_on_binary_non_200_status(hass: HomeAssistant, cache_dir: str) -> None:
     bodies = {
         f"{_SOURCE}/{_VARIANT}.json": _manifest(),
@@ -203,6 +251,31 @@ async def test_stage_raises_on_binary_network_error(hass: HomeAssistant, cache_d
     session = _fake_get_raising(f"{_SOURCE}/{_VARIANT}.ota.bin", aiohttp.ClientConnectionError("boom"))
     with (
         patch.object(firmware_cache, "async_get_clientsession", return_value=session),
+        pytest.raises(firmware_cache.FirmwareStageError),
+    ):
+        await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_stage_raises_on_commit_oserror(hass: HomeAssistant, tmp_path) -> None:
+    """A disk error while writing the staged files (full disk, permission denied,
+    cleanup race, ...) must surface as FirmwareStageError, not a raw OSError —
+    Task 3's fallback only catches FirmwareStageError.
+
+    Points the cache dir at a plain FILE (not a directory), so _commit()'s
+    os.makedirs(dest, exist_ok=True) hits a real NotADirectoryError/OSError
+    without monkeypatching os itself.
+    """
+    blocked = tmp_path / "fw_cache"
+    blocked.write_bytes(b"not a directory")
+    hass.data[firmware_cache._FW_CACHE_REGISTERED_KEY] = True
+
+    bodies = {
+        f"{_SOURCE}/{_VARIANT}.json": _manifest(),
+        f"{_SOURCE}/{_VARIANT}.ota.bin": _BIN,
+    }
+    with (
+        patch.object(firmware_cache, "firmware_cache_dir", return_value=str(blocked)),
+        patch.object(firmware_cache, "async_get_clientsession", return_value=_fake_get(bodies)),
         pytest.raises(firmware_cache.FirmwareStageError),
     ):
         await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
