@@ -592,6 +592,15 @@ class DeviceManager:
         for retry_task in self._stream_retry_tasks.values():
             retry_task.cancel()
         self._stream_retry_tasks.clear()
+        # Same treatment for long-lived heatmap poll tasks: they loop until cancelled,
+        # so the Phase 2 `_drain(_pending_tasks)` (which tracks them via `_spawn`) would
+        # otherwise time out waiting for one to settle. Cancel here; `_run_poll_stream`
+        # then returns on its next await and the drain awaits its fast settle. Phase 3's
+        # `mark_closed` cancel is idempotent, so this leaves that a safe no-op.
+        for streams in self._state_streams.values():
+            for stream in streams:
+                if stream.poll_task is not None:
+                    stream.poll_task.cancel()
         # Same treatment for a pending debounced discovery — it must not
         # fire a full-registry scan against a manager that's shutting down.
         if (pending_discover := self._pending_discover) is not None:
@@ -1853,14 +1862,22 @@ class DeviceManager:
         Safe on an unarmed stream, and safe when the connection is already dead:
         `release_session` identity-checks against the active session, so a ref
         that a force-close already reset is not double-released.
+
+        A poll-source stream (`poll_task` set) has no PUSH subscription to drop —
+        cancelling its poller is the teardown. A push stream (`poll_task is None`)
+        keeps the exact original behaviour: `unsubscribe_states` then release.
         """
-        conn, cb = stream.conn, stream.cb
+        conn, cb, task = stream.conn, stream.cb, stream.poll_task
         stream.conn = None
         stream.cb = None
+        stream.poll_task = None
         if conn is None:
             return
-        with contextlib.suppress(Exception):
-            conn.unsubscribe_states(cb)
+        if task is not None:
+            task.cancel()
+        else:
+            with contextlib.suppress(Exception):
+                conn.unsubscribe_states(cb)
         self.release_session(stream.mac, conn)
 
     @callback
@@ -2077,6 +2094,19 @@ class DeviceManager:
             # The client went away while we were opening.
             _abandon()
             return False
+        if stream.poll_fn is not None:
+            # Poll-source stream (heatmap): drive a periodic poller instead of a PUSH
+            # `subscribe_states` subscription. `stream.conn`/`poll_task` are set
+            # synchronously here — there is NO await between the `closed_now()` check
+            # above and returning — so the push path's second `closed_now()` re-check
+            # stays push-only, and `_run_poll_stream`'s `stream.conn is conn` guard is
+            # already valid on its first iteration.
+            cb = stream.make_on_state(mac, conn)
+            stream.conn = conn
+            stream.cb = cb
+            stream.poll_task = self._spawn(self._run_poll_stream(stream, conn, cb))
+            stream.notify(True)
+            return True
         try:
             cb = stream.make_on_state(mac, conn)
             await conn.subscribe_states(cb)
@@ -2102,6 +2132,34 @@ class DeviceManager:
         stream.cb = cb
         stream.notify(True)
         return True
+
+    async def _run_poll_stream(self, stream: StateStream, conn: DeviceConnection, cb: Callable[[Any], None]) -> None:
+        """Delivery loop for a poll-source stream: fetch on an interval and feed cb.
+
+        Runs until the stream is closed/disarmed (cancelled by _disarm_stream /
+        mark_closed) or the connection is replaced (stream.conn is not conn). An
+        immediate first poll gives an instant overlay. poll_fn returning None
+        (e.g. old firmware without the action) or raising just skips that tick.
+        """
+        poll_fn = stream.poll_fn
+        if poll_fn is None:
+            # `_arm_stream` only spawns this for a poll-source stream; bind the
+            # fetcher to a local so the narrowing holds across the loop's awaits.
+            return
+        try:
+            while not stream.closed and stream.conn is conn:
+                try:
+                    item = await poll_fn(conn)
+                except Exception as err:
+                    # Transient (device flap, service unavailable on old fw): skip
+                    # this tick and try again on the next one, keeping the loop alive.
+                    _LOGGER.debug("Heatmap poll fetch failed for %s: %s", stream.mac, err)
+                    item = None
+                if item is not None and not stream.closed:
+                    cb(item)
+                await asyncio.sleep(stream.poll_interval)
+        except asyncio.CancelledError:
+            return
 
     async def _push_pipeline_to_device(self, mac: str) -> None:
         """Recompute pipeline intervals and push to device."""
