@@ -17,6 +17,7 @@ from homeassistant.helpers.event import async_call_later
 from ..const import FIRMWARE_VERSION
 from ..const import GRID_COLS
 from ..const import GRID_ROWS
+from ..device_manager import OtaOutcome
 from . import _LOGGER
 from . import _OTA_LOG_CATEGORY
 from . import _OTA_LOG_LEVEL
@@ -27,9 +28,16 @@ from . import _require_manager
 from . import _send_exception
 from . import _send_no_session
 
-# Outer safety net: if no terminal state arrives within 5 minutes after the
-# OTA starts, emit `state: error` so the UI doesn't spin forever.
-_OTA_OUTER_TIMEOUT_S = 300
+# Outer safety net: if no terminal state arrives within this window after the
+# OTA starts, emit `state: error` so the UI doesn't spin forever. The
+# firmware-version outcome watcher fast-fails an interrupted flash well before
+# this, so this is only reached when the device neither returns on the target
+# version nor goes cleanly offline.
+_OTA_OUTER_TIMEOUT_S = 240
+# Device must sit on the old firmware continuously (after going offline) for
+# this long before we call an OTA aborted — debounces a between-chunk online
+# blip during the blocking fetch.
+_OTA_ABORT_STABLE_S = 10
 
 # Deployed firmware's `set_update_manifest` action starts the OTA a fixed 1s
 # after kicking off an asynchronous manifest fetch (the fetch runs in a
@@ -262,6 +270,17 @@ async def websocket_subscribe_ota_progress(
         connection.send_message(websocket_api.event_message(msg["id"], {"state": "success", "version": version}))
 
     @callback
+    def _report_failure(error_key: str) -> None:
+        """Send a terminal error event once (idempotent via `done`)."""
+        nonlocal done
+        if done:
+            return
+        done = True
+        _cancel_timer()
+        _cancel_version_task()
+        connection.send_message(websocket_api.event_message(msg["id"], {"state": "error", "error_key": error_key}))
+
+    @callback
     def _on_state(state: Any) -> None:
         nonlocal was_in_progress, ever_active, saw_progress, done
         from aioesphomeapi import UpdateState
@@ -457,29 +476,40 @@ async def websocket_subscribe_ota_progress(
         return
     device_conn.add_log_callback(_on_log)
 
-    async def _await_version_return() -> None:
-        """Report success once the device returns on the target firmware version.
-
-        The `_on_state` path only sees success when the terminal
-        `current==latest` UpdateState arrives before the flash reboot tears down
-        the connection it's subscribed to — a race the panel usually loses
-        (fast local serving, concurrent multi-device updates). This watches the
-        durable firmware-version entity instead, so completion is confirmed the
-        same way a page refresh does: the device coming back on the new version.
-        """
+    async def _await_ota_outcome() -> None:
+        """Classify the OTA off the durable firmware-version signal (reboot-proof;
+        the per-connection `_on_state` is torn down by the flash reboot). Fast-fails
+        a flash that parked back on the OLD firmware, instead of spinning the full
+        outer timeout. (A device that goes offline and never returns is left to the
+        outer timer — see OtaOutcome.TIMEOUT.)"""
         try:
-            reached = await manager.async_wait_for_firmware_version(mac, FIRMWARE_VERSION, _OTA_OUTER_TIMEOUT_S)
+            outcome = await manager.async_wait_for_ota_outcome(
+                mac,
+                FIRMWARE_VERSION,
+                _OTA_OUTER_TIMEOUT_S,
+                _OTA_ABORT_STABLE_S,
+                lambda: saw_progress,
+            )
         except Exception:
-            _LOGGER.debug("Firmware-version completion watch failed for %s", mac, exc_info=True)
+            _LOGGER.debug("Firmware-version outcome watch failed for %s", mac, exc_info=True)
             return
-        # Only treat "on target version" as success if we actually saw an OTA
-        # start (`was_in_progress` — mirrors the `_on_state` guard). Otherwise a
-        # device already on FIRMWARE_VERSION when OTA is (re-)triggered would
-        # report instant success off the first poll without any flash happening.
-        if reached and was_in_progress:
+        # Mirror the version-return guard: only act if we actually saw the OTA
+        # start (`was_in_progress`), so a device already on FIRMWARE_VERSION can't
+        # report instant success and a coincidental offline read can't fabricate a
+        # failure.
+        if not was_in_progress:
+            return
+        # A failed flash can also be surfaced by `_on_state` (ota_failed_version_
+        # unchanged) if a successor connection delivers the terminal state first;
+        # whichever path wins, `done` makes the terminal event idempotent, so the
+        # user sees exactly one failure — just possibly a different error_key.
+        if outcome == OtaOutcome.SUCCESS:
             _report_success(FIRMWARE_VERSION)
+        elif outcome == OtaOutcome.ABORTED:
+            _report_failure("flasher.errors.ota_interrupted")
+        # OtaOutcome.TIMEOUT → the outer timer (`_on_timeout`) owns it.
 
-    version_task = hass.async_create_task(_await_version_return())
+    version_task = hass.async_create_task(_await_ota_outcome())
     connection.send_result(msg["id"])
 
     released = False

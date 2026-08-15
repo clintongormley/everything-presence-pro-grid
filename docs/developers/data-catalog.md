@@ -595,16 +595,45 @@ or error) is sent.
 
 Success is confirmed two ways, whichever lands first: the `UpdateState` reaching
 `current == latest`, OR — the reboot-proof path — the manager's
-`async_wait_for_firmware_version` seeing the device return on `FIRMWARE_VERSION`
-via the durable firmware-version entity. The second path matters because the OTA
-reboots the device (to free heap, and again after flashing), replacing the
-connection this watcher's `UpdateState` subscription is bound to; the terminal
+`async_wait_for_ota_outcome` classifying the outcome off the durable
+firmware-version entity. The second path matters because the OTA reboots the
+device (to free heap, and again after flashing), replacing the connection this
+watcher's `UpdateState` subscription is bound to; the terminal
 `current == latest` state then arrives on a successor connection the raw
 subscription can't see. Confirming off the durable entity — the same signal a
 page refresh reads, and the same one the Repairs flow polls — keeps completion
 detection from being lost to the reboot (previously a fast local-served or
 concurrent "update all" would report a false failure even though the device had
 updated).
+
+`async_wait_for_ota_outcome` reads that same entity but classifies the whole
+outcome so an interrupted flash fast-fails instead of spinning the full outer
+timeout. It returns one of three states:
+
+- `success` — the device came back on `FIRMWARE_VERSION`.
+- `aborted` — after download started, the device went offline and then settled
+    back on the OLD firmware, staying there continuously for
+    `_OTA_ABORT_STABLE_S` (10s) → `flasher.errors.ota_interrupted`. A successful
+    flash returns on the NEW version and never parks on the old one; only a
+    flash that didn't take (e.g. power lost mid-flash) does. The stability
+    window debounces a brief between-chunk online blip so a still-downloading
+    device is never mis-read.
+- `timeout` — none of the above within `_OTA_OUTER_TIMEOUT_S` (240s); the outer
+    timer owns it (`flasher.errors.ota_timeout`). A device that went offline
+    mid-flash and never returned falls here too.
+
+There is deliberately no offline-duration `gone` verdict: the firmware's
+`http_request` OTA fetch blocks the main loop (BLE is paused for it), so the
+device reads OFFLINE while it is still downloading successfully — an
+offline-duration threshold could not distinguish that from a genuine disconnect.
+Instead, `aborted` requires the device to sit on the OLD version continuously
+(after having gone offline) for `_OTA_ABORT_STABLE_S`.
+
+The abort detection arms ONLY after real download bytes have flowed (the
+watcher's `saw_progress` flag), so the pre-OTA reboot (which also reads as
+offline → back-on-old-version) is never mistaken for a started download. The
+frontend's `OTA_BACKSTOP_MS` (270s) stays deliberately longer than the 240s
+backend window so the backend's verdict always lands first.
 
 N concurrent OTA watchers on the same device share ONE device log subscription
 and ONE `epp_set_log_level` bump (tracked in the `OtaWatcherState` dataclass on
@@ -631,7 +660,11 @@ code `no_session`, translation key `no_active_session`.
     placeholder. Download/connect failures (`Code: -1`, `ESP_ERR_HTTP_CONNECT`,
     `ESP_ERR_NO_MEM` — the device couldn't reach the download server) instead
     use `flasher.errors.ota_download_unreachable`, which points the user at
-    network reachability between the device and Home Assistant.
+    network reachability between the device and Home Assistant. An interrupted
+    flash (device settles back on its old firmware) uses
+    `flasher.errors.ota_interrupted` (see `async_wait_for_ota_outcome` above); a
+    device that goes offline mid-flash and never returns falls to the outer
+    timeout (`flasher.errors.ota_timeout`).
 
 The handler also monitors device log messages for `http_request.ota` and
 `http_request.update` errors, forwarding the actual error message immediately.

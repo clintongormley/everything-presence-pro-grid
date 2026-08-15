@@ -11,6 +11,7 @@ from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Coroutine
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 from aioesphomeapi import APIConnectionError
@@ -53,6 +54,20 @@ from ._helpers import strip_unsupported_pipeline_fields
 from ._streams import StateStream
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class OtaOutcome(StrEnum):
+    """Terminal classification of an OTA attempt (see async_wait_for_ota_outcome).
+
+    StrEnum so callers/tests may still compare against the raw string, but the
+    members give the manager -> watcher contract a typo-proof, greppable surface
+    (a mistyped member is an immediate AttributeError, not a silent no-op).
+    """
+
+    SUCCESS = "success"
+    ABORTED = "aborted"  # flash didn't take: device settled back on the old version
+    TIMEOUT = "timeout"  # outer window elapsed, or the device was never watched
+
 
 # Pre-flight reboot before an OTA. A freshly-booted device has its full heap; on
 # a no-PSRAM ESP32 the resident BLE stack + fragmentation otherwise leave too
@@ -1120,6 +1135,75 @@ class DeviceManager:
             lambda: self.read_firmware_version(device_id, entries=entries) == target,
             timeout_s,
         )
+
+    async def async_wait_for_ota_outcome(
+        self,
+        mac: str,
+        target: str,
+        timeout_s: float,
+        abort_stable_s: float,
+        download_started: Callable[[], bool],
+    ) -> OtaOutcome:
+        """Watch the durable firmware-version entity through an OTA and classify it.
+
+        Reads the same reboot-proof signal as `async_wait_for_firmware_version`
+        (the Firmware Version entity: a version string when online, ``None`` when
+        offline/unavailable), and returns:
+
+          "success" — the device came back on ``target``.
+          "aborted" — after the download started, the device went offline (the
+                      `http_request` OTA fetch blocks the main loop, so the device
+                      reads offline while downloading — and again for the reboot)
+                      and then settled back on the OLD firmware, staying there for
+                      ``abort_stable_s`` continuously. A successful flash returns
+                      on the NEW version; only a flash that did not take (e.g.
+                      power lost mid-flash, device runs the old image) parks on the
+                      old version. The stability window debounces a brief
+                      between-chunk online blip so a still-downloading device is
+                      never mis-read as aborted.
+          "timeout" — ``timeout_s`` elapsed with none of the above (a device that
+                      went offline and never returned falls here — the outer timer
+                      owns it).
+
+        ``download_started`` gates all of this so the pre-OTA reboot
+        (`async_trigger_ota` reboots before flashing, which also reads as
+        offline->back-on-old) is never mistaken for a started download.
+        """
+        dev = self.devices.get(mac)
+        if dev is None or dev.device_id is None:
+            return OtaOutcome.TIMEOUT
+        device_id = dev.device_id
+        ent_reg = er.async_get(self._hass)
+        entries = er.async_entries_for_device(ent_reg, device_id, include_disabled_entities=True)
+
+        deadline = time.monotonic() + timeout_s
+        armed = False
+        went_offline = False
+        old_stable_since: float | None = None
+        while time.monotonic() < deadline:
+            now = time.monotonic()
+            version = self.read_firmware_version(device_id, entries=entries)
+            if version == target:
+                return OtaOutcome.SUCCESS
+            if not armed:
+                # Ignore everything (incl. the pre-OTA reboot) until real download
+                # bytes have flowed.
+                if download_started():
+                    armed = True
+            elif version is None:
+                # Offline: the blocking fetch, the apply reboot, or genuinely
+                # gone — not a verdict on its own. Reset the stable-old clock so a
+                # brief blip can't accumulate toward an abort.
+                went_offline = True
+                old_stable_since = None
+            else:
+                # Online on a non-target (old) version.
+                if old_stable_since is None:
+                    old_stable_since = now
+                if went_offline and now - old_stable_since >= abort_stable_s:
+                    return OtaOutcome.ABORTED
+            await asyncio.sleep(_REBOOT_POLL_INTERVAL_S)
+        return OtaOutcome.TIMEOUT
 
     def read_current_connection_count(
         self, device_id: str | None, *, entries: list[er.RegistryEntry] | None = None

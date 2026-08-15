@@ -407,7 +407,7 @@ class TestSubscribeOtaProgress:
         can never deliver the terminal in_progress=False/current==latest state.
         Success must still be reported off the durable firmware-version signal —
         the same thing a page refresh reads — via the manager's
-        ``async_wait_for_firmware_version`` completion path.
+        ``async_wait_for_ota_outcome`` completion path.
         """
         from custom_components.eppgrid.const import FIRMWARE_VERSION
 
@@ -415,7 +415,7 @@ class TestSubscribeOtaProgress:
         device_conn = make_mock_device_conn()
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
         # The device comes back on the target version after the flash reboot.
-        mock_dm.async_wait_for_firmware_version = AsyncMock(return_value=True)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="success")
 
         # The OTA visibly starts (progress flows, latching `was_in_progress`)
         # before the connection goes silent for the reboot — deliver that
@@ -436,9 +436,44 @@ class TestSubscribeOtaProgress:
 
         from homeassistant.components.websocket_api import event_message
 
-        mock_dm.async_wait_for_firmware_version.assert_awaited()
+        mock_dm.async_wait_for_ota_outcome.assert_awaited()
         calls = [c[0][0] for c in connection.send_message.call_args_list]
         assert event_message(1, {"state": "success", "version": FIRMWARE_VERSION}) in calls
+
+    async def test_reports_error_when_device_returns_on_old_firmware(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """The device was unplugged mid-flash and rebooted onto its previous
+        firmware. The outcome watcher classifies that as 'aborted'; the watcher
+        must fast-fail with the ota_interrupted error_key instead of spinning
+        the full outer timeout.
+        """
+        mock_dm = await setup_integration(hass, config_entry)
+        device_conn = make_mock_device_conn()
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="aborted")
+
+        # Latch `was_in_progress` by delivering an in_progress state as
+        # subscribe_states is wired up (mirrors the success test).
+        def _deliver_in_progress(cb):
+            cb(make_update_state(in_progress=True, has_progress=True, progress=50.0, current_version="0.89.0"))
+
+        device_conn.subscribe_states = AsyncMock(side_effect=_deliver_in_progress)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+        await hass.async_block_till_done()
+
+        from homeassistant.components.websocket_api import event_message
+
+        mock_dm.async_wait_for_ota_outcome.assert_awaited()
+        calls = [c[0][0] for c in connection.send_message.call_args_list]
+        assert event_message(1, {"state": "error", "error_key": "flasher.errors.ota_interrupted"}) in calls
 
     async def test_no_version_return_success_when_no_ota_ever_started(
         self,
@@ -446,15 +481,15 @@ class TestSubscribeOtaProgress:
         config_entry: MockConfigEntry,
     ) -> None:
         """If the device is already on the target version when OTA is
-        (re-)triggered, ``async_wait_for_firmware_version`` matches on its first
+        (re-)triggered, ``async_wait_for_ota_outcome`` returns success on its first
         poll — but with no in_progress/version-mismatch state ever seen
-        (``was_in_progress`` never latched) the version-return path must NOT
+        (``was_in_progress`` never latched) the outcome path must NOT
         fabricate a success (no flash actually happened).
         """
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
-        mock_dm.async_wait_for_firmware_version = AsyncMock(return_value=True)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="success")
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -1315,12 +1350,12 @@ class TestSubscribeOtaProgress:
         on_state(make_update_state(in_progress=False, current_version="0.90.0-alpha", latest_version="0.90.0-alpha"))
         connection.send_message.assert_not_called()
 
-    async def test_outer_timeout_emits_error_after_5_minutes(
+    async def test_outer_timeout_emits_error_after_outer_timeout(
         self,
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
-        """When OTA stalls without delivering a terminal state, an outer 5-min
+        """When OTA stalls without delivering a terminal state, the outer
         timeout fires `state: error` so the UI doesn't spin forever."""
         import asyncio
         from datetime import datetime
@@ -1341,9 +1376,9 @@ class TestSubscribeOtaProgress:
             # Simulate an OTA in progress so the outer timer is armed.
             on_state(make_update_state(in_progress=True, has_progress=True, progress=10.0))
 
-            # Verify the timer was scheduled with a 5-minute (300s) delay.
+            # Verify the timer was scheduled with the outer-timeout (240s) delay.
             assert mock_call_later.called
-            assert mock_call_later.call_args[0][1] == 300
+            assert mock_call_later.call_args[0][1] == 240
             timeout_cb = mock_call_later.call_args[0][2]
 
             connection.send_message.reset_mock()
