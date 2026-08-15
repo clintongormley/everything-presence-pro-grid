@@ -96,7 +96,9 @@ async def websocket_update_firmware(
 ) -> None:
     """Trigger firmware OTA update — delegates to DeviceManager.async_trigger_ota."""
     try:
-        await manager.async_trigger_ota(msg["mac"], prefer_local=msg.get("source", "auto") != "github")
+        # Any source other than "github" (including missing) prefers HA-local
+        # serving — the schema defaults it to "auto".
+        await manager.async_trigger_ota(msg["mac"], prefer_local=msg.get("source") != "github")
     except HomeAssistantError as err:
         _send_exception(connection, msg["id"], "update_failed", err)
         return

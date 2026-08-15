@@ -1450,7 +1450,7 @@ const de={attribute:!0,type:String,converter:v,reflect:!1,hasChanged:w},pe=(e=de
     font-size: 0.9em;
   }
 
-`;class us extends ce{constructor(){super(...arguments),this.flashableDevices=[],this.loading=!1,this.localize=jt,this._selectedVariant="wifi",this.firmwareVersion="",this.integrationVersion="",this.usbFlashState=null,this.wifiNetworks=[],this.otaStates={},this.cancelledDeviceIpHint=null,this._hasWebSerial="undefined"!=typeof navigator&&"serial"in navigator,this._isSecureContext="undefined"==typeof window||window.isSecureContext,this._showUsbFlash=!1,this._cancelling=!1,this._selectedSsid="",this._manualSsid=!1,this._wifiPassword="",this._showPassword=!1,this._errorPopoverMac=null,this._closeErrorPopover=()=>{null!==this._errorPopoverMac&&(this._errorPopoverMac=null),this._popoverListeners.detach()},this._onPopoverKeydown=e=>{"Escape"===e.key&&this._closeErrorPopover()},this._onPopoverPointerDown=e=>{e.composedPath().some(e=>e instanceof HTMLElement&&(e.classList.contains("ota-error")||e.classList.contains("ota-error-detail")))||this._closeErrorPopover()},this._popoverListeners=new os([{target:document,type:"keydown",listener:this._onPopoverKeydown},{target:document,type:"pointerdown",listener:this._onPopoverPointerDown,options:!0},{target:window,type:"scroll",listener:this._closeErrorPopover,options:!0}])}_dispatchUpdateFirmware(e){this.dispatchEvent(new CustomEvent("update-firmware",{detail:{mac:e.mac},bubbles:!0,composed:!0}))}_isUpgradeable(e){return"eppgrid"===e.firmware_type&&!this.otaStates[e.mac]&&(e.update_available||"firmware_behind"===e.firmware_status)}_upgradeableDevices(){return this.flashableDevices.filter(e=>this._isUpgradeable(e))}_dispatchUpdateAll(){this.dispatchEvent(new CustomEvent("update-all-firmware",{detail:{macs:this._upgradeableDevices().map(e=>e.mac)},bubbles:!0,composed:!0}))}disconnectedCallback(){super.disconnectedCallback(),this._popoverListeners.detach()}_toggleErrorPopover(e,t){e.stopPropagation(),this._errorPopoverMac===t?this._closeErrorPopover():(this._errorPopoverMac=t,this._popoverListeners.attach())}_dispatchRetryOta(e,t){this._closeErrorPopover(),this.dispatchEvent(new CustomEvent("retry-ota",{detail:t?{mac:e.mac,source:t}:{mac:e.mac},bubbles:!0,composed:!0}))}_renderOtaIndicator(e){const t=this.otaStates[e.mac];if(!t)return j;switch(t.state){case"updating":{if(null==t.progress)return N`<div class="ota-spinner"></div>`;const e=14,i=2*Math.PI*e,s=i-t.progress/100*i;return N`
+`;class us extends ce{constructor(){super(...arguments),this.flashableDevices=[],this.loading=!1,this.localize=jt,this._selectedVariant="wifi",this.firmwareVersion="",this.integrationVersion="",this.usbFlashState=null,this.wifiNetworks=[],this.otaStates={},this.cancelledDeviceIpHint=null,this._hasWebSerial="undefined"!=typeof navigator&&"serial"in navigator,this._isSecureContext="undefined"==typeof window||window.isSecureContext,this._showUsbFlash=!1,this._cancelling=!1,this._selectedSsid="",this._manualSsid=!1,this._wifiPassword="",this._showPassword=!1,this._errorPopoverMac=null,this._closeErrorPopover=()=>{null!==this._errorPopoverMac&&(this._errorPopoverMac=null),this._popoverListeners.detach()},this._onPopoverKeydown=e=>{"Escape"===e.key&&this._closeErrorPopover()},this._onPopoverPointerDown=e=>{e.composedPath().some(e=>e instanceof HTMLElement&&(e.classList.contains("ota-error")||e.classList.contains("ota-error-detail")))||this._closeErrorPopover()},this._popoverListeners=new os([{target:document,type:"keydown",listener:this._onPopoverKeydown},{target:document,type:"pointerdown",listener:this._onPopoverPointerDown,options:!0},{target:window,type:"scroll",listener:this._closeErrorPopover,options:!0}])}_dispatchUpdateFirmware(e){this.dispatchEvent(new CustomEvent("update-firmware",{detail:{mac:e.mac},bubbles:!0,composed:!0}))}_isUpgradeable(e){return"eppgrid"===e.firmware_type&&!this.otaStates[e.mac]&&(e.update_available||"firmware_behind"===e.firmware_status)}_upgradeableDevices(){return this.flashableDevices.filter(e=>this._isUpgradeable(e))}_dispatchUpdateAll(){this.dispatchEvent(new CustomEvent("update-all-firmware",{detail:{macs:this._upgradeableDevices().map(e=>e.mac)},bubbles:!0,composed:!0}))}disconnectedCallback(){super.disconnectedCallback(),this._popoverListeners.detach()}_toggleErrorPopover(e,t){e.stopPropagation(),this._errorPopoverMac===t?this._closeErrorPopover():(this._errorPopoverMac=t,this._popoverListeners.attach())}_dispatchRetryOta(e,t){this._closeErrorPopover(),this.dispatchEvent(new CustomEvent("retry-ota",{detail:{mac:e.mac,source:t},bubbles:!0,composed:!0}))}_renderOtaIndicator(e){const t=this.otaStates[e.mac];if(!t)return j;switch(t.state){case"updating":{if(null==t.progress)return N`<div class="ota-spinner"></div>`;const e=14,i=2*Math.PI*e,s=i-t.progress/100*i;return N`
 					<div class="ota-progress">
 						<svg width="36" height="36" viewBox="0 0 36 36">
 							<circle class="ota-track" cx="18" cy="18" r="${e}" />
@@ -1459,23 +1459,20 @@ const de={attribute:!0,type:String,converter:v,reflect:!1,hasChanged:w},pe=(e=de
 								stroke-dashoffset="${s}" />
 						</svg>
 						<span class="ota-pct">${Math.round(t.progress)}</span>
-					</div>`}case"success":return N`<ha-icon class="ota-success" icon="mdi:check-circle"></ha-icon>`;case"error":{const i="flasher.errors.ota_download_unreachable"===t.errorKey;return N`
+					</div>`}case"success":return N`<ha-icon class="ota-success" icon="mdi:check-circle"></ha-icon>`;case"error":{const i="flasher.errors.ota_download_unreachable"===t.errorKey,s=(t,i)=>N`
+					<epp-button
+						variant="neutral"
+						@click=${()=>this._dispatchRetryOta(e,i)}>
+						${this.localize(t)}
+					</epp-button>`;return N`
 					<div class="ota-error">
 						<ha-icon class="ota-error-icon"
 							icon="mdi:alert-circle"
 							@click=${t=>this._toggleErrorPopover(t,e.mac)}
 						></ha-icon>
 						${e.available?N`
-									<epp-button
-										variant="neutral"
-										@click=${()=>this._dispatchRetryOta(e)}>
-										${this.localize("flasher.ota_retry")}
-									</epp-button>
-									${i?N`<epp-button
-												variant="neutral"
-												@click=${()=>this._dispatchRetryOta(e,"github")}>
-												${this.localize("flasher.ota_download_github")}
-											</epp-button>`:j}`:j}
+									${s("flasher.ota_retry")}
+									${i?s("flasher.ota_download_github","github"):j}`:j}
 					</div>`}}}_renderOtaErrorDetail(e){const t=this.otaStates[e.mac];return"error"!==t?.state||this._errorPopoverMac!==e.mac?j:N`<div class="ota-error-detail" role="alert">${t.errorKey?this.localize(t.errorKey,t.errorParams):""}</div>`}_onUsbConnect(){this._hasWebSerial&&(this._showUsbFlash=!0)}_dispatchFlashComplete(){this.dispatchEvent(new CustomEvent("flash-complete",{bubbles:!0,composed:!0}))}_dispatchUsbFlash(){this.dispatchEvent(new CustomEvent("usb-flash",{detail:{variant:this._getFirmwareVariant()},bubbles:!0,composed:!0}))}_dispatchUsbRetry(){this.dispatchEvent(new CustomEvent("usb-retry",{bubbles:!0,composed:!0}))}_dispatchRetryHaAdd(){this.dispatchEvent(new CustomEvent("retry-ha-add",{bubbles:!0,composed:!0}))}_dispatchCancel(){null==this.usbFlashState?this._showUsbFlash=!1:this._cancelling=!0,this._wifiPassword="",this.dispatchEvent(new CustomEvent("flasher-cancel",{bubbles:!0,composed:!0}))}updated(e){if(e.has("usbFlashState")&&null==this.usbFlashState&&(this._cancelling=!1),e.has("_errorPopoverMac")&&null!==this._errorPopoverMac){const e=this.shadowRoot?.querySelector(".device-list"),t=this.shadowRoot?.querySelector(".ota-error-detail");if(e&&t){const i=e.getBoundingClientRect(),s=t.getBoundingClientRect();s.bottom>i.bottom?e.scrollTop+=s.bottom-i.bottom:s.top<i.top&&(e.scrollTop-=i.top-s.top)}}}_renderCancelButton(e){const t=this._cancelling?this.localize("flasher.cancelling"):this.localize("flasher.cancel");return N`<epp-button
 			variant="neutral"
 			class=${e??""}
