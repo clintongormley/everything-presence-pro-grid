@@ -19,10 +19,11 @@ firmware downloads, see the
     leaving you to refresh the page or type the panel's address by hand to get
     in — and in the mobile app, where there is no refresh, the panel was
     effectively unreachable. It now loads correctly however you open it.
-- Fixed the `sensor.*_heatmap` entity spamming "state is longer than 255,
-    falling back to unknown" (#365). The heatmap is now delivered directly to
-    the panel/card and is no longer a Home Assistant sensor entity; the old
-    entity is removed automatically after you update the firmware.
+- **The heatmap no longer spams "unknown" warnings.** The `sensor.*_heatmap`
+    entity was logging "state is longer than 255, falling back to unknown"
+    (#365). The heatmap is now delivered directly to the panel/card and is no
+    longer a Home Assistant sensor entity; the old entity is removed
+    automatically after you update the firmware.
 
 ## v1.7.0 — 2026-08-07
 

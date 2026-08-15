@@ -38,9 +38,9 @@ survives a device reboot, so you won't lose weeks of build-up over a power cut.
 ## No Home Assistant entity
 
 The heatmap streams straight to the panel and card — it isn't a Home Assistant
-sensor. Earlier versions published it as a hidden `sensor.*_heatmap` entity; if
-you'd enabled it, it could show as *unknown* and log a warning about its state
-being too long. Updating clears that up.
+sensor. Earlier versions exposed it as a `sensor.*_heatmap` diagnostic entity,
+disabled by default; if you'd enabled it, it could show as *unknown* and log a
+warning about its state being too long. Updating clears that up.
 
 Update the device's firmware and the old entity disappears on its own — Home
 Assistant removes it automatically the next time the device reconnects. Want it

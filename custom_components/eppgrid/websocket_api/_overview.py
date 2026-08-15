@@ -8,6 +8,7 @@ they never mutate device *configuration*.
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
 from typing import Literal
@@ -35,7 +36,7 @@ async def _start_overview_stream(
     make_on_state: Callable[[str, Any], Callable[[Any], None]],
     send_snapshot: bool,
     protocol: Literal["frames_only", "closed_only", "full"],
-    poll_fn: Callable[[Any], Any] | None = None,
+    poll_fn: Callable[[Any], Awaitable[Any]] | None = None,
 ) -> None:
     """Resolve the card's `device_id` to a mac, then start a durable stream.
 

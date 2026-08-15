@@ -8,6 +8,7 @@ after a device flap, and reports liveness (#334, #336).
 
 from __future__ import annotations
 
+from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
 from typing import Literal
@@ -30,7 +31,7 @@ async def start_durable_stream(
     make_on_state: Callable[[str, Any], Callable[[Any], None]],
     send_snapshot: bool,
     protocol: Literal["frames_only", "closed_only", "full"],
-    poll_fn: Callable[[Any], Any] | None = None,
+    poll_fn: Callable[[Any], Awaitable[Any]] | None = None,
 ) -> None:
     """Shared scaffolding for the durable-stream subscribe commands — the
     non-admin overview commands (`_overview.py`) and the panel's three

@@ -7,6 +7,7 @@ import contextlib
 import logging
 import time
 from collections.abc import AsyncIterator
+from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Coroutine
 from dataclasses import dataclass
@@ -1759,7 +1760,7 @@ class DeviceManager:
         make_on_state: Callable[[str, Any], Callable[[Any], None]],
         on_availability: Callable[[bool], None],
         on_closed: Callable[[], None] | None = None,
-        poll_fn: Callable[[Any], Any] | None = None,
+        poll_fn: Callable[[Any], Awaitable[Any]] | None = None,
     ) -> Callable[[], None] | None:
         """Register a durable state stream for `mac` and arm it if possible.
 

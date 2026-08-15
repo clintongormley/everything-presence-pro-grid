@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
 from typing import Literal
@@ -714,7 +715,7 @@ async def _start_panel_stream(
     *,
     counter_attr: Literal["raw_target_subs", "grid_target_subs", "heatmap_subs"],
     make_on_state: Callable[[str, Any], Callable[[Any], None]],
-    poll_fn: Callable[[Any], Any] | None = None,
+    poll_fn: Callable[[Any], Awaitable[Any]] | None = None,
 ) -> None:
     """Shared scaffolding for the panel's three live streams.
 
