@@ -467,7 +467,7 @@
 			"ota_failed_version_unchanged": "Actualización fallida — la versión del firmware no ha cambiado",
 			"ota_timeout": "La actualización OTA ha agotado el tiempo de espera",
 			"ota_device_error": "Error en la actualización: {message}",
-			"ota_low_memory": "El dispositivo no pudo descargar el firmware, probablemente por falta de memoria ({message}). Se reinicia antes de cada intento para liberar memoria; si las actualizaciones siguen fallando, desactiva el proxy Bluetooth de este dispositivo e inténtalo de nuevo.",
+			"ota_download_unreachable": "El dispositivo no pudo descargar el firmware: no pudo conectarse al servidor de descargas ({message}). Comprueba que este dispositivo puede acceder a Home Assistant en tu red; algunas configuraciones impiden que los dispositivos IoT accedan al host de Home Assistant.",
 			"flash_cancelled": "Instalación cancelada",
 			"timeout": "Tiempo de espera agotado",
 			"aborted": "Cancelado",

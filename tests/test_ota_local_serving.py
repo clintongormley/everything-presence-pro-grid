@@ -1,0 +1,78 @@
+"""async_trigger_ota prefers an HA-local manifest URL, else GitHub-direct."""
+
+from __future__ import annotations
+
+from unittest.mock import AsyncMock
+from unittest.mock import MagicMock
+from unittest.mock import patch
+
+import pytest
+from homeassistant.core import HomeAssistant
+
+from custom_components.eppgrid.device_manager import DeviceManager
+from custom_components.eppgrid.device_manager import ManagedDevice
+from custom_components.eppgrid.storage import EPPGridStore
+
+MAC = "AA:BB:CC:DD:EE:01"
+
+
+def _fake_head_session(status: int = 200) -> MagicMock:
+    resp = MagicMock()
+    resp.status = status
+    cm = MagicMock()
+    cm.__aenter__ = AsyncMock(return_value=resp)
+    cm.__aexit__ = AsyncMock(return_value=False)
+    session = MagicMock()
+    session.head = MagicMock(return_value=cm)
+    return session
+
+
+@pytest.fixture
+def manager(hass: HomeAssistant) -> DeviceManager:
+    mgr = DeviceManager(hass, EPPGridStore(hass))
+    mgr.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    mgr._build_flags[MAC] = {"ethernet_enabled": False}
+    return mgr
+
+
+async def _run_trigger(manager: DeviceManager, local_url: str | None) -> str:
+    """Trigger OTA with reboot + head stubbed; return the URL handed to the device."""
+    session = MagicMock()
+    session.async_execute_service = AsyncMock()
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "get_session", return_value=session),
+        patch(
+            "custom_components.eppgrid.device_manager.async_local_ota_manifest_url",
+            new=AsyncMock(return_value=local_url),
+        ),
+    ):
+        await manager.async_trigger_ota(MAC)
+    _name, payload = session.async_execute_service.await_args.args
+    return payload["url"]
+
+
+async def test_trigger_uses_local_url_when_available(manager: DeviceManager) -> None:
+    url = await _run_trigger(manager, "http://192.168.1.10:8123/eppgrid_fw/tok/wifi-ble-co2.json")
+    assert url == "http://192.168.1.10:8123/eppgrid_fw/tok/wifi-ble-co2.json"
+
+
+async def test_trigger_falls_back_to_github_when_no_local_url(manager: DeviceManager) -> None:
+    url = await _run_trigger(manager, None)
+    assert url.startswith("https://clintongormley.github.io/")
+    assert url.endswith("/wifi-ble-co2.json")
+
+
+async def test_resend_reuses_the_resolved_url(manager: DeviceManager) -> None:
+    local = "http://192.168.1.10:8123/eppgrid_fw/tok/wifi-ble-co2.json"
+    await _run_trigger(manager, local)
+    session = MagicMock()
+    session.async_execute_service = AsyncMock()
+    with patch.object(manager, "get_session", return_value=session):
+        await manager.async_resend_ota_manifest(MAC)
+    _name, payload = session.async_execute_service.await_args.args
+    assert payload["url"] == local

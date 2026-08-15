@@ -21,6 +21,7 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -493,8 +494,8 @@ class TestSubscribeOtaProgress:
         client layer, the actionable log line is tagged http_request.idf,
         not http_request.ota / .update. Captured live during the heap
         exhaustion that motivated this PR — so it must surface as the
-        low-memory error, which explains the cause and the reboot-and-retry
-        remedy rather than echoing the bare ESP_ERR.
+        unreachable-download error, which points at network reachability
+        rather than echoing the bare ESP_ERR.
         """
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn()
@@ -523,7 +524,7 @@ class TestSubscribeOtaProgress:
             {
                 "state": "error",
                 "message": "HTTP Request failed: ESP_ERR_HTTP_CONNECT",
-                "error_key": "flasher.errors.ota_low_memory",
+                "error_key": "flasher.errors.ota_download_unreachable",
             },
         )
 

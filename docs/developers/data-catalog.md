@@ -529,6 +529,12 @@ separate bundle with its own hash). **Not admin-gated** — the dashboard card
 renders for non-admin viewers, and the payload is just non-sensitive content
 hashes. See `frontend/src/lib/version-check.ts`.
 
+Separately, `/eppgrid_fw/<token>/{variant}.json` + `.../{variant}.ota.bin` is
+another unauthenticated served path: the firmware cache HA downloads and
+md5-verifies GitHub's public firmware into, then serves over the LAN so an
+internet-restricted device can still fetch its OTA (`token` is
+`secrets.token_hex(8)`). See `custom_components/eppgrid/firmware_cache.py`.
+
 **Request:** `{ "type": "eppgrid/frontend_version" }` **Response:**
 `{ "hash": str | null, "card_hash": str | null }` — each is `null` until that
 bundle has been hashed (e.g. before the panel/card resources are first
@@ -556,10 +562,15 @@ entity IDs are regenerated from the new name's slug. Admin only.
 
 Triggers OTA firmware update on a device via the `set_update_manifest` API
 action. Derives the firmware variant (`wifi-ble-co2` or `ethernet-ble-co2`) from
-build flags and constructs the manifest URL from `FIRMWARE_VERSION` using GitHub
-Pages
-(`https://clintongormley.github.io/everything-presence-pro-grid/fw/v{VERSION}/{variant}.json`).
-Uses a temporary connection (not the persistent session).
+build flags. By default Home Assistant downloads and md5-verifies the firmware
+and serves it to the device over the LAN (the unauthenticated
+`/eppgrid_fw/<token>/` path), then hands the device that HA-local manifest URL —
+so a device with no internet access can still update. When HA can't determine a
+device-reachable URL, or the download/verify fails, it falls back to the pinned
+GitHub Pages URL built from `FIRMWARE_VERSION`
+(`https://clintongormley.github.io/everything-presence-pro-grid/fw/v{VERSION}/{variant}.json`),
+which the device fetches directly. Prefers the live session, falling back to a
+temporary connection when none is open.
 
 **Request:** `{ "type": "eppgrid/update_firmware", "mac": str }`
 
@@ -595,9 +606,9 @@ code `no_session`, translation key `no_active_session`.
     it. Log-derived failures use `flasher.errors.ota_device_error`, whose
     translation interpolates the cleaned device text via the `{message}`
     placeholder. Download/connect failures (`Code: -1`, `ESP_ERR_HTTP_CONNECT`,
-    `ESP_ERR_NO_MEM` — the device out of contiguous heap for the TLS handshake)
-    instead use `flasher.errors.ota_low_memory`, which explains the likely cause
-    and the reboot-and-retry remedy.
+    `ESP_ERR_NO_MEM` — the device couldn't reach the download server) instead
+    use `flasher.errors.ota_download_unreachable`, which points the user at
+    network reachability between the device and Home Assistant.
 
 The handler also monitors device log messages for `http_request.ota` and
 `http_request.update` errors, forwarding the actual error message immediately.

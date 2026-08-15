@@ -31,6 +31,7 @@ from .const import CURRENT_BUNDLE_HASH_KEY
 from .const import DOMAIN
 from .device_groups._registry import zone_name_from_store
 from .device_manager import DeviceManager
+from .firmware_cache import async_register_firmware_cache
 from .firmware_proxy import FirmwareProxyView
 from .storage import EPPGridStore
 from .websocket_api import async_register_websocket_commands
@@ -191,6 +192,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if not hass.data.get(_PROXY_VIEW_REGISTERED_KEY):
         hass.http.register_view(FirmwareProxyView())
         hass.data[_PROXY_VIEW_REGISTERED_KEY] = True
+    await async_register_firmware_cache(hass)
 
     try:
         await manager.async_start()

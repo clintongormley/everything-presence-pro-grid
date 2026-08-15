@@ -31,6 +31,7 @@ from homeassistant.helpers.event import async_call_later
 from ..const import FIRMWARE_VERSION
 from ..const import MAX_ZONES
 from ..const import empty_zone_slots
+from ..firmware_cache import async_local_ota_manifest_url
 from ..storage import EPPGridStore
 from ._connection import DeviceConnection
 from ._connection import OtaWatcherState as OtaWatcherState  # re-export for tests
@@ -262,6 +263,12 @@ class DeviceManager:
         # set_update_manifest call is in flight; concurrent callers fail-fast
         # with `ota_in_progress` rather than firing a duplicate OTA.
         self._ota_locks: dict[str, asyncio.Lock] = {}
+        # The manifest URL actually handed to the device on its most recent
+        # async_trigger_ota — either the HA-local URL or the GitHub-direct
+        # fallback. async_resend_ota_manifest re-sends this same URL rather
+        # than re-resolving, so a resend during the firmware's empty-URL race
+        # can't flip a device from local-serving to GitHub-direct mid-flash.
+        self._ota_manifest_urls: dict[str, str] = {}
         # In-flight close tasks keyed by mac. async_open_session awaits these
         # before opening so a quick close→reopen doesn't return a connection
         # that the close task is about to disconnect.
@@ -707,18 +714,14 @@ class DeviceManager:
         self._target_subs.clear()
         self._static_presence_cache.clear()
 
-    def _ota_manifest_url(self, mac: str) -> str:
-        """Resolve the pinned-version ESP Web Tools manifest URL for a device.
+    def _ota_variant(self, mac: str) -> str:
+        """Resolve the firmware variant filename stem for a device.
 
-        Derives the firmware variant from the device's cached build flags and
-        joins it onto `OTA_MANIFEST_BASE_URL` (which embeds `FIRMWARE_VERSION`).
-        Shared by `async_trigger_ota` and `async_resend_ota_manifest` so both
-        target the same per-version release. Raises HomeAssistantError with a
-        translation_key on every failure path.
+        Shared by `_ota_manifest_url` and the local-serving path. Raises
+        HomeAssistantError with a translation_key on every failure path.
         """
         from ..const import DOMAIN as _DOMAIN
         from ..const import FIRMWARE_VARIANTS
-        from ..const import OTA_MANIFEST_BASE_URL
 
         dev = self.devices.get(mac)
         if dev is None:
@@ -749,7 +752,17 @@ class DeviceManager:
                 translation_key="no_firmware_variant",
                 translation_placeholders={"network": network},
             )
-        return f"{OTA_MANIFEST_BASE_URL}/{variant}.json"
+        return variant
+
+    def _ota_manifest_url(self, mac: str) -> str:
+        """Resolve the pinned-version GitHub Pages manifest URL for a device.
+
+        This is the GitHub-direct fallback URL; the local-serving path in
+        `async_trigger_ota` overrides it when HA can serve the firmware itself.
+        """
+        from ..const import OTA_MANIFEST_BASE_URL
+
+        return f"{OTA_MANIFEST_BASE_URL}/{self._ota_variant(mac)}.json"
 
     async def async_resend_ota_manifest(self, mac: str) -> None:
         """Re-issue the OTA manifest after the firmware's empty-URL race.
@@ -767,12 +780,19 @@ class DeviceManager:
         failure so it can run from the OTA progress watcher's log callback; the
         watcher's outer timeout still surfaces a terminal failure if the retries
         never take.
+
+        Re-sends the SAME URL `async_trigger_ota` resolved for this device
+        (local or GitHub-direct) — falls back to re-resolving only if none was
+        stored, so a resend can't flip a device mid-flash from local-serving to
+        GitHub-direct (or vice versa).
         """
-        try:
-            manifest_url = self._ota_manifest_url(mac)
-        except HomeAssistantError:
-            _LOGGER.warning("Cannot re-issue OTA manifest for %s; build info unavailable", mac, exc_info=True)
-            return
+        manifest_url = self._ota_manifest_urls.get(mac)
+        if manifest_url is None:
+            try:
+                manifest_url = self._ota_manifest_url(mac)
+            except HomeAssistantError:
+                _LOGGER.warning("Cannot re-issue OTA manifest for %s; build info unavailable", mac, exc_info=True)
+                return
         session = self.get_session(mac)
         if session is None:
             _LOGGER.warning("No live session to re-issue OTA manifest for %s", mac)
@@ -786,8 +806,14 @@ class DeviceManager:
     async def async_trigger_ota(self, mac: str) -> None:
         """Trigger firmware OTA update on a device.
 
-        Derives the firmware variant from cached build flags, constructs the
-        manifest URL from `OTA_MANIFEST_BASE_URL`, and calls the device's
+        Derives the firmware variant from cached build flags and constructs
+        the manifest URL from `OTA_MANIFEST_BASE_URL`. Before handing that URL
+        to the device, first attempts HA-local serving (`firmware_cache`): if
+        HA can download+verify the firmware and reach the device over the
+        LAN, the device fetches it from HA instead, so devices with no
+        internet access can still update; this falls back to the
+        GitHub-direct `OTA_MANIFEST_BASE_URL` URL whenever local serving isn't
+        possible or fails. Either way, calls the device's
         `set_update_manifest` API action over a temporary connection. Shared
         by the panel's `update_firmware` websocket handler and the Repairs
         framework's `FirmwareUpdateRepairFlow`.
@@ -839,6 +865,24 @@ class DeviceManager:
                 "Could not reach %s to verify firmware availability; proceeding with OTA anyway",
                 manifest_url,
             )
+
+        # Prefer serving the firmware from HA over the LAN so a device with no
+        # internet access can still update. Falls back to the GitHub-direct URL
+        # (already in `manifest_url`) if HA has no device-reachable URL or the
+        # download/verify fails. Reused by async_resend_ota_manifest.
+        from ..const import OTA_MANIFEST_BASE_URL
+
+        dev = self.devices.get(mac)
+        local_url = await async_local_ota_manifest_url(
+            self._hass,
+            dev.host if dev else None,
+            OTA_MANIFEST_BASE_URL,
+            self._ota_variant(mac),
+        )
+        if local_url:
+            _LOGGER.info("OTA for %s will be served locally from HA (%s)", mac, local_url)
+            manifest_url = local_url
+        self._ota_manifest_urls[mac] = manifest_url
 
         async with lock:
             # Pre-flight: reboot the device so the OTA flashes from a fresh,
@@ -1489,6 +1533,7 @@ class DeviceManager:
         self._build_flags.pop(mac, None)
         self._session_locks.pop(mac, None)
         self._ota_locks.pop(mac, None)
+        self._ota_manifest_urls.pop(mac, None)
         self._push_locks.pop(mac, None)
         self._target_subs.pop(mac, None)
         self._static_presence_cache.pop(mac, None)

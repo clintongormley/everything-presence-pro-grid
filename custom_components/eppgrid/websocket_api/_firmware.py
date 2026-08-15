@@ -46,20 +46,20 @@ _OTA_EMPTY_URL_RETRY_MAX = 3
 # Device OTA-error log patterns that mean the firmware download couldn't
 # connect/complete — `Code: -1` (transport failure, no HTTP response; anchored
 # with `(?!\d)` so `Code: -10x` and other negative codes don't match),
-# `ESP_ERR_HTTP_CONNECT` (TLS connect failed), `ESP_ERR_NO_MEM` (explicit OOM).
-# On the memory-tight wifi-ble-co2 build these are almost always the device
-# running out of contiguous heap for the TLS handshake, so we route them to a
-# distinct error_key whose translation explains the likely cause + the
-# reboot-and-retry remedy instead of surfacing the opaque ESP_ERR. A positive
-# HTTP status (e.g. `Code: 404`) means the server answered — not a memory
-# failure — so it falls through to the generic key.
-_OTA_LOW_MEMORY_RE = re.compile(r"ESP_ERR_HTTP_CONNECT|ESP_ERR_NO_MEM|Code: -1(?!\d)")
+# `ESP_ERR_HTTP_CONNECT` (couldn't open the connection), `ESP_ERR_NO_MEM`
+# (explicit OOM). These almost always mean the device couldn't reach the
+# download server: with the pre-OTA reboot and HA-local (plain-HTTP) serving,
+# the old out-of-heap-for-TLS cause is largely gone. We route them to a distinct
+# error_key whose translation points at network reachability instead of the
+# opaque ESP_ERR. A positive HTTP status (e.g. `Code: 404`) means the server
+# answered, so it falls through to the generic key.
+_OTA_DOWNLOAD_FAIL_RE = re.compile(r"ESP_ERR_HTTP_CONNECT|ESP_ERR_NO_MEM|Code: -1(?!\d)")
 
 
 def _classify_ota_error_key(message: str) -> str:
     """Map a device OTA-error log line to the panel error_key it should raise."""
-    if _OTA_LOW_MEMORY_RE.search(message):
-        return "flasher.errors.ota_low_memory"
+    if _OTA_DOWNLOAD_FAIL_RE.search(message):
+        return "flasher.errors.ota_download_unreachable"
     return "flasher.errors.ota_device_error"
 
 

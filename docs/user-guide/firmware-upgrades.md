@@ -55,6 +55,13 @@ move on.
     detection itself, so the entity won't show pending updates on HA's standard
     Updates dashboard. Use Repairs or the panel.
 
+### Devices without internet access
+
+The Repairs and panel update paths serve the firmware from Home Assistant over
+your LAN, so the device only needs to reach the HA host (not the internet). The
+native ESPHome **Firmware Update** entity is the exception — it downloads
+directly from the internet, so use Repairs or the panel on restricted networks.
+
 ## When OTA fails
 
 The panel reports a specific error and offers Retry. Common causes:
@@ -82,12 +89,13 @@ To roll back or pin to a specific firmware version, flash via USB. See
 
 ## Troubleshooting
 
-| Symptom                                               | Likely cause                              | Fix                                                                          |
-| ----------------------------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------- |
-| OTA stalls or times out repeatedly                    | Weak Wi-Fi at the device                  | Move the device, switch to Ethernet variant, or flash via USB.               |
-| OTA reports "Update failed" on every retry            | Flash partition unhealthy                 | Re-flash via USB.                                                            |
-| Panel refuses to control device                       | Firmware newer than installed integration | Update the integration in HACS.                                              |
-| Device disappeared from the list after a variant swap | ESPHome cache stale                       | Remove and re-add the device in **Settings → Devices & services → ESPHome**. |
+| Symptom                                                                   | Likely cause                                                                | Fix                                                                                                                                 |
+| ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| OTA stalls or times out repeatedly                                        | Weak Wi-Fi at the device                                                    | Move the device, switch to Ethernet variant, or flash via USB.                                                                      |
+| OTA reports "Update failed" on every retry                                | Flash partition unhealthy                                                   | Re-flash via USB.                                                                                                                   |
+| Panel refuses to control device                                           | Firmware newer than installed integration                                   | Update the integration in HACS.                                                                                                     |
+| Device disappeared from the list after a variant swap                     | ESPHome cache stale                                                         | Remove and re-add the device in **Settings → Devices & services → ESPHome**.                                                        |
+| OTA fails with a connection error on a device that has no internet access | Device blocked from the internet *and* cannot reach the Home Assistant host | Ensure the device can reach Home Assistant on your network; update via Repairs or the panel, not the native Firmware Update entity. |
 
 Still stuck? See [Troubleshooting](troubleshooting.md) for how to open an issue.
 

@@ -50,6 +50,7 @@ async def test_setup_entry_registers_manager(hass: HomeAssistant, config_entry: 
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -80,6 +81,7 @@ async def test_setup_entry_registers_frontend_resources_always(
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch("custom_components.eppgrid.EPPGridStore") as mock_store_cls,
         patch(
             "custom_components.eppgrid._register_frontend_resources",
@@ -112,6 +114,7 @@ async def test_setup_entry_registers_panel_when_enabled(hass: HomeAssistant, con
     module_url = "/eppgrid_static/eppgrid-panel.js?v=deadbeef"
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources", new_callable=AsyncMock, return_value=module_url
         ),
@@ -136,6 +139,7 @@ async def test_setup_entry_skips_panel_when_disabled(hass: HomeAssistant, config
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch("custom_components.eppgrid.EPPGridStore") as mock_store_cls,
         patch(
             "custom_components.eppgrid._register_frontend_resources",
@@ -166,6 +170,7 @@ async def test_unload_entry_stops_manager(hass: HomeAssistant, config_entry: Moc
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -215,6 +220,7 @@ async def test_unload_entry_returns_false_when_platform_unload_fails(
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -251,6 +257,7 @@ async def test_options_update_does_not_reload_entry(hass: HomeAssistant, config_
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -320,6 +327,7 @@ async def test_unload_entry_removes_panel(hass: HomeAssistant, config_entry: Moc
     module_url = "/eppgrid_static/eppgrid-panel.js?v=deadbeef"
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -355,6 +363,7 @@ async def test_unload_entry_skips_panel_when_not_registered(hass: HomeAssistant,
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch("custom_components.eppgrid.EPPGridStore") as mock_store_cls,
         patch(
             "custom_components.eppgrid._register_frontend_resources",
@@ -520,6 +529,7 @@ async def test_setup_entry_unwinds_on_start_failure_and_allows_retry(
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -568,6 +578,7 @@ async def test_setup_unwind_stop_failure_does_not_mask_original_error(
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -603,6 +614,7 @@ async def test_setup_unwind_panel_visibility_failure_does_not_mask_original_erro
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -645,6 +657,7 @@ async def test_setup_entry_unwinds_on_panel_failure(hass: HomeAssistant, config_
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -677,6 +690,7 @@ async def test_setup_unwind_unloads_binary_sensor_platform(hass: HomeAssistant, 
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -721,6 +735,7 @@ async def test_setup_entry_registers_panel_after_manager_start(
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
@@ -750,6 +765,7 @@ async def test_setup_entry_registers_proxy_view_once_across_reloads(
 
     with (
         patch("custom_components.eppgrid.DeviceManager") as mock_dm_cls,
+        patch("custom_components.eppgrid.async_register_firmware_cache", new_callable=AsyncMock),
         patch(
             "custom_components.eppgrid._register_frontend_resources",
             new_callable=AsyncMock,
