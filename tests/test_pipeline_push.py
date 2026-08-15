@@ -174,7 +174,8 @@ class TestHeatmapPipelinePushBWCStrip:
         self, hass: HomeAssistant, config_entry: MockConfigEntry
     ) -> None:
         """Firmware 1.3.0+ supports the Heatmap feature — the field must be
-        present and reflect the tracked subscriber count."""
+        present (old firmware's epp_set_pipeline still declares the arg) but
+        always 0: the pull transport never uses the firmware publish timer."""
         mock_dm = await setup_integration(hass, config_entry)
         mac = "AA:BB:CC:DD:EE:FF"
         mock_dm._store.devices[mac] = {}
@@ -199,7 +200,7 @@ class TestHeatmapPipelinePushBWCStrip:
         call_args = mock_session.async_execute_service.await_args
         assert call_args[0][0] == "epp_set_pipeline"
         pipeline = call_args[0][1]
-        assert pipeline["heatmap_interval"] == 2000
+        assert pipeline["heatmap_interval"] == 0
 
 
 class TestSubscriberCountsSurviveSessionReplacement:

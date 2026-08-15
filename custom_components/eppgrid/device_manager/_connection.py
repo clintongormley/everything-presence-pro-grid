@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import contextlib
 import json
 import logging
@@ -19,6 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 from ..const import DEFAULT_PORT
 from ..const import GRID_CELL_SIZE_MM
 from ..const import GRID_COLS
+from ..const import GRID_ROWS
 from ..const import ZONES_JSON_MAX
 from ._helpers import _ESPHOME_TO_PYTHON_LOG
 from ._helpers import _expand_zone_slot
@@ -29,6 +31,28 @@ from ._helpers import is_valid_zone_slots_shape
 
 _LOGGER = logging.getLogger(__name__)
 _DEVICE_LOGGER = logging.getLogger(f"{__name__}.device_logs")
+
+# Dense length of the firmware heatmap payload once decoded — one byte per grid
+# cell, row-major, normalized 0..255.
+_HEATMAP_CELL_COUNT = GRID_COLS * GRID_ROWS
+
+
+def _decode_heatmap_b64(value: str) -> list[int]:
+    """Decode a firmware heatmap base64 payload to a dense 400-length 0..255 list.
+
+    Any empty / garbled / wrong-length input yields an all-zero frame rather than
+    raising, so a transient bad read never breaks the poll loop or strands the
+    overlay.
+    """
+    if not value:
+        return [0] * _HEATMAP_CELL_COUNT
+    try:
+        data = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        return [0] * _HEATMAP_CELL_COUNT
+    if len(data) != _HEATMAP_CELL_COUNT:
+        return [0] * _HEATMAP_CELL_COUNT
+    return list(data)
 
 
 def _fan_out(callbacks: list[Any], invoke: Callable[[Any], None], label: str) -> None:
@@ -352,6 +376,29 @@ class DeviceConnection:
             timeout=timeout,
         )
 
+    async def _fetch_response_json(self, service_name: str, *, timeout: float) -> Any | None:
+        """Call a response-returning action and return its parsed JSON, or None when
+        the device firmware doesn't expose the action. Raises RuntimeError if the
+        client is gone, and ValueError if the action returns no response_data.
+        Transient failures (timeout, connection error, malformed JSON) propagate.
+        """
+        if self._client is None:
+            raise RuntimeError("DeviceConnection is not connected")
+        svc = self._services.get(service_name)
+        if svc is None:
+            # `None` means EXCLUSIVELY "the firmware doesn't expose this action". It
+            # stays an unambiguous sentinel only because the firmware always
+            # `api.respond`s a JSON OBJECT (never a bare `null`), so a present action
+            # can never itself decode to `None` and collide with this signal.
+            return None
+        resp = await asyncio.wait_for(
+            self._client.execute_service(svc, {}, return_response=True),
+            timeout=timeout,
+        )
+        if resp is None or not resp.response_data:
+            raise ValueError(f"{service_name} returned no response_data")
+        return json.loads(resp.response_data)
+
     async def async_fetch_build_flags(self, timeout: float = 10.0) -> dict[str, Any]:
         """Fetch build flags from the device via the get_build_flags action.
 
@@ -361,21 +408,26 @@ class DeviceConnection:
         connection error, malformed JSON, dropped client) propagate so the
         caller can decide whether to retry.
         """
-        if self._client is None:
-            raise RuntimeError("DeviceConnection is not connected")
-        svc = self._services.get("get_build_flags")
-        if svc is None:
+        decoded = await self._fetch_response_json("get_build_flags", timeout=timeout)
+        if decoded is None:
             return {}
-        resp = await asyncio.wait_for(
-            self._client.execute_service(svc, {}, return_response=True),
-            timeout=timeout,
-        )
-        if resp is None or not resp.response_data:
-            raise ValueError("get_build_flags returned no response_data")
-        decoded = json.loads(resp.response_data)
         if not isinstance(decoded, dict):
             raise ValueError(f"get_build_flags returned non-dict: {type(decoded).__name__}")
         return decoded
+
+    async def async_fetch_heatmap(self, timeout: float = 10.0) -> list[int] | None:
+        """Pull the current heatmap via the epp_get_heatmap response action.
+
+        Returns a dense 400-int (0..255) list, or ``None`` when the device
+        firmware doesn't expose the action (old firmware / original EPP
+        firmware) — that result means "heatmap unavailable" and is safe for the
+        poll loop to skip on. All transient failures (timeout, connection error,
+        missing/garbled JSON) propagate so the poll loop can skip a single tick.
+        """
+        payload = await self._fetch_response_json("epp_get_heatmap", timeout=timeout)
+        if payload is None:
+            return None
+        return _decode_heatmap_b64(payload["b64"])
 
     async def async_push_distance_override(self, override: dict[str, Any]) -> None:
         """Push distance override to device without persisting.

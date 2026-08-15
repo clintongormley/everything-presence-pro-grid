@@ -214,7 +214,11 @@ def _compute_pipeline(
         "entity_zone_interval": zone_rate if any_zone else 0,
         "display_interval": 200 if has_display_sub else 0,
         "zone_state_interval": 1000 if grid_target_subs > 0 else 0,
-        "heatmap_interval": 2000 if heatmap_subs > 0 else 0,
+        # Pull transport (issue #365): the heatmap is fetched on demand via the
+        # epp_get_heatmap action, never published by the firmware timer. The field
+        # stays in the pipeline (old firmware still declares the epp_set_pipeline
+        # arg and requires a value) but is always 0.
+        "heatmap_interval": 0,
     }
 
 

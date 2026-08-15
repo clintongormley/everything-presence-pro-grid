@@ -77,16 +77,22 @@ class EPPComponent : public esphome::Component {
   void set_zone_state_sensor(esphome::text_sensor::TextSensor *sensor) {
     zone_state_sensor_ = sensor;
   }
-  void set_heatmap_sensor(esphome::text_sensor::TextSensor *sensor) { heatmap_sensor_ = sensor; }
   void set_entity_target_interval(uint32_t ms) { entity_target_interval_ms_ = ms; }
   void set_entity_zone_interval(uint32_t ms) { entity_zone_interval_ms_ = ms; }
   void set_display_interval(uint32_t ms) { display_interval_ms_ = ms; }
   void set_zone_state_interval(uint32_t ms) { zone_state_interval_ms_ = ms; }
+  // Retained for the epp_set_pipeline arg contract only: the pull transport no
+  // longer has a publish timer, so this value is stored but unused.
   void set_heatmap_interval(int ms) { heatmap_interval_ms_ = ms < 0 ? 0 : (uint32_t) ms; }
   // Zero the accumulated heatmap in RAM and overwrite the persisted NVS blob
   // so the clear survives a reboot (the hourly saver would otherwise only
   // overwrite once an hour). Invoked by the epp_clear_heatmap API action.
   void clear_heatmap();
+  // Encode the current heatmap accumulator to base64 on demand (the pull
+  // transport's counterpart of the removed publish timer). Returns the base64
+  // of encode_normalized() (400 bytes -> 536 chars), or "" on encode failure.
+  // Served by the epp_get_heatmap API action.
+  std::string get_heatmap_base64();
   void set_static_presence_sensor(esphome::binary_sensor::BinarySensor *sensor) {
     static_presence_sensor_ = sensor;
   }
@@ -227,9 +233,6 @@ class EPPComponent : public esphome::Component {
   // Zone state text sensor (JSON at 1Hz)
   esphome::text_sensor::TextSensor *zone_state_sensor_{nullptr};
 
-  // Heatmap text sensor (base64 of encode_normalized(), gated by heatmap_interval_ms_)
-  esphome::text_sensor::TextSensor *heatmap_sensor_{nullptr};
-
   // Sensor presence inputs (references to raw hardware binary sensors)
   esphome::binary_sensor::BinarySensor *static_presence_sensor_{nullptr};
   esphome::binary_sensor::BinarySensor *motion_presence_sensor_{nullptr};
@@ -277,8 +280,7 @@ class EPPComponent : public esphome::Component {
   // Heatmap: per-cell activity accumulator (see epp_heatmap.h). Bumped every
   // frame in loop(), decayed on a timer, reset whenever the grid changes.
   epp::Heatmap heatmap_{};
-  uint32_t heatmap_interval_ms_ = 0;      // 0 = don't publish
-  uint32_t last_heatmap_publish_ms_ = 0;
+  uint32_t heatmap_interval_ms_ = 0;      // unused; retained for epp_set_pipeline arg BWC
   uint32_t last_heatmap_decay_ms_ = 0;
   uint32_t last_heatmap_nvs_ms_ = 0;
 

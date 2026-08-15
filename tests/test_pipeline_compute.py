@@ -122,14 +122,18 @@ class TestComputePipeline:
         )
         assert result["entity_target_interval"] == 1000
 
-    def test_heatmap_subscribers_enable_heatmap_interval(self) -> None:
+    def test_heatmap_interval_is_always_zero(self) -> None:
+        """Pull transport (issue #365): the heatmap is fetched on demand via
+        epp_get_heatmap, never published by the firmware timer, so
+        heatmap_subs no longer drives heatmap_interval — it stays 0
+        regardless of subscriber count."""
         from custom_components.eppgrid.device_manager._helpers import _compute_pipeline
 
         off = _compute_pipeline(config={}, raw_target_subs=0, grid_target_subs=0, heatmap_subs=0)
         assert off["heatmap_interval"] == 0
 
         on = _compute_pipeline(config={}, raw_target_subs=0, grid_target_subs=0, heatmap_subs=1)
-        assert on["heatmap_interval"] == 2000
+        assert on["heatmap_interval"] == 0
         # heatmap alone must not turn on the display/zone-state streams
         assert on["display_interval"] == 0
         assert on["zone_state_interval"] == 0

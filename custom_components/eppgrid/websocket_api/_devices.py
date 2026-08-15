@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 import json
 import math
+from collections.abc import Awaitable
 from collections.abc import Callable
 from typing import Any
 from typing import Literal
@@ -41,10 +40,6 @@ from . import _send_no_session
 from . import _validate_zone_slots
 from . import finite_float
 from ._durable_stream import start_durable_stream
-
-# Dense length of the firmware `Heatmap` text-sensor payload once decoded —
-# one byte per grid cell, row-major, normalized 0..255.
-_HEATMAP_CELL_COUNT = GRID_COLS * GRID_ROWS
 
 
 def _parse_position_csv(raw: str) -> tuple[float, float, str | None] | None:
@@ -720,6 +715,7 @@ async def _start_panel_stream(
     *,
     counter_attr: Literal["raw_target_subs", "grid_target_subs", "heatmap_subs"],
     make_on_state: Callable[[str, Any], Callable[[Any], None]],
+    poll_fn: Callable[[Any], Awaitable[Any]] | None = None,
 ) -> None:
     """Shared scaffolding for the panel's three live streams.
 
@@ -734,6 +730,9 @@ async def _start_panel_stream(
     A cached pre-upgrade panel bundle does not opt in, and reduces every message with
     `event.targets || []` — so it must keep seeing frames and nothing else
     (`protocol="frames_only"`).
+
+    `poll_fn`, when given, switches the stream to the POLL delivery seam (issue
+    #365, heatmap) — forwarded unchanged to `start_durable_stream`.
     """
     opted_in = bool(msg.get("availability"))
     await start_durable_stream(
@@ -745,6 +744,7 @@ async def _start_panel_stream(
         make_on_state=make_on_state,
         send_snapshot=False,
         protocol="full" if opted_in else "frames_only",
+        poll_fn=poll_fn,
     )
 
 
@@ -996,48 +996,23 @@ async def websocket_subscribe_grid_targets(
 # -- subscribe_heatmap --
 
 
-def _decode_heatmap_b64(value: str) -> list[int]:
-    """Decode the firmware Heatmap text sensor to a dense 400-length 0..255 list.
+def _make_heatmap_on_state(connection: websocket_api.ActiveConnection, msg_id: int) -> Callable[[Any], None]:
+    """Build the per-session callback that emits polled heatmap cells for the
+    subscribe_heatmap commands.
 
-    Returns an all-zero list of length `_HEATMAP_CELL_COUNT` for any input that
-    isn't a clean, correctly-sized base64 blob (empty, garbled, or the wrong
-    decoded length) rather than raising — the caller streams this straight to
-    the frontend, and a malformed one-off firmware emit must not crash the
-    subscription.
+    Under the poll transport (issue #365) the delivered item is the decoded cells
+    list from `DeviceConnection.async_fetch_heatmap` — not a device state — so
+    there is no entity-key filtering here. An empty firmware read already comes
+    back as an all-zero list (decoded in `async_fetch_heatmap`), so it is emitted
+    like any other frame and deterministically clears the overlay rather than
+    leaving stale heat on the panel/card.
     """
-    if not value:
-        return [0] * _HEATMAP_CELL_COUNT
-    try:
-        data = base64.b64decode(value, validate=True)
-    except (binascii.Error, ValueError):
-        return [0] * _HEATMAP_CELL_COUNT
-    if len(data) != _HEATMAP_CELL_COUNT:
-        return [0] * _HEATMAP_CELL_COUNT
-    return list(data)
-
-
-def _make_heatmap_on_state(
-    connection: websocket_api.ActiveConnection, msg_id: int, mac: str, device_conn: Any
-) -> Callable[[Any], None]:
-    """Build the per-session state callback that decodes and emits the
-    on-device activity heatmap for `subscribe_heatmap`.
-    """
-    key_map = _build_entity_key_map(device_conn.entities)
-    heatmap_key = key_map.get("Heatmap")
 
     @callback
-    def _on_state(state: Any) -> None:
-        if heatmap_key is None:
-            return
-        # Emit even on an empty state: `_decode_heatmap_b64("")` returns an
-        # all-zero frame, so an empty firmware emit deterministically CLEARS the
-        # overlay rather than being dropped (which would leave stale heat on the
-        # panel/card). Only the entity-key check gates emission.
-        if isinstance(state, TextSensorState) and state.key == heatmap_key:
-            cells = _decode_heatmap_b64(state.state)
-            connection.send_message(websocket_api.event_message(msg_id, {"cells": cells}))
+    def _on_cells(cells: Any) -> None:
+        connection.send_message(websocket_api.event_message(msg_id, {"cells": cells}))
 
-    return _on_state
+    return _on_cells
 
 
 @websocket_api.websocket_command(
@@ -1056,13 +1031,15 @@ async def websocket_subscribe_heatmap(
     msg: dict[str, Any],
     manager: Any,
 ) -> None:
-    """Stream the occupancy heatmap from a durable device stream."""
+    """Stream the occupancy heatmap from a durable device stream, polled from the
+    device (issue #365) rather than pushed via `subscribe_states`."""
     await _start_panel_stream(
         connection,
         msg,
         manager,
         counter_attr="heatmap_subs",
-        make_on_state=lambda mac, device_conn: _make_heatmap_on_state(connection, msg["id"], mac, device_conn),
+        make_on_state=lambda mac, device_conn: _make_heatmap_on_state(connection, msg["id"]),
+        poll_fn=lambda conn: conn.async_fetch_heatmap(),
     )
 
 

@@ -34,6 +34,7 @@ from custom_components.eppgrid.device_manager import ManagedDevice
 from custom_components.eppgrid.device_manager import _compare_firmware_version
 from custom_components.eppgrid.device_manager import _extract_host
 from custom_components.eppgrid.device_manager import _extract_mac
+from custom_components.eppgrid.device_manager._streams import StateStream
 from custom_components.eppgrid.storage import EPPGridStore
 
 # ---------------------------------------------------------------------------
@@ -5270,7 +5271,7 @@ class TestEventCallbacks:
         pipeline = mock_conn.async_execute_service.await_args.args[1]
         assert pipeline["display_interval"] == 200
         assert pipeline["zone_state_interval"] == 1000
-        assert pipeline["heatmap_interval"] == 2000
+        assert pipeline["heatmap_interval"] == 0
 
     async def test_push_config_temp_and_session_paths_push_the_same_pipeline(
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
@@ -11221,6 +11222,238 @@ class TestStateStreams:
         assert manager._stream_retry_tasks == {}
         assert all(t.done() for t in manager._pending_tasks), "a task escaped teardown"
 
+    # -- Poll-delivery seam (heatmap polls instead of push; issue #365) --------
+    #
+    # A stream carrying a `poll_fn` drives a periodic poller INSTEAD of a PUSH
+    # `subscribe_states` subscription. These tests construct a poll `StateStream`
+    # directly (the `async_add_state_stream(poll_fn=...)` plumbing arrives in a
+    # later task) and drive `_arm_stream`/`_disarm_stream`/`mark_closed`/`async_stop`
+    # against it. Everything else (session keep-alive, refcount, availability) is
+    # reused unchanged, so the existing PUSH tests above still pin that behaviour.
+
+    async def test_poll_stream_arms_with_a_poll_task_not_subscribe_states(self, hass, manager):
+        """Arming a poll stream starts a poll task and never calls subscribe_states."""
+        mac, conn = self._armable(manager)
+        seen_conn: list[Any] = []
+        emitted: list[Any] = []
+
+        async def poll_fn(c):
+            seen_conn.append(c)
+            return [1, 2, 3]
+
+        stream = StateStream(
+            mac=mac,
+            counter_attr="heatmap_subs",
+            make_on_state=lambda m, c: emitted.append,
+            on_availability=lambda a: None,
+            poll_fn=poll_fn,
+            poll_interval=0.01,
+        )
+        manager._state_streams.setdefault(mac, []).append(stream)
+
+        assert await manager._arm_stream(stream) is True
+        assert stream.poll_task is not None
+        assert stream.armed is True
+        # PUSH path untouched: an armed poll stream never subscribes to state frames.
+        conn.subscribe_states.assert_not_called()
+
+        await asyncio.sleep(0.03)  # let the poller tick a few times
+        assert emitted and emitted[0] == [1, 2, 3]
+        assert seen_conn[0] is conn  # poll_fn is fed the live connection
+
+        task = stream.poll_task
+        manager._disarm_stream(stream)
+        # Disarm cancels the poller and releases the session, and — unlike the PUSH
+        # path — does NOT call unsubscribe_states.
+        assert stream.poll_task is None
+        conn.unsubscribe_states.assert_not_called()
+        manager.release_session.assert_called_once_with(mac, conn)
+        await asyncio.gather(task, return_exceptions=True)
+        assert task.done()
+
+    async def test_poll_stream_skips_tick_on_none_or_error(self, hass, manager):
+        """A tick where poll_fn returns None (old fw) or raises skips cb; the loop continues."""
+        mac, _conn = self._armable(manager)
+        emitted: list[Any] = []
+        drained = asyncio.Event()
+        results: list[Any] = [None, "boom", [9]]
+
+        async def poll_fn(c):
+            if not results:
+                drained.set()  # the poller has run past every scripted tick
+                return None
+            item = results.pop(0)
+            if item == "boom":
+                raise RuntimeError("transient fetch error")
+            return item
+
+        stream = StateStream(
+            mac=mac,
+            counter_attr="heatmap_subs",
+            make_on_state=lambda m, c: emitted.append,
+            on_availability=lambda a: None,
+            poll_fn=poll_fn,
+            poll_interval=0.01,
+        )
+        manager._state_streams.setdefault(mac, []).append(stream)
+
+        assert await manager._arm_stream(stream) is True
+        # Bounded wait: a 4th poll_fn call (list now empty) sets the event, proving
+        # the loop ticked past the None and the raise to reach the successful [9].
+        await asyncio.wait_for(drained.wait(), timeout=2.0)
+
+        # Only the successful [9] tick called cb; the None and the raise were skipped.
+        assert emitted == [[9]]
+
+        task = stream.poll_task
+        manager._disarm_stream(stream)
+        await asyncio.gather(task, return_exceptions=True)
+
+    async def test_mark_closed_cancels_the_poll_task(self, hass, manager):
+        """Terminal teardown cancels the poller — async_stop Phase 3 reaches streams here."""
+        mac, _conn = self._armable(manager)
+
+        async def poll_fn(c):
+            return [1]
+
+        stream = StateStream(
+            mac=mac,
+            counter_attr="heatmap_subs",
+            make_on_state=lambda m, c: lambda item: None,
+            on_availability=lambda a: None,
+            poll_fn=poll_fn,
+            poll_interval=0.01,
+        )
+        manager._state_streams.setdefault(mac, []).append(stream)
+
+        assert await manager._arm_stream(stream) is True
+        task = stream.poll_task
+        assert task is not None
+
+        stream.mark_closed()
+
+        assert stream.closed is True
+        assert stream.poll_task is None
+        await asyncio.gather(task, return_exceptions=True)
+        assert task.done()
+
+    async def test_async_stop_cancels_poll_tasks_without_hanging(self, hass, manager):
+        """Phase 1 cancels forever-looping poll tasks BEFORE the drain, so stop can't hang."""
+        mac, _conn = self._armable(manager)
+        # Wide drain bound: on the success path the poll task is cancelled in Phase 1
+        # and async_stop returns at once; a regression that left it looping would make
+        # the Phase 2 drain wait out this whole window.
+        manager._stop_timeout = 10.0
+
+        async def poll_fn(c):
+            return [1]  # never None -> a poll task that loops until cancelled
+
+        stream = StateStream(
+            mac=mac,
+            counter_attr="heatmap_subs",
+            make_on_state=lambda m, c: lambda item: None,
+            on_availability=lambda a: None,
+            poll_fn=poll_fn,
+            poll_interval=0.01,
+        )
+        manager._state_streams.setdefault(mac, []).append(stream)
+
+        assert await manager._arm_stream(stream) is True
+        task = stream.poll_task
+        assert task is not None
+
+        # Bounded well under `_stop_timeout`: a hung drain blows this, not the timeout.
+        await asyncio.wait_for(manager.async_stop(), timeout=2.0)
+
+        assert task.done()
+        assert manager._state_streams == {}
+        assert all(t.done() for t in manager._pending_tasks), "a task escaped teardown"
+
+    async def test_poll_arm_rollback_releases_session_when_make_on_state_raises(self, hass, manager):
+        """A raise in the poll branch rolls back all-or-nothing, like the push path.
+
+        The poll branch calls `make_on_state` and spawns the poller — either can raise
+        (a `make_on_state` bug, task creation during shutdown). An unprotected failure
+        would leak the session `async_open_session` just took and leave the stream
+        half-armed, breaking `async_add_state_stream`'s all-or-nothing invariant. The
+        arm must return False, give the ref back via `release_session`, and leave the
+        stream unarmed.
+        """
+        mac, conn = self._armable(manager)
+
+        def make_on_state(_mac, _conn):
+            raise RuntimeError("callback build failed")
+
+        async def poll_fn(c):
+            return None  # never reached — make_on_state raises first
+
+        stream = StateStream(
+            mac=mac,
+            counter_attr="heatmap_subs",
+            make_on_state=make_on_state,
+            on_availability=lambda a: None,
+            poll_fn=poll_fn,
+            poll_interval=0.01,
+        )
+        manager._state_streams.setdefault(mac, []).append(stream)
+
+        assert await manager._arm_stream(stream) is False
+        # Left unarmed: no connection bound, no poller spawned.
+        assert stream.conn is None
+        assert stream.poll_task is None
+        assert stream.armed is False
+        # The session ref `async_open_session` took is given back, not pinned open.
+        manager.release_session.assert_called_once_with(mac, conn)
+        # No poller ever ran, so the push subscription path stays untouched too.
+        conn.subscribe_states.assert_not_called()
+
+    async def test_poll_emit_failure_does_not_kill_the_poller(self, hass, manager):
+        """A `cb(item)` raise skips that emit but keeps the poller alive for later ticks.
+
+        Unlike a `poll_fn` failure (which just skips a tick), an unguarded emit raise
+        would kill the poll task permanently with no re-arm. The emit is isolated to
+        match the PUSH path's per-callback `_fan_out`: the first delivery raises, and a
+        LATER successful delivery proves the loop survived and kept ticking.
+        """
+        mac, _conn = self._armable(manager)
+        recorded: list[Any] = []
+        recorded_after_raise = asyncio.Event()
+        calls = {"n": 0}
+
+        def cb(item):
+            calls["n"] += 1
+            if calls["n"] == 1:
+                raise RuntimeError("emit boom")  # first emit dies
+            recorded.append(item)
+            recorded_after_raise.set()  # a later emit succeeded -> poller survived
+
+        async def poll_fn(c):
+            return [1]
+
+        stream = StateStream(
+            mac=mac,
+            counter_attr="heatmap_subs",
+            make_on_state=lambda m, c: cb,
+            on_availability=lambda a: None,
+            poll_fn=poll_fn,
+            poll_interval=0.01,
+        )
+        manager._state_streams.setdefault(mac, []).append(stream)
+
+        assert await manager._arm_stream(stream) is True
+        task = stream.poll_task
+        assert task is not None
+
+        # Bounded wait: only a LATER successful emit fires this event, so reaching it
+        # proves the poller did not die on the first emit's raise.
+        await asyncio.wait_for(recorded_after_raise.wait(), timeout=2.0)
+        assert calls["n"] >= 2
+        assert recorded and recorded[0] == [1]
+        assert not task.done()  # still looping
+
+        manager._disarm_stream(stream)
+        await asyncio.gather(task, return_exceptions=True)
+
 
 class TestOverviewStreamRecovery:
     """The card's stream must survive a device flap — issue #334.
@@ -11391,7 +11624,7 @@ class TestOverviewStreamRecovery:
                 {"id": 2, "type": "eppgrid/overview/subscribe_heatmap", "device_id": "dev1"},
                 manager,
                 counter_attr="heatmap_subs",
-                make_on_state=lambda m, dc: _make_heatmap_on_state(connection, 2, m, dc),
+                make_on_state=lambda m, dc: _make_heatmap_on_state(connection, 2),
                 send_snapshot=False,
                 protocol="closed_only",
             )
@@ -11404,11 +11637,12 @@ class TestOverviewStreamRecovery:
             ]
 
         assert len(pipelines) == 1
-        # The final counts, not the mid-mount ones: grid drives display/zone_state,
-        # heatmap drives heatmap_interval — an inline push would carry heatmap 0.
+        # The final counts, not the mid-mount ones: grid drives display/zone_state.
+        # heatmap_interval no longer varies with heatmap_subs (pull transport,
+        # issue #365) — it stays 0 regardless of the heatmap subscription.
         assert pipelines[0]["display_interval"] == 200
         assert pipelines[0]["zone_state_interval"] == 1000
-        assert pipelines[0]["heatmap_interval"] == 2000
+        assert pipelines[0]["heatmap_interval"] == 0
 
         connection.subscriptions[1]()
         connection.subscriptions[2]()

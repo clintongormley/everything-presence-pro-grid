@@ -11,6 +11,7 @@ an OTA).
 from __future__ import annotations
 
 import logging
+from collections.abc import Awaitable
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
@@ -34,6 +35,14 @@ class StateStream:
     make_on_state: Callable[[str, Any], Callable[[Any], None]]
     on_availability: Callable[[bool], None]
     on_closed: Callable[[], None] | None = None
+    # Poll-source delivery (heatmap): when set, an armed stream drives a periodic
+    # poller (`DeviceManager._run_poll_stream`) instead of a PUSH `subscribe_states`
+    # subscription. `poll_fn` fetches one item per tick against the live connection;
+    # its returned callback (`make_on_state`) is fed each fetched item, not a device
+    # state. `poll_task` is the running poller, cancelled on disarm/close.
+    poll_fn: Callable[[Any], Awaitable[Any]] | None = None
+    poll_interval: float = 2.0
+    poll_task: Any | None = field(default=None, repr=False)
     conn: Any | None = None
     cb: Any | None = None
     closed: bool = False
@@ -123,5 +132,12 @@ class StateStream:
         if self.closed:
             return
         self.closed = True
+        # A poll-source stream's poller is the ONLY thing this terminal path stops:
+        # `async_stop` Phase 3 nulls conn/cb directly and calls `mark_closed`,
+        # bypassing `_disarm_stream`, so without this the poll task would loop on.
+        # `cancel()` is idempotent, so Phase 1's earlier cancel makes this a no-op.
+        if self.poll_task is not None:
+            self.poll_task.cancel()
+            self.poll_task = None
         self.notify(False)
         self.notify_closed()
