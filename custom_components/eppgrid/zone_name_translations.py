@@ -28,4 +28,10 @@ ZONE_NAMES: dict[str, dict[str, str]] = {
         "zone_rest_of_room_target_count": "Número de objetivos en zona Resto de la habitación",
         "zone_with_name_target_count": "Número de objetivos en zona {name}",
     },
+    "cs": {
+        "zone_rest_of_room": "Zóna Zbytek místnosti",
+        "zone_with_name": "Zóna {name}",
+        "zone_rest_of_room_target_count": "Počet cílů v zóně Zbytek místnosti",
+        "zone_with_name_target_count": "Počet cílů v zóně {name}",
+    },
 }

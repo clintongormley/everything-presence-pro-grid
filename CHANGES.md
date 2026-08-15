@@ -6,6 +6,12 @@ firmware downloads, see the
 
 ## v1.8.0 — unreleased
 
+### New features
+
+- **Czech translation.** The panel and dashboard card are now available in Czech
+    (čeština). Home Assistant shows them in Czech automatically when your Home
+    Assistant language is set to Czech.
+
 ### Fixes
 
 - **The panel opens reliably from the sidebar again.** Opening Everything

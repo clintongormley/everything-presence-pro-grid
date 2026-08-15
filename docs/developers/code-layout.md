@@ -151,8 +151,8 @@ Top-level files:
     formatter cache.
 - **`types.ts`, `constants.ts`, `styles.ts`** — shared types, SVG / catalog /
     threshold constants, HA theme tokens and reusable CSS fragments.
-- **`translations/en.json`, `es.json`** — user-facing strings for the panel,
-    nested keys.
+- **`translations/en.json`, `es.json`, `cs.json`** — user-facing strings for the
+    panel, nested keys.
 
 ### `components/`
 

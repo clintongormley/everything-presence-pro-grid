@@ -6,12 +6,32 @@ import json
 import re
 from pathlib import Path
 
+import pytest
+
 COMPONENT_DIR = Path(__file__).parent.parent / "custom_components" / "eppgrid"
+
+# Every shipped locale catalogue except the English source of truth, discovered
+# at collection time so a new translations/<locale>.json is covered with no new
+# test code.
+_LOCALE_FILES = sorted(p for p in (COMPONENT_DIR / "translations").glob("*.json") if p.stem != "en")
 
 
 def _load_strings() -> dict:
     with (COMPONENT_DIR / "strings.json").open(encoding="utf-8") as f:
         return json.load(f)
+
+
+def _flatten_keys(obj, prefix: str = "") -> set[str]:
+    """Flatten a nested translation dict into a set of dotted leaf-key paths."""
+    keys: set[str] = set()
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            path = f"{prefix}.{k}" if prefix else k
+            if isinstance(v, dict):
+                keys.update(_flatten_keys(v, path))
+            else:
+                keys.add(path)
+    return keys
 
 
 def _find_used_translation_keys() -> set[str]:
@@ -36,29 +56,25 @@ def test_all_exception_keys_resolve():
     )
 
 
-def test_spanish_translation_keys_match_english():
-    """custom_components/eppgrid/translations/es.json must have the same keys as strings.json."""
+def test_locale_translation_files_discovered():
+    """Guard the parametrized parity test below from silently skipping.
+
+    An empty `_LOCALE_FILES` would make `parametrize` yield zero cases (a SKIP,
+    not a failure), so a vanished/renamed locale dir would pass unnoticed.
+    """
+    assert _LOCALE_FILES, "no translations/<locale>.json discovered"
+
+
+@pytest.mark.parametrize("locale_path", _LOCALE_FILES, ids=lambda p: p.stem)
+def test_locale_translation_keys_match_english(locale_path):
+    """Every custom_components/eppgrid/translations/<locale>.json must have the same keys as en.json."""
     base = COMPONENT_DIR / "translations"
-    en = json.loads((base / "en.json").read_text(encoding="utf-8"))
-    es = json.loads((base / "es.json").read_text(encoding="utf-8"))
-
-    def flatten(obj, prefix=""):
-        keys = set()
-        if isinstance(obj, dict):
-            for k, v in obj.items():
-                path = f"{prefix}.{k}" if prefix else k
-                if isinstance(v, dict):
-                    keys.update(flatten(v, path))
-                else:
-                    keys.add(path)
-        return keys
-
-    en_keys = flatten(en)
-    es_keys = flatten(es)
-    missing = en_keys - es_keys
-    extra = es_keys - en_keys
-    assert not missing, f"Spanish translation missing keys: {sorted(missing)}"
-    assert not extra, f"Spanish translation has extra keys: {sorted(extra)}"
+    en_keys = _flatten_keys(json.loads((base / "en.json").read_text(encoding="utf-8")))
+    locale_keys = _flatten_keys(json.loads(locale_path.read_text(encoding="utf-8")))
+    missing = en_keys - locale_keys
+    extra = locale_keys - en_keys
+    assert not missing, f"{locale_path.name} translation missing keys: {sorted(missing)}"
+    assert not extra, f"{locale_path.name} translation has extra keys: {sorted(extra)}"
 
 
 def test_zone_name_translations_have_required_keys():

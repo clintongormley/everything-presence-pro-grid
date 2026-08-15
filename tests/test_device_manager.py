@@ -9006,6 +9006,15 @@ def test_zone_entity_names_resolve_spanish():
     )
 
 
+def test_zone_entity_names_resolve_czech():
+    """Czech locale returns Czech zone names with prefix translated, user name verbatim."""
+    from custom_components.eppgrid.device_manager import _resolve_zone_name
+
+    assert _resolve_zone_name("cs", index=1, zone_name="Kuchyně", target_count=False) == "Zóna Kuchyně"
+    assert _resolve_zone_name("cs-CZ", index=1, zone_name="Kuchyně", target_count=False) == "Zóna Kuchyně"
+    assert _resolve_zone_name("cs", index=0, zone_name=None, target_count=True) == "Počet cílů v zóně Zbytek místnosti"
+
+
 def test_resolve_zone_name_falls_back_to_english_for_unknown_language():
     """Unknown languages fall back to English."""
     from custom_components.eppgrid.device_manager import _resolve_zone_name
@@ -9030,6 +9039,12 @@ def test_resolve_zone_name_strips_redundant_zone_prefix():
 
     # Spanish: English default "Zone 1" → localized "Zona 1"
     assert _resolve_zone_name("es", index=3, zone_name="Zone 3", target_count=False) == "Zona 3"
+
+    # Czech: name starting with "Zóna" → no double prefix
+    assert _resolve_zone_name("cs", index=1, zone_name="Zóna Kuchyně", target_count=False) == "Zóna Kuchyně"
+
+    # Czech: English default "Zone 3" → localized "Zóna 3"
+    assert _resolve_zone_name("cs", index=3, zone_name="Zone 3", target_count=False) == "Zóna 3"
 
     # Names not starting with the prefix still get it
     assert _resolve_zone_name("en", index=1, zone_name="Kitchen", target_count=False) == "Zone Kitchen"

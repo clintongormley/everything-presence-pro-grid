@@ -90,7 +90,7 @@ everything-presence-pro-grid/
 │   │   │   └── overview-store.ts    # Module-level ref-counted store (one WS sub per device)
 │   │   ├── panel-mount-guard.ts     # Re-mount guard for HA frontend rebuilds
 │   │   ├── localize.ts              # IntlMessageFormat translation factory + language-availability detection
-│   │   ├── translations/            # en.json, es.json (nested string keys)
+│   │   ├── translations/            # en.json, es.json, cs.json (nested string keys)
 │   │   ├── types.ts                 # Shared type definitions
 │   │   ├── constants.ts             # SVG data, catalog, labels, thresholds
 │   │   ├── styles.ts                # HA theme tokens, reusable CSS fragments
@@ -945,14 +945,14 @@ The pre-push hook builds and tests both when firmware code changes.
 
 Tests live in `frontend/src/__tests__/` with happy-dom for DOM simulation.
 
-| Path                                                                                         | Covers                                                                                                                                                         |
-| -------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `panel-*.test.ts`                                                                            | Integration tests for the orchestrator (35+ files: navigation, render, configurations, settings, wizard, flasher, mount-guard, URL hash, reconnect, parity, …) |
-| `controllers/*.test.ts`                                                                      | DeviceController, GridStateController, TargetController, FlasherController                                                                                     |
-| `components/*.test.ts`                                                                       | All shared components                                                                                                                                          |
-| `lib/*.test.ts`                                                                              | Pure-function modules (grid, coordinates, perspective, zone-engine, settings-defaults, view-hash, …)                                                           |
-| `localize.test.ts`, `translations-coverage.test.ts`, `translations-spanish-coverage.test.ts` | i18n parity                                                                                                                                                    |
-| `strategy.test.ts`                                                                           | Lovelace dashboard strategy                                                                                                                                    |
+| Path                                                                                        | Covers                                                                                                                                                         |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `panel-*.test.ts`                                                                           | Integration tests for the orchestrator (35+ files: navigation, render, configurations, settings, wizard, flasher, mount-guard, URL hash, reconnect, parity, …) |
+| `controllers/*.test.ts`                                                                     | DeviceController, GridStateController, TargetController, FlasherController                                                                                     |
+| `components/*.test.ts`                                                                      | All shared components                                                                                                                                          |
+| `lib/*.test.ts`                                                                             | Pure-function modules (grid, coordinates, perspective, zone-engine, settings-defaults, view-hash, …)                                                           |
+| `localize.test.ts`, `translations-coverage.test.ts`, `translations-locale-coverage.test.ts` | i18n parity                                                                                                                                                    |
+| `strategy.test.ts`                                                                          | Lovelace dashboard strategy                                                                                                                                    |
 
 ### Python (pytest)
 

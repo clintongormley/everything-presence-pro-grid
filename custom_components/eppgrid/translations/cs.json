@@ -1,0 +1,91 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Everything Presence Pro Grid",
+        "description": "Nastavte kalibrační rozhraní a správu zařízení Everything Presence Pro Grid."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Již nastaveno. Je povolena pouze jedna konfigurace."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "sidebar_panel": "Zobrazit v postranním panelu",
+          "show_room_calibration_tutorial": "Zobrazit průvodce kalibrací místnosti"
+        }
+      }
+    },
+    "abort": {
+      "not_loaded": "Integrace Everything Presence Pro Grid není načtena. Opravte nebo znovu načtěte integraci a poté změňte její možnosti."
+    }
+  },
+  "exceptions": {
+    "integration_not_loaded": { "message": "Integrace není načtena" },
+    "device_not_available": { "message": "Zařízení není dostupné" },
+    "device_not_connected": { "message": "Zařízení není připojeno" },
+    "device_not_found": { "message": "Zařízení nenalezeno" },
+    "device_host_unknown": { "message": "Neznámý host zařízení" },
+    "connection_failed": { "message": "Připojení k zařízení se nezdařilo" },
+    "no_active_session": { "message": "Žádná aktivní relace — nejdříve zavolejte subscribe_device" },
+    "no_firmware_variant": { "message": "Žádná varianta firmwaru pro typ sítě: {network}" },
+    "ota_unsupported": { "message": "Zařízení nepodporuje aktualizaci OTA" },
+    "ota_in_progress": { "message": "Pro toto zařízení již probíhá aktualizace OTA" },
+    "ota_trigger_failed": { "message": "Nepodařilo se kontaktovat zařízení {mac}: {error}" },
+    "restart_button_unavailable": { "message": "Zařízení se před aktualizací nepodařilo restartovat: nebylo nalezeno žádné tlačítko pro restart zařízení." },
+    "device_reboot_timeout": { "message": "Zařízení se po restartu před aktualizací nevrátilo online." },
+    "firmware_not_published": { "message": "Firmware {version} zatím není k dispozici ke stažení. Vydání se pravděpodobně stále publikuje — zkuste to prosím za chvíli znovu." },
+    "build_flags_unavailable": { "message": "Parametry sestavení zařízení zatím nejsou k dispozici" },
+    "config_entry_not_found": { "message": "Konfigurační záznam nenalezen" },
+    "only_esphome_can_be_deleted": { "message": "Tímto příkazem lze smazat pouze konfigurační záznamy ESPHome" },
+    "not_epp_device": { "message": "Konfigurační záznam nepatří zařízení Everything Presence Pro" },
+    "service_not_available": { "message": "Služba {service} není dostupná" },
+    "firmware_behind": { "message": "Vyžadována aktualizace firmwaru" },
+    "firmware_ahead": { "message": "Vyžadována aktualizace integrace" },
+    "entity_not_found": { "message": "Entita nenalezena" },
+    "entity_not_on_device": { "message": "Entita nepatří tomuto zařízení" },
+    "too_many_configurations": { "message": "Nelze uložit více než {max} konfigurací — nejdříve jednu smažte" }
+  },
+  "entity": {
+    "binary_sensor": {
+      "device_group_occupancy": { "name": "Obsazenost" },
+      "device_group_static_presence": { "name": "Statická přítomnost" },
+      "device_group_motion_presence": { "name": "Pohybová přítomnost" },
+      "device_group_target_presence": { "name": "Přítomnost cíle" },
+      "device_group_mmwave_presence": { "name": "Přítomnost mmWave" }
+    }
+  },
+  "issues": {
+    "firmware_behind": {
+      "title": "Vyžadována aktualizace firmwaru zařízení {device_name}",
+      "fix_flow": {
+        "step": {
+          "confirm": {
+            "title": "Aktualizovat firmware zařízení {device_name}",
+            "description": "Integrace Everything Presence Pro Grid očekává firmware **{required_version}**, ale zařízení **{device_name}** používá **{current_version}**. Kliknutím na **Odeslat** nyní bezdrátově nainstalujete požadovaný firmware. Po dokončení nahrávání se zařízení restartuje — obvykle to trvá minutu až dvě. Dokud firmware neaktualizujete, nemusí některé funkce integrace fungovat správně."
+          },
+          "failed": {
+            "title": "Aktualizace se nezdařila",
+            "description": "Aktualizace firmwaru zařízení **{device_name}** se nedokončila. Nejpravděpodobnější příčina: zařízení se odpojilo nebo se stahování OTA během nahrávání přerušilo. Zkontrolujte zařízení a poté to kliknutím na **Odeslat** zkuste znovu.\n\nPodrobnosti: {error}"
+          }
+        },
+        "progress": {
+          "installing": "Instaluje se firmware **{required_version}** na zařízení **{device_name}**. Zařízení firmware bezdrátově stáhne, restartuje se a znovu se připojí. Obvykle to trvá minutu až dvě."
+        }
+      }
+    },
+    "firmware_ahead": {
+      "title": "Vyžadována aktualizace integrace pro zařízení {device_name}",
+      "description": "Zařízení {device_name} používá firmware **{current_version}**, ale integrace Everything Presence Pro Grid je připnutá na verzi **{required_version}**. Aktualizujte integraci přes HACS, aby mohla komunikovat s novějším firmwarem. Dokud integraci neaktualizujete, nemusí některé funkce fungovat správně."
+    }
+  },
+  "services": {
+    "clear_heatmap": {
+      "name": "Vymazat heatmapu",
+      "description": "Vymaže nahromaděnou heatmapu přítomnosti pro cílené senzory Everything Presence Pro Grid. Bez zadaného cíle vymaže všechny spravované senzory."
+    }
+  }
+}
