@@ -2113,7 +2113,7 @@ class DeviceManager:
             cb = stream.make_on_state(mac, conn)
             stream.conn = conn
             stream.cb = cb
-            stream.poll_task = self._spawn(self._run_poll_stream(stream, conn, cb))
+            stream.poll_task = self._spawn(self._run_poll_stream(stream, conn, cb, stream.poll_fn))
             stream.notify(True)
             return True
         try:
@@ -2142,7 +2142,13 @@ class DeviceManager:
         stream.notify(True)
         return True
 
-    async def _run_poll_stream(self, stream: StateStream, conn: DeviceConnection, cb: Callable[[Any], None]) -> None:
+    async def _run_poll_stream(
+        self,
+        stream: StateStream,
+        conn: DeviceConnection,
+        cb: Callable[[Any], None],
+        poll_fn: Callable[[Any], Awaitable[Any]],
+    ) -> None:
         """Delivery loop for a poll-source stream: fetch on an interval and feed cb.
 
         Runs until the stream is closed/disarmed (cancelled by _disarm_stream /
@@ -2150,11 +2156,6 @@ class DeviceManager:
         immediate first poll gives an instant overlay. poll_fn returning None
         (e.g. old firmware without the action) or raising just skips that tick.
         """
-        poll_fn = stream.poll_fn
-        if poll_fn is None:
-            # `_arm_stream` only spawns this for a poll-source stream; bind the
-            # fetcher to a local so the narrowing holds across the loop's awaits.
-            return
         try:
             while not stream.closed and stream.conn is conn:
                 try:
@@ -2162,7 +2163,7 @@ class DeviceManager:
                 except Exception as err:
                     # Transient (device flap, service unavailable on old fw): skip
                     # this tick and try again on the next one, keeping the loop alive.
-                    _LOGGER.debug("Heatmap poll fetch failed for %s: %s", stream.mac, err)
+                    _LOGGER.debug("Poll fetch failed for %s (%s): %s", stream.mac, stream.counter_attr, err)
                     item = None
                 if item is not None and not stream.closed:
                     cb(item)

@@ -376,6 +376,25 @@ class DeviceConnection:
             timeout=timeout,
         )
 
+    async def _fetch_response_json(self, service_name: str, *, timeout: float) -> Any | None:
+        """Call a response-returning action and return its parsed JSON, or None when
+        the device firmware doesn't expose the action. Raises RuntimeError if the
+        client is gone, and ValueError if the action returns no response_data.
+        Transient failures (timeout, connection error, malformed JSON) propagate.
+        """
+        if self._client is None:
+            raise RuntimeError("DeviceConnection is not connected")
+        svc = self._services.get(service_name)
+        if svc is None:
+            return None
+        resp = await asyncio.wait_for(
+            self._client.execute_service(svc, {}, return_response=True),
+            timeout=timeout,
+        )
+        if resp is None or not resp.response_data:
+            raise ValueError(f"{service_name} returned no response_data")
+        return json.loads(resp.response_data)
+
     async def async_fetch_build_flags(self, timeout: float = 10.0) -> dict[str, Any]:
         """Fetch build flags from the device via the get_build_flags action.
 
@@ -385,18 +404,9 @@ class DeviceConnection:
         connection error, malformed JSON, dropped client) propagate so the
         caller can decide whether to retry.
         """
-        if self._client is None:
-            raise RuntimeError("DeviceConnection is not connected")
-        svc = self._services.get("get_build_flags")
-        if svc is None:
+        decoded = await self._fetch_response_json("get_build_flags", timeout=timeout)
+        if decoded is None:
             return {}
-        resp = await asyncio.wait_for(
-            self._client.execute_service(svc, {}, return_response=True),
-            timeout=timeout,
-        )
-        if resp is None or not resp.response_data:
-            raise ValueError("get_build_flags returned no response_data")
-        decoded = json.loads(resp.response_data)
         if not isinstance(decoded, dict):
             raise ValueError(f"get_build_flags returned non-dict: {type(decoded).__name__}")
         return decoded
@@ -410,18 +420,9 @@ class DeviceConnection:
         poll loop to skip on. All transient failures (timeout, connection error,
         missing/garbled JSON) propagate so the poll loop can skip a single tick.
         """
-        if self._client is None:
-            raise RuntimeError("DeviceConnection is not connected")
-        svc = self._services.get("epp_get_heatmap")
-        if svc is None:
+        payload = await self._fetch_response_json("epp_get_heatmap", timeout=timeout)
+        if payload is None:
             return None
-        resp = await asyncio.wait_for(
-            self._client.execute_service(svc, {}, return_response=True),
-            timeout=timeout,
-        )
-        if resp is None or not resp.response_data:
-            raise ValueError("epp_get_heatmap returned no response_data")
-        payload = json.loads(resp.response_data)
         return _decode_heatmap_b64(payload["b64"])
 
     async def async_push_distance_override(self, override: dict[str, Any]) -> None:

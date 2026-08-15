@@ -11309,22 +11309,6 @@ class TestStateStreams:
         manager._disarm_stream(stream)
         await asyncio.gather(task, return_exceptions=True)
 
-    async def test_run_poll_stream_returns_immediately_without_a_poll_fn(self, hass, manager):
-        """Defensive: the loop only runs for a poll stream — no poll_fn, no ticks."""
-        mac, conn = self._armable(manager)
-        emitted: list[Any] = []
-        stream = StateStream(
-            mac=mac,
-            counter_attr="grid_target_subs",
-            make_on_state=lambda m, c: emitted.append,
-            on_availability=lambda a: None,
-        )
-
-        # Runs to completion at once (no poll_fn) and never touches cb.
-        await manager._run_poll_stream(stream, conn, emitted.append)
-
-        assert emitted == []
-
     async def test_mark_closed_cancels_the_poll_task(self, hass, manager):
         """Terminal teardown cancels the poller — async_stop Phase 3 reaches streams here."""
         mac, _conn = self._armable(manager)
@@ -11555,7 +11539,7 @@ class TestOverviewStreamRecovery:
                 {"id": 2, "type": "eppgrid/overview/subscribe_heatmap", "device_id": "dev1"},
                 manager,
                 counter_attr="heatmap_subs",
-                make_on_state=lambda m, dc: _make_heatmap_on_state(connection, 2, m, dc),
+                make_on_state=lambda m, dc: _make_heatmap_on_state(connection, 2),
                 send_snapshot=False,
                 protocol="closed_only",
             )

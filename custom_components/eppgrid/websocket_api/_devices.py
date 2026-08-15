@@ -996,9 +996,7 @@ async def websocket_subscribe_grid_targets(
 # -- subscribe_heatmap --
 
 
-def _make_heatmap_on_state(
-    connection: websocket_api.ActiveConnection, msg_id: int, mac: str, device_conn: Any
-) -> Callable[[Any], None]:
+def _make_heatmap_on_state(connection: websocket_api.ActiveConnection, msg_id: int) -> Callable[[Any], None]:
     """Build the per-session callback that emits polled heatmap cells for the
     subscribe_heatmap commands.
 
@@ -1040,7 +1038,7 @@ async def websocket_subscribe_heatmap(
         msg,
         manager,
         counter_attr="heatmap_subs",
-        make_on_state=lambda mac, device_conn: _make_heatmap_on_state(connection, msg["id"], mac, device_conn),
+        make_on_state=lambda mac, device_conn: _make_heatmap_on_state(connection, msg["id"]),
         poll_fn=lambda conn: conn.async_fetch_heatmap(),
     )
 

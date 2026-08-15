@@ -158,7 +158,7 @@ async def websocket_overview_subscribe_heatmap(
         msg,
         manager,
         counter_attr="heatmap_subs",
-        make_on_state=lambda mac, dc: _make_heatmap_on_state(connection, msg["id"], mac, dc),
+        make_on_state=lambda mac, dc: _make_heatmap_on_state(connection, msg["id"]),
         send_snapshot=False,
         protocol="closed_only",
         poll_fn=lambda conn: conn.async_fetch_heatmap(),
