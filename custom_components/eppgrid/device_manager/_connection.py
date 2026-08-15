@@ -401,6 +401,29 @@ class DeviceConnection:
             raise ValueError(f"get_build_flags returned non-dict: {type(decoded).__name__}")
         return decoded
 
+    async def async_fetch_heatmap(self, timeout: float = 10.0) -> list[int] | None:
+        """Pull the current heatmap via the epp_get_heatmap response action.
+
+        Returns a dense 400-int (0..255) list, or ``None`` when the device
+        firmware doesn't expose the action (old firmware / original EPP
+        firmware) — that result means "heatmap unavailable" and is safe for the
+        poll loop to skip on. All transient failures (timeout, connection error,
+        missing/garbled JSON) propagate so the poll loop can skip a single tick.
+        """
+        if self._client is None:
+            raise RuntimeError("DeviceConnection is not connected")
+        svc = self._services.get("epp_get_heatmap")
+        if svc is None:
+            return None
+        resp = await asyncio.wait_for(
+            self._client.execute_service(svc, {}, return_response=True),
+            timeout=timeout,
+        )
+        if resp is None or not resp.response_data:
+            raise ValueError("epp_get_heatmap returned no response_data")
+        payload = json.loads(resp.response_data)
+        return _decode_heatmap_b64(payload["b64"])
+
     async def async_push_distance_override(self, override: dict[str, Any]) -> None:
         """Push distance override to device without persisting.
 
