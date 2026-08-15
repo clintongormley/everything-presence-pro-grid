@@ -934,6 +934,25 @@ describe("FlasherController", () => {
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("success");
 		});
 
+		it("default startOta does not pin a source (backend prefers HA-local)", async () => {
+			await ctrl.startOta("AA:BB:CC:DD:EE:01");
+			expect(hass.callWS).toHaveBeenCalledWith({
+				type: "eppgrid/update_firmware",
+				mac: "AA:BB:CC:DD:EE:01",
+			});
+		});
+
+		it("startOta with source:github forces the GitHub-direct download", async () => {
+			// The "Download from GitHub" retry after HA-local serving handed the
+			// device an unreachable URL (e.g. HA in Docker).
+			await ctrl.startOta("AA:BB:CC:DD:EE:01", { source: "github" });
+			expect(hass.callWS).toHaveBeenCalledWith({
+				type: "eppgrid/update_firmware",
+				mac: "AA:BB:CC:DD:EE:01",
+				source: "github",
+			});
+		});
+
 		it("updating event with progress=0 arms the backstop, not a short timeout", async () => {
 			vi.useFakeTimers();
 			await ctrl.startOta("AA:BB:CC:DD:EE:01");

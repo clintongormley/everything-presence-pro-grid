@@ -1790,6 +1790,56 @@ describe("OTA inline rendering", () => {
 		expect((el as any)._errorPopoverMac).toBeNull();
 	});
 
+	it("_dispatchRetryOta forwards the github source when given", () => {
+		const el = createView({
+			flashableDevices: [updatableDevice],
+			otaStates: {
+				[updatableDevice.mac]: {
+					state: "error",
+					progress: null,
+					errorKey: "flasher.errors.ota_download_unreachable",
+				},
+			},
+		});
+		const events: CustomEvent[] = [];
+		el.addEventListener("retry-ota", (e) => events.push(e as CustomEvent));
+		(el as any)._dispatchRetryOta(updatableDevice, "github");
+
+		expect(events.length).toBe(1);
+		expect(events[0].detail).toEqual({
+			mac: updatableDevice.mac,
+			source: "github",
+		});
+	});
+
+	it("offers a GitHub-direct download only when the local download was unreachable", () => {
+		const makeView = (errorKey: string) =>
+			createView({
+				flashableDevices: [updatableDevice],
+				otaStates: {
+					[updatableDevice.mac]: { state: "error", progress: null, errorKey },
+				},
+			});
+
+		// Unreachable local download → a distinct "Download from GitHub" action.
+		let c = renderTo(
+			(makeView("flasher.errors.ota_download_unreachable") as any).render(),
+		);
+		let btns = Array.from(c.querySelectorAll(".ota-error epp-button"));
+		expect(
+			btns.some((b) => b.textContent?.includes("flasher.ota_download_github")),
+		).toBe(true);
+
+		// Any other error → Retry only, no GitHub button.
+		c = renderTo(
+			(makeView("flasher.errors.update_failed_generic") as any).render(),
+		);
+		btns = Array.from(c.querySelectorAll(".ota-error epp-button"));
+		expect(
+			btns.some((b) => b.textContent?.includes("flasher.ota_download_github")),
+		).toBe(false);
+	});
+
 	it("hides retry button for error state on unavailable device", () => {
 		const offlineEppDevice: FlashableDevice = {
 			mac: "AA:BB:CC:DD:EE:05",

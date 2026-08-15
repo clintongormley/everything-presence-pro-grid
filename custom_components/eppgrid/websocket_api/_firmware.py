@@ -57,6 +57,12 @@ _OTA_EMPTY_URL_RETRY_MAX = 3
 # answered, so it falls through to the generic key.
 _OTA_DOWNLOAD_FAIL_RE = re.compile(r"ESP_ERR_HTTP_CONNECT|ESP_ERR_NO_MEM|Code: -1(?!\d)")
 
+# ESPHome delivers coloured log lines; strip ANSI CSI escape sequences (colour
+# codes etc.) before parsing so terminal control codes never reach the panel
+# popover — and so a reset code sitting between `]` and `: ` can't defeat the
+# component-tag split below.
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+
 
 def _classify_ota_error_key(message: str) -> str:
     """Map a device OTA-error log line to the panel error_key it should raise."""
@@ -72,6 +78,11 @@ def _classify_ota_error_key(message: str) -> str:
     {
         vol.Required("type"): "eppgrid/update_firmware",
         vol.Required("mac"): MAC_SCHEMA,
+        # "auto" (default) prefers HA-local serving with a GitHub-direct
+        # fallback; "github" forces the GitHub-direct URL, skipping local
+        # serving — the panel's "Download from GitHub" retry for when HA
+        # advertised a URL the device can't reach (e.g. HA in Docker).
+        vol.Optional("source", default="auto"): vol.In(["auto", "github"]),
     }
 )
 @websocket_api.require_admin
@@ -85,7 +96,7 @@ async def websocket_update_firmware(
 ) -> None:
     """Trigger firmware OTA update — delegates to DeviceManager.async_trigger_ota."""
     try:
-        await manager.async_trigger_ota(msg["mac"])
+        await manager.async_trigger_ota(msg["mac"], prefer_local=msg.get("source", "auto") != "github")
     except HomeAssistantError as err:
         _send_exception(connection, msg["id"], "update_failed", err)
         return
@@ -313,7 +324,7 @@ async def websocket_subscribe_ota_progress(
         text = log_msg.message
         if isinstance(text, bytes):
             text = text.decode("utf-8", errors="replace")
-        text = text.rstrip()
+        text = _ANSI_RE.sub("", text).rstrip()
         if not text:
             return
         # Drop noise: recovery transitions and the vague unspecified flag.

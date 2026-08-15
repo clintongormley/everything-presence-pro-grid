@@ -528,6 +528,50 @@ class TestSubscribeOtaProgress:
             },
         )
 
+    async def test_strips_ansi_colour_codes_from_device_log_error(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """ESPHome delivers coloured log lines; the ANSI escape codes (and the
+        component tag they wrap) must be stripped so the popover shows a clean
+        message, not raw ``\\x1b[1;31m[E]...`` terminal codes. Here the reset code
+        sits between ``]`` and ``:``, which also defeats the tag split — so
+        without stripping first the whole raw line leaks through.
+        """
+        mock_dm = await setup_integration(hass, config_entry)
+        device_conn = make_mock_device_conn()
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+
+        on_log = device_conn.add_log_callback.call_args[0][0]
+        from aioesphomeapi import LogLevel as ESPLogLevel
+
+        log_msg = MagicMock()
+        log_msg.level = ESPLogLevel.LOG_LEVEL_ERROR
+        log_msg.message = (
+            "\x1b[1;31m[E][http_request.idf:139][update_task]\x1b[0m: HTTP Request failed: ESP_ERR_HTTP_CONNECT"
+        )
+        on_log(log_msg)
+
+        from homeassistant.components.websocket_api import event_message
+
+        connection.send_message.assert_called_once()
+        sent = connection.send_message.call_args[0][0]
+        assert sent == event_message(
+            1,
+            {
+                "state": "error",
+                "message": "HTTP Request failed: ESP_ERR_HTTP_CONNECT",
+                "error_key": "flasher.errors.ota_download_unreachable",
+            },
+        )
+
     async def test_ignores_non_http_request_log_errors(
         self,
         hass: HomeAssistant,

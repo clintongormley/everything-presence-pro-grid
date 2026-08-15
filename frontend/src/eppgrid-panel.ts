@@ -2779,9 +2779,13 @@ export class EPPGridPanel extends LitElement {
 					@retry-ota=${(e: CustomEvent) => {
 						// Clear the error AND start a fresh OTA — dismissing alone
 						// made "Retry" a two-click flow (the second click being the
-						// Update button that reappeared).
+						// Update button that reappeared). `source: "github"` (from
+						// the "Download from GitHub" action) forces the direct path.
 						this._flasherCtrl.dismissOtaError(e.detail.mac);
-						this._flasherCtrl.startOta(e.detail.mac);
+						this._flasherCtrl.startOta(
+							e.detail.mac,
+							e.detail.source ? { source: e.detail.source } : undefined,
+						);
 					}}
 				></epp-flasher-view>
 				${this._renderFlasherDeleteConfirmDialog()}

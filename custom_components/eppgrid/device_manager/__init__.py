@@ -803,7 +803,7 @@ class DeviceManager:
         except Exception:
             _LOGGER.warning("Failed to re-issue OTA manifest for %s", mac, exc_info=True)
 
-    async def async_trigger_ota(self, mac: str) -> None:
+    async def async_trigger_ota(self, mac: str, *, prefer_local: bool = True) -> None:
         """Trigger firmware OTA update on a device.
 
         Derives the firmware variant from cached build flags and constructs
@@ -817,6 +817,13 @@ class DeviceManager:
         `set_update_manifest` API action over a temporary connection. Shared
         by the panel's `update_firmware` websocket handler and the Repairs
         framework's `FirmwareUpdateRepairFlow`.
+
+        `prefer_local=False` skips HA-local serving entirely and hands the
+        device the GitHub-direct URL. This is the panel's "Download from
+        GitHub" retry: HA can advertise a URL the device can't reach (e.g. HA
+        in a Docker bridge network hands out its container IP), and HA has no
+        way to detect that device-side failure — so the user can force the
+        direct path, which an internet-connected device can always fetch.
 
         Raises HomeAssistantError with a translation_key on every failure
         path so callers can map the failure to a user-facing message.
@@ -869,19 +876,23 @@ class DeviceManager:
         # Prefer serving the firmware from HA over the LAN so a device with no
         # internet access can still update. Falls back to the GitHub-direct URL
         # (already in `manifest_url`) if HA has no device-reachable URL or the
-        # download/verify fails. Reused by async_resend_ota_manifest.
+        # download/verify fails. Reused by async_resend_ota_manifest. Skipped
+        # when the caller forces GitHub-direct (`prefer_local=False`).
         from ..const import OTA_MANIFEST_BASE_URL
 
-        dev = self.devices.get(mac)
-        local_url = await async_local_ota_manifest_url(
-            self._hass,
-            dev.host if dev else None,
-            OTA_MANIFEST_BASE_URL,
-            self._ota_variant(mac),
-        )
-        if local_url:
-            _LOGGER.info("OTA for %s will be served locally from HA (%s)", mac, local_url)
-            manifest_url = local_url
+        if prefer_local:
+            dev = self.devices.get(mac)
+            local_url = await async_local_ota_manifest_url(
+                self._hass,
+                dev.host if dev else None,
+                OTA_MANIFEST_BASE_URL,
+                self._ota_variant(mac),
+            )
+            if local_url:
+                _LOGGER.info("OTA for %s will be served locally from HA (%s)", mac, local_url)
+                manifest_url = local_url
+        else:
+            _LOGGER.info("OTA for %s will be served GitHub-direct (local serving bypassed by request)", mac)
         self._ota_manifest_urls[mac] = manifest_url
 
         async with lock:
