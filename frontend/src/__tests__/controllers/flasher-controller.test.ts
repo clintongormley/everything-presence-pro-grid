@@ -706,7 +706,13 @@ describe("FlasherController", () => {
 			expect(host.requestUpdate).toHaveBeenCalled();
 		});
 
-		it("transitions to error on timeout when progress stopped mid-update", async () => {
+		it("stays updating through the reboot window after progress (no premature connection_lost)", async () => {
+			// After the download the device reboots into the new firmware and its
+			// API connection goes silent for the reboot window. The backend
+			// confirms success off the durable firmware-version signal once the
+			// device returns, so the panel must NOT declare connection_lost during
+			// that silence — the old 10s watchdog is what made a successful update
+			// read as "failed".
 			vi.useFakeTimers();
 			await ctrl.startOta("AA:BB:CC:DD:EE:01");
 
@@ -714,6 +720,36 @@ describe("FlasherController", () => {
 			callback({ state: "updating", progress: 50 });
 
 			vi.advanceTimersByTime(10000);
+
+			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("updating");
+			vi.useRealTimers();
+		});
+
+		it("honors a late backend success after the reboot window", async () => {
+			vi.useFakeTimers();
+			await ctrl.startOta("AA:BB:CC:DD:EE:01");
+
+			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
+			callback({ state: "updating", progress: 50 });
+			// The reboot takes a while; the connection is silent, then the backend
+			// reports success once the device returns on the new version.
+			vi.advanceTimersByTime(45000);
+			callback({ state: "success", version: "0.90.0-alpha" });
+
+			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("success");
+			vi.useRealTimers();
+		});
+
+		it("transitions to error on timeout when progress stopped mid-update", async () => {
+			vi.useFakeTimers();
+			await ctrl.startOta("AA:BB:CC:DD:EE:01");
+
+			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
+			callback({ state: "updating", progress: 50 });
+
+			// Only after the full reboot-grace window (the device never came back)
+			// does the panel give up with connection_lost.
+			vi.advanceTimersByTime(180000);
 
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toEqual({
 				state: "error",
@@ -915,14 +951,20 @@ describe("FlasherController", () => {
 			vi.useRealTimers();
 		});
 
-		it("updating event with progress > 0 uses 10s timeout", async () => {
+		it("updating event with progress > 0 waits the reboot-grace window before connection_lost", async () => {
 			vi.useFakeTimers();
 			await ctrl.startOta("AA:BB:CC:DD:EE:01");
 
 			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
 			callback({ state: "updating", progress: 25 });
 
-			vi.advanceTimersByTime(10000);
+			// Still waiting just before the grace window elapses (the device is
+			// rebooting into the new firmware) — no premature failure.
+			vi.advanceTimersByTime(179000);
+			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("updating");
+
+			// Only once the full window passes with no terminal event does it give up.
+			vi.advanceTimersByTime(1000);
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("error");
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].errorKey).toBe(
 				"flasher.errors.connection_lost",
@@ -1332,7 +1374,7 @@ describe("FlasherController", () => {
 			callback({ state: "made_up_state" });
 
 			// Original watchdog should still fire — we're still updating.
-			vi.advanceTimersByTime(10000);
+			vi.advanceTimersByTime(180000);
 
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("error");
 			vi.useRealTimers();

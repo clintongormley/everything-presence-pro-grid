@@ -9,6 +9,15 @@ import type {
 } from "../types.js";
 import { UsbFlashFlow } from "./usb-flash-flow.js";
 
+// After the download the device reboots into the new firmware and its API
+// connection goes silent for the reboot window (boot + reconnect + version
+// report, ~15-60s, longer on a flaky link). The backend confirms success off
+// the durable firmware-version signal once the device returns, so the panel
+// must wait out that silence rather than declare `connection_lost`. A short
+// post-progress watchdog is exactly what made a successful update — especially
+// a fast local-served or concurrent "update all" — read as "failed".
+const OTA_REBOOT_GRACE_MS = 180_000;
+
 /**
  * Backend supplies the firmware base URL — validate before we splice it into
  * manifest URLs or hand it to the esp-web-flasher iframe.
@@ -217,7 +226,7 @@ export class FlasherController implements ReactiveController {
 					});
 					this._startOtaTimeout(
 						mac,
-						progress != null && progress > 0 ? 10000 : 15000,
+						progress != null && progress > 0 ? OTA_REBOOT_GRACE_MS : 15000,
 					);
 				}
 				break;

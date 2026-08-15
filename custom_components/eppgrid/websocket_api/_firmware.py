@@ -13,6 +13,7 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.event import async_call_later
 
+from ..const import FIRMWARE_VERSION
 from ..const import GRID_COLS
 from ..const import GRID_ROWS
 from . import _LOGGER
@@ -140,6 +141,7 @@ async def websocket_subscribe_ota_progress(
     url_retries = 0  # empty-URL-race re-issues fired so far (see _OTA_EMPTY_URL_*)
     done = False  # shared guard: once a terminal event is sent, stop
     timer_cancel: Any = None  # async_call_later cancel handle for the outer timeout
+    version_task: Any = None  # reboot-proof completion watch (firmware-version return)
 
     # Ensure device logs are subscribed so _on_log callbacks fire
     from aioesphomeapi import LogLevel as ESPLogLevel
@@ -206,6 +208,16 @@ async def websocket_subscribe_ota_progress(
             timer_cancel = None
 
     @callback
+    def _report_success(version: str | None) -> None:
+        """Send the terminal success event once (idempotent via `done`)."""
+        nonlocal done
+        if done:
+            return
+        done = True
+        _cancel_timer()
+        connection.send_message(websocket_api.event_message(msg["id"], {"state": "success", "version": version}))
+
+    @callback
     def _on_state(state: Any) -> None:
         nonlocal was_in_progress, ever_active, saw_progress, done
         from aioesphomeapi import UpdateState
@@ -246,17 +258,7 @@ async def websocket_subscribe_ota_progress(
             return  # baseline / pre-OTA — nothing to report
 
         if state.current_version and state.current_version == state.latest_version:
-            done = True
-            _cancel_timer()
-            connection.send_message(
-                websocket_api.event_message(
-                    msg["id"],
-                    {
-                        "state": "success",
-                        "version": state.current_version,
-                    },
-                )
-            )
+            _report_success(state.current_version)
         elif ever_active:
             # We saw in_progress=True earlier and now it's False with the
             # version unchanged. If no bytes ever downloaded (has_progress
@@ -408,6 +410,26 @@ async def websocket_subscribe_ota_progress(
         _send_no_session(connection, msg["id"])
         return
     device_conn.add_log_callback(_on_log)
+
+    async def _await_version_return() -> None:
+        """Report success once the device returns on the target firmware version.
+
+        The `_on_state` path only sees success when the terminal
+        `current==latest` UpdateState arrives before the flash reboot tears down
+        the connection it's subscribed to — a race the panel usually loses
+        (fast local serving, concurrent multi-device updates). This watches the
+        durable firmware-version entity instead, so completion is confirmed the
+        same way a page refresh does: the device coming back on the new version.
+        """
+        try:
+            reached = await manager.async_wait_for_firmware_version(mac, FIRMWARE_VERSION, _OTA_OUTER_TIMEOUT_S)
+        except Exception:
+            _LOGGER.debug("Firmware-version completion watch failed for %s", mac, exc_info=True)
+            return
+        if reached:
+            _report_success(FIRMWARE_VERSION)
+
+    version_task = hass.async_create_task(_await_version_return())
     connection.send_result(msg["id"])
 
     released = False
@@ -421,6 +443,8 @@ async def websocket_subscribe_ota_progress(
             return
         released = True
         _cancel_timer()
+        if version_task is not None:
+            version_task.cancel()
         device_conn.unsubscribe_states(_on_state)
         device_conn.remove_log_callback(_on_log)
         _release_watcher()

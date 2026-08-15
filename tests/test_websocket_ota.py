@@ -398,6 +398,42 @@ class TestSubscribeOtaProgress:
             in calls
         )
 
+    async def test_reports_success_when_device_returns_on_target_version(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """The OTA reboots the device, replacing the connection so ``_on_state``
+        can never deliver the terminal in_progress=False/current==latest state.
+        Success must still be reported off the durable firmware-version signal —
+        the same thing a page refresh reads — via the manager's
+        ``async_wait_for_firmware_version`` completion path.
+        """
+        from custom_components.eppgrid.const import FIRMWARE_VERSION
+
+        mock_dm = await setup_integration(hass, config_entry)
+        device_conn = make_mock_device_conn()
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+        # The device comes back on the target version after the flash reboot.
+        mock_dm.async_wait_for_firmware_version = AsyncMock(return_value=True)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+        # Progress flows, then the connection goes silent (the reboot): no
+        # terminal state is ever delivered on _on_state.
+        on_state = device_conn.subscribe_states.await_args[0][0]
+        on_state(make_update_state(in_progress=True, has_progress=True, progress=50.0, current_version="0.89.0"))
+        await hass.async_block_till_done()
+
+        from homeassistant.components.websocket_api import event_message
+
+        mock_dm.async_wait_for_firmware_version.assert_awaited()
+        calls = [c[0][0] for c in connection.send_message.call_args_list]
+        assert event_message(1, {"state": "success", "version": FIRMWARE_VERSION}) in calls
+
     async def test_unsubscribe_cleans_up(
         self,
         hass: HomeAssistant,

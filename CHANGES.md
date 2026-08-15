@@ -24,6 +24,13 @@ firmware downloads, see the
     (#365). The heatmap is now delivered directly to the panel/card and is no
     longer a Home Assistant sensor entity; the old entity is removed
     automatically after you update the firmware.
+- **Firmware updates no longer report false failures.** Updating several devices
+    at once — or a single device over a fast local network — could show "update
+    failed" or "connection lost" for devices that had in fact updated, with a
+    page refresh revealing them already on the new version. Each device reboots
+    while flashing, and the panel was giving up during that reboot. It now waits
+    for the device to come back on the new firmware before reporting success or
+    failure, so what you see matches what actually happened.
 
 ## v1.7.0 — 2026-08-07
 
