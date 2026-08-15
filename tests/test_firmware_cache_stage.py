@@ -279,3 +279,29 @@ async def test_stage_raises_on_commit_oserror(hass: HomeAssistant, tmp_path) -> 
         pytest.raises(firmware_cache.FirmwareStageError),
     ):
         await firmware_cache.async_stage_firmware(hass, _SOURCE, _VARIANT)
+
+
+async def test_local_url_composes_base_and_served_manifest(hass: HomeAssistant, cache_dir: str) -> None:
+    with (
+        patch.object(firmware_cache, "resolve_reachable_base_url", AsyncMock(return_value="http://192.168.1.10:8123")),
+        patch.object(firmware_cache, "async_stage_firmware", AsyncMock(return_value="/eppgrid_fw/abc123")),
+    ):
+        url = await firmware_cache.async_local_ota_manifest_url(hass, "192.168.1.50", _SOURCE, _VARIANT)
+    assert url == f"http://192.168.1.10:8123/eppgrid_fw/abc123/{_VARIANT}.json"
+
+
+async def test_local_url_none_when_no_reachable_base(hass: HomeAssistant) -> None:
+    with patch.object(firmware_cache, "resolve_reachable_base_url", AsyncMock(return_value=None)):
+        url = await firmware_cache.async_local_ota_manifest_url(hass, "192.168.1.50", _SOURCE, _VARIANT)
+    assert url is None
+
+
+async def test_local_url_none_when_staging_fails(hass: HomeAssistant) -> None:
+    with (
+        patch.object(firmware_cache, "resolve_reachable_base_url", AsyncMock(return_value="http://192.168.1.10:8123")),
+        patch.object(
+            firmware_cache, "async_stage_firmware", AsyncMock(side_effect=firmware_cache.FirmwareStageError("boom"))
+        ),
+    ):
+        url = await firmware_cache.async_local_ota_manifest_url(hass, "192.168.1.50", _SOURCE, _VARIANT)
+    assert url is None

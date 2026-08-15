@@ -184,3 +184,19 @@ async def async_stage_firmware(hass: HomeAssistant, source_base: str, variant: s
     except OSError as err:
         raise FirmwareStageError(f"failed to write staged firmware: {err}") from err
     return f"{FW_CACHE_URL_PREFIX}/{token}"
+
+
+async def async_local_ota_manifest_url(
+    hass: HomeAssistant, device_host: str | None, source_base: str, variant: str
+) -> str | None:
+    """Return an HA-local manifest URL the device can fetch, or None to fall back
+    to GitHub-direct. Fails soft: any resolution/staging error returns None."""
+    base = await resolve_reachable_base_url(hass, device_host)
+    if base is None:
+        return None
+    try:
+        served = await async_stage_firmware(hass, source_base, variant)
+    except FirmwareStageError as err:
+        _LOGGER.warning("Local firmware staging failed (%s); using GitHub-direct", err)
+        return None
+    return f"{base}{served}/{variant}.json"
