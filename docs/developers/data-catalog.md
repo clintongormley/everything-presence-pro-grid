@@ -587,9 +587,9 @@ code `no_session`, translation key `no_active_session`.
     it. Log-derived failures use `flasher.errors.ota_device_error`, whose
     translation interpolates the cleaned device text via the `{message}`
     placeholder. Download/connect failures (`Code: -1`, `ESP_ERR_HTTP_CONNECT`,
-    `ESP_ERR_NO_MEM` — the device out of contiguous heap for the TLS handshake)
-    instead use `flasher.errors.ota_low_memory`, which explains the likely cause
-    and the reboot-and-retry remedy.
+    `ESP_ERR_NO_MEM` — the device couldn't reach the download server) instead
+    use `flasher.errors.ota_download_unreachable`, which points the user at
+    network reachability between the device and Home Assistant.
 
 The handler also monitors device log messages for `http_request.ota` and
 `http_request.update` errors, forwarding the actual error message immediately.
