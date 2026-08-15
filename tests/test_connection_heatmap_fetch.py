@@ -71,6 +71,16 @@ async def test_async_fetch_heatmap_raises_on_empty_response_data():
         await conn.async_fetch_heatmap()
 
 
+async def test_async_fetch_heatmap_raises_on_none_response():
+    """resp is None (e.g. malformed/dropped reply) is the other half of the
+    `resp is None or not resp.response_data` guard — must raise, not return
+    an empty/zeroed frame silently."""
+    conn = _make_conn_with_service("epp_get_heatmap")
+    conn._client.execute_service.return_value = None
+    with pytest.raises(ValueError):
+        await conn.async_fetch_heatmap()
+
+
 async def test_async_fetch_heatmap_propagates_timeout():
     conn = _make_conn_with_service("epp_get_heatmap")
     conn._client.execute_service.side_effect = asyncio.TimeoutError
@@ -81,7 +91,17 @@ async def test_async_fetch_heatmap_propagates_timeout():
 async def test_async_fetch_heatmap_raises_on_bad_json():
     conn = _make_conn_with_service("epp_get_heatmap")
     conn._client.execute_service.return_value = _resp(b"not json")
-    with pytest.raises(Exception):  # noqa: B017 -- json.loads raises JSONDecodeError; asserting the base class is the point
+    with pytest.raises(json.JSONDecodeError):
+        await conn.async_fetch_heatmap()
+
+
+async def test_async_fetch_heatmap_raises_on_missing_b64_key():
+    """Valid JSON without a `b64` key must raise (KeyError), not silently
+    decode-to-zeros -- guards against a future `payload.get("b64")` refactor
+    swallowing a malformed/mismatched firmware payload."""
+    conn = _make_conn_with_service("epp_get_heatmap")
+    conn._client.execute_service.return_value = _resp(json.dumps({}).encode())
+    with pytest.raises(KeyError):
         await conn.async_fetch_heatmap()
 
 
