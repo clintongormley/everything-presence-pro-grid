@@ -467,7 +467,7 @@
 			"ota_failed_version_unchanged": "Aktualizace se nezdařila — verze firmwaru se nezměnila",
 			"ota_timeout": "Vypršel časový limit aktualizace OTA",
 			"ota_device_error": "Aktualizace se nezdařila: {message}",
-			"ota_low_memory": "Zařízení nemohlo stáhnout firmware — nejpravděpodobněji má nedostatek paměti ({message}). Před každým pokusem se restartuje, aby uvolnilo paměť; pokud aktualizace stále selhávají, vypněte na tomto zařízení Bluetooth proxy a zkuste to znovu.",
+			"ota_download_unreachable": "Zařízení nemohlo stáhnout firmware — nepodařilo se mu spojit se serverem pro stahování ({message}). Zkontrolujte, zda toto zařízení může ve vaší síti komunikovat s Home Assistantem; některé konfigurace blokují zařízením IoT přístup k hostiteli Home Assistant.",
 			"flash_cancelled": "Nahrávání zrušeno",
 			"timeout": "Časový limit vypršel",
 			"aborted": "Zrušeno",
