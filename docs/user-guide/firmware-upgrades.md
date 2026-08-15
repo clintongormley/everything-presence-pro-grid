@@ -84,6 +84,9 @@ The panel reports a specific error and offers Retry. Common causes:
 - **Connection lost during update.** The device fell off the network mid-flash.
     Power-cycle and retry. If it keeps happening, check the Wi-Fi signal at the
     device or switch to the Ethernet variant.
+- **Update interrupted.** The device came back on its previous firmware — it
+    likely lost power or disconnected mid-update, so the flash didn't take. Keep
+    it powered and connected to your network, then try the update again.
 - **Update timed out.** The device didn't finish within the expected window.
     Usually a one-off; retry.
 - **Update failed.** The device refused the update or the flash partition is

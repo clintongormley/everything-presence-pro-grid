@@ -469,6 +469,7 @@
 			"ota_device_error": "Aktualizace se nezdařila: {message}",
 			"ota_download_unreachable": "Zařízení nemohlo stáhnout firmware z Home Assistanta — nepodařilo se mu spojit se serverem pro stahování ({message}). Zkuste „Stáhnout z GitHubu“ nebo zkontrolujte, že zařízení dosáhne na Home Assistant ve vaší síti.",
 			"ota_download_unreachable_direct": "Zařízení nemohlo stáhnout firmware — nepodařilo se mu spojit se serverem pro stahování ({message}). Stahuje přímo z GitHubu, zkontrolujte proto přístup tohoto zařízení k internetu.",
+			"ota_interrupted": "Aktualizace byla přerušena — zařízení se vrátilo k předchozímu firmwaru. Ponechte ho zapnuté a připojené a zkuste aktualizaci znovu.",
 			"flash_cancelled": "Nahrávání zrušeno",
 			"timeout": "Časový limit vypršel",
 			"aborted": "Zrušeno",

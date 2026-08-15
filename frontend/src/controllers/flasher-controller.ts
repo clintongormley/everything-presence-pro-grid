@@ -9,8 +9,8 @@ import type {
 } from "../types.js";
 import { UsbFlashFlow } from "./usb-flash-flow.js";
 
-// The backend is the OTA completion authority: within its ~5-minute window
-// (`_OTA_OUTER_TIMEOUT_S` = 300s) it sends a terminal `success` (the device
+// The backend is the OTA completion authority: within its ~4-minute window
+// (`_OTA_OUTER_TIMEOUT_S` = 240s) it sends a terminal `success` (the device
 // returned on the new firmware, confirmed off the durable firmware-version
 // signal) or `error`/timeout. During the flash reboot the device's API
 // connection goes silent and it shows `available: false` — both expected, not
@@ -19,8 +19,10 @@ import { UsbFlashFlow } from "./usb-flash-flow.js";
 // goes *entirely* silent (a genuine transport/WS drop). It is deliberately
 // longer than the backend window so the backend's verdict always lands first —
 // a shorter local watchdog is exactly what made a successful update (especially
-// a fast local-served or concurrent "update all") read as "failed".
-export const OTA_BACKSTOP_MS = 330_000;
+// a fast local-served or concurrent "update all") read as "failed". The backend
+// outer timeout is now 240s (was 300s), and it fast-fails an interrupted flash
+// sooner still; this backstop stays deliberately longer than that 240s window.
+export const OTA_BACKSTOP_MS = 270_000;
 
 /**
  * Backend supplies the firmware base URL — validate before we splice it into

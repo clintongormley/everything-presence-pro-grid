@@ -469,6 +469,7 @@
 			"ota_device_error": "Error en la actualización: {message}",
 			"ota_download_unreachable": "El dispositivo no pudo descargar el firmware desde Home Assistant: no pudo conectarse al servidor de descargas ({message}). Prueba «Descargar desde GitHub» o comprueba que el dispositivo puede acceder a Home Assistant en tu red.",
 			"ota_download_unreachable_direct": "El dispositivo no pudo descargar el firmware: no pudo conectarse al servidor de descargas ({message}). Descarga directamente desde GitHub, así que comprueba el acceso a internet de este dispositivo.",
+			"ota_interrupted": "La actualización se interrumpió: el dispositivo volvió a su firmware anterior. Mantenlo encendido y conectado e inténtalo de nuevo.",
 			"flash_cancelled": "Instalación cancelada",
 			"timeout": "Tiempo de espera agotado",
 			"aborted": "Cancelado",

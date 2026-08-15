@@ -469,6 +469,7 @@
 			"ota_device_error": "Update failed: {message}",
 			"ota_download_unreachable": "The device couldn't download the firmware from Home Assistant — it couldn't reach the download server ({message}). Try \"Download from GitHub\", or check that the device can reach Home Assistant on your network.",
 			"ota_download_unreachable_direct": "The device couldn't download the firmware — it couldn't reach the download server ({message}). It downloads directly from GitHub, so check this device's internet access.",
+			"ota_interrupted": "The update was interrupted — the device came back on its previous firmware. Keep it powered and connected, then try the update again.",
 			"flash_cancelled": "Flash cancelled",
 			"timeout": "Timeout",
 			"aborted": "Cancelled",

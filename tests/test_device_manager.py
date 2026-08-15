@@ -3340,6 +3340,133 @@ class TestFirmwareVersion:
 
 
 # ---------------------------------------------------------------------------
+# async_wait_for_ota_outcome tests
+# ---------------------------------------------------------------------------
+
+
+class TestAsyncWaitForOtaOutcome:
+    """Classify an OTA outcome off the durable firmware-version signal.
+
+    All cases drive a fake clock (sleep advances it, monotonic reads it) so no
+    real time passes, and feed a scripted sequence of firmware-version reads.
+    """
+
+    def _mgr_with_device(self, manager):
+        from unittest.mock import MagicMock
+
+        dev = MagicMock()
+        dev.device_id = "dev1"
+        manager.devices["AA:BB:CC:DD:EE:FF"] = dev
+        return manager
+
+    async def _run(self, manager, versions, download_started, *, abort_stable_s=10.0, timeout_s=1000.0):
+        from unittest.mock import Mock
+        from unittest.mock import patch
+
+        import custom_components.eppgrid.device_manager as dm_mod
+
+        clock = {"t": 0.0}
+
+        async def fake_sleep(s):
+            clock["t"] += s
+
+        manager.read_firmware_version = Mock(side_effect=versions)
+        with (
+            patch.object(dm_mod.time, "monotonic", lambda: clock["t"]),
+            patch.object(dm_mod.asyncio, "sleep", fake_sleep),
+        ):
+            return await manager.async_wait_for_ota_outcome(
+                "AA:BB:CC:DD:EE:FF",
+                "1.9.0",
+                timeout_s,
+                abort_stable_s,
+                download_started,
+            )
+
+    async def test_success(self, manager: DeviceManager) -> None:
+        """Device comes back on the target version → 'success'."""
+        self._mgr_with_device(manager)
+        outcome = await self._run(manager, ["1.9.0"], lambda: True)
+        assert outcome == "success"
+
+    async def test_aborted_when_old_version_stays_stable(self, manager: DeviceManager) -> None:
+        """After download started, the device goes offline then settles back on the
+        OLD version and stays there continuously past ``abort_stable_s`` → 'aborted'.
+
+        Fake clock steps 2s/poll: arm@old, offline@t2 sets went_offline,
+        old@t4 sets old_stable_since=4, old@t6 (2s elapsed), old@t8 (4s > 3s) →
+        aborted.
+        """
+        self._mgr_with_device(manager)
+        outcome = await self._run(
+            manager,
+            ["1.8.0", None, "1.8.0", "1.8.0", "1.8.0"],
+            lambda: True,
+            abort_stable_s=3.0,
+        )
+        assert outcome == "aborted"
+
+    async def test_single_offline_blip_does_not_abort(self, manager: DeviceManager) -> None:
+        """A lone old-version reading between two offline reads (a between-chunk
+        blip during the blocking fetch) resets the stable-old clock, so it never
+        accumulates toward an abort — the device then returns on target → 'success'.
+        This is the critical debounce guard for a still-downloading device.
+        """
+        self._mgr_with_device(manager)
+        outcome = await self._run(
+            manager,
+            ["1.8.0", None, "1.8.0", None, "1.9.0"],
+            lambda: True,
+            abort_stable_s=5.0,
+        )
+        assert outcome == "success"
+
+    async def test_pre_ota_reboot_not_mistaken_for_abort(self, manager: DeviceManager) -> None:
+        """The pre-OTA reboot (offline→back-on-old BEFORE download starts) must
+        not arm the abort detection, so a healthy update still reports 'success'.
+        """
+        self._mgr_with_device(manager)
+        calls = {"n": 0}
+
+        def started():
+            calls["n"] += 1
+            # Stays False through the pre-OTA reboot cycle; flips True only after.
+            return calls["n"] > 3
+
+        # old, pre-OTA-reboot offline, back-old, (armed) old, apply-reboot offline, new
+        versions = ["1.8.0", None, "1.8.0", "1.8.0", None, "1.9.0"]
+        outcome = await self._run(manager, versions, started)
+        assert outcome == "success"
+
+    async def test_timeout(self, manager: DeviceManager) -> None:
+        """None of success/aborted before timeout_s elapses → 'timeout'.
+
+        Online on the old version forever WITHOUT ever going offline must NOT
+        abort — ``went_offline`` stays False, so the stable-old window is never
+        consulted and the outer timer owns the outcome.
+        """
+        self._mgr_with_device(manager)
+        outcome = await self._run(
+            manager,
+            ["1.8.0"] * 10,
+            lambda: True,
+            timeout_s=6.0,
+        )
+        assert outcome == "timeout"
+
+    async def test_no_device_returns_timeout(self, manager: DeviceManager) -> None:
+        """Unknown MAC (no device / no device_id) → 'timeout' (never watched)."""
+        outcome = await manager.async_wait_for_ota_outcome(
+            "AA:BB:CC:DD:EE:FF",
+            "1.9.0",
+            1000.0,
+            90.0,
+            lambda: True,
+        )
+        assert outcome == "timeout"
+
+
+# ---------------------------------------------------------------------------
 # Push config tests
 # ---------------------------------------------------------------------------
 
