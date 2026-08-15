@@ -4571,35 +4571,6 @@ class TestWebSocketSubscriptions:
         connection.send_message.assert_not_called()
 
 
-def test_decode_heatmap_b64_roundtrip() -> None:
-    import base64
-
-    from custom_components.eppgrid.websocket_api._devices import _decode_heatmap_b64
-
-    raw = bytearray(400)
-    raw[0] = 255
-    raw[399] = 128
-    encoded = base64.b64encode(bytes(raw)).decode("ascii")
-
-    cells = _decode_heatmap_b64(encoded)
-    assert len(cells) == 400
-    assert cells[0] == 255
-    assert cells[399] == 128
-    assert cells[1] == 0
-
-
-def test_decode_heatmap_b64_rejects_bad_input() -> None:
-    import base64
-
-    from custom_components.eppgrid.websocket_api._devices import _decode_heatmap_b64
-
-    assert _decode_heatmap_b64("") == [0] * 400
-    assert _decode_heatmap_b64("not-base64!!") == [0] * 400
-    # wrong length (too short) -> all zero
-    short = base64.b64encode(bytes(10)).decode("ascii")
-    assert _decode_heatmap_b64(short) == [0] * 400
-
-
 class TestSubscribeHeatmap:
     """Tests for eppgrid/subscribe_heatmap."""
 

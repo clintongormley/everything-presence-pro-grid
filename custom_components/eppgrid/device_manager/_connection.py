@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import contextlib
 import json
 import logging
@@ -19,6 +20,7 @@ from homeassistant.exceptions import HomeAssistantError
 from ..const import DEFAULT_PORT
 from ..const import GRID_CELL_SIZE_MM
 from ..const import GRID_COLS
+from ..const import GRID_ROWS
 from ..const import ZONES_JSON_MAX
 from ._helpers import _ESPHOME_TO_PYTHON_LOG
 from ._helpers import _expand_zone_slot
@@ -29,6 +31,28 @@ from ._helpers import is_valid_zone_slots_shape
 
 _LOGGER = logging.getLogger(__name__)
 _DEVICE_LOGGER = logging.getLogger(f"{__name__}.device_logs")
+
+# Dense length of the firmware heatmap payload once decoded — one byte per grid
+# cell, row-major, normalized 0..255.
+_HEATMAP_CELL_COUNT = GRID_COLS * GRID_ROWS
+
+
+def _decode_heatmap_b64(value: str) -> list[int]:
+    """Decode a firmware heatmap base64 payload to a dense 400-length 0..255 list.
+
+    Any empty / garbled / wrong-length input yields an all-zero frame rather than
+    raising, so a transient bad read never breaks the poll loop or strands the
+    overlay.
+    """
+    if not value:
+        return [0] * _HEATMAP_CELL_COUNT
+    try:
+        data = base64.b64decode(value, validate=True)
+    except (binascii.Error, ValueError):
+        return [0] * _HEATMAP_CELL_COUNT
+    if len(data) != _HEATMAP_CELL_COUNT:
+        return [0] * _HEATMAP_CELL_COUNT
+    return list(data)
 
 
 def _fan_out(callbacks: list[Any], invoke: Callable[[Any], None], label: str) -> None:
