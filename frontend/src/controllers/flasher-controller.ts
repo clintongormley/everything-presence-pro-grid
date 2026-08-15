@@ -9,14 +9,18 @@ import type {
 } from "../types.js";
 import { UsbFlashFlow } from "./usb-flash-flow.js";
 
-// After the download the device reboots into the new firmware and its API
-// connection goes silent for the reboot window (boot + reconnect + version
-// report, ~15-60s, longer on a flaky link). The backend confirms success off
-// the durable firmware-version signal once the device returns, so the panel
-// must wait out that silence rather than declare `connection_lost`. A short
-// post-progress watchdog is exactly what made a successful update — especially
-// a fast local-served or concurrent "update all" — read as "failed".
-const OTA_REBOOT_GRACE_MS = 180_000;
+// The backend is the OTA completion authority: within its ~5-minute window
+// (`_OTA_OUTER_TIMEOUT_S` = 300s) it sends a terminal `success` (the device
+// returned on the new firmware, confirmed off the durable firmware-version
+// signal) or `error`/timeout. During the flash reboot the device's API
+// connection goes silent and it shows `available: false` — both expected, not
+// failures. So the panel must NOT declare its own failure while an update is in
+// flight; it defers to the backend and only trips this backstop if the backend
+// goes *entirely* silent (a genuine transport/WS drop). It is deliberately
+// longer than the backend window so the backend's verdict always lands first —
+// a shorter local watchdog is exactly what made a successful update (especially
+// a fast local-served or concurrent "update all") read as "failed".
+export const OTA_BACKSTOP_MS = 330_000;
 
 /**
  * Backend supplies the firmware base URL — validate before we splice it into
@@ -189,9 +193,9 @@ export class FlasherController implements ReactiveController {
 			// Never orphan a previous subscription's unsub for this mac.
 			this._unsubOta(mac);
 			this._otaUnsubs[mac] = unsub;
-			// Start initial timeout — if no progress events arrive at all,
-			// the device rejected the update or something went wrong
-			this._startOtaTimeout(mac, 15000);
+			// Backstop only — the backend drives the terminal state. This trips
+			// solely if the backend goes entirely silent (see OTA_BACKSTOP_MS).
+			this._startOtaTimeout(mac, OTA_BACKSTOP_MS);
 		} catch {
 			if (this._otaGen !== token) return;
 			this._setOtaState(mac, {
@@ -224,10 +228,8 @@ export class FlasherController implements ReactiveController {
 						progress,
 						errorKey: null,
 					});
-					this._startOtaTimeout(
-						mac,
-						progress != null && progress > 0 ? OTA_REBOOT_GRACE_MS : 15000,
-					);
+					// Re-arm the backstop only; the backend owns the verdict.
+					this._startOtaTimeout(mac, OTA_BACKSTOP_MS);
 				}
 				break;
 			}
@@ -436,34 +438,16 @@ export class FlasherController implements ReactiveController {
 		this.loading = false;
 		this.onDeviceListChanged?.();
 		this._host.requestUpdate();
-		this._checkOtaDevicesOffline();
-	}
-
-	private _checkOtaDevicesOffline(): void {
-		for (const [mac, ota] of Object.entries(this.otaStates)) {
-			if (ota.state !== "updating") continue;
-			// Only treat an offline device as a failed update once the OTA has
-			// actually started downloading (progress > 0). startOta sets the
-			// optimistic "updating"/progress:0 on click, and the backend then
-			// reboots the device to free heap for the TLS handshake BEFORE the
-			// download begins — during that reboot the device is legitimately
-			// offline. Without this gate that expected reboot is misreported as
-			// "device went offline during update". Mirrors the backend's
-			// `ever_active` latch (websocket_api/_firmware.py); a device that
-			// never starts is still caught by the 15s watchdog timeout.
-			if (ota.progress == null || ota.progress <= 0) continue;
-			const device = this.flashableDevices.find((d) => d.mac === mac);
-			if (device && !device.available) {
-				this._setOtaState(mac, {
-					state: "error",
-					progress: null,
-					errorKey: "flasher.errors.device_offline",
-				});
-				this._unsubOta(mac);
-				this._resetOtaTimeout(mac);
-				this._host.requestUpdate();
-			}
-		}
+		// NOTE: a device that is mid-OTA and shows `available: false` is NOT
+		// treated as a failure here. Every OTA reboots the device (to free heap
+		// before the download, and again after flashing), so it always goes
+		// briefly offline — a device-list push with `available: false` is the
+		// expected reboot, not a dropped update. The backend is the completion
+		// authority (it confirms success off the durable firmware-version signal
+		// once the device returns, or times out), so the panel defers to it
+		// rather than declaring `device_offline` and tearing down the
+		// progress subscription mid-reboot. Failing here on offline is exactly
+		// what made a successful multi-device "update all" read as "failed".
 	}
 
 	async deleteEsphomeDevice(configEntryId: string): Promise<void> {

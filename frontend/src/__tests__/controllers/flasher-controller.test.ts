@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { FlasherController } from "../../controllers/flasher-controller.js";
+import {
+	FlasherController,
+	OTA_BACKSTOP_MS,
+} from "../../controllers/flasher-controller.js";
 import type { FlashableDevice } from "../../types.js";
 
 function mockHost() {
@@ -747,9 +750,9 @@ describe("FlasherController", () => {
 			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
 			callback({ state: "updating", progress: 50 });
 
-			// Only after the full reboot-grace window (the device never came back)
-			// does the panel give up with connection_lost.
-			vi.advanceTimersByTime(180000);
+			// Only after the full backstop window (backend went entirely silent —
+			// the device never came back) does the panel give up with connection_lost.
+			vi.advanceTimersByTime(OTA_BACKSTOP_MS);
 
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toEqual({
 				state: "error",
@@ -763,8 +766,8 @@ describe("FlasherController", () => {
 			vi.useFakeTimers();
 			await ctrl.startOta("AA:BB:CC:DD:EE:01");
 
-			// No events arrive — initial timeout fires after 15s
-			vi.advanceTimersByTime(15000);
+			// No events arrive at all — the backstop eventually fires update_timeout.
+			vi.advanceTimersByTime(OTA_BACKSTOP_MS);
 
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toEqual({
 				state: "error",
@@ -931,19 +934,19 @@ describe("FlasherController", () => {
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("success");
 		});
 
-		it("updating event with progress=0 uses 15s timeout", async () => {
+		it("updating event with progress=0 arms the backstop, not a short timeout", async () => {
 			vi.useFakeTimers();
 			await ctrl.startOta("AA:BB:CC:DD:EE:01");
 
 			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
 			callback({ state: "updating", progress: 0 });
 
-			// After 10s, should still be updating (15s timeout)
-			vi.advanceTimersByTime(10000);
+			// Well past the old 15s window, still updating — the backend owns the verdict.
+			vi.advanceTimersByTime(60000);
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("updating");
 
-			// After 15s total, should have timed out
-			vi.advanceTimersByTime(5000);
+			// Only the full backstop (backend entirely silent) trips update_timeout.
+			vi.advanceTimersByTime(OTA_BACKSTOP_MS - 60000);
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("error");
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].errorKey).toBe(
 				"flasher.errors.update_timeout",
@@ -951,19 +954,19 @@ describe("FlasherController", () => {
 			vi.useRealTimers();
 		});
 
-		it("updating event with progress > 0 waits the reboot-grace window before connection_lost", async () => {
+		it("updating event with progress > 0 waits the backstop window before connection_lost", async () => {
 			vi.useFakeTimers();
 			await ctrl.startOta("AA:BB:CC:DD:EE:01");
 
 			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
 			callback({ state: "updating", progress: 25 });
 
-			// Still waiting just before the grace window elapses (the device is
+			// Still waiting just before the backstop elapses (the device is
 			// rebooting into the new firmware) — no premature failure.
-			vi.advanceTimersByTime(179000);
+			vi.advanceTimersByTime(OTA_BACKSTOP_MS - 1000);
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("updating");
 
-			// Only once the full window passes with no terminal event does it give up.
+			// Only once the full backstop passes with no terminal event does it give up.
 			vi.advanceTimersByTime(1000);
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("error");
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].errorKey).toBe(
@@ -993,128 +996,39 @@ describe("FlasherController", () => {
 			vi.useRealTimers();
 		});
 
-		it("_checkOtaDevicesOffline sets error when device goes offline during OTA", async () => {
-			// Start OTA
+		it("does not fail an updating device that goes offline mid-OTA (the flash reboot)", async () => {
+			// Every OTA reboots the device (to free heap before the download, and
+			// again after flashing), so it always goes briefly offline. A
+			// device-list push with available:false for an in-flight update is the
+			// expected reboot, not a dropped update — the backend confirms the real
+			// outcome off the durable firmware-version signal. The panel must stay
+			// "updating" and must NOT tear down the progress subscription (doing so
+			// is what made a successful multi-device "update all" read as "failed").
+			const unsub = vi.fn();
+			hass.connection.subscribeMessage = vi.fn().mockResolvedValue(unsub);
 			await ctrl.startOta("AA:BB:CC:DD:EE:01");
+			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
+			callback({ state: "updating", progress: 50 });
 
-			// Directly set updating state
-			ctrl.otaStates["AA:BB:CC:DD:EE:01"] = {
-				state: "updating",
-				progress: 50,
-				errorKey: null,
-			};
-
-			// Simulate device going offline via _applyDeviceList
-			ctrl.flashableDevices = [
-				{
-					mac: "AA:BB:CC:DD:EE:01",
-					name: "Test",
-					host: "192.168.1.10",
-					available: false,
-					firmware_type: "eppgrid",
-					firmware_version: "1.0.0",
-					esphome_config_entry_id: "entry-1",
-					update_available: true,
-					firmware_status: "firmware_behind",
-				},
-			];
-
-			// Call _checkOtaDevicesOffline directly
-			(ctrl as any)._checkOtaDevicesOffline();
-
-			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toEqual({
-				state: "error",
-				progress: null,
-				errorKey: "flasher.errors.device_offline",
+			// The flash reboot: HA pushes the device list with the device offline.
+			(ctrl as any)._applyDeviceList({
+				devices: [
+					{
+						mac: "AA:BB:CC:DD:EE:01",
+						name: "Test",
+						host: "192.168.1.10",
+						available: false,
+						firmware_type: "eppgrid",
+						firmware_version: "1.0.0",
+						esphome_config_entry_id: "entry-1",
+						update_available: true,
+						firmware_status: "firmware_behind",
+					},
+				],
 			});
-		});
 
-		it("_checkOtaDevicesOffline skips devices not in updating state", () => {
-			ctrl.otaStates["AA:BB:CC:DD:EE:01"] = {
-				state: "error",
-				progress: null,
-				errorKey: "flasher.errors.connection_lost",
-			};
-			ctrl.flashableDevices = [
-				{
-					mac: "AA:BB:CC:DD:EE:01",
-					name: "Test",
-					host: "192.168.1.10",
-					available: false,
-					firmware_type: "eppgrid",
-					firmware_version: "1.0.0",
-					esphome_config_entry_id: "entry-1",
-					update_available: false,
-					firmware_status: "compatible",
-				},
-			];
-
-			(ctrl as any)._checkOtaDevicesOffline();
-
-			// Should NOT have changed
-			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].errorKey).toBe(
-				"flasher.errors.connection_lost",
-			);
-		});
-
-		it("_checkOtaDevicesOffline skips available devices", () => {
-			ctrl.otaStates["AA:BB:CC:DD:EE:01"] = {
-				state: "updating",
-				progress: 50,
-				errorKey: null,
-			};
-			ctrl.flashableDevices = [
-				{
-					mac: "AA:BB:CC:DD:EE:01",
-					name: "Test",
-					host: "192.168.1.10",
-					available: true,
-					firmware_type: "eppgrid",
-					firmware_version: "1.0.0",
-					esphome_config_entry_id: "entry-1",
-					update_available: true,
-					firmware_status: "firmware_behind",
-				},
-			];
-
-			(ctrl as any)._checkOtaDevicesOffline();
-
-			// Should still be updating
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("updating");
-		});
-
-		it("_checkOtaDevicesOffline ignores offline during the pre-OTA reboot (no progress yet)", () => {
-			// startOta optimistically sets state "updating" / progress 0 on click,
-			// then the backend reboots the device to free heap for the TLS
-			// handshake BEFORE the download starts. During that reboot the device
-			// is briefly unavailable, but no real OTA progress has arrived yet —
-			// so this offline is the EXPECTED reboot, not a failure, and must not
-			// be reported as "device went offline during update". (The offline
-			// check predates the pre-OTA reboot feature and never accounted for it.)
-			ctrl.otaStates["AA:BB:CC:DD:EE:01"] = {
-				state: "updating",
-				progress: 0,
-				errorKey: null,
-			};
-			ctrl.flashableDevices = [
-				{
-					mac: "AA:BB:CC:DD:EE:01",
-					name: "Test",
-					host: "192.168.1.10",
-					available: false,
-					firmware_type: "eppgrid",
-					firmware_version: "1.0.0",
-					esphome_config_entry_id: "entry-1",
-					update_available: true,
-					firmware_status: "firmware_behind",
-				},
-			];
-
-			(ctrl as any)._checkOtaDevicesOffline();
-
-			// Still updating — the pre-OTA reboot offline must not flip to error.
-			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("updating");
-			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].errorKey).toBeNull();
+			expect(unsub).not.toHaveBeenCalled();
 		});
 
 		it("ignores the pre-OTA reboot offline pushed via _applyDeviceList while update_firmware is pending", async () => {
@@ -1323,7 +1237,11 @@ describe("FlasherController", () => {
 			vi.useRealTimers();
 		});
 
-		it("_applyDeviceList triggers _checkOtaDevicesOffline", async () => {
+		it("a device-list push showing an updating device offline does not fail it", async () => {
+			// The device-list subscription stays live during an OTA. When the
+			// device reboots mid-flash it shows available:false — the panel must
+			// leave it "updating" and let the backend confirm the real outcome,
+			// not flip it to error off the device-list push.
 			ctrl.otaStates["AA:BB:CC:DD:EE:01"] = {
 				state: "updating",
 				progress: 50,
@@ -1354,11 +1272,8 @@ describe("FlasherController", () => {
 
 			await ctrl.subscribeDeviceList();
 
-			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toEqual({
-				state: "error",
-				progress: null,
-				errorKey: "flasher.errors.device_offline",
-			});
+			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("updating");
+			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].errorKey).toBeNull();
 		});
 
 		it("unknown event state does not orphan the watchdog timer", async () => {
@@ -1373,8 +1288,8 @@ describe("FlasherController", () => {
 			callback({ state: "updating", progress: 25 });
 			callback({ state: "made_up_state" });
 
-			// Original watchdog should still fire — we're still updating.
-			vi.advanceTimersByTime(180000);
+			// The backstop should still be armed — we're still updating.
+			vi.advanceTimersByTime(OTA_BACKSTOP_MS);
 
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("error");
 			vi.useRealTimers();
@@ -1401,14 +1316,14 @@ describe("FlasherController", () => {
 			vi.useRealTimers();
 		});
 
-		it("updating event with null progress uses 15s timeout", async () => {
+		it("updating event with null (indeterminate) progress arms the backstop", async () => {
 			vi.useFakeTimers();
 			await ctrl.startOta("AA:BB:CC:DD:EE:01");
 
 			const callback = hass.connection.subscribeMessage.mock.calls[0][0];
 			callback({ state: "updating", progress: null });
 
-			vi.advanceTimersByTime(15000);
+			vi.advanceTimersByTime(OTA_BACKSTOP_MS);
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].state).toBe("error");
 			expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"].errorKey).toBe(
 				"flasher.errors.update_timeout",
@@ -1464,7 +1379,7 @@ describe("FlasherController", () => {
 				vi.useFakeTimers();
 				await ctrl.startOta("AA:BB:CC:DD:EE:01");
 				const before = ctrl.otaStates;
-				vi.advanceTimersByTime(15000);
+				vi.advanceTimersByTime(OTA_BACKSTOP_MS);
 				expect(ctrl.otaStates).not.toBe(before);
 				vi.useRealTimers();
 			});
@@ -1477,35 +1392,6 @@ describe("FlasherController", () => {
 				ctrl.dismissOtaError("AA:BB:CC:DD:EE:01");
 				expect(ctrl.otaStates).not.toBe(before);
 				expect(ctrl.otaStates["AA:BB:CC:DD:EE:01"]).toBeUndefined();
-			});
-
-			it("reassigns otaStates when a device goes offline mid-OTA", async () => {
-				await ctrl.startOta("AA:BB:CC:DD:EE:01");
-				// Genuine mid-OTA: the device has reported real download progress
-				// (progress > 0), so a subsequent offline is a true failure — as
-				// opposed to the optimistic progress-0 set on click during the
-				// expected pre-OTA reboot.
-				ctrl.otaStates["AA:BB:CC:DD:EE:01"] = {
-					state: "updating",
-					progress: 50,
-					errorKey: null,
-				};
-				ctrl.flashableDevices = [
-					{
-						mac: "AA:BB:CC:DD:EE:01",
-						name: "Test",
-						host: "192.168.1.10",
-						available: false,
-						firmware_type: "eppgrid",
-						firmware_version: "1.0.0",
-						esphome_config_entry_id: "entry-1",
-						update_available: true,
-						firmware_status: "firmware_behind",
-					},
-				];
-				const before = ctrl.otaStates;
-				(ctrl as any)._checkOtaDevicesOffline();
-				expect(ctrl.otaStates).not.toBe(before);
 			});
 		});
 

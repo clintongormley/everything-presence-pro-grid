@@ -462,7 +462,6 @@
 			"connect_failed": "Připojení k zařízení se nezdařilo",
 			"connection_lost": "Během aktualizace došlo ke ztrátě připojení",
 			"update_timeout": "Vypršel časový limit aktualizace",
-			"device_offline": "Zařízení se během aktualizace odpojilo",
 			"update_failed_generic": "Aktualizace se nezdařila",
 			"ota_failed_version_unchanged": "Aktualizace se nezdařila — verze firmwaru se nezměnila",
 			"ota_timeout": "Vypršel časový limit aktualizace OTA",
