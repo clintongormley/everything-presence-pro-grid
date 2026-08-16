@@ -3167,7 +3167,7 @@ const js={},Ws=ii(class extends si{constructor(){super(...arguments),this.ot=js}
             ${this.resetBtn(i,"targetMaxDistance")}${this.infoTip(this.localize("info.target_max_distance"))}
           </div>
         </epp-card>
-        <epp-card heading=${this.localize("settings.static_sensor")}>
+        ${this._has("has_static_presence")?N`<epp-card heading=${this.localize("settings.static_sensor")}>
           <!-- .setting-row conversion deferred — see comment above -->
           <div class="setting-row">
             <label>${this.localize("settings.auto")}</label>
@@ -3189,7 +3189,7 @@ const js={},Ws=ii(class extends si{constructor(){super(...arguments),this.ot=js}
               @input=${e=>{const t=e.target;let i=Number(t.value);const s=this._overrides.staticMinDistance??this.staticMinDistance;i<=s&&(i=Math.round(10*(s+.1))/10,t.value=String(i)),this._overrides.staticMaxDistance=i,this._fireChange("staticMaxDistance",i),this._setSettingValue(t,this.localize.formatNumber(i,1))}} /><span class="setting-value">${this.localize.formatNumber(r,1)}</span><span class="setting-unit">m</span></span>
             ${this.resetBtn(s,"staticMaxDistance")}${this.infoTip(this.localize("info.static_max_distance"))}
           </div>
-        </epp-card>
+        </epp-card>`:j}
       </div>
     `}renderSliderRow(e){return N`
       <div class="setting-row${e.disabled?" row-disabled":""}">

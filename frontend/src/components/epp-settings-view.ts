@@ -769,7 +769,9 @@ export class EppSettingsView extends LitElement {
             ${this.resetBtn(targetAutoVal, "targetMaxDistance")}${this.infoTip(this.localize("info.target_max_distance"))}
           </div>
         </epp-card>
-        <epp-card heading=${this.localize("settings.static_sensor")}>
+        ${
+					this._has("has_static_presence")
+						? html`<epp-card heading=${this.localize("settings.static_sensor")}>
           <!-- .setting-row conversion deferred — see comment above -->
           <div class="setting-row">
             <label>${this.localize("settings.auto")}</label>
@@ -826,7 +828,9 @@ export class EppSettingsView extends LitElement {
 							}} /><span class="setting-value">${this.localize.formatNumber(staticMaxVal, 1)}</span><span class="setting-unit">m</span></span>
             ${this.resetBtn(staticMaxAutoVal, "staticMaxDistance")}${this.infoTip(this.localize("info.static_max_distance"))}
           </div>
-        </epp-card>
+        </epp-card>`
+						: nothing
+				}
       </div>
     `;
 	}
