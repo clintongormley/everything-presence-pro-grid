@@ -2905,6 +2905,13 @@ class DeviceManager:
         is safe. Tracked so `async_stop` can drop the timer cleanly (HA 2026.4+
         fails the test if a timer outlives the config entry).
         """
+        if self._stopping:
+            # Shutdown has begun: `async_stop` already cancelled/cleared these
+            # timers and owns the refcounts + disconnects (it closes the held conn
+            # in Phase 3). Arming a timer now — e.g. a trigger that resumed
+            # uncancelled after unload started — would outlive the config entry.
+            # `release_session` no-ops while stopping anyway, so just don't arm it.
+            return
         if (cancel := self._ota_session_releases.pop(mac, None)) is not None:
             cancel()
 

@@ -414,6 +414,22 @@ async def test_trigger_ota_releases_held_session_on_cancellation(hass: HomeAssis
     release_mock.assert_called_once_with(MAC, conn)
 
 
+async def test_schedule_ota_session_release_skips_while_stopping(hass: HomeAssistant, manager: DeviceManager) -> None:
+    """`_schedule_ota_session_release` must NOT arm a timer once shutdown has
+    begun. `async_stop` (which sets `_stopping`) has already cancelled and
+    cleared the release timers and owns the refcounts + disconnects, so a timer
+    armed after that would outlive the config entry (HA 2026.4+ fails the test on
+    a lingering timer). This can happen if unload starts while `async_trigger_ota`
+    is mid-hand-off and then resumes uncancelled. The held connection is closed by
+    `async_stop`'s teardown, so skipping the timer strands nothing."""
+    conn = _mock_ota_conn()
+    manager._stopping = True
+
+    manager._schedule_ota_session_release(MAC, conn)
+
+    assert MAC not in manager._ota_session_releases  # no timer armed while stopping
+
+
 class TestWaitForFirmwareVersion:
     """`async_wait_for_firmware_version` is the OTA watcher's reboot-proof
     completion path: it confirms an update by watching the durable
