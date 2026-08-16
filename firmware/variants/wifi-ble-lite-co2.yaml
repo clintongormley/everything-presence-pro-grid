@@ -2,9 +2,11 @@
 #
 # Identical to wifi-ble-lite.yaml plus the CO2 package. Flashing this to a board
 # without the module leaves the scd4x component unable to reach its I2C device,
-# which fails it and parks the app in error state — a permanently blinking
-# status LED that ignores manual control. Use wifi-ble-lite.yaml for a bare
-# board.
+# which fails it — but co2-lite-base.yaml clears that one component's error so
+# the status LED does not blink for a CO2 module the owner simply didn't fit
+# (it still blinks for genuine faults). The CO2 entity just stays unavailable.
+# Prefer wifi-ble-lite.yaml for a permanently bare board so nothing unreachable
+# is compiled in.
 dashboard_import:
   package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-ble-lite-co2.yaml@main
   import_full_config: false
