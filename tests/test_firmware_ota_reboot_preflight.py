@@ -18,6 +18,7 @@ confirming a real reboot completed before we hand the device the OTA manifest.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -380,6 +381,33 @@ async def test_trigger_ota_releases_held_session_on_trigger_failure(
         patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
         patch.object(manager, "release_session") as release_mock,
         pytest.raises(HomeAssistantError),
+    ):
+        await manager.async_trigger_ota(MAC)
+
+    release_mock.assert_called_once_with(MAC, conn)
+
+
+async def test_trigger_ota_releases_held_session_on_cancellation(hass: HomeAssistant, manager: DeviceManager) -> None:
+    """If the trigger is cancelled while handing over the manifest (unload /
+    shutdown / websocket drop), the reference the trigger took must still be
+    released before `CancelledError` propagates. `CancelledError` derives from
+    `BaseException`, so it bypasses the `except HomeAssistantError` / `except
+    Exception` handlers — without an unconditional release it would strand the
+    held session's reference."""
+    manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    manager._build_flags[MAC] = {"ethernet_enabled": False}
+    conn = _mock_ota_conn()
+    conn.async_execute_service.side_effect = asyncio.CancelledError()
+
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
+        patch.object(manager, "release_session") as release_mock,
+        pytest.raises(asyncio.CancelledError),
     ):
         await manager.async_trigger_ota(MAC)
 

@@ -958,20 +958,19 @@ class DeviceManager:
             # grace window once the panel has had time to subscribe.
             conn = await self.async_open_session(mac)
             if conn is not None:
+                triggered = False
                 try:
                     await conn.async_execute_service("set_update_manifest", {"url": manifest_url})
+                    triggered = True
                 except HomeAssistantError:
-                    self.release_session(mac, conn)
                     raise
                 except Exception as err:
                     # Wrap aioesphomeapi (and any other unexpected) exceptions so
                     # callers see a stable message-bearing type rather than raw
-                    # technical text from a third-party library. Carry
-                    # translation metadata so the websocket / Repairs surfaces
-                    # can localize the message — the docstring promises a
-                    # translation_key on every failure path. Drop OUR ref first
-                    # so a failed trigger doesn't strand the held session.
-                    self.release_session(mac, conn)
+                    # technical text from a third-party library. Carry translation
+                    # metadata so the websocket / Repairs surfaces can localize the
+                    # message — the docstring promises a translation_key on every
+                    # failure path.
                     _LOGGER.warning("OTA via held session for %s failed", mac, exc_info=True)
                     raise HomeAssistantError(
                         f"Could not contact device {mac}: {err}",
@@ -979,6 +978,15 @@ class DeviceManager:
                         translation_key="ota_trigger_failed",
                         translation_placeholders={"mac": mac, "error": str(err)},
                     ) from err
+                finally:
+                    if not triggered:
+                        # The trigger didn't complete: an error above, or a
+                        # `CancelledError` (unload / shutdown / websocket drop) that
+                        # skips both excepts because it derives from BaseException.
+                        # Drop OUR ref so a failed/cancelled trigger doesn't strand
+                        # the held session. On success the grace-window release owns
+                        # the ref instead — see below.
+                        self.release_session(mac, conn)
                 _LOGGER.info("Triggered OTA via held session for %s (manifest=%s)", mac, manifest_url)
                 self._schedule_ota_session_release(mac, conn)
                 return
