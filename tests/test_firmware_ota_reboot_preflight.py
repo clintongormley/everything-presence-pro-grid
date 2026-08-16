@@ -466,6 +466,38 @@ async def test_trigger_ota_marks_flash_expected_when_device_on_old_version(
     await hass.async_block_till_done()
 
 
+async def test_trigger_ota_does_not_mark_flash_expected_when_version_unknown(
+    hass: HomeAssistant, manager: DeviceManager
+) -> None:
+    """If the device's firmware version can't be read at trigger time (None —
+    offline / unavailable / no device_id), the trigger must NOT mark flash-expected:
+    an unknown state must never let the held-session path fabricate a success for a
+    device that may already be current. Such a device is offline anyway, so it takes
+    the sessionless path (which primes on its own); the flag is only for the
+    held-session path, where the version is KNOWN to differ from the target."""
+    manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    manager._build_flags[MAC] = {"ethernet_enabled": False}
+    manager._ota_flash_expected.add(MAC)  # pre-seed to prove an unknown version clears it
+    conn = _mock_ota_conn()
+
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
+        # Version can't be read (device offline / unavailable at trigger time).
+        patch.object(manager, "read_firmware_version", return_value=None),
+    ):
+        await manager.async_trigger_ota(MAC)
+
+    assert manager.take_ota_flash_expected(MAC) is False
+
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=_OTA_SESSION_GRACE_S + 1))
+    await hass.async_block_till_done()
+
+
 async def test_trigger_ota_clears_flash_expected_when_device_already_on_target(
     hass: HomeAssistant, manager: DeviceManager
 ) -> None:

@@ -963,7 +963,14 @@ class DeviceManager:
             # == target means no flash is expected (an already-current device: the
             # watch must not fabricate a success for it).
             dev = self.devices.get(mac)
-            if dev is not None and self.read_firmware_version(dev.device_id) != FIRMWARE_VERSION:
+            current_version = self.read_firmware_version(dev.device_id) if dev is not None else None
+            # Only mark when the version is KNOWN and differs. A None reading
+            # (offline / unavailable / no device_id) is NOT treated as "flash
+            # expected": we can't confirm a real old->target change, and such a
+            # device is offline anyway so it takes the sessionless path (which
+            # primes on its own). This keeps an unknown state from fabricating a
+            # success for a device that may already be current.
+            if current_version is not None and current_version != FIRMWARE_VERSION:
                 self._ota_flash_expected.add(mac)
             else:
                 self._ota_flash_expected.discard(mac)
