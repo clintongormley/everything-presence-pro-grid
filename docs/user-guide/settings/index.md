@@ -13,3 +13,9 @@ own page:
 - **[LED and relay](led-relay.md)** — LED modes, colours, brightness; relay
     trigger mode and contact mode.
 - **[Logging](logging.md)** — per-component firmware log levels.
+
+!!! note
+
+    The panel automatically hides controls for hardware a model doesn't have. On an
+    [Everything Presence Lite](../hardware.md#models) you won't see the
+    static-sensor, motion, temperature/humidity, LED-mode, or relay controls.

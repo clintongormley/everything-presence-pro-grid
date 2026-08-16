@@ -34,6 +34,15 @@ The EPP contains three main sensors:
     so a room stays marked occupied while someone is sitting still. Lets
     automations turn lights off only when the room is genuinely empty.
 
+There are now two models. The **Everything Presence Pro** described above is the
+full-featured unit. The **Everything Presence Lite** is a lower-cost version
+that keeps the spatial features this integration is built around — zones, the
+grid, target tracking, room calibration, and heatmaps — along with CO₂,
+Bluetooth, and light-level sensing. It drops the static-presence radar, the PIR
+motion sensor, temperature/humidity, the relay, the addressable RGB LED, and
+Ethernet. Everything in this guide applies to both models except where noted;
+see the [hardware comparison](hardware.md#models) for the full breakdown.
+
 ## Problems with the original firmware
 
 The original firmware does basic "in zone or not" detection on the device and
