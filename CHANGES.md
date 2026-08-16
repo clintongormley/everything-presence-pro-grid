@@ -9,53 +9,27 @@ firmware downloads, see the
 ### New features
 
 - **Czech translation.** The panel and dashboard card are now available in Czech
-    (čeština). Home Assistant shows them in Czech automatically when your Home
-    Assistant language is set to Czech.
+    (čeština), shown automatically when Home Assistant is set to Czech.
+- **Firmware updates no longer need internet access.** Home Assistant now serves
+    firmware to your devices over your local network, so a sensor with no internet
+    access of its own can still update. Devices that do have internet fall back to
+    downloading from GitHub.
+- **The installed devices list shows each device's area.** The flasher's
+    Installed Devices list now shows the Home Assistant area each device is in,
+    making it easier to tell similar devices apart at a glance.
 
 ### Fixes
 
-- **The panel opens reliably from the sidebar again.** Opening Everything
-    Presence Pro Grid from the Home Assistant sidebar could show a blank screen,
-    leaving you to refresh the page or type the panel's address by hand to get
-    in — and in the mobile app, where there is no refresh, the panel was
-    effectively unreachable. It now loads correctly however you open it.
-- **The panel refreshes itself to the new version after an upgrade.** After
-    updating the integration and restarting Home Assistant, opening the panel in
-    a browser tab left open across the restart could keep showing the previous
-    version until you manually refreshed. The panel now checks for a newer
-    version when it opens — not only while it is already open during the restart
-    — and reloads itself automatically.
-- **The heatmap no longer spams "unknown" warnings.** The `sensor.*_heatmap`
+- **The panel opens reliably from the sidebar and updates itself after an
+    upgrade.** Opening the panel could show a blank screen — unreachable in the
+    mobile app, where there is no refresh — and a tab left open across a Home
+    Assistant restart could keep showing the previous version. The panel now
+    loads however you open it and reloads itself to the new version.
+- **The heatmap no longer logs "unknown" warnings.** The `sensor.*_heatmap`
     entity was logging "state is longer than 255, falling back to unknown"
-    (#365). The heatmap is now delivered directly to the panel/card and is no
+    (#365). The heatmap is now delivered directly to the panel and card and is no
     longer a Home Assistant sensor entity; the old entity is removed
     automatically after you update the firmware.
-- **Firmware updates no longer report false failures.** Updating several devices
-    at once — or a single device over a fast local network — could show "update
-    failed" or "connection lost" for devices that had in fact updated, with a
-    page refresh revealing them already on the new version. Each device reboots
-    while flashing, and the panel was giving up during that reboot. It now waits
-    for the device to come back on the new firmware before reporting success or
-    failure, so what you see matches what actually happened.
-- **Updating several devices at once no longer shows "Failed to connect to
-    device" for all but one.** With several devices updating together, every
-    device except the one open on your screen could sit on a zero-percent
-    spinner and then show "Failed to connect to device" — even though that
-    device's firmware had in fact updated. Showing a device's live progress
-    needs a connection to it, but a device is unreachable while it is busy
-    downloading its update, so only the device that already had a connection
-    open was followed. Each device is now tracked through Home Assistant's own
-    version signal, which needs no live connection, so they all report their own
-    progress and result — and if a device times out on an update Home Assistant
-    served over your LAN, the panel now offers the **Download from GitHub**
-    retry (the likely fix when the device couldn't reach Home Assistant).
-- **Failed or interrupted firmware updates fail fast.** An update that can't
-    reach the download server, or that's interrupted — the device loses power or
-    drops off mid-update and comes back on its old firmware — now reports within
-    seconds to a minute with a clear message, instead of spinning for several
-    minutes. When Home Assistant can't serve the firmware over your LAN, an
-    internet-connected device downloads from GitHub automatically, and a
-    **Download from GitHub** button lets you force that when needed.
 
 ## v1.7.0 — 2026-08-07
 
