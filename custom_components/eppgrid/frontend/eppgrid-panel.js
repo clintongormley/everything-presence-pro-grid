@@ -1675,7 +1675,7 @@ const de={attribute:!0,type:String,converter:v,reflect:!1,hasChanged:w},pe=(e=de
           </div>
         </div>
       </ha-card>
-    `}render(){return this.loading?this._renderLoading():this._showUsbFlash||this.usbFlashState?this._renderUsbFlash():this._renderDeviceList()}_getFirmwareVariant(){return"lite"===this._selectedModel?"wifi-ble-lite":"wifi"===this._selectedVariant?"wifi-ble-co2":"ethernet-ble-co2"}_renderUsbFlash(){const e=this.usbFlashState;return"wifi_provision"===e?.step?this._renderWifiProvisioning():"error"===e?.step?this._renderUsbError(e):"wifi_configured"===e?.step?this._renderUsbConfigured(e):"complete"===e?.step?this._renderUsbComplete(e):e&&"idle"!==e.step?this._renderUsbProgress(e):this._renderUsbIdle()}_renderUsbError(e){return N`
+    `}render(){return this.loading?this._renderLoading():this._showUsbFlash||this.usbFlashState?this._renderUsbFlash():this._renderDeviceList()}_getFirmwareVariant(){return"lite"===this._selectedModel?"wifi-ble-lite":"pro"!==this._selectedModel?"":"wifi"===this._selectedVariant?"wifi-ble-co2":"ethernet-ble-co2"}_renderUsbFlash(){const e=this.usbFlashState;return"wifi_provision"===e?.step?this._renderWifiProvisioning():"error"===e?.step?this._renderUsbError(e):"wifi_configured"===e?.step?this._renderUsbConfigured(e):"complete"===e?.step?this._renderUsbComplete(e):e&&"idle"!==e.step?this._renderUsbProgress(e):this._renderUsbIdle()}_renderUsbError(e){return N`
 			<div class="flasher-content">
 				<ha-card>
 					<div class="card-content">
