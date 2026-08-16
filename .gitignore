@@ -1,4 +1,9 @@
 node_modules/
+# This repo has no root npm project (the npm project is frontend/). Ignore an
+# accidental root package-lock.json so it can't be re-committed — running an npm
+# command at the repo root would otherwise strand an empty lockfile that breaks
+# `npm ci` there. Anchored (leading /) so frontend/package-lock.json is untouched.
+/package-lock.json
 __pycache__/
 *.pyc
 dist/
