@@ -333,7 +333,7 @@ describe("_handleUsbFlash", () => {
 			{
 				mac: "AA:BB:CC:DD:EE:FF",
 				name: "Test",
-				device_name: null,
+				area: null,
 				host: "192.168.1.10",
 				available: true,
 				firmware_type: "original",
@@ -373,7 +373,7 @@ describe("_handleUsbFlash", () => {
 			{
 				mac: "AA:BB:CC:DD:EE:FF",
 				name: "Test",
-				device_name: null,
+				area: null,
 				host: "192.168.1.10",
 				available: true,
 				firmware_type: "original",
@@ -412,7 +412,7 @@ describe("_handleUsbFlash", () => {
 			{
 				mac: "AA:BB:CC:DD:EE:FF",
 				name: "Test",
-				device_name: null,
+				area: null,
 				host: "192.168.1.10",
 				available: true,
 				firmware_type: "original",
@@ -496,7 +496,7 @@ describe("_handleUsbFlash", () => {
 			{
 				mac: "AA:BB:CC:DD:EE:FF",
 				name: "Test",
-				device_name: null,
+				area: null,
 				host: "192.168.1.10",
 				available: true,
 				firmware_type: "original",
@@ -529,7 +529,7 @@ describe("_handleUsbFlash", () => {
 			{
 				mac: "AA:BB:CC:DD:EE:FF",
 				name: "Test",
-				device_name: null,
+				area: null,
 				host: "192.168.1.10",
 				available: true,
 				firmware_type: "eppgrid",

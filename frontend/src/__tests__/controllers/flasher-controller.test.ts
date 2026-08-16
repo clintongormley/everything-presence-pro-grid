@@ -82,7 +82,7 @@ describe("FlasherController", () => {
 				{
 					mac: "aa:bb:cc:dd:ee:ff",
 					name: "Sensor A",
-					device_name: null,
+					area: null,
 					host: "192.168.1.10",
 					available: true,
 					firmware_type: "eppgrid",
@@ -210,7 +210,7 @@ describe("FlasherController", () => {
 				{
 					mac: "aa:bb:cc:dd:ee:ff",
 					name: "Sensor A",
-					device_name: null,
+					area: null,
 					host: "192.168.1.10",
 					available: true,
 					firmware_type: "eppgrid",
