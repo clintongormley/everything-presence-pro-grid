@@ -35,3 +35,30 @@ button:
       - scd4x.perform_forced_calibration:
           value: 419
           id: scd40
+
+interval:
+  # The SCD40 is optional on the Lite's expansion header. When it is absent,
+  # scd4x can't reach it over I2C and marks itself failed, which sets ESPHome's
+  # global error state. The Lite's only indicator is a status_led
+  # (everything-presence-lite-base.yaml), so that error blinks the LED forever —
+  # a false alarm for hardware the owner simply chose not to fit. The Pro is
+  # immune because its LED is a script-driven RGB ring, not a status_led.
+  #
+  # Rather than demote the LED to a plain light (which would silence *every*
+  # fault — WiFi, API, BLE — not just this one), clear only the scd40
+  # component's error. status_clear_error() walks every component and drops the
+  # app-wide error bit only when nothing else still holds it, so a genuine fault
+  # keeps the LED blinking while a missing CO2 module does not.
+  #
+  # scd4x probes its sensor from a deferred set_timeout (~1s after setup), so the
+  # failure lands after on_boot has already run — an interval is what reliably
+  # catches it. status_clear_error() self-guards (no-op when the bit is clear)
+  # and a failed component never loops to re-raise it, so this settles to a
+  # cheap no-op once the LED is steady.
+  - interval: 5s
+    then:
+      - if:
+          condition:
+            lambda: "return id(scd40).status_has_error();"
+          then:
+            - lambda: "id(scd40).status_clear_error();"
