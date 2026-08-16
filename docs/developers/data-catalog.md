@@ -1013,6 +1013,7 @@ whether they run original or Everything Presence Pro Grid firmware.
         {
             "mac": "AA:BB:CC:DD:EE:FF",
             "name": "Presence Pro Kitchen",
+            "device_name": "Everything Presence Pro 29be5c",
             "host": "192.168.1.42",
             "available": false,
             "firmware_type": "original",
@@ -1024,9 +1025,15 @@ whether they run original or Everything Presence Pro Grid firmware.
 }
 ```
 
-`firmware_type` is `"original"` (no `firmware_version` entity) or `"eppgrid"`
-(has `firmware_version` entity). `update_available` is `true` when the device
-runs Everything Presence Pro Grid firmware and a newer version is available.
+`name` is the device's friendly (user-facing) name — a rename if one was set,
+otherwise the ESPHome node name. `device_name` is the underlying ESPHome node
+device name surfaced *alongside* `name` when it differs and adds information:
+the node's own name when the device was renamed, or the parent ESPHome node's
+name for a sub-device linked via `via_device`. It is `null` when there is
+nothing extra to show (no rename and no distinct parent). `firmware_type` is
+`"original"` (no `firmware_version` entity) or `"eppgrid"` (has
+`firmware_version` entity). `update_available` is `true` when the device runs
+Everything Presence Pro Grid firmware and a newer version is available.
 `firmware_version` is the current firmware version string. `firmware_status` is
 `"compatible"`, `"firmware_behind"`, `"firmware_ahead"`, `"unknown"`, or
 `"unavailable"`.

@@ -3020,10 +3020,26 @@ class DeviceManager:
                 else None
             )
             sw_fallback = (device.sw_version or "").split(" (")[0] or "unknown"
+            display_name = device.name_by_user or device.name or "EPP Device"
+            # The ESPHome node name ("Everything Presence Pro <suffix>"), surfaced
+            # alongside a friendly rename so a row can be matched to its ESPHome
+            # device. Two registry shapes cover it: the device was renamed in HA
+            # (its original `name` is the node name), or it's a sub-device linked
+            # to the node via `via_device`. None when there's nothing extra to add.
+            device_name: str | None = None
+            if device.name_by_user and device.name and device.name != device.name_by_user:
+                device_name = device.name
+            elif device.via_device_id:
+                parent = dev_reg.async_get(device.via_device_id)
+                if parent is not None:
+                    candidate = parent.name_by_user or parent.name
+                    if candidate and candidate != display_name:
+                        device_name = candidate
             result.append(
                 {
                     "mac": mac,
-                    "name": device.name_by_user or device.name or "EPP Device",
+                    "name": display_name,
+                    "device_name": device_name,
                     "host": host,
                     "available": available,
                     "firmware_type": "eppgrid" if has_firmware_version else "original",

@@ -135,6 +135,13 @@ const flasherStyles = css`
     color: var(--epp-text-muted, var(--secondary-text-color, #757575));
     margin-top: 2px;
   }
+  .device-esphome-name {
+    font-size: var(--epp-font-xs, 12px);
+    color: var(--epp-text-muted, var(--secondary-text-color, #757575));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   .firmware-badge {
     font-size: 11px;
@@ -1122,6 +1129,7 @@ export class EppFlasherView extends LitElement {
                         <div class="device-row">
                           <div class="device-info${isFaded ? " device-info-faded" : ""}">
                             <div class="device-name">${device.name} <span class="device-mac">(${device.mac.replace(/:/g, "").slice(-6).toLowerCase()})</span></div>
+                            ${device.device_name ? html`<div class="device-esphome-name">${device.device_name}</div>` : nothing}
                             <div class="device-host">${device.host ?? this.localize("flasher.offline")}${
 															device.firmware_type === "eppgrid" &&
 															device.firmware_version &&
