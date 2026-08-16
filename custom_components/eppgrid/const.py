@@ -52,18 +52,30 @@ def empty_zone_slots() -> list[dict[str, str] | None]:
 # Bump when releasing new firmware. GitHub release tag is v{FIRMWARE_VERSION}.
 FIRMWARE_VERSION = "1.8.0-rc.5"
 
-# Original EPP firmware identifiers (for device discovery)
+# Original EPP firmware identifiers (for device discovery). The model string is
+# whatever the device reports as its ESPHome project name, so each supported
+# board contributes one entry — a board missing from here is invisible to
+# discovery even with our firmware on it.
 EPP_MANUFACTURER = "EverythingSmartTechnology"
-EPP_MODEL = "Everything Presence Pro"
+EPP_MODELS = ("Everything Presence Pro", "Everything Presence Lite")
+
+# Repository the firmware artifacts are published from. Both URLs below derive
+# from these, so a fork repoints its devices by editing GITHUB_OWNER alone.
+#
+# The firmware side does this without an edit at all — each variant's
+# `package_import_url` and `update:` source are ESPHome substitutions that CI
+# fills in from the repository it runs in (firmware/common/epp-core.yaml). The
+# integration can't do the same: HACS ships custom_components/ verbatim, so
+# there is no build step to substitute into.
+GITHUB_OWNER = "clintongormley"
+GITHUB_REPO = "everything-presence-pro-grid"
 
 # Browser-side firmware artifacts (ESP Web Flasher) — GitHub release
 # assets for v{FIRMWARE_VERSION}. The ESP Web Tools manifest there has
 # absolute parts+offsets needed for an initial USB flash, and the proxy
 # at /api/eppgrid/firmware/{filename} fetches these server-side so the
 # browser doesn't need direct GitHub connectivity.
-MANIFEST_BASE_URL = (
-    f"https://github.com/clintongormley/everything-presence-pro-grid/releases/download/v{FIRMWARE_VERSION}"
-)
+MANIFEST_BASE_URL = f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/download/v{FIRMWARE_VERSION}"
 
 # Pinned-version manifest for the integration's OTA button (Path B) on
 # GitHub Pages. The ESP32's update.http_request component fetches this
@@ -75,19 +87,40 @@ MANIFEST_BASE_URL = (
 # requiring a second TLS context for the OTA bin fetch. The ESP32 fails
 # the second mbedtls_ssl_setup with MBEDTLS_ERR_SSL_ALLOC_FAILED, the HTTP
 # client can't open a socket, and the OTA aborts with "firmware unchanged".
-# Pages keeps both fetches on clintongormley.github.io with relative paths
+# Pages keeps both fetches on the same host with relative paths
 # (stage-firmware.sh publishes fw/v{V}/{variant}.json and {variant}.ota.bin
 # side by side), so a single TLS session covers everything.
 #
 # ESPHome's own update entity uses fw/latest/ on the same Pages site as
 # the "always-newest" channel; this URL is the per-version pin.
-OTA_MANIFEST_BASE_URL = f"https://clintongormley.github.io/everything-presence-pro-grid/fw/v{FIRMWARE_VERSION}"
+OTA_MANIFEST_BASE_URL = f"https://{GITHUB_OWNER}.github.io/{GITHUB_REPO}/fw/v{FIRMWARE_VERSION}"
 
-# Map UI network choice to firmware variant filename (matches fw/ filenames)
-FIRMWARE_VARIANTS = {
-    "wifi": "wifi-ble-co2",
-    "ethernet": "ethernet-ble-co2",
+# Map a device's build flags to its firmware variant filename, which is what
+# `fw/v{V}/{variant}.json` and the release assets are named.
+#
+# Keyed by (model, network, co2) because a variant is exactly the combination of
+# hardware a build was compiled for, and the models differ on both axes:
+#   - the Lite has no ethernet hardware, so no ethernet build exists for it
+#   - the Lite's SCD40 is an add-on, so it has both a CO2 and a bare build,
+#     while every Pro build includes CO2
+#
+# A missing combination raises rather than falling back. Sending the wrong
+# variant is not a cosmetic error: flashing a CO2 build onto a board with no
+# SCD40 leaves that component unable to reach its I2C device, which fails it and
+# parks the whole app in error state.
+#
+# All three keys come from `get_build_flags` — `model` verbatim, `network`
+# derived from `ethernet_enabled`, `co2` from `co2_enabled`.
+FIRMWARE_VARIANTS: dict[tuple[str, str, bool], str] = {
+    ("everything-presence-pro", "wifi", True): "wifi-ble-co2",
+    ("everything-presence-pro", "ethernet", True): "ethernet-ble-co2",
+    ("everything-presence-lite", "wifi", True): "wifi-ble-lite-co2",
+    ("everything-presence-lite", "wifi", False): "wifi-ble-lite",
 }
+
+# Model reported by firmware that predates the `model` build flag. Those builds
+# are all Pro — the Lite was only ever supported by firmware that reports it.
+DEFAULT_FIRMWARE_MODEL = "everything-presence-pro"
 
 # -- Device Groups -----------------------------------------------------------
 # Binary presence slots a source EPP device may expose. Order is the order

@@ -18,14 +18,14 @@ from pathlib import Path
 
 import yaml
 
-from tests.esphome_yaml import ESPHomeLoader
+from tests.esphome_yaml import WIFI_VARIANT_YAML
+from tests.esphome_yaml import load_variant
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BASE_YAML = REPO_ROOT / "firmware" / "common" / "everything-presence-pro-base.yaml"
 
 
 def _set_update_manifest_then() -> list:
-    doc = yaml.load(BASE_YAML.read_text(), Loader=ESPHomeLoader)
+    doc = load_variant(WIFI_VARIANT_YAML)
     for action in doc.get("api", {}).get("actions", []):
         if isinstance(action, dict) and action.get("action") == "set_update_manifest":
             return action.get("then", [])

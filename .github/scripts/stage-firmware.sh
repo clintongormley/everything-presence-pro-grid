@@ -25,14 +25,18 @@ set -euo pipefail
 : "${ARTIFACTS:=artifacts}"
 : "${STAGE_LATEST:=1}"
 
-VARIANTS=(wifi-ble-co2 ethernet-ble-co2)
+VARIANTS=(wifi-ble-co2 ethernet-ble-co2 wifi-ble-lite wifi-ble-lite-co2)
 
 variant_label() {
   # Human-readable label for the manifest `name` field — shown in the
-  # ESPHome / HA firmware-update UI.
+  # ESPHome / HA firmware-update UI. The Lite label names the board, because
+  # the manifest `name` is the only place the update UI says which model this
+  # firmware is for.
   case "$1" in
     wifi-ble-co2)     echo "WiFi + BLE + CO2" ;;
     ethernet-ble-co2) echo "Ethernet + BLE + CO2" ;;
+    wifi-ble-lite)     echo "Lite, WiFi + BLE" ;;
+    wifi-ble-lite-co2) echo "Lite, WiFi + BLE + CO2" ;;
     *)                echo "$1" ;;
   esac
 }

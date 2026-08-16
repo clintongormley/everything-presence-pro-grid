@@ -14,7 +14,7 @@ from homeassistant.helpers import entity_registry as er
 
 from ..const import DOMAIN
 from ..const import EPP_MANUFACTURER
-from ..const import EPP_MODEL
+from ..const import EPP_MODELS
 from ..const import NUM_ZONE_SLOTS
 from ..const import STATIC_ON_DELAY_MAX
 from ..zone_name_translations import ZONE_NAMES
@@ -358,7 +358,7 @@ def _is_epp_device(device: dr.DeviceEntry) -> bool:
     Shared by discovery, the entity-create pre-filter, and the delete-guard so
     the check cannot drift between call sites.
     """
-    return device.manufacturer == EPP_MANUFACTURER and device.model == EPP_MODEL
+    return device.manufacturer == EPP_MANUFACTURER and device.model in EPP_MODELS
 
 
 def _extract_mac(device: dr.DeviceEntry) -> str | None:

@@ -3,8 +3,41 @@
 The Everything Presence Pro packs several sensors into one small unit: two
 mmWave radars, a PIR (passive infrared) motion sensor, environmental sensors for
 illuminance, temperature, humidity, an optional CO₂ sensor, and a network
-interface. Each presence sensor has its own blind spots, which is why Everything
-Presence Pro Grid combines all three into a single Occupancy signal.
+interface. Each of the Pro's presence sensors has its own blind spots, which is
+why Everything Presence Pro Grid combines all three into a single Occupancy
+signal. The Everything Presence Lite carries a subset of this hardware — see
+[Models](#models) below.
+
+## Models
+
+Everything Presence Pro Grid runs on two hardware models. Both share the same
+firmware core and the same zone engine, so the spatial features — zones, the
+grid, target tracking, room calibration, and heatmaps — work identically on
+each. The **Everything Presence Lite** is a lower-cost subset of the
+**Everything Presence Pro**: it keeps all the spatial features, plus CO₂,
+Bluetooth, and light level, and drops the static-presence radar, motion sensor,
+temperature/humidity, relay, addressable RGB LED, and Ethernet.
+
+| Feature                                 | Everything Presence Pro | Everything Presence Lite |
+| --------------------------------------- | :---------------------: | :----------------------: |
+| Target tracking radar (LD2450)          |            ✓            |            ✓             |
+| Zones, grid & room calibration          |            ✓            |            ✓             |
+| Heatmaps                                |            ✓            |            ✓             |
+| Stuck-target clearing & pipeline tuning |            ✓            |            ✓             |
+| CO₂ sensor (SCD4x)                      |            ✓            |            ✓             |
+| Illuminance / light level (BH1750)      |            ✓            |            ✓             |
+| Bluetooth LE proxy                      |            ✓            |            ✓             |
+| OTA updates & diagnostics               |            ✓            |            ✓             |
+| Static-presence radar (SEN0609)         |            ✓            |            —             |
+| Motion sensor (PIR)                     |            ✓            |            —             |
+| Temperature & humidity (SHTC3)          |            ✓            |            —             |
+| Relay output                            |            ✓            |            —             |
+| Addressable RGB LED (modes & effects)   |            ✓            |     Status LED only      |
+| Network                                 | Wi-Fi or Ethernet (PoE) |        Wi-Fi only        |
+
+On the Lite, occupancy comes from LD2450 target tracking alone — there's no
+separate static-presence signal. The rest of this page describes the full Pro
+hardware; each section notes where the Lite differs.
 
 ## Motion — fast infrared motion sensor
 
@@ -18,6 +51,9 @@ in a fraction of a second.
 - **Strength:** quickest to react, and the widest field of view of the three.
 - **Weakness:** only triggers on movement, and stops reporting within seconds
     once someone is still.
+
+**Not on the Everything Presence Lite.** The Lite has no PIR; it detects people
+through the LD2450 alone. See [Models](#models).
 
 ## The mmWave radars
 
@@ -52,6 +88,10 @@ coordinates.
 - **Weakness:** no per-target information, just a single room-wide presence
     signal.
 
+**Not on the Everything Presence Lite.** The Lite has no static-presence radar,
+so occupancy there comes from LD2450 target tracking alone. See
+[Models](#models).
+
 ## How the sensors complement each other
 
 Each presence sensor has a blind spot that at least one of the others covers:
@@ -66,7 +106,9 @@ Each presence sensor has a blind spot that at least one of the others covers:
 
 The **Occupancy** binary sensor in Home Assistant — the one you'll typically
 automate against — combines all three presence signals into a single entity.
-Each sensor on its own has gaps; together they cover each other.
+Each sensor on its own has gaps; together they cover each other. On the
+Everything Presence Lite, which has only the LD2450, occupancy comes from target
+tracking alone — see [Models](#models).
 
 For example: someone walks into the bedroom and climbs into bed. The motion
 sensor catches the entry in a fraction of a second, so the main lights come on
@@ -100,6 +142,10 @@ registry.
     despite limitations, but should not be relied upon for accurate climate control.
     For this reason they are disabled by default.
 
+**On the Everything Presence Lite:** illuminance (BH1750) and the optional CO₂
+module are present, but there's no temperature/humidity sensor. See
+[Models](#models).
+
 ## LED and relay
 
 The front LED can reflect device state (occupancy, CO₂ level) or be driven
@@ -110,6 +156,9 @@ See Everything Smart's
 [hardware overview](https://docs.everythingsmart.io/s/products/doc/hardware-overview-gqc0XAh0e5)
 for relay wiring and ratings.
 
+**On the Everything Presence Lite:** a plain on/off status LED replaces the
+addressable RGB LED, and there's no relay output. See [Models](#models).
+
 ## Connectivity
 
 Two firmware variants differ only in which network interface is active:
@@ -119,10 +168,13 @@ Two firmware variants differ only in which network interface is active:
     on the LAN. Supports Power over Ethernet (PoE), so a single cable handles
     data and power.
 
-Both variants also include **Bluetooth LE**. Home Assistant exposes each device
-as a Bluetooth proxy for nearby BLE devices like temperature tags, buttons, or
-presence badges. If you've got BLE hardware around the house, each device
-becomes another reception point.
+**The Everything Presence Lite is Wi-Fi only** — there's no Ethernet build. It
+ships a single `wifi-ble-lite` variant. See [Models](#models).
+
+Every variant — the Lite included — also runs **Bluetooth LE**. Home Assistant
+exposes each device as a Bluetooth proxy for nearby BLE devices like temperature
+tags, buttons, or presence badges. If you've got BLE hardware around the house,
+each device becomes another reception point.
 
 A **BLE Scan** switch under the device's Configuration entities lets you turn
 the scan off when you don't need the proxy — useful if you have heavy

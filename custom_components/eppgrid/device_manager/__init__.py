@@ -735,6 +735,7 @@ class DeviceManager:
         Shared by `_ota_manifest_url` and the local-serving path. Raises
         HomeAssistantError with a translation_key on every failure path.
         """
+        from ..const import DEFAULT_FIRMWARE_MODEL
         from ..const import DOMAIN as _DOMAIN
         from ..const import FIRMWARE_VARIANTS
 
@@ -758,14 +759,24 @@ class DeviceManager:
                 translation_domain=_DOMAIN,
                 translation_key="build_flags_unavailable",
             )
+        # Firmware from before the `model` flag existed is all Pro; the Lite has
+        # only ever run builds that report it. `co2_enabled` predates both and
+        # is reported by every build that exposes get_build_flags, so a missing
+        # value can only be firmware old enough to be a Pro, which always has it.
+        model = flags.get("model") or DEFAULT_FIRMWARE_MODEL
         network = "ethernet" if flags.get("ethernet_enabled") else "wifi"
-        variant = FIRMWARE_VARIANTS.get(network)
+        co2 = bool(flags.get("co2_enabled", True))
+        variant = FIRMWARE_VARIANTS.get((model, network, co2))
         if variant is None:
+            # Offering the wrong build is not cosmetic: a mismatched model
+            # flashes firmware compiled for different pins, and a CO2 build on a
+            # board without the add-on fails the scd4x component and parks the
+            # device in error state. No variant can be right here, so refuse.
             raise HomeAssistantError(
-                f"No firmware variant for network type: {network}",
+                f"No firmware variant for model {model!r} on network type: {network} (co2={co2})",
                 translation_domain=_DOMAIN,
                 translation_key="no_firmware_variant",
-                translation_placeholders={"network": network},
+                translation_placeholders={"model": model, "network": network},
             )
         return variant
 

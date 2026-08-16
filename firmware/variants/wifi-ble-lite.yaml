@@ -1,0 +1,44 @@
+# Everything Presence Lite, bare board — no CO2 add-on fitted.
+#
+# The SCD40 sits on the Lite's expansion header and is genuinely optional, so
+# it must not be compiled in unconditionally: ESPHome marks a component that
+# cannot reach its I2C device as failed, which parks the whole app in error
+# state. Visibly that means the status LED blinks forever and stops honouring
+# manual control. Boards with the add-on use wifi-ble-lite-co2.yaml.
+#
+# The Lite is WiFi-only, so unlike the Pro there is no ethernet counterpart.
+dashboard_import:
+  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-ble-lite.yaml@main
+  import_full_config: false
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    version: recommended
+
+packages:
+   variant_defaults: !include ../common/lite-variant-defaults.yaml
+   epp_core: !include ../common/epp-core.yaml
+   epp_entities: !include ../common/epp-entities.yaml
+   bh1750_base: !include ../common/bh1750-base.yaml
+   lite_base: !include ../common/everything-presence-lite-base.yaml
+   ld2450_lite_base: !include ../common/ld2450-lite-base.yaml
+   bluetooth_base: !include ../common/bluetooth-base.yaml
+   wifi_base: !include ../common/wifi-base.yaml
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: True
+
+update:
+  - platform: http_request
+    id: update_http_request
+    name: Firmware Update
+    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/wifi-ble-lite.json
+    # The eppgrid integration pins FIRMWARE_VERSION and surfaces version
+    # mismatches via HA Repairs, so device-side polling (default 6h) is
+    # redundant. set_update_manifest action and the OTA button still drive
+    # this component for explicit checks/installs.
+    update_interval: never
