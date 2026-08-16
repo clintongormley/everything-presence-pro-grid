@@ -101,3 +101,63 @@ describe("#377 the trail's leading point lands on the target dot", () => {
 		},
 	);
 });
+
+// #377 follow-up: the user still saw the offset on rc.3 (which shipped the fix)
+// in the DASHBOARD CARD, whose <epp-grid> runs in FILL mode (grid grows to fill
+// its measured width, no height budget) at the reported room of 4.2m x 2.7m.
+// Fill mode is the one structural difference the test above (a fixed 800x600
+// measured box) does not exercise. If the fix were fill-mode-specific-broken the
+// trail would detach here; if it holds, a residual-code bug is ruled out and the
+// live offset can only be a stale (pre-fix) bundle in the client.
+const CARD_ROOM_W = 4200;
+const CARD_ROOM_D = 2700;
+
+describe("#377 fill-mode (dashboard card) trail lands on the dot", () => {
+	it.each([
+		["deep", 3600, 2400],
+		["shallow", 1000, 500],
+	])(
+		"draws the trail's leading vertex on the dot in fill mode (%s)",
+		async (_label, tx, ty) => {
+			const el = document.createElement("epp-grid") as EppGrid;
+			el.style.display = "block";
+			// A wide card-like host: fill mode measures this width and grows the
+			// map to fit it, ignoring height (mirrors the overview card).
+			el.style.width = "900px";
+			el.style.height = "700px";
+			Object.assign(el, {
+				roomWidth: CARD_ROOM_W,
+				roomDepth: CARD_ROOM_D,
+				grid: initGridFromRoom(CARD_ROOM_W, CARD_ROOM_D),
+				showHeatmap: true,
+				fill: true,
+				targets: [{ x: tx, y: ty, status: "active", signal: 90 }],
+				trails: [
+					[
+						{ x: tx - 800, y: ty - 400 },
+						{ x: tx, y: ty },
+					],
+				],
+			});
+			document.body.appendChild(el);
+			mounted.push(el);
+			await settle(el);
+
+			const dot = el.shadowRoot!.querySelector<HTMLElement>(".target-dot");
+			expect(dot, "target dot rendered").not.toBeNull();
+			const d = dot!.getBoundingClientRect();
+			const dotCx = d.left + d.width / 2;
+			const dotCy = d.top + d.height / 2;
+
+			const svg = el.shadowRoot!.querySelector<SVGSVGElement>("svg.trail");
+			expect(svg, "trail svg rendered").not.toBeNull();
+			const polyline = svg!.querySelector("polyline")!;
+			const pts = polyline.points;
+			const lastUser = pts.getItem(pts.numberOfItems - 1);
+			const lastScreen = lastUser.matrixTransform(polyline.getScreenCTM()!);
+
+			expect(Math.abs(lastScreen.x - dotCx)).toBeLessThan(1);
+			expect(Math.abs(lastScreen.y - dotCy)).toBeLessThan(1);
+		},
+	);
+});
