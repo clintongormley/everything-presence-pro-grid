@@ -447,7 +447,7 @@
 		"confirm_delete_title": "Remove old configuration?",
 		"confirm_delete_message": "This device was previously configured with the original firmware. The old configuration will be removed from Home Assistant.",
 		"update": "Update",
-		"update_all": "Upgrade all",
+		"update_all": "Update all",
 		"integration_update": "Integration update needed",
 		"integration_outdated_title": "Integration update required",
 		"integration_outdated_body": "One or more devices have firmware that is newer than this version of the integration. Update the Everything Presence Pro Grid integration to restore full functionality.",

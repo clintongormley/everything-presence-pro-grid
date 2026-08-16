@@ -148,27 +148,69 @@ class TestSubscribeOtaProgress:
             translation_key="integration_not_loaded",
         )
 
-    async def test_sends_error_when_no_session(
+    async def test_reports_success_without_a_session_when_device_offline(
         self,
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
+        """Upgrade-all regression: when the panel subscribes, a device is usually
+        OFFLINE (the http_request OTA download blocks its main loop), so
+        async_open_session returns None. The handler must NOT bail with no_session
+        — it must arm the reboot-proof, session-independent outcome watch and
+        report success when the device returns on the target version. (Only the
+        currently-streamed device has a reusable live session, which is why a
+        single physical device always appeared to work before.)
+        """
+        from custom_components.eppgrid.const import FIRMWARE_VERSION
+
         mock_dm = await setup_integration(hass, config_entry)
+        # Offline / non-selected device: no session can be opened.
         mock_dm.async_open_session = AsyncMock(return_value=None)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="success")
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
+        connection.subscriptions = {}
         msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
         await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
-        # Standard no-session pairing shared by every no-session error site:
-        # code `no_session` + translation_key `no_active_session`.
-        connection.send_error.assert_called_once_with(
-            1,
-            "no_session",
-            "No active session — call subscribe_device first",
-            translation_domain=DOMAIN,
-            translation_key="no_active_session",
-        )
+        await hass.async_block_till_done()
+
+        # Must NOT abandon the update with a no-session error.
+        no_session_errors = [
+            c for c in connection.send_error.call_args_list if len(c[0]) > 1 and c[0][1] == "no_session"
+        ]
+        assert no_session_errors == []
+        # Must establish the subscription and report success off the durable signal.
+        connection.send_result.assert_called_once_with(1)
+        mock_dm.async_wait_for_ota_outcome.assert_awaited()
+        from homeassistant.components.websocket_api import event_message
+
+        calls = [c[0][0] for c in connection.send_message.call_args_list]
+        assert event_message(1, {"state": "success", "version": FIRMWARE_VERSION}) in calls
+
+    async def test_reports_abort_without_a_session(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """The sessionless path still fast-fails a flash that parked back on the
+        old firmware (outcome 'aborted' -> ota_interrupted)."""
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.async_open_session = AsyncMock(return_value=None)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="aborted")
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+        await hass.async_block_till_done()
+
+        mock_dm.async_wait_for_ota_outcome.assert_awaited()
+        from homeassistant.components.websocket_api import event_message
+
+        calls = [c[0][0] for c in connection.send_message.call_args_list]
+        assert event_message(1, {"state": "error", "error_key": "flasher.errors.ota_interrupted"}) in calls
 
     async def test_subscribes_and_sends_result(
         self,
@@ -1163,16 +1205,17 @@ class TestSubscribeOtaProgress:
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
-        """If the connection is no longer alive (raced to close after
-        the open returned), don't try to subscribe / bump — release the
-        session reference the open just took, then send an error and bail.
-        Without the release, the raced-out reference would keep the dead
-        session's refcount from ever reaching zero."""
+        """If the connection is no longer alive (raced to close after the open
+        returned), don't try to subscribe / bump — release the session reference
+        the open just took, then downgrade to the sessionless outcome watch (do
+        NOT abandon the update with an error). Without the release, the raced-out
+        reference would keep the dead session's refcount from ever reaching zero."""
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
         device_conn.connected = False  # connection vanished
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="success")
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()
@@ -1180,23 +1223,24 @@ class TestSubscribeOtaProgress:
         msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
         await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
 
-        connection.send_result.assert_not_called()
-        connection.send_error.assert_called_once()
-        args = connection.send_error.call_args[0]
-        assert args[0] == 1
-        assert args[1] == "no_session"
-        device_conn.subscribe_states.assert_not_awaited()
+        # Still-valid: released the raced-out reference, never touched the dead conn.
         mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", device_conn)
+        device_conn.subscribe_states.assert_not_awaited()
+        # New behaviour: establishes the subscription and runs the sessionless watch.
+        connection.send_error.assert_not_called()
+        connection.send_result.assert_called_once_with(1)
+        mock_dm.async_wait_for_ota_outcome.assert_awaited()
 
     async def test_subscribe_states_failure_reverts_bump_and_releases(
         self,
         hass: HomeAssistant,
         config_entry: MockConfigEntry,
     ) -> None:
-        """If subscribe_states raises AFTER the log-level bump, the handler
-        must revert the bump, drop the log subscription it started, release
-        the session reference, and send a curated error — otherwise the
-        device keeps streaming ERROR logs forever and the session leaks."""
+        """If subscribe_states raises AFTER the log-level bump, the handler must
+        revert the bump, drop the log subscription it started, and release the
+        session reference — otherwise the device keeps streaming ERROR logs
+        forever and the session leaks — then downgrade to the sessionless outcome
+        watch rather than abandoning the update with an error."""
         log_svc = MagicMock()
         mock_dm = await setup_integration(hass, config_entry)
         device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
@@ -1205,6 +1249,7 @@ class TestSubscribeOtaProgress:
         device_conn.unsubscribe_logs = MagicMock()
         device_conn.subscribe_states = AsyncMock(side_effect=RuntimeError("connection is closed"))
         mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="success")
 
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
@@ -1213,9 +1258,10 @@ class TestSubscribeOtaProgress:
         msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
         await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
 
-        connection.send_result.assert_not_called()
-        connection.send_error.assert_called_once()
-        assert connection.send_error.call_args[0][0] == 1
+        # Downgrades to the sessionless watch — no error, subscription established.
+        connection.send_error.assert_not_called()
+        connection.send_result.assert_called_once_with(1)
+        mock_dm.async_wait_for_ota_outcome.assert_awaited()
 
         # Bump happened, then was reverted (stored config empty → "None").
         calls = device_conn._client.execute_service.await_args_list
@@ -1392,6 +1438,76 @@ class TestSubscribeOtaProgress:
         sent = connection.send_message.call_args[0][0]
         # Event message structure: {"id": 1, "type": "event", "event": {...}}
         assert sent["event"]["state"] == "error"
+
+    async def test_locally_served_timeout_offers_github_retry(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """A locally-served OTA that times out is most likely a device that
+        couldn't reach HA to download — surface the reachability error (which
+        offers the 'Download from GitHub' retry) rather than a bare timeout.
+        Matters most on the sessionless path (an 'Upgrade all' non-selected
+        device), where the device log that would classify a connect failure is
+        unavailable."""
+        import asyncio
+        from datetime import datetime
+
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.async_open_session = AsyncMock(return_value=None)  # sessionless
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="timeout")
+        mock_dm.ota_was_locally_served = MagicMock(return_value=True)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        with patch("custom_components.eppgrid.websocket_api._firmware.async_call_later") as mock_call_later:
+            await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+            await hass.async_block_till_done()
+            assert mock_call_later.called
+            timeout_cb = mock_call_later.call_args[0][2]
+            connection.send_message.reset_mock()
+            ret = timeout_cb(datetime.now())
+            if asyncio.iscoroutine(ret):
+                await ret
+
+        sent = connection.send_message.call_args[0][0]
+        assert sent["event"]["state"] == "error"
+        # The download-unreachable key is what the frontend keys the
+        # "Download from GitHub" button off.
+        assert sent["event"]["error_key"] == "flasher.errors.ota_download_unreachable"
+
+    async def test_github_direct_timeout_stays_generic(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """A GitHub-direct OTA that times out keeps the generic timeout error —
+        the device has internet, so offering to switch source wouldn't help."""
+        import asyncio
+        from datetime import datetime
+
+        mock_dm = await setup_integration(hass, config_entry)
+        mock_dm.async_open_session = AsyncMock(return_value=None)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="timeout")
+        mock_dm.ota_was_locally_served = MagicMock(return_value=False)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        with patch("custom_components.eppgrid.websocket_api._firmware.async_call_later") as mock_call_later:
+            await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+            await hass.async_block_till_done()
+            timeout_cb = mock_call_later.call_args[0][2]
+            connection.send_message.reset_mock()
+            ret = timeout_cb(datetime.now())
+            if asyncio.iscoroutine(ret):
+                await ret
+
+        sent = connection.send_message.call_args[0][0]
+        assert sent["event"]["error_key"] == "flasher.errors.ota_timeout"
 
     async def test_outer_timeout_does_not_fire_after_terminal(
         self,

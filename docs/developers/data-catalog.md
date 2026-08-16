@@ -586,12 +586,16 @@ internet-connected device can always fetch.
 
 ### `subscribe_ota_progress`
 
-Subscribes to OTA firmware update progress for a device. Takes one refcounted
-session reference via `async_open_session` (shared with `subscribe_device` — see
-the session-lifecycle section). Subscribes to ESPHome `UpdateState` entity
-changes and device log messages to forward progress, success, and error events
-to the frontend. Uses a shared `done` flag so only one terminal event (success
-or error) is sent.
+Subscribes to OTA firmware update progress for a device. A live device session
+(`async_open_session`, shared with `subscribe_device` — see the
+session-lifecycle section) is **best-effort**: when one is available it
+subscribes to ESPHome `UpdateState` entity changes and device log messages to
+forward incremental progress; when it can't be opened — a device reads as
+offline while its `http_request` download blocks the main loop, so a session
+usually can't be opened right after the OTA is triggered — the command
+downgrades to the sessionless outcome watch (below) instead of failing. Either
+way it uses a shared `done` flag so only one terminal event (success or error)
+is sent.
 
 Success is confirmed two ways, whichever lands first: the `UpdateState` reaching
 `current == latest`, OR — the reboot-proof path — the manager's
@@ -631,9 +635,13 @@ Instead, `aborted` requires the device to sit on the OLD version continuously
 
 The abort detection arms ONLY after real download bytes have flowed (the
 watcher's `saw_progress` flag), so the pre-OTA reboot (which also reads as
-offline → back-on-old-version) is never mistaken for a started download. The
-frontend's `OTA_BACKSTOP_MS` (270s) stays deliberately longer than the 240s
-backend window so the backend's verdict always lands first.
+offline → back-on-old-version) is never mistaken for a started download. On the
+sessionless path there is no `UpdateState` to set `saw_progress`, so it is
+primed `True` — the command only subscribes after a successful trigger, so the
+OTA is already in flight; the pre-OTA reboot is still excluded because the
+frontend subscribes only after `async_trigger_ota` has finished rebooting the
+device. The frontend's `OTA_BACKSTOP_MS` (270s) stays deliberately longer than
+the 240s backend window so the backend's verdict always lands first.
 
 N concurrent OTA watchers on the same device share ONE device log subscription
 and ONE `epp_set_log_level` bump (tracked in the `OtaWatcherState` dataclass on
@@ -641,9 +649,18 @@ the `DeviceConnection`); the bump is reverted to the stored level — and the lo
 subscription dropped — only when the last watcher unsubscribes, and skipped
 entirely when that release also closes the session.
 
-When the device session can't be opened (device offline/unknown, or the
-connection raced to close), the command returns the standard no-session error:
-code `no_session`, translation key `no_active_session`.
+When the device session can't be opened (device offline/unknown, the connection
+raced to close, or `subscribe_states` fails), the command does NOT error — it
+downgrades to the **sessionless** path: it skips the log/state subscriptions and
+runs `async_wait_for_ota_outcome` (which reads the durable firmware-version
+entity, needing no device connection) plus the outer timeout, so every device
+reports its own success / abort / timeout. This is what makes "Update all"
+report all devices rather than only the currently-streamed one (whose session is
+reused without an availability check). The only thing lost on the sessionless
+path is the incremental progress log stream — and the firmware's empty-URL
+manifest-race retry that rides on it (log-driven), so a pre-1.2.1 device that
+hits that race under "Update all" falls to the outer timeout instead of
+auto-retrying (the race is fixed forward in firmware).
 
 **Request:** `{ "type": "eppgrid/subscribe_ota_progress", "mac": str }`
 
