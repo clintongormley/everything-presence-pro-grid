@@ -163,6 +163,26 @@ describe("renderSettingsSection", () => {
 });
 
 describe("renderDetectionRanges", () => {
+	it("hides the static sensor range card without the static radar (Lite)", () => {
+		// Review finding (#361): the static-range card fires staticMinDistance /
+		// staticMaxDistance, which push via epp_set_static_presence — a service the
+		// Lite firmware never declares — so the save went nowhere. Gate it like
+		// every other static control.
+		const sv = createView({ capabilities: { has_static_presence: false } });
+		const c = renderTo((sv as any).renderDetectionRanges());
+		expect(c.innerHTML).not.toContain("settings.static_sensor");
+		// The target-range card is shared by every model and must stay.
+		expect(c.innerHTML).toContain("settings.target_sensor");
+		document.body.removeChild(c);
+	});
+
+	it("keeps the static sensor range card with the radar and on pre-flag firmware", () => {
+		const sv = createView({ capabilities: {} });
+		const c = renderTo((sv as any).renderDetectionRanges());
+		expect(c.innerHTML).toContain("settings.static_sensor");
+		document.body.removeChild(c);
+	});
+
 	it("renders with auto range enabled", () => {
 		const sv = createView({
 			targetAutoDistance: true,
