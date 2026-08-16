@@ -96,7 +96,12 @@ import {
 	headerStyles,
 	saveCancelBarStyles,
 } from "./styles.js";
-import type { DeviceInfo, RawTarget, Target } from "./types.js";
+import type {
+	DeviceCapabilities,
+	DeviceInfo,
+	RawTarget,
+	Target,
+} from "./types.js";
 import { tokens } from "./ui/tokens.js";
 
 // ZoneSlots / INITIAL_ZONE_SLOTS moved to lib/zone-defaults.ts so the
@@ -106,6 +111,13 @@ import { tokens } from "./ui/tokens.js";
 // for the newly added device to appear in the device list.
 const DEVICE_WAIT_MAX_ATTEMPTS = 30;
 const DEVICE_WAIT_DELAY_MS = 1000;
+
+// Stable empty defaults for render-time fallbacks. Returning a fresh `{}` from
+// `??`/`||` on every render hands the child element a new property identity each
+// cycle, defeating Lit's dirty-check and re-rendering the settings subtree
+// needlessly. Frozen so no consumer can mutate the shared instance.
+const EMPTY_CAPABILITIES: DeviceCapabilities = Object.freeze({});
+const EMPTY_ENTITIES_CONFIG: Record<string, boolean> = Object.freeze({});
 
 // Content hash of the running bundle, read from its own content-hashed URL
 // (`/eppgrid_static/<hash>/eppgrid-panel.js`). Compared against the server's
@@ -3741,7 +3753,7 @@ export class EPPGridPanel extends LitElement {
           .grid=${this._grid}
           .saving=${this._saving}
           .dirty=${this._dirty}
-          .entitiesConfig=${this._entitiesConfig || {}}
+          .entitiesConfig=${this._entitiesConfig || EMPTY_ENTITIES_CONFIG}
           .temperatureOffset=${this._temperatureOffset}
           .humidityOffset=${this._humidityOffset}
           .illuminanceOffset=${this._illuminanceOffset}
@@ -3752,7 +3764,7 @@ export class EPPGridPanel extends LitElement {
           .staticOnDelay=${this._staticOnDelay}
           .logLevels=${this._logLevels}
           .co2Enabled=${this._co2Enabled}
-          .capabilities=${activeDevice ?? {}}
+          .capabilities=${activeDevice ?? EMPTY_CAPABILITIES}
           .ledMode=${this._ledMode}
           .ledBrightness=${this._ledBrightness}
           .ledPresenceColor=${this._ledPresenceColor}
