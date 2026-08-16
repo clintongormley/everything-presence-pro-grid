@@ -33,13 +33,11 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-import yaml
-
-from tests.esphome_yaml import ESPHomeLoader
+from tests.esphome_yaml import WIFI_VARIANT_YAML
+from tests.esphome_yaml import load_variant
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-BASE_YAML = REPO_ROOT / "firmware" / "common" / "everything-presence-pro-base.yaml"
 
 # Categories that set per-tag overrides. `system` is intentionally excluded:
 # it sets the global default level (no tag), not a per-tag override.
@@ -68,7 +66,7 @@ def _balanced_block(text: str, open_index: int) -> str:
 def _set_log_level_action_lambda() -> str:
     """Return the (comment-stripped) lambda body of the `epp_set_log_level`
     API action, which holds the category → tag mapping."""
-    doc = yaml.load(BASE_YAML.read_text(), Loader=ESPHomeLoader)
+    doc = load_variant(WIFI_VARIANT_YAML)
     actions = (doc.get("api") or {}).get("actions") or []
     action = next(
         (a for a in actions if isinstance(a, dict) and a.get("action") == "epp_set_log_level"),
@@ -131,7 +129,7 @@ def _on_boot_pinned_tags() -> set[str]:
        `for (const char *tag : {"a", "b", ...}) set_log_level(tag, ...NONE);`
        — here every literal in the initializer list counts as pinned.
     """
-    doc = yaml.load(BASE_YAML.read_text(), Loader=ESPHomeLoader)
+    doc = load_variant(WIFI_VARIANT_YAML)
     on_boot = (doc.get("esphome") or {}).get("on_boot") or []
     if isinstance(on_boot, dict):
         on_boot = [on_boot]

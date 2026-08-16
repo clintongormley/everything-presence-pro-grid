@@ -1,9 +1,8 @@
-# Substitutions / device_config live in ../common/variant-defaults.yaml
-# (included below); this variant uses its defaults unchanged
-# (ethernet_enabled: false).
-
+# Substitutions / device_config live in ../common/lite-variant-defaults.yaml
+# (included below); this variant uses its defaults unchanged. The Lite is
+# WiFi-only, so unlike the Pro there is no ethernet counterpart to this file.
 dashboard_import:
-  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-ble-co2.yaml@main
+  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-ble-lite.yaml@main
   import_full_config: false
 
 esp32:
@@ -13,15 +12,14 @@ esp32:
     version: recommended
 
 packages:
-   variant_defaults: !include ../common/variant-defaults.yaml
+   variant_defaults: !include ../common/lite-variant-defaults.yaml
    epp_core: !include ../common/epp-core.yaml
    epp_entities: !include ../common/epp-entities.yaml
    bh1750_base: !include ../common/bh1750-base.yaml
-   pro_base: !include ../common/everything-presence-pro-base.yaml
-   ld2450_base: !include ../common/ld2450-base.yaml
-   sen0609_base: !include ../common/sen0609-base.yaml
+   lite_base: !include ../common/everything-presence-lite-base.yaml
+   ld2450_lite_base: !include ../common/ld2450-lite-base.yaml
    bluetooth_base: !include ../common/bluetooth-base.yaml
-   co2_base: !include ../common/co2-base.yaml
+   co2_lite_base: !include ../common/co2-lite-base.yaml
 
 esphome:
   name: ${name}
@@ -90,7 +88,7 @@ update:
   - platform: http_request
     id: update_http_request
     name: Firmware Update
-    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/wifi-ble-co2.json
+    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/wifi-ble-lite.json
     # The eppgrid integration pins FIRMWARE_VERSION and surfaces version
     # mismatches via HA Repairs, so device-side polling (default 6h) is
     # redundant. set_update_manifest action and the OTA button still drive
@@ -100,7 +98,6 @@ update:
 wifi:
   on_connect:
     then:
-      - script.execute: control_leds
       # The drop is described here, on the way back up, rather than as it happens.
       #
       # Nothing published during an outage reaches HA anyway: the device is
@@ -129,7 +126,6 @@ wifi:
 
   on_disconnect:
     then:
-      - script.execute: control_leds
       # Republish the count as the link goes, so a device whose API session outlives
       # a brief blip reports the drop immediately rather than at reconnect. The
       # count itself is maintained by record_disconnect() in the event handler,

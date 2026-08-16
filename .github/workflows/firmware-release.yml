@@ -16,6 +16,7 @@ jobs:
         variant:
           - wifi-ble-co2
           - ethernet-ble-co2
+          - wifi-ble-lite
     name: "Build ${{ matrix.variant }}"
     steps:
       - uses: actions/checkout@v5
@@ -31,11 +32,33 @@ jobs:
       - name: Install ESPHome
         run: pip install -r firmware/requirements.txt
       - name: Compile firmware
-        run: esphome compile firmware/variants/${{ matrix.variant }}.yaml
+        # Build the firmware for whichever repository this workflow is running
+        # in, so a fork's devices fetch updates from the fork's own Pages rather
+        # than upstream's. `-s` is a global esphome option: placed after the
+        # subcommand it is silently ignored, so it must precede `compile`.
+        run: |
+          # Lowercased because the owner also forms the GitHub Pages host in the
+          # `update:` URL, and Pages serves the canonical lowercase hostname —
+          # an owner with capitals would otherwise bake in a host that only
+          # resolves by DNS case-insensitivity and never matches what a browser
+          # or the docs site reports. GitHub redirects the repo path
+          # case-insensitively, so the same value is safe for package_import_url.
+          REPO=$(echo "$GITHUB_REPOSITORY" | tr '[:upper:]' '[:lower:]')
+          esphome -s epp_repo_owner "${REPO%%/*}" \
+                  -s epp_repo_name "${REPO#*/}" \
+                  compile firmware/variants/${{ matrix.variant }}.yaml
       - name: Collect artifacts
         run: |
           mkdir -p dist
-          BUILD_DIR="firmware/variants/.esphome/build/everything-presence-pro/.pioenvs/everything-presence-pro"
+          # ESPHome names the build dir after the config's resolved `name`,
+          # which is per model (everything-presence-pro / -lite), not per
+          # variant. Ask ESPHome rather than hardcoding it: this path was
+          # pinned to the Pro's name, so the Lite job built successfully and
+          # then failed on the copy below.
+          DEVICE_NAME=$(esphome config "firmware/variants/${{ matrix.variant }}.yaml" \
+            | awk '/^esphome:/{f=1} f && /^  name:/{print $2; exit}')
+          test -n "$DEVICE_NAME" || { echo "::error::could not resolve device name"; exit 1; }
+          BUILD_DIR="firmware/variants/.esphome/build/${DEVICE_NAME}/.pioenvs/${DEVICE_NAME}"
           VARIANT="everything-presence-pro-${{ matrix.variant }}"
           cp "$BUILD_DIR/firmware.ota.bin" "dist/${VARIANT}.ota.bin"
           cp "$BUILD_DIR/bootloader.bin" "dist/${VARIANT}-bootloader.bin"
@@ -46,9 +69,16 @@ jobs:
           VER="${{ steps.version.outputs.version }}"
           VARIANT="everything-presence-pro-${{ matrix.variant }}"
           OTA_MD5=$(md5sum "dist/${VARIANT}.ota.bin" | cut -d' ' -f1)
+          # The asset filenames keep one prefix (it is the project slug, not a
+          # model claim), but `name` is what ESP Web Tools shows the user in the
+          # flash dialog, so it has to name the board they are holding.
+          case "${{ matrix.variant }}" in
+            *-lite) MODEL="Everything Presence Lite" ;;
+            *)      MODEL="Everything Presence Pro" ;;
+          esac
           cat > "dist/${VARIANT}-manifest.json" << EOF
           {
-            "name": "Everything Presence Pro (${{ matrix.variant }})",
+            "name": "${MODEL} (${{ matrix.variant }})",
             "version": "$VER",
             "builds": [
               {
