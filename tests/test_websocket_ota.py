@@ -1700,3 +1700,308 @@ class TestEmptyUrlRaceRetry:
         sent = connection.send_message.call_args[0][0]
         assert sent["event"]["state"] == "error"
         assert sent["event"]["error_key"] == "flasher.errors.ota_failed_version_unchanged"
+
+
+class TestOtaProgressLiveSessionRetry:
+    """Multi-device 'Upgrade all' regression: `async_trigger_ota` reboots each
+    device before flashing, so at subscribe time it is usually OFFLINE and
+    `async_open_session` returns None for every device except the streamed one.
+    Those devices fall to the sessionless outcome watch, which reports
+    success/failure but NO incremental progress bar. The device becomes
+    reachable again during the download, so a background retry must (re)open a
+    live session and upgrade the watcher to stream 0→100 like the streamed one.
+    """
+
+    async def test_retry_opens_session_and_streams_progress(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """First open (at subscribe) returns None (device offline); a later
+        retry succeeds once the device is reachable. The retry must attach the
+        live session (subscribe_states) and forward incremental `updating`
+        events from the delivered UpdateState."""
+        import asyncio
+
+        mock_dm = await setup_integration(hass, config_entry)
+        live_conn = make_mock_device_conn()
+        # Offline at subscribe time, reachable on the next retry open.
+        mock_dm.async_open_session = AsyncMock(side_effect=[None, live_conn])
+
+        # The outcome watch hangs so the retry has a window to attach before any
+        # terminal event lands (a resolved outcome would set `done` and the
+        # retry would stop before attaching).
+        never = asyncio.Event()
+
+        async def _hang(*args, **kwargs):
+            await never.wait()
+
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(side_effect=_hang)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        # interval 0 so the retry's sleep yields once per loop turn — advance it
+        # deterministically by pumping the loop rather than waiting real time.
+        with patch(
+            "custom_components.eppgrid.websocket_api._firmware._REBOOT_POLL_INTERVAL_S",
+            0,
+            create=True,
+        ):
+            websocket_subscribe_ota_progress(hass, connection, msg)
+            for _ in range(60):
+                await asyncio.sleep(0)
+                if live_conn.subscribe_states.await_count:
+                    break
+
+        # The background retry opened a second session and attached the live
+        # watcher (subscribe_states awaited on the re-opened connection).
+        assert mock_dm.async_open_session.await_count >= 2
+        live_conn.subscribe_states.assert_awaited()
+
+        # Delivering an in-progress UpdateState now streams a progress event.
+        on_state = live_conn.subscribe_states.await_args[0][0]
+        on_state(make_update_state(in_progress=True, has_progress=True, progress=42.0))
+
+        from homeassistant.components.websocket_api import event_message
+
+        calls = [c[0][0] for c in connection.send_message.call_args_list]
+        assert event_message(1, {"state": "updating", "progress": 42.0}) in calls
+
+        # Teardown: cancel the hung outcome watch + retry, release the session.
+        connection.subscriptions[1]()
+        await hass.async_block_till_done()
+
+    async def test_retry_cancelled_on_unsubscribe(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """Unsubscribing must cancel the background live-session retry — a live
+        retry would keep polling `async_open_session` after the subscription is
+        gone; a cancelled one stops making calls."""
+        import asyncio
+
+        mock_dm = await setup_integration(hass, config_entry)
+        # Always offline: the retry keeps looping (open → None → retry) until
+        # cancelled, so extra calls after unsubscribe would prove it survived.
+        mock_dm.async_open_session = AsyncMock(return_value=None)
+
+        never = asyncio.Event()
+
+        async def _hang(*args, **kwargs):
+            await never.wait()
+
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(side_effect=_hang)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        with patch(
+            "custom_components.eppgrid.websocket_api._firmware._REBOOT_POLL_INTERVAL_S",
+            0,
+            create=True,
+        ):
+            websocket_subscribe_ota_progress(hass, connection, msg)
+            # Let the handler start and the retry loop run several open attempts.
+            for _ in range(40):
+                await asyncio.sleep(0)
+            opens_at_unsub = mock_dm.async_open_session.call_count
+            # Initial open + at least one retry open proves the retry is running.
+            assert opens_at_unsub >= 2
+
+            # Unsubscribe cancels the retry task.
+            connection.subscriptions[1]()
+
+            # A surviving retry would keep polling; a cancelled one makes no more
+            # calls no matter how long we pump.
+            for _ in range(40):
+                await asyncio.sleep(0)
+
+        assert mock_dm.async_open_session.call_count == opens_at_unsub
+        await hass.async_block_till_done()
+
+    async def test_retry_rides_through_transient_failures_then_attaches(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """The device flaps while downloading: the retry must survive an open
+        error, a still-offline None, and a raced-closed connection, then attach
+        once a healthy session opens — releasing (never leaking) the reference
+        the raced-closed open took."""
+        import asyncio
+
+        mock_dm = await setup_integration(hass, config_entry)
+        live_conn = make_mock_device_conn()
+        raced = make_mock_device_conn()
+        raced.connected = False  # opened but already dead
+
+        # Initial open (sessionless), then the retry rides through failures.
+        seq: list = [
+            None,  # subscribe-time open → sessionless
+            RuntimeError("boom"),  # retry: open raises → swallowed
+            None,  # retry: still offline
+            raced,  # retry: opened but raced closed → released
+            live_conn,  # retry: healthy → attach
+        ]
+
+        async def _open(mac):
+            item = seq.pop(0)
+            if isinstance(item, Exception):
+                raise item
+            return item
+
+        mock_dm.async_open_session = AsyncMock(side_effect=_open)
+
+        never = asyncio.Event()
+
+        async def _hang(*args, **kwargs):
+            await never.wait()
+
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(side_effect=_hang)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        with patch(
+            "custom_components.eppgrid.websocket_api._firmware._REBOOT_POLL_INTERVAL_S",
+            0,
+            create=True,
+        ):
+            websocket_subscribe_ota_progress(hass, connection, msg)
+            for _ in range(200):
+                await asyncio.sleep(0)
+                if live_conn.subscribe_states.await_count:
+                    break
+
+        # Eventually attached the healthy session despite the flapping.
+        live_conn.subscribe_states.assert_awaited()
+        # The raced-closed connection's reference was released, not leaked.
+        mock_dm.release_session.assert_any_call("AA:BB:CC:DD:EE:FF", raced)
+
+        connection.subscriptions[1]()
+        await hass.async_block_till_done()
+
+    async def test_retry_attached_session_steps_aside_on_empty_url_no_op(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """The sessionless prime must NOT leak its 'started' signal into
+        `_on_state`'s real-download-byte flag. After the prime, the background
+        retry attaches a live session; if the pre-1.2.1 firmware hits the
+        empty-URL manifest race (in_progress flips with NO bytes downloaded,
+        then version unchanged), `_on_state` must STEP ASIDE for the log-driven
+        retry — not emit a premature `ota_failed_version_unchanged`. A primed
+        `saw_progress=True` would defeat that step-aside."""
+        import asyncio
+
+        mock_dm = await setup_integration(hass, config_entry)
+        live_conn = make_mock_device_conn()
+        # Offline at subscribe (→ sessionless prime), reachable on the retry.
+        mock_dm.async_open_session = AsyncMock(side_effect=[None, live_conn])
+
+        never = asyncio.Event()
+
+        async def _hang(*args, **kwargs):
+            await never.wait()
+
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(side_effect=_hang)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        with patch(
+            "custom_components.eppgrid.websocket_api._firmware._REBOOT_POLL_INTERVAL_S",
+            0,
+            create=True,
+        ):
+            websocket_subscribe_ota_progress(hass, connection, msg)
+            for _ in range(60):
+                await asyncio.sleep(0)
+                if live_conn.subscribe_states.await_count:
+                    break
+
+        live_conn.subscribe_states.assert_awaited()
+        on_state = live_conn.subscribe_states.await_args[0][0]
+
+        # Empty-URL no-op on the retry-attached session: INSTALLING with no
+        # bytes (has_progress=False), then in_progress=False with the version
+        # unchanged. Must step aside — the log-driven empty-URL retry owns it.
+        on_state(make_update_state(in_progress=True, has_progress=False))
+        on_state(make_update_state(in_progress=False, current_version="1.1.0", latest_version="1.2.1"))
+
+        sent_keys = [c[0][0].get("event", {}).get("error_key") for c in connection.send_message.call_args_list]
+        assert "flasher.errors.ota_failed_version_unchanged" not in sent_keys
+
+        connection.subscriptions[1]()
+        await hass.async_block_till_done()
+
+    async def test_retry_recovers_when_attach_raises_midway(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """A raise INSIDE `_attach_live_session` after it set device_conn=conn
+        (e.g. subscribe_logs throwing, which its own subscribe_states unwind
+        never covers) must not wedge the retry: the outer handler must release
+        the reference it took and clear device_conn so a later attempt can still
+        attach. Without that, device_conn stays set and the loop's
+        `device_conn is not None` guard stops the retry for good."""
+        import asyncio
+
+        mock_dm = await setup_integration(hass, config_entry)
+        # First retry conn: subscribe_logs raises partway through attach (after
+        # device_conn=conn and the watcher increment).
+        wedging = make_mock_device_conn()
+        wedging.is_log_subscribed = False
+        wedging.subscribe_logs = MagicMock(side_effect=RuntimeError("boom"))
+        # Second retry conn: healthy, attaches cleanly.
+        live_conn = make_mock_device_conn()
+
+        mock_dm.async_open_session = AsyncMock(side_effect=[None, wedging, live_conn])
+
+        never = asyncio.Event()
+
+        async def _hang(*args, **kwargs):
+            await never.wait()
+
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(side_effect=_hang)
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+
+        with patch(
+            "custom_components.eppgrid.websocket_api._firmware._REBOOT_POLL_INTERVAL_S",
+            0,
+            create=True,
+        ):
+            websocket_subscribe_ota_progress(hass, connection, msg)
+            for _ in range(120):
+                await asyncio.sleep(0)
+                if live_conn.subscribe_states.await_count:
+                    break
+
+        # Recovered: attached the healthy session on the later attempt.
+        live_conn.subscribe_states.assert_awaited()
+        # The wedging conn's reference was released (unwound), not leaked.
+        mock_dm.release_session.assert_any_call("AA:BB:CC:DD:EE:FF", wedging)
+
+        connection.subscriptions[1]()
+        await hass.async_block_till_done()
