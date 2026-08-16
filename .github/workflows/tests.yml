@@ -49,6 +49,15 @@ jobs:
         run: ruff check custom_components/ tests/ firmware/
       - name: Ruff format
         run: ruff format --check custom_components/ tests/ firmware/
+      - name: Mypy (type check)
+        # Type-check on the floor job only: [tool.mypy] pins python_version and
+        # sets ignore_missing_imports, so the result is HA-version-independent —
+        # one run is enough. Mirrors the local pre-push hook, which was the ONLY
+        # place mypy ran; CI itself never type-checked, so a union-attr
+        # regression reached main via a GitHub merge (server-side merges don't
+        # run the local hook).
+        if: matrix.ha-version == '2025.2.0'
+        run: mypy
       - name: Pytest
         run: pytest tests/ -v --cov=custom_components/eppgrid --cov-report=term-missing
 
