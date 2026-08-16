@@ -38,6 +38,7 @@ function createView(
 const device1: FlashableDevice = {
 	mac: "AA:BB:CC:DD:EE:01",
 	name: "Living Room Sensor",
+	device_name: null,
 	host: "192.168.1.10",
 	available: true,
 	firmware_type: "original",
@@ -50,6 +51,7 @@ const device1: FlashableDevice = {
 const device2: FlashableDevice = {
 	mac: "AA:BB:CC:DD:EE:02",
 	name: "Bedroom Sensor",
+	device_name: null,
 	host: "192.168.1.11",
 	available: true,
 	firmware_type: "eppgrid",
@@ -62,6 +64,7 @@ const device2: FlashableDevice = {
 const offlineDevice: FlashableDevice = {
 	mac: "AA:BB:CC:DD:EE:03",
 	name: "Offline Sensor",
+	device_name: null,
 	host: null,
 	available: false,
 	firmware_type: "original",
@@ -74,6 +77,7 @@ const offlineDevice: FlashableDevice = {
 const updatableDevice: FlashableDevice = {
 	mac: "AA:BB:CC:DD:EE:04",
 	name: "EPP Lounge",
+	device_name: null,
 	host: "192.168.20.214",
 	available: true,
 	firmware_type: "eppgrid",
@@ -214,6 +218,38 @@ describe("render() device list", () => {
 		);
 	});
 
+	it("shows the ESPHome node device name alongside the friendly name", () => {
+		const el = createView({
+			flashableDevices: [
+				{
+					...device1,
+					name: "EPP Bathroom 2",
+					device_name: "Everything Presence Pro 29be5c",
+				},
+			],
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		const extra = c.querySelector(".device-esphome-name");
+		expect(extra).not.toBeNull();
+		expect(extra!.textContent).toContain("Everything Presence Pro 29be5c");
+		// The friendly (sub-device) name still shows on its own row.
+		expect(c.querySelector(".device-name")!.textContent).toContain(
+			"EPP Bathroom 2",
+		);
+	});
+
+	it("omits the ESPHome node device name when null", () => {
+		const el = createView({
+			flashableDevices: [{ ...device1, device_name: null }],
+		});
+		const tpl = (el as any).render();
+		const c = renderTo(tpl);
+
+		expect(c.querySelector(".device-esphome-name")).toBeNull();
+	});
+
 	it("shows orange badge for original firmware", () => {
 		const el = createView({ flashableDevices: [device1] });
 		const tpl = (el as any).render();
@@ -238,6 +274,7 @@ describe("device list buttons", () => {
 		const device: FlashableDevice = {
 			mac: "AA:BB:CC:DD:EE:01",
 			name: "Test",
+			device_name: null,
 			host: "192.168.1.10",
 			available: true,
 			firmware_type: "original",
@@ -257,6 +294,7 @@ describe("device list buttons", () => {
 		const device: FlashableDevice = {
 			mac: "AA:BB:CC:DD:EE:01",
 			name: "Test",
+			device_name: null,
 			host: "192.168.1.10",
 			available: true,
 			firmware_type: "eppgrid",
@@ -277,6 +315,7 @@ describe("device list buttons", () => {
 		const device: FlashableDevice = {
 			mac: "AA:BB:CC:DD:EE:01",
 			name: "Test",
+			device_name: null,
 			host: "192.168.1.10",
 			available: true,
 			firmware_type: "eppgrid",
@@ -296,6 +335,7 @@ describe("device list buttons", () => {
 		const device: FlashableDevice = {
 			mac: "AA:BB:CC:DD:EE:01",
 			name: "Test",
+			device_name: null,
 			host: "192.168.1.10",
 			available: true,
 			firmware_type: "eppgrid",
@@ -1873,6 +1913,7 @@ describe("OTA inline rendering", () => {
 		const offlineEppDevice: FlashableDevice = {
 			mac: "AA:BB:CC:DD:EE:05",
 			name: "Offline EPP",
+			device_name: null,
 			host: null,
 			available: false,
 			firmware_type: "eppgrid",

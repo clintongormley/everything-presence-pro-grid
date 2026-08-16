@@ -1093,6 +1093,13 @@ const de={attribute:!0,type:String,converter:v,reflect:!1,hasChanged:w},pe=(e=de
     color: var(--epp-text-muted, var(--secondary-text-color, #757575));
     margin-top: 2px;
   }
+  .device-esphome-name {
+    font-size: var(--epp-font-xs, 12px);
+    color: var(--epp-text-muted, var(--secondary-text-color, #757575));
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
 
   .firmware-badge {
     font-size: 11px;
@@ -1598,6 +1605,7 @@ const de={attribute:!0,type:String,converter:v,reflect:!1,hasChanged:w},pe=(e=de
                         <div class="device-row">
                           <div class="device-info${t?" device-info-faded":""}">
                             <div class="device-name">${e.name} <span class="device-mac">(${e.mac.replace(/:/g,"").slice(-6).toLowerCase()})</span></div>
+                            ${e.device_name?N`<div class="device-esphome-name">${e.device_name}</div>`:j}
                             <div class="device-host">${e.host??this.localize("flasher.offline")}${"eppgrid"===e.firmware_type&&e.firmware_version&&"unknown"!==e.firmware_version?` - v${e.firmware_version}`:""}</div>
                           </div>
                           ${i.map(e=>N`<span class="firmware-badge ${e.cls}">${this.localize(e.labelKey)}</span>`)}

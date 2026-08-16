@@ -37,6 +37,7 @@ function mkDevices(n: number): FlashableDevice[] {
 	return Array.from({ length: n }, (_, i) => ({
 		mac: `AA:BB:CC:DD:EE:0${i}`,
 		name: `Sensor ${i + 1}`,
+		device_name: null,
 		host: `192.168.1.${10 + i}`,
 		available: true,
 		firmware_type: "eppgrid" as const,
