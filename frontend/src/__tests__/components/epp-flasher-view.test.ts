@@ -2541,6 +2541,8 @@ describe("USB flash — model selection", () => {
 		// non-functional device — the model has to be a deliberate choice.
 		const el = createView();
 		expect((el as any)._selectedModel).toBeNull();
+		// The variant helper must not guess "Pro" for an unset model.
+		expect((el as any)._getFirmwareVariant()).toBe("");
 	});
 
 	it("keeps the flash button disabled until a model is chosen, then enables it", async () => {

@@ -1232,6 +1232,12 @@ export class EppFlasherView extends LitElement {
 		// decides first and a stale `_selectedVariant` from a previous Pro
 		// selection cannot route it to firmware that does not exist.
 		if (this._selectedModel === "lite") return "wifi-ble-lite";
+		// Never guess "Pro" for an unset model: callers must gate on
+		// `_selectedModel` first (the flash button is disabled and
+		// `_dispatchUsbFlash` early-returns until it is set). Returning "" keeps
+		// the helper self-safe rather than re-introducing the silent-Pro footgun
+		// this component exists to prevent.
+		if (this._selectedModel !== "pro") return "";
 		return this._selectedVariant === "wifi"
 			? "wifi-ble-co2"
 			: "ethernet-ble-co2";
