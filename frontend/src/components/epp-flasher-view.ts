@@ -519,8 +519,14 @@ export class EppFlasherView extends LitElement {
 	 * Which board is being flashed. Chosen by the user rather than detected: a
 	 * USB flash targets a device that may still be running stock firmware, so
 	 * there is nothing to ask what it is.
+	 *
+	 * Starts unset (not "pro") on purpose: a silent Pro default flashed Pro
+	 * firmware onto a Lite for anyone who didn't notice the selector, and the
+	 * Lite's I2C/UART/LED pins differ enough that the wrong image leaves a
+	 * dead device. The flash button stays disabled until this is a deliberate
+	 * choice (see `_renderUsbIdle` / `_dispatchUsbFlash`).
 	 */
-	@state() private _selectedModel: "pro" | "lite" = "pro";
+	@state() private _selectedModel: "pro" | "lite" | null = null;
 	@property() firmwareVersion = "";
 	@property() integrationVersion = "";
 	@property({ attribute: false }) usbFlashState: UsbFlashState | null = null;
@@ -757,6 +763,9 @@ export class EppFlasherView extends LitElement {
 	}
 
 	private _dispatchUsbFlash(): void {
+		// Defensive: the button is disabled until a model is picked, but never
+		// route a flash to a guessed variant if that gate is ever bypassed.
+		if (!this._selectedModel) return;
 		this.dispatchEvent(
 			new CustomEvent("usb-flash", {
 				detail: { variant: this._getFirmwareVariant() },
@@ -1495,7 +1504,7 @@ export class EppFlasherView extends LitElement {
 						}
 						<div class="confirm-actions">
 							${this._renderCancelButton()}
-							<epp-button variant="primary" @click=${this._dispatchUsbFlash}>
+							<epp-button variant="primary" ?disabled=${!this._selectedModel} @click=${this._dispatchUsbFlash}>
 								${this.localize("flasher.usb_flash")}
 							</epp-button>
 						</div>
