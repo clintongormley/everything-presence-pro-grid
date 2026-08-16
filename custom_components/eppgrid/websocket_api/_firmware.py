@@ -334,12 +334,6 @@ async def websocket_subscribe_ota_progress(
         if state.in_progress:
             ever_active = True
             progress = state.progress if state.has_progress else None
-            _LOGGER.debug(
-                "OTA state[%s]: in_progress progress=%s has_progress=%s — sending 'updating' to panel",
-                mac,
-                progress,
-                state.has_progress,
-            )
             connection.send_message(
                 websocket_api.event_message(
                     msg["id"],
@@ -588,7 +582,6 @@ async def websocket_subscribe_ota_progress(
     if device_conn is not None:
         # A live session was open at subscribe time (the currently-streamed
         # device under "Upgrade all", or a single online device). Attach it.
-        _LOGGER.debug("OTA subscribe[%s]: live session at subscribe time — streaming directly", mac)
         await _attach_live_session(device_conn)
 
     if device_conn is None:
@@ -596,10 +589,6 @@ async def websocket_subscribe_ota_progress(
         # failed attach): fall back to the reboot-proof, entity-based outcome
         # watch. A background retry (below) upgrades this to live progress once
         # the device is reachable again during the download.
-        _LOGGER.debug(
-            "OTA subscribe[%s]: no live session (offline/rebooting) — sessionless watch + background retry",
-            mac,
-        )
         _prime_sessionless()
 
     async def _await_ota_outcome() -> None:
@@ -664,78 +653,35 @@ async def websocket_subscribe_ota_progress(
         # Cover roughly the outer-timeout download window; guard div-by-zero when
         # the interval is patched to 0 in tests.
         attempts = int(_OTA_OUTER_TIMEOUT_S / interval) if interval > 0 else _OTA_OUTER_TIMEOUT_S
-        # TEMP diagnostic logging (rc.7): pin down why non-streamed devices never
-        # upgrade to a live progress bar under "Update all" on real hardware —
-        # whether the device reads unavailable through the whole download, or is
-        # available but refuses a second API connection, or the OTA completes
-        # before a session ever attaches. Remove once the root cause is known.
-        _LOGGER.debug(
-            "OTA retry[%s]: starting live-session poll (interval=%ss, up to %s attempts)",
-            mac,
-            interval,
-            max(1, attempts),
-        )
-        attempt = 0
         for _ in range(max(1, attempts)):
             await asyncio.sleep(interval)
             if _should_stop():
-                _LOGGER.debug(
-                    "OTA retry[%s]: stopping after %s attempt(s) — done=%s, attached=%s (no live bar streamed)",
-                    mac,
-                    attempt,
-                    done,
-                    device_conn is not None,
-                )
                 return
-            attempt += 1
-            available = manager._is_device_available(mac)
             try:
                 conn = await manager.async_open_session(mac)
             except Exception:
                 # Device still offline / transient open failure — retry.
-                _LOGGER.debug(
-                    "OTA retry[%s] attempt %s: async_open_session raised (available=%s)",
-                    mac,
-                    attempt,
-                    available,
-                    exc_info=True,
-                )
+                _LOGGER.debug("OTA live-session retry: open failed for %s", mac, exc_info=True)
                 continue
             if conn is None:
-                _LOGGER.debug(
-                    "OTA retry[%s] attempt %s: no session yet (available=%s)",
-                    mac,
-                    attempt,
-                    available,
-                )
                 continue
             if not conn.connected:
                 # Raced closed between open and here — release the reference the
                 # open took, then retry.
-                _LOGGER.debug(
-                    "OTA retry[%s] attempt %s: opened but not connected (available=%s)", mac, attempt, available
-                )
                 manager.release_session(mac, conn)
                 continue
             if _should_stop():
                 # A terminal event or another attach landed during the open —
                 # release the just-opened reference and stop.
                 manager.release_session(mac, conn)
-                _LOGGER.debug("OTA retry[%s] attempt %s: terminal/attach landed during open — stop", mac, attempt)
                 return
             if await _attach_live_session(conn):
-                _LOGGER.debug(
-                    "OTA retry[%s] attempt %s: ATTACHED live session — incremental progress resumes",
-                    mac,
-                    attempt,
-                )
                 return
             # Attach failed — the connection raced closed during the subscribe.
             # `_attach_live_session` self-unwinds on any ordinary error (releases
             # the session reference it was given and resets device_conn), so just
             # loop and retry on the next tick. A cancel (unsubscribe) propagates out
             # of the awaited attach, ending this task; `_unsub` owns that release.
-            _LOGGER.debug("OTA retry[%s] attempt %s: attach failed (raced closed) — retry", mac, attempt)
 
     if device_conn is None:
         # No `_on_state` to arm the outer safety-net timer, so arm it here — the
