@@ -144,24 +144,25 @@ async def websocket_subscribe_ota_progress(
 ) -> None:
     """Subscribe to OTA firmware update progress for a device."""
     mac = msg["mac"]
-    # Always go through async_open_session: it returns the existing session
-    # when one is active and takes one subscriber reference either way, so
-    # this watcher and any subscribe_device clients share the connection and
-    # the manager only closes it when the LAST reference is released.
+    # Best-effort live session — used ONLY for incremental progress logs/state.
+    # Right after a device's OTA is triggered it is usually OFFLINE (the
+    # http_request download blocks the main loop), so a session frequently can't
+    # be opened — especially under "Upgrade all", where only the currently-
+    # streamed device has a reusable one. A missing session must NOT abandon the
+    # update: the reboot-proof, entity-based outcome watch
+    # (`async_wait_for_ota_outcome`, below) reports success/failure with no
+    # session at all, so we downgrade to that sessionless path instead of
+    # erroring out. `async_open_session` returns the shared session when one is
+    # active, taking one subscriber reference released in `_release_watcher`.
     device_conn = None
     with contextlib.suppress(Exception):
         device_conn = await manager.async_open_session(mac)
-    if device_conn is None:
-        _send_no_session(connection, msg["id"])
-        return
-    if not device_conn.connected:
-        # The connection raced to close between the open and here; treat it
-        # the same as "no session" rather than letting subsequent
-        # execute_service calls AttributeError — but release the reference
-        # the open just took, or the dead session's refcount never drains.
+    if device_conn is not None and not device_conn.connected:
+        # Raced closed between open and here — release the reference the open took
+        # (else the dead session's refcount never drains), then fall through to the
+        # sessionless path rather than AttributeError-ing on it.
         manager.release_session(mac, device_conn)
-        _send_no_session(connection, msg["id"])
-        return
+        device_conn = None
 
     # Start sentinel: latched once we've seen evidence that the device is
     # mid-OTA — either explicit `in_progress=True`, or a `latest != current`
@@ -176,37 +177,57 @@ async def websocket_subscribe_ota_progress(
     timer_cancel: Any = None  # async_call_later cancel handle for the outer timeout
     version_task: Any = None  # reboot-proof completion watch (firmware-version return)
 
-    # Ensure device logs are subscribed so _on_log callbacks fire
+    def _prime_sessionless() -> None:
+        # Enter sessionless mode. With no live session there is no `_on_state` to
+        # latch these from the device, but the frontend only subscribes AFTER a
+        # successful trigger — so the OTA is in flight and the device is offline
+        # because it is downloading. Treat it as started so `_await_ota_outcome`
+        # reports success (version->target) and can fast-fail an abort
+        # (offline->settled-on-old). Known gap: the firmware's empty-URL
+        # manifest-race retry is log-driven (see `_on_log`), so it does NOT run
+        # here — an old (<1.2.1) device that hits that race under "Upgrade all"
+        # falls to the outer timeout instead of auto-retrying. The race is fixed
+        # forward in firmware, so this only affects upgrades from pre-1.2.1.
+        nonlocal was_in_progress, saw_progress
+        was_in_progress = True
+        saw_progress = True
+
+    if device_conn is None:
+        _prime_sessionless()
+
+    # `_on_log` (below) references ESPLogLevel even on the sessionless path where
+    # it is never registered, so import it unconditionally.
     from aioesphomeapi import LogLevel as ESPLogLevel
 
-    # Shared watcher state lives on the DeviceConnection (`ota`): N
-    # concurrent OTA watchers (two tabs, two users) share ONE device log
-    # subscription and ONE log-level bump, reverted only when the last
-    # watcher releases.
-    device_conn.ota.watchers += 1
-    if device_conn.ota.watchers == 1:
-        if not device_conn.is_log_subscribed:
-            device_conn.subscribe_logs(ESPLogLevel.LOG_LEVEL_ERROR)
-            device_conn.ota.started_log_sub = True
+    if device_conn is not None:
+        # Shared watcher state lives on the DeviceConnection (`ota`): N
+        # concurrent OTA watchers (two tabs, two users) share ONE device log
+        # subscription and ONE log-level bump, reverted only when the last
+        # watcher releases.
+        device_conn.ota.watchers += 1
+        if device_conn.ota.watchers == 1:
+            if not device_conn.is_log_subscribed:
+                device_conn.subscribe_logs(ESPLogLevel.LOG_LEVEL_ERROR)
+                device_conn.ota.started_log_sub = True
 
-        # Firmware silences the ESPHome logger to NONE on boot, so even ERROR
-        # messages from http_request.ota / http_request.update never leave the
-        # device — the subscribe-logs surface above reads nothing. Bump the
-        # system log level to Error here so OTA failures actually reach the
-        # frontend. Older firmware that doesn't expose this action is left
-        # alone (older firmware also doesn't silence to NONE, so it works).
-        try:
-            await device_conn.async_execute_service(
-                "epp_set_log_level",
-                {"category": _OTA_LOG_CATEGORY, "level": _OTA_LOG_LEVEL},
-            )
-            device_conn.ota.bumped_log_level = True
-        except HomeAssistantError:
-            # Older firmware doesn't expose epp_set_log_level — fine; the
-            # ESPHome OTA logger isn't silenced on those builds anyway.
-            _LOGGER.debug("Device %s does not expose epp_set_log_level", mac)
-        except Exception:
-            _LOGGER.debug("Failed to bump device log level for OTA visibility", exc_info=True)
+            # Firmware silences the ESPHome logger to NONE on boot, so even ERROR
+            # messages from http_request.ota / http_request.update never leave the
+            # device — the subscribe-logs surface above reads nothing. Bump the
+            # system log level to Error here so OTA failures actually reach the
+            # frontend. Older firmware that doesn't expose this action is left
+            # alone (older firmware also doesn't silence to NONE, so it works).
+            try:
+                await device_conn.async_execute_service(
+                    "epp_set_log_level",
+                    {"category": _OTA_LOG_CATEGORY, "level": _OTA_LOG_LEVEL},
+                )
+                device_conn.ota.bumped_log_level = True
+            except HomeAssistantError:
+                # Older firmware doesn't expose epp_set_log_level — fine; the
+                # ESPHome OTA logger isn't silenced on those builds anyway.
+                _LOGGER.debug("Device %s does not expose epp_set_log_level", mac)
+            except Exception:
+                _LOGGER.debug("Failed to bump device log level for OTA visibility", exc_info=True)
 
     @callback
     def _arm_timer() -> None:
@@ -223,6 +244,26 @@ async def websocket_subscribe_ota_progress(
             return
         done = True
         _cancel_version_task()
+        # A locally-served OTA that never completes is most likely a device that
+        # couldn't reach HA to download it — especially on the sessionless path,
+        # where the device error log that would classify a connect failure isn't
+        # available (only the streamed device gets it, so a plain "Upgrade all"
+        # non-selected device would otherwise time out with no escape hatch).
+        # Surface the reachability error, which offers the "Download from GitHub"
+        # retry, instead of a bare timeout. A GitHub-direct OTA keeps the generic
+        # timeout — the device has internet, so switching source wouldn't help.
+        if manager.ota_was_locally_served(mac):
+            connection.send_message(
+                websocket_api.event_message(
+                    msg["id"],
+                    {
+                        "state": "error",
+                        "message": "no response within the time limit",
+                        "error_key": "flasher.errors.ota_download_unreachable",
+                    },
+                )
+            )
+            return
         connection.send_message(
             websocket_api.event_message(
                 msg["id"],
@@ -417,13 +458,18 @@ async def websocket_subscribe_ota_progress(
             )
         )
 
-    async def _async_revert_log_level() -> None:
+    async def _async_revert_log_level(conn: Any) -> None:
         # Restore the firmware's `system` category to whatever the user has
         # configured (or "None" if unconfigured). Without this, the device
-        # keeps emitting ERROR logs after the OTA panel closes.
+        # keeps emitting ERROR logs after the OTA panel closes. Takes the
+        # connection explicitly rather than closing over the outer `device_conn`:
+        # the subscribe-fail downgrade rebinds `device_conn = None` right after
+        # scheduling this task, so a closure would revert against None (a no-op
+        # that strands the bump) unless the task's `device_conn` read happened to
+        # run eagerly before the rebind — too fragile to rely on.
         stored_level = manager.store.devices.get(mac, {}).get("log_levels", {}).get(_OTA_LOG_CATEGORY, "None")
         try:
-            await device_conn.async_execute_service(
+            await conn.async_execute_service(
                 "epp_set_log_level",
                 {"category": _OTA_LOG_CATEGORY, "level": stored_level},
             )
@@ -460,21 +506,30 @@ async def websocket_subscribe_ota_progress(
         if not last_watcher or closing is not None:
             return
         if bumped:
-            hass.async_create_task(_async_revert_log_level())
+            # Capture `device_conn` now (still the live connection) — the
+            # subscribe-fail downgrade rebinds it to None right after this call.
+            hass.async_create_task(_async_revert_log_level(device_conn))
         if started:
             device_conn.unsubscribe_logs()
 
-    try:
-        await device_conn.subscribe_states(_on_state)
-    except Exception:
-        # Connection raced to close after the bump — undo this watcher's
-        # contributions (revert the bump / drop the log sub if we're the
-        # last watcher, release the session reference) before erroring out.
-        _LOGGER.debug("Failed to subscribe to states for OTA progress on %s", mac, exc_info=True)
-        _release_watcher()
-        _send_no_session(connection, msg["id"])
-        return
-    device_conn.add_log_callback(_on_log)
+    if device_conn is not None:
+        try:
+            await device_conn.subscribe_states(_on_state)
+        except Exception:
+            # Connection raced to close after the bump — undo this watcher's
+            # contributions (revert the bump / drop the log sub if we're the
+            # last watcher, release the session reference), then downgrade to the
+            # sessionless outcome watch rather than abandoning the update.
+            _LOGGER.debug(
+                "Failed to subscribe to states for OTA progress on %s; using sessionless watch",
+                mac,
+                exc_info=True,
+            )
+            _release_watcher()
+            device_conn = None
+            _prime_sessionless()
+        else:
+            device_conn.add_log_callback(_on_log)
 
     async def _await_ota_outcome() -> None:
         """Classify the OTA off the durable firmware-version signal (reboot-proof;
@@ -509,6 +564,11 @@ async def websocket_subscribe_ota_progress(
             _report_failure("flasher.errors.ota_interrupted")
         # OtaOutcome.TIMEOUT → the outer timer (`_on_timeout`) owns it.
 
+    if device_conn is None:
+        # No `_on_state` to arm the outer safety-net timer, so arm it here — the
+        # TIMEOUT outcome is owned by `_on_timeout` (a device that goes offline
+        # and never returns falls to it).
+        _arm_timer()
     version_task = hass.async_create_task(_await_ota_outcome())
     connection.send_result(msg["id"])
 
@@ -524,9 +584,10 @@ async def websocket_subscribe_ota_progress(
         released = True
         _cancel_timer()
         _cancel_version_task()
-        device_conn.unsubscribe_states(_on_state)
-        device_conn.remove_log_callback(_on_log)
-        _release_watcher()
+        if device_conn is not None:
+            device_conn.unsubscribe_states(_on_state)
+            device_conn.remove_log_callback(_on_log)
+            _release_watcher()
 
     connection.subscriptions[msg["id"]] = _unsub
     if _connection_is_closed(connection):

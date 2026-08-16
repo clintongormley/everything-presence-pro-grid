@@ -37,6 +37,18 @@ firmware downloads, see the
     while flashing, and the panel was giving up during that reboot. It now waits
     for the device to come back on the new firmware before reporting success or
     failure, so what you see matches what actually happened.
+- **Updating several devices at once no longer shows "Failed to connect to
+    device" for all but one.** With several devices updating together, every
+    device except the one open on your screen could sit on a zero-percent
+    spinner and then show "Failed to connect to device" — even though that
+    device's firmware had in fact updated. Showing a device's live progress
+    needs a connection to it, but a device is unreachable while it is busy
+    downloading its update, so only the device that already had a connection
+    open was followed. Each device is now tracked through Home Assistant's own
+    version signal, which needs no live connection, so they all report their own
+    progress and result — and if a device times out on an update Home Assistant
+    served over your LAN, the panel now offers the **Download from GitHub**
+    retry (the likely fix when the device couldn't reach Home Assistant).
 - **Failed or interrupted firmware updates fail fast.** An update that can't
     reach the download server, or that's interrupted — the device loses power or
     drops off mid-update and comes back on its old firmware — now reports within
