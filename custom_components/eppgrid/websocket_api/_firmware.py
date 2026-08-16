@@ -489,7 +489,14 @@ async def websocket_subscribe_ota_progress(
         resets log levels) or the next config push of the stored
         log_levels.
         """
-        ota = device_conn.ota
+        conn = device_conn
+        # Both `_release_watcher` call sites guard on `device_conn is not None`, so
+        # this never triggers at runtime — it restores the non-None narrowing that
+        # #388 removed when it dropped the early returns in favour of the
+        # sessionless downgrade. Unreachable, hence excluded from coverage.
+        if conn is None:  # pragma: no cover
+            return
+        ota = conn.ota
         ota.watchers -= 1
         # `<= 0` (not `== 0`): a force-closed connection resets the shared
         # state mid-flight, so a late release can land on an already-zeroed
@@ -502,15 +509,16 @@ async def websocket_subscribe_ota_progress(
             started = ota.started_log_sub
             ota.bumped_log_level = False
             ota.started_log_sub = False
-        closing = manager.release_session(mac, device_conn)
+        closing = manager.release_session(mac, conn)
         if not last_watcher or closing is not None:
             return
         if bumped:
-            # Capture `device_conn` now (still the live connection) — the
-            # subscribe-fail downgrade rebinds it to None right after this call.
-            hass.async_create_task(_async_revert_log_level(device_conn))
+            # `conn` was captured at entry, so it stays the live connection even
+            # though the subscribe-fail downgrade may rebind `device_conn` to None
+            # right after this call.
+            hass.async_create_task(_async_revert_log_level(conn))
         if started:
-            device_conn.unsubscribe_logs()
+            conn.unsubscribe_logs()
 
     if device_conn is not None:
         try:
