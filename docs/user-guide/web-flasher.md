@@ -24,14 +24,17 @@ Assistant needed.
 
 ## Flash
 
-Pick the variant based on how you want the device to connect to your network,
-then click its button and select the device in the browser's serial-port picker.
+First pick your model, then how it connects to your network. Click its button
+and select the device in the browser's serial-port picker. Not sure which model
+you have? See the [hardware comparison](hardware.md#models).
+
+### Everything Presence Pro
 
 <div class="grid" markdown>
 
 <div markdown>
 
-### WiFi
+#### WiFi
 
 Connect over Wi-Fi. After flashing, set up Wi-Fi right here in the browser.
 
@@ -43,7 +46,7 @@ Connect over Wi-Fi. After flashing, set up Wi-Fi right here in the browser.
 
 <div markdown>
 
-### Ethernet
+#### Ethernet
 
 Connect over an Ethernet cable (PoE optional).
 
@@ -54,6 +57,14 @@ Connect over an Ethernet cable (PoE optional).
 </div>
 
 </div>
+
+### Everything Presence Lite
+
+The Lite is Wi-Fi only. After flashing, set up Wi-Fi right here in the browser.
+
+<esp-web-install-button manifest="../../fw/latest/wifi-ble-lite.json">
+  <button slot="activate">Flash Lite firmware</button>
+</esp-web-install-button>
 
 !!! warning
 

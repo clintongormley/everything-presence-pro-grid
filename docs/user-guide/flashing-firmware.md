@@ -31,11 +31,17 @@ your browser. Once flashed, future updates happen over the air — see
 
     ![Flash firmware page](../images/flashing-firmware/flash-firmware.png "Flash firmware page")
 
+1. Choose your model — **Everything Presence Pro** or **Everything Presence
+    Lite**. See the [hardware comparison](hardware.md#models) if you're not
+    sure which you have.
+
 1. Pick the firmware variant based on how you want the device to connect to your
     network, then click **Flash via USB**:
 
     - **WiFi** — connect over Wi-Fi.
-    - **Ethernet** — connect over an Ethernet cable (PoE optional).
+    - **Ethernet** — connect over an Ethernet cable (PoE optional). Pro only —
+        the Everything Presence Lite is Wi-Fi only, so this option doesn't appear
+        for it.
 
     ![Choose wifi or ethernet variant](../images/flashing-firmware/variant.png "Choose wifi or ethernet variant")
 
