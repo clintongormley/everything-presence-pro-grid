@@ -43,7 +43,9 @@ export interface FlashableDevice {
 	mac: string;
 	name: string;
 	/** The HA area the device lives in (e.g. "Bathroom"), shown under the
-	 *  friendly name; null when the device has no area assigned. */
+	 *  friendly name. For a sub-device linked to the ESPHome node via
+	 *  `via_device` with no area of its own, this is the parent node's area.
+	 *  Null when neither the device nor its parent has an area assigned. */
 	area: string | null;
 	host: string | null;
 	available: boolean;
