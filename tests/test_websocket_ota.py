@@ -48,6 +48,11 @@ async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) 
         mock_dm._entity_update_macs = set()
         mock_dm.async_update_zone_entities = AsyncMock()
         mock_dm.async_open_session = AsyncMock(return_value=None)
+        # Default: no real flash was recorded by the trigger, so a held-session
+        # device isn't primed by subscribe_ota_progress (keeps the
+        # 'no flash -> no fabricated success' gate test honest). Tests exercising
+        # the flash-expected priming override this.
+        mock_dm.take_ota_flash_expected = MagicMock(return_value=False)
         # release_session returns None when other references keep the session
         # alive, or the scheduled close task when this release closed it.
         # Default to "kept alive" — tests pinning the closing path override.
@@ -468,6 +473,45 @@ class TestSubscribeOtaProgress:
             cb(make_update_state(in_progress=True, has_progress=True, progress=50.0, current_version="0.89.0"))
 
         device_conn.subscribe_states = AsyncMock(side_effect=_deliver_in_progress)
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+        await hass.async_block_till_done()
+
+        from homeassistant.components.websocket_api import event_message
+
+        mock_dm.async_wait_for_ota_outcome.assert_awaited()
+        calls = [c[0][0] for c in connection.send_message.call_args_list]
+        assert event_message(1, {"state": "success", "version": FIRMWARE_VERSION}) in calls
+
+    async def test_held_session_reports_success_when_flash_expected_and_state_silent(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """Under "Update all" the panel can subscribe AFTER the fast download's
+        in_progress states have already passed: a live session attaches but
+        ``_on_state`` never fires, so ``was_in_progress`` never latches. Because
+        the trigger recorded a REAL flash (old->target) is in flight
+        (``take_ota_flash_expected`` returns True), the subscribe handler must
+        prime the start sentinel so the reboot-proof outcome watch's success
+        (device back on the target version) is reported instead of being gated
+        out to a hung spinner.
+        """
+        from custom_components.eppgrid.const import FIRMWARE_VERSION
+
+        mock_dm = await setup_integration(hass, config_entry)
+        device_conn = make_mock_device_conn()
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+        # Attaches a live session but delivers NO state — `_on_state` never fires.
+        device_conn.subscribe_states = AsyncMock()
+        # The device comes back on the target version after the flash reboot.
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="success")
+        # The trigger recorded that a real flash is in flight for this mac.
+        mock_dm.take_ota_flash_expected = MagicMock(return_value=True)
         from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
 
         connection = MagicMock()

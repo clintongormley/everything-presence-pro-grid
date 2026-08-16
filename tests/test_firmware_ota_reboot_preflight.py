@@ -430,6 +430,75 @@ async def test_schedule_ota_session_release_skips_while_stopping(hass: HomeAssis
     assert MAC not in manager._ota_session_releases  # no timer armed while stopping
 
 
+async def test_trigger_ota_marks_flash_expected_when_device_on_old_version(
+    hass: HomeAssistant, manager: DeviceManager
+) -> None:
+    """The trigger must record that a REAL flash (old->target) is in flight when
+    the device is on an OLD firmware version at trigger time. `subscribe_ota_progress`
+    consumes this (one-shot) to prime the reboot-proof outcome watch for a
+    held-session device whose live `_on_state` never fires."""
+    from custom_components.eppgrid.const import FIRMWARE_VERSION
+
+    manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    manager._build_flags[MAC] = {"ethernet_enabled": False}
+    conn = _mock_ota_conn()
+
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
+        # Device is on an OLD version (just rebooted, not yet flashed) — a flash
+        # WILL change it, so the trigger must mark it.
+        patch.object(manager, "read_firmware_version", return_value="1.7.0"),
+    ):
+        assert FIRMWARE_VERSION != "1.7.0"  # sanity: the fixture version really is old
+        await manager.async_trigger_ota(MAC)
+
+    # Consumed one-shot: True the first time, False on the re-subscribe.
+    assert manager.take_ota_flash_expected(MAC) is True
+    assert manager.take_ota_flash_expected(MAC) is False
+
+    # Flush the held-session release timer so it doesn't linger past the test.
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=_OTA_SESSION_GRACE_S + 1))
+    await hass.async_block_till_done()
+
+
+async def test_trigger_ota_clears_flash_expected_when_device_already_on_target(
+    hass: HomeAssistant, manager: DeviceManager
+) -> None:
+    """A device ALREADY on the target version at trigger time is not flashing —
+    no `old->target` change will happen. The trigger must NOT mark it (and must
+    DISCARD any stale flag), so the outcome watch can't fabricate a success for a
+    device that never flashed. Pre-seed a stale flag to prove it's cleared."""
+    from custom_components.eppgrid.const import FIRMWARE_VERSION
+
+    manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    manager._build_flags[MAC] = {"ethernet_enabled": False}
+    manager._ota_flash_expected.add(MAC)  # stale flag from a prior trigger
+    conn = _mock_ota_conn()
+
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
+        # Device is already on the target version — no flash expected.
+        patch.object(manager, "read_firmware_version", return_value=FIRMWARE_VERSION),
+    ):
+        await manager.async_trigger_ota(MAC)
+
+    assert manager.take_ota_flash_expected(MAC) is False
+
+    # Flush the held-session release timer so it doesn't linger past the test.
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=_OTA_SESSION_GRACE_S + 1))
+    await hass.async_block_till_done()
+
+
 class TestWaitForFirmwareVersion:
     """`async_wait_for_firmware_version` is the OTA watcher's reboot-proof
     completion path: it confirms an update by watching the durable

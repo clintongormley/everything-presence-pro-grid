@@ -180,13 +180,14 @@ async def websocket_subscribe_ota_progress(
     version_task: Any = None  # reboot-proof completion watch (firmware-version return)
     retry_task: Any = None  # background re-open of a live session during the download
 
-    def _prime_sessionless() -> None:
-        # Enter sessionless mode. With no live session there is no `_on_state` to
-        # latch the start signal from the device, but the frontend only subscribes
-        # AFTER a successful trigger — so the OTA is in flight and the device is
-        # offline because it is downloading. Treat it as started so
-        # `_await_ota_outcome` reports success (version->target) and can fast-fail
-        # an abort (offline->settled-on-old). Latch a SEPARATE `primed_started`
+    def _prime_ota_started() -> None:
+        # Prime the OTA-start sentinels. The frontend only subscribes AFTER a
+        # successful trigger, so the OTA is in flight; latch it as started so
+        # `_await_ota_outcome` reports success (version->target) / fast-fails an
+        # abort even when no live `_on_state` fires. On the sessionless path there
+        # is no `_on_state` at all; on the held-session path `_on_state` exists but
+        # may never fire (the panel can subscribe after the fast download's
+        # in_progress states have passed). Latch a SEPARATE `primed_started`
         # flag rather than `saw_progress`: the outcome watch keys "started" off
         # `saw_progress or primed_started`, while `_on_state` keeps `saw_progress`
         # as its REAL download-byte flag. Otherwise, once the background retry
@@ -589,7 +590,17 @@ async def websocket_subscribe_ota_progress(
         # failed attach): fall back to the reboot-proof, entity-based outcome
         # watch. A background retry (below) upgrades this to live progress once
         # the device is reachable again during the download.
-        _prime_sessionless()
+        _prime_ota_started()
+    elif manager.take_ota_flash_expected(mac):
+        # We hold a live session, but `_on_state` may never fire: under "Update
+        # all" the panel can subscribe AFTER the fast download's in_progress
+        # states have passed, so `was_in_progress` would never latch and the
+        # reboot-proof outcome watch's success would be gated out — the device
+        # sits on the new version but the spinner hangs. The trigger recorded that
+        # a real flash (old->target) is in flight for this mac, so prime the start
+        # sentinel. (A device already on target is never marked, so this doesn't
+        # fabricate success for it.)
+        _prime_ota_started()
 
     async def _await_ota_outcome() -> None:
         """Classify the OTA off the durable firmware-version signal (reboot-proof;

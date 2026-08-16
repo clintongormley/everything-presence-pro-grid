@@ -224,6 +224,13 @@ class DeviceManager:
         # ref after the grace window. Tracked so `async_stop` can cancel any
         # in-flight handle instead of leaking it past the config entry.
         self._ota_session_releases: dict[str, Any] = {}
+        # Macs with a REAL OTA flash (old firmware -> target) in flight, recorded
+        # by `async_trigger_ota`. `subscribe_ota_progress` consumes this to prime
+        # the reboot-proof outcome watch for a held-session device whose live
+        # `_on_state` never fires (the panel can subscribe after the fast download's
+        # in_progress states have passed) — WITHOUT fabricating success for an
+        # already-current device (the trigger never marks those).
+        self._ota_flash_expected: set[str] = set()
         self._build_flags: dict[str, dict[str, Any]] = {}
         # One connection per device, kept alive for the frontend session
         self._active_connections: dict[str, DeviceConnection] = {}
@@ -601,6 +608,7 @@ class DeviceManager:
         for cancel in self._ota_session_releases.values():
             cancel()
         self._ota_session_releases.clear()
+        self._ota_flash_expected.clear()
         # Cancel pending debounce timers from `_request_push`. They're
         # `asyncio.sleep` waits, so cancellation lands inside the helper's
         # CancelledError handler which returns cleanly. Await the gather
@@ -945,6 +953,20 @@ class DeviceManager:
                 # not block the update. CancelledError is BaseException, so a
                 # real cancellation still propagates.
                 _LOGGER.warning("Pre-OTA reboot of %s failed; attempting the update anyway", mac, exc_info=True)
+
+            # Record whether a REAL flash (old -> target) is in flight, so
+            # `subscribe_ota_progress` can prime the reboot-proof outcome watch even
+            # when the held session's `_on_state` never fires (under "Update all" the
+            # panel can subscribe after the fast ~30s download's in_progress states
+            # have passed). The device is on its OLD firmware here — just rebooted,
+            # not yet flashed — so a version != target means a flash will change it;
+            # == target means no flash is expected (an already-current device: the
+            # watch must not fabricate a success for it).
+            dev = self.devices.get(mac)
+            if dev is not None and self.read_firmware_version(dev.device_id) != FIRMWARE_VERSION:
+                self._ota_flash_expected.add(mac)
+            else:
+                self._ota_flash_expected.discard(mac)
 
             # Open (or reuse) a PERSISTENT session and trigger over it, then hold
             # it open. Progress can only stream over a session that exists BEFORE
@@ -2921,6 +2943,21 @@ class DeviceManager:
             self.release_session(mac, conn)
 
         self._ota_session_releases[mac] = async_call_later(self._hass, _OTA_SESSION_GRACE_S, _release)
+
+    def take_ota_flash_expected(self, mac: str) -> bool:
+        """Whether `async_trigger_ota` recorded a real flash (old -> target) in
+        flight for `mac`, CONSUMING the flag (one-shot per trigger).
+
+        Lets `subscribe_ota_progress` prime the reboot-proof outcome watch for a
+        held-session device whose live `_on_state` never fires, without letting a
+        stale flag fabricate success on a later re-subscribe. An already-current
+        device is never marked, so this returns False for it — preserving the
+        'no flash -> no fabricated success' guard.
+        """
+        if mac in self._ota_flash_expected:
+            self._ota_flash_expected.discard(mac)
+            return True
+        return False
 
     async def async_close_session(self, mac: str) -> None:
         """Force-close the frontend session connection for a device.
