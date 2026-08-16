@@ -445,14 +445,90 @@ describe("panel HA reconnect handling", () => {
 		document.body.removeChild(el);
 	});
 
-	it("does not query the bundle version on the initial connect", async () => {
-		const { el, hass } = await mountForBundleCheck("new");
-		await new Promise((r) => setTimeout(r, 0));
+	it("checks the bundle version on initial connect and reloads when it reveals a newer bundle", async () => {
+		// Regression: a user who upgrades + restarts HA and *then* navigates to
+		// the panel (the browser tab stayed open across the restart, so its SPA
+		// still serves the pre-upgrade bundle) never observes a
+		// disconnect→reconnect while the panel is mounted — so a reconnect-only
+		// check never fires and the stale bundle runs until a manual refresh.
+		// The panel must verify its own bundle on initial connect too.
+		const hass = mockHass(true);
+		hass.callWS = vi.fn().mockImplementation((msg: any) => {
+			if (msg.type === "eppgrid/frontend_version") {
+				return Promise.resolve({ hash: "new" });
+			}
+			return Promise.resolve({ devices: [] });
+		});
+		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
+		el.hass = hass;
+		const a = el as any;
+		// Set the running-bundle hash + reload spy before mount, so the
+		// initial-connect check reads them (the check fires during mount).
+		a._currentBundleHash = "old";
+		const reload = vi.fn();
+		a._reloadPage = reload;
 
-		const versionCalls = (hass.callWS as any).mock.calls.filter(
-			(c: any[]) => c[0]?.type === "eppgrid/frontend_version",
-		);
-		expect(versionCalls).toHaveLength(0);
+		document.body.appendChild(el); // initial mount — no reconnect
+		await el.updateComplete;
+		await flush();
+
+		expect(hass.callWS).toHaveBeenCalledWith({
+			type: "eppgrid/frontend_version",
+		});
+		expect(reload).toHaveBeenCalledTimes(1);
+		document.body.removeChild(el);
+	});
+
+	it("checks the bundle version only once across repeated hass pushes on one mount", async () => {
+		// The initial-connect check must fire once per mount, not on every `hass`
+		// push (HA streams them constantly). The connection-identity guard in
+		// `_attachConnectionListeners` provides that latch.
+		const hass = mockHass(true);
+		let versionCalls = 0;
+		hass.callWS = vi.fn().mockImplementation((msg: any) => {
+			if (msg.type === "eppgrid/frontend_version") {
+				versionCalls += 1;
+				return Promise.resolve({ hash: "same" });
+			}
+			return Promise.resolve({ devices: [] });
+		});
+		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
+		el.hass = hass;
+		(el as any)._currentBundleHash = "same";
+
+		document.body.appendChild(el);
+		await el.updateComplete;
+		await flush();
+		// Further hass pushes carrying the *same* connection object must not re-arm.
+		el.hass = { ...hass };
+		await el.updateComplete;
+		el.hass = { ...hass };
+		await flush();
+
+		expect(versionCalls).toBe(1);
+		document.body.removeChild(el);
+	});
+
+	it("does not reload on initial connect when the bundle hash matches", async () => {
+		const hass = mockHass(true);
+		hass.callWS = vi.fn().mockImplementation((msg: any) => {
+			if (msg.type === "eppgrid/frontend_version") {
+				return Promise.resolve({ hash: "same" });
+			}
+			return Promise.resolve({ devices: [] });
+		});
+		const el = document.createElement("eppgrid-panel") as EPPGridPanel;
+		el.hass = hass;
+		const a = el as any;
+		a._currentBundleHash = "same";
+		const reload = vi.fn();
+		a._reloadPage = reload;
+
+		document.body.appendChild(el);
+		await el.updateComplete;
+		await flush();
+
+		expect(reload).not.toHaveBeenCalled();
 		document.body.removeChild(el);
 	});
 

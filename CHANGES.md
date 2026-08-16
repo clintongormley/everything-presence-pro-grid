@@ -19,6 +19,12 @@ firmware downloads, see the
     leaving you to refresh the page or type the panel's address by hand to get
     in — and in the mobile app, where there is no refresh, the panel was
     effectively unreachable. It now loads correctly however you open it.
+- **The panel refreshes itself to the new version after an upgrade.** After
+    updating the integration and restarting Home Assistant, opening the panel in
+    a browser tab left open across the restart could keep showing the previous
+    version until you manually refreshed. The panel now checks for a newer
+    version when it opens — not only while it is already open during the restart
+    — and reloads itself automatically.
 - **The heatmap no longer spams "unknown" warnings.** The `sensor.*_heatmap`
     entity was logging "state is longer than 255, falling back to unknown"
     (#365). The heatmap is now delivered directly to the panel/card and is no
