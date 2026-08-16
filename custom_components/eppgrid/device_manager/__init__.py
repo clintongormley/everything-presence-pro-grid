@@ -39,6 +39,7 @@ from ..storage import EPPGridStore
 from ._connection import DeviceConnection
 from ._connection import OtaWatcherState as OtaWatcherState  # re-export for tests
 from ._helpers import ZONE_TYPE_DEFAULTS as ZONE_TYPE_DEFAULTS  # re-export for tests
+from ._helpers import _area_name
 from ._helpers import _compare_firmware_version
 from ._helpers import _compute_pipeline
 from ._helpers import _esphome_object_id
@@ -3043,11 +3044,7 @@ class DeviceManager:
             fw_ver = self.read_firmware_version(dev.device_id, entries=entries)
             registry_entry = dev_reg.async_get(dev.device_id) if dev.device_id else None
             fresh_name = ((registry_entry.name_by_user or registry_entry.name) if registry_entry else None) or dev.name
-            area_name: str | None = None
-            if registry_entry and registry_entry.area_id:
-                area = area_reg.async_get_area(registry_entry.area_id)
-                if area is not None:
-                    area_name = area.name
+            area_name = _area_name(area_reg, registry_entry.area_id if registry_entry else None)
             device_entry = {
                 "mac": mac,
                 "name": config.get("name", fresh_name) if config else fresh_name,
@@ -3148,11 +3145,7 @@ class DeviceManager:
                 parent = dev_reg.async_get(device.via_device_id)
                 if parent is not None:
                     area_id = parent.area_id
-            area_name: str | None = None
-            if area_id is not None:
-                area = area_reg.async_get_area(area_id)
-                if area is not None:
-                    area_name = area.name
+            area_name = _area_name(area_reg, area_id)
             result.append(
                 {
                     "mac": mac,
