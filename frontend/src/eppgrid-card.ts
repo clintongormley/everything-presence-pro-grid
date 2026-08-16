@@ -492,6 +492,10 @@ export class EppGridCard extends LitElement {
 				reload: this._reloadPage,
 				storage: safeSessionStorage(),
 				guardKey: CARD_RELOAD_GUARD_KEY,
+				// Like the panel: an on-mount check can resolve after the card is
+				// detached (dashboard navigation) — don't reload the page then.
+				// Skips without consuming the loop guard, so a later mount reloads.
+				canReload: () => this.isConnected,
 			});
 			if (resolved) {
 				this._bundleCheckPending = false;

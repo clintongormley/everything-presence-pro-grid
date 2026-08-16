@@ -289,4 +289,60 @@ describe("checkForNewBundle", () => {
 		expect(reloadA).toHaveBeenCalledTimes(1);
 		expect(reloadB).toHaveBeenCalledTimes(1);
 	});
+
+	it("does not reload when canReload() is false, and leaves the loop guard unconsumed", async () => {
+		// The panel passes canReload = () => this.isConnected, so a check that
+		// resolves *after* the user navigated away from the panel must not reload
+		// the whole page (disrupting wherever they went). Crucially it must also
+		// leave the loop guard unwritten, so a later check — once the panel is
+		// mounted again — still reloads. Otherwise the skip would permanently
+		// suppress the real reload for that server hash.
+		const reload = vi.fn();
+		const deps = {
+			currentHash: "old",
+			fetchServerHash: async () => "new",
+			reload,
+			storage,
+		};
+		const resolved = await checkForNewBundle({
+			...deps,
+			canReload: () => false,
+		});
+		expect(reload).not.toHaveBeenCalled();
+		// Unresolved → the caller keeps the check pending and retries later.
+		expect(resolved).toBe(false);
+
+		// A later check while connected reloads — proving the guard wasn't
+		// consumed by the skipped attempt.
+		const resolved2 = await checkForNewBundle({
+			...deps,
+			canReload: () => true,
+		});
+		expect(reload).toHaveBeenCalledTimes(1);
+		expect(resolved2).toBe(true);
+	});
+
+	it("reloads as normal when canReload() is true", async () => {
+		const reload = vi.fn();
+		const resolved = await checkForNewBundle({
+			currentHash: "old",
+			fetchServerHash: async () => "new",
+			reload,
+			storage,
+			canReload: () => true,
+		});
+		expect(reload).toHaveBeenCalledTimes(1);
+		expect(resolved).toBe(true);
+	});
+
+	it("still reloads (canReload absent) — the gate is opt-in", async () => {
+		const reload = vi.fn();
+		await checkForNewBundle({
+			currentHash: "old",
+			fetchServerHash: async () => "new",
+			reload,
+			storage,
+		});
+		expect(reload).toHaveBeenCalledTimes(1);
+	});
 });

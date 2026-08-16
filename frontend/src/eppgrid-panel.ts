@@ -977,12 +977,8 @@ export class EPPGridPanel extends LitElement {
 			// upgrade+restart would have swapped the bundle. Arm the bundle-version
 			// check and try it now; if the integration's WS command isn't back
 			// yet, `_runInitialize` retries it across re-init passes — see
-			// `_maybeCheckForNewBundle`. The in-flight latch keeps this immediate
-			// attempt from racing the one inside `_runInitialize`. Running it here
-			// too means we don't depend on a fresh (non-deduped) `_initialize`
-			// pass actually reaching the check.
-			this._bundleCheckPending = true;
-			void this._maybeCheckForNewBundle();
+			// `_maybeCheckForNewBundle`.
+			this._armBundleCheck();
 			// Device list / session subscriptions may have been torn down during
 			// the outage — re-bootstrap so the UI recovers without a manual
 			// reload. `_initialize` keys off `_loadedConfigMac` so it won't
@@ -1013,6 +1009,18 @@ export class EPPGridPanel extends LitElement {
 	private _bundleCheckInFlight = false;
 
 	/**
+	 * Arm the bundle-version check and fire it once. Shared by its two triggers:
+	 * initial connect (in `_attachConnectionListeners`) and reconnect (in
+	 * `_onHaReady`). The pending flag keeps `_runInitialize`'s retry loop trying
+	 * if the backend isn't up yet; the in-flight latch de-dupes this immediate
+	 * attempt against that retry.
+	 */
+	private _armBundleCheck(): void {
+		this._bundleCheckPending = true;
+		void this._maybeCheckForNewBundle();
+	}
+
+	/**
 	 * Run the armed bundle-version check, if any. Called from each
 	 * `_runInitialize` pass: the first reconnect may beat the integration's
 	 * setup (the WS command isn't registered yet), so the check keeps retrying
@@ -1033,6 +1041,11 @@ export class EPPGridPanel extends LitElement {
 				},
 				reload: this._reloadPage,
 				storage: safeSessionStorage(),
+				// Don't reload a page the user has navigated away from: an on-mount
+				// check can resolve after the panel detaches, and reloading then
+				// would disrupt wherever they went. Skips without consuming the loop
+				// guard, so the next mount still reloads.
+				canReload: () => this.isConnected,
 			});
 			if (resolved) this._bundleCheckPending = false;
 		} finally {
@@ -1212,6 +1225,15 @@ export class EPPGridPanel extends LitElement {
 		conn.addEventListener("ready", this._onHaReady);
 		conn.addEventListener("disconnected", this._onHaDisconnected);
 		this._listeningConnection = conn;
+		// First time we wire up this connection (its identity is stable across
+		// reconnects, so this runs once per mount): verify the running bundle
+		// against the server. Without an on-mount check, a panel that mounts
+		// *after* an upgrade+restart's reconnect — the common case where the user
+		// opens the panel once HA is already back, in a tab kept open across the
+		// restart so the SPA still serves the old bundle — would keep running that
+		// stale bundle until a manual refresh. `_onHaReady` covers the panel that
+		// was already open across the restart.
+		this._armBundleCheck();
 	}
 
 	private _detachConnectionListeners(): void {

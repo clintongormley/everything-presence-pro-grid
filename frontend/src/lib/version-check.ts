@@ -91,6 +91,13 @@ export interface VersionCheckDeps {
 	/** Loop-guard storage key. Defaults to the panel's key; the card passes its
 	 *  own so the two don't clobber each other's guard in a shared SPA tab. */
 	guardKey?: string;
+	/** Optional gate consulted on a confirmed mismatch, right before reloading.
+	 *  When it returns false the reload is skipped *and* the loop guard is left
+	 *  unwritten, and the check reports unresolved so a later trigger re-checks
+	 *  and reloads when wanted. Lets a caller avoid reloading a page the user has
+	 *  already navigated away from (e.g. the panel was detached mid-check).
+	 *  Absent → always reload on a mismatch. */
+	canReload?: () => boolean;
 }
 
 /**
@@ -104,7 +111,9 @@ export interface VersionCheckDeps {
  * moment later still; until then the lookup throws or returns null. Those cases
  * return `false` ("not resolved — retry"), so the caller can poll until the
  * backend answers. A definitive answer (match, mismatch, the unhashable "0"
- * sentinel, or an unknown local hash) returns `true`.
+ * sentinel, or an unknown local hash) returns `true` — with one exception: a
+ * confirmed mismatch that `canReload` vetoes also returns `false`, so a caller
+ * whose reload was skipped (e.g. the panel detached mid-check) re-checks later.
  */
 export async function checkForNewBundle(
 	deps: VersionCheckDeps,
@@ -140,6 +149,11 @@ export async function checkForNewBundle(
 
 	// serverHash is a real, differing hash here.
 	if (readGuard(storage, guardKey) === serverHash) return true;
+	// Confirmed mismatch, but the caller may no longer want the reload (e.g. the
+	// panel was detached mid-check). Skip without consuming the loop guard, and
+	// report unresolved so a later trigger re-checks and reloads when wanted.
+	// Checked after the guard read so an already-armed guard still short-circuits.
+	if (deps.canReload && !deps.canReload()) return false;
 	writeGuard(storage, guardKey, serverHash);
 	reload();
 	return true;
