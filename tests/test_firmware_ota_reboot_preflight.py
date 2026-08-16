@@ -18,6 +18,7 @@ confirming a real reboot completed before we hand the device the OTA manifest.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -27,9 +28,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import MockConfigEntry
+from pytest_homeassistant_custom_component.common import async_fire_time_changed
 from pytest_homeassistant_custom_component.common import async_mock_service
 
+from custom_components.eppgrid.device_manager import _OTA_SESSION_GRACE_S
 from custom_components.eppgrid.device_manager import DeviceManager
 from custom_components.eppgrid.device_manager import ManagedDevice
 from custom_components.eppgrid.storage import EPPGridStore
@@ -201,7 +205,11 @@ def _mock_ota_conn() -> MagicMock:
 async def test_trigger_ota_reboots_before_setting_manifest(hass: HomeAssistant, manager: DeviceManager) -> None:
     """The OTA must reboot the device for a fresh heap *before* it hands over the
     update manifest — otherwise the device flashes from its tight, fragmented
-    steady-state heap and the TLS download fails."""
+    steady-state heap and the TLS download fails.
+
+    The trigger now hands the manifest over a held persistent session (opened by
+    `async_open_session`) rather than a one-shot temp connection, but the
+    reboot-then-manifest ordering must be unchanged."""
     manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
     manager._build_flags[MAC] = {"ethernet_enabled": False}
     order: list[str] = []
@@ -216,19 +224,24 @@ async def test_trigger_ota_reboots_before_setting_manifest(hass: HomeAssistant, 
             "custom_components.eppgrid.device_manager.async_get_clientsession",
             return_value=_fake_head_session(200),
         ),
-        patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=conn),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
         patch.object(manager, "async_reboot_and_wait", side_effect=_reboot),
     ):
         await manager.async_trigger_ota(MAC)
 
     assert order == ["reboot", "manifest"]
 
+    # Flush the held-session release timer so it doesn't linger past the test
+    # (real release_session no-ops: nothing is in `_active_connections`).
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=_OTA_SESSION_GRACE_S + 1))
+    await hass.async_block_till_done()
+
 
 async def test_trigger_ota_proceeds_when_reboot_fails(hass: HomeAssistant, manager: DeviceManager) -> None:
     """The pre-flight reboot is best-effort: if it fails (e.g. no restart button,
     or the device didn't come back), the OTA must still be attempted rather than
     blocked — a failed reboot mustn't be strictly worse than the old no-reboot
-    behaviour."""
+    behaviour. The manifest still goes over the held session."""
     manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
     manager._build_flags[MAC] = {"ethernet_enabled": False}
     conn = _mock_ota_conn()
@@ -238,7 +251,7 @@ async def test_trigger_ota_proceeds_when_reboot_fails(hass: HomeAssistant, manag
             "custom_components.eppgrid.device_manager.async_get_clientsession",
             return_value=_fake_head_session(200),
         ),
-        patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=conn),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
         patch.object(
             manager,
             "async_reboot_and_wait",
@@ -251,6 +264,126 @@ async def test_trigger_ota_proceeds_when_reboot_fails(hass: HomeAssistant, manag
     conn.async_execute_service.assert_awaited_once()
     name, _payload = conn.async_execute_service.await_args.args
     assert name == "set_update_manifest"
+
+    # Flush the held-session release timer so it doesn't linger past the test.
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=_OTA_SESSION_GRACE_S + 1))
+    await hass.async_block_till_done()
+
+
+async def test_trigger_ota_holds_persistent_session_for_progress(hass: HomeAssistant, manager: DeviceManager) -> None:
+    """The trigger must open (or reuse) a PERSISTENT session and hand the
+    manifest over THAT session, then HOLD it open so the imminent
+    `subscribe_ota_progress` can reuse it and stream 0->100%. Progress can only
+    stream over a session that already existed when the download started — the
+    device refuses new API connections mid-download. So: `async_open_session`
+    is used (not a temp connection), and our reference is NOT released
+    synchronously at trigger time (the session is held for the handoff)."""
+    manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    manager._build_flags[MAC] = {"ethernet_enabled": False}
+    conn = _mock_ota_conn()
+
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)) as open_mock,
+        patch.object(manager, "release_session") as release_mock,
+        patch.object(manager, "_temp_connection") as temp_mock,
+    ):
+        await manager.async_trigger_ota(MAC)
+
+        open_mock.assert_awaited_once_with(MAC)
+        conn.async_execute_service.assert_awaited_once()
+        name, _payload = conn.async_execute_service.await_args.args
+        assert name == "set_update_manifest"
+        release_mock.assert_not_called()  # session held for the progress handoff
+        temp_mock.assert_not_called()  # never fell back to a temp connection
+
+        # Flush the held-session release timer so it doesn't linger past the test.
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=_OTA_SESSION_GRACE_S + 1))
+        await hass.async_block_till_done()
+
+
+async def test_trigger_ota_releases_held_session_after_grace(hass: HomeAssistant, manager: DeviceManager) -> None:
+    """The reference the trigger took on the held session is released after the
+    grace window. If `subscribe_ota_progress` attached in the meantime it holds
+    its own reference and the session survives the download; if none arrived,
+    this drop takes the count to zero and closes it — the handoff safety net."""
+    manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    manager._build_flags[MAC] = {"ethernet_enabled": False}
+    conn = _mock_ota_conn()
+
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
+        patch.object(manager, "release_session") as release_mock,
+    ):
+        await manager.async_trigger_ota(MAC)
+        release_mock.assert_not_called()  # not released synchronously — held
+
+        async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=_OTA_SESSION_GRACE_S + 1))
+        await hass.async_block_till_done()
+
+        release_mock.assert_called_once_with(MAC, conn)
+
+
+async def test_trigger_ota_falls_back_to_temp_conn_when_no_session(hass: HomeAssistant, manager: DeviceManager) -> None:
+    """When `async_open_session` returns None — HA has the device marked
+    unavailable (the post-reboot reconnect can briefly lag the entity state) —
+    the trigger must still land, over a short-lived connection, so the update
+    proceeds. That device then rides the sessionless outcome watch (no
+    incremental bar, but success/failure is still reported)."""
+    manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    manager._build_flags[MAC] = {"ethernet_enabled": False}
+    temp_conn = _mock_ota_conn()
+
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=None)),
+        # The temp-conn fallback constructs a DeviceConnection directly.
+        patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=temp_conn),
+    ):
+        await manager.async_trigger_ota(MAC)
+
+    temp_conn.async_execute_service.assert_awaited_once()
+    name, _payload = temp_conn.async_execute_service.await_args.args
+    assert name == "set_update_manifest"
+
+
+async def test_trigger_ota_releases_held_session_on_trigger_failure(
+    hass: HomeAssistant, manager: DeviceManager
+) -> None:
+    """If the manifest hand-off over the held session raises, the reference the
+    trigger took must be released (not leaked) before the error propagates —
+    otherwise a failed trigger strands an open session reference nothing drops."""
+    manager.devices[MAC] = ManagedDevice(mac=MAC, name="EPP", host="192.168.1.50")
+    manager._build_flags[MAC] = {"ethernet_enabled": False}
+    conn = _mock_ota_conn()
+    conn.async_execute_service.side_effect = RuntimeError("boom")
+
+    with (
+        patch(
+            "custom_components.eppgrid.device_manager.async_get_clientsession",
+            return_value=_fake_head_session(200),
+        ),
+        patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=conn)),
+        patch.object(manager, "release_session") as release_mock,
+        pytest.raises(HomeAssistantError),
+    ):
+        await manager.async_trigger_ota(MAC)
+
+    release_mock.assert_called_once_with(MAC, conn)
 
 
 class TestWaitForFirmwareVersion:

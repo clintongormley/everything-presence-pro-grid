@@ -2488,6 +2488,20 @@ class TestAsyncTriggerOta:
         ):
             yield
 
+    @pytest.fixture(autouse=True)
+    def _no_held_session(self, manager: DeviceManager):
+        """This class covers the temp-conn fallback path (no live session).
+
+        The trigger now opens/reuses a persistent session via
+        `async_open_session` and only falls back to a temp connection when that
+        returns None (device unavailable). These device_id-less test devices
+        read *available*, so force `async_open_session` to None to keep
+        exercising the temp-conn fallback these tests are about (the held-session
+        path is covered by `TestAsyncTriggerOtaSessionReuse` and the preflight
+        suite)."""
+        with patch.object(manager, "async_open_session", new=AsyncMock(return_value=None)):
+            yield
+
     def _setup_device(self, manager: DeviceManager, *, host: str | None = "192.168.1.50") -> None:
         manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(mac="AA:BB:CC:DD:EE:FF", name="EPP", host=host)
 
@@ -9413,7 +9427,12 @@ def test_zone_type_defaults_match_frontend():
 
 
 class TestAsyncTriggerOtaSessionReuse:
-    """Tests for DeviceManager.async_trigger_ota — session reuse + temp-conn fallback."""
+    """Tests for DeviceManager.async_trigger_ota — held-session path + temp-conn fallback.
+
+    The trigger now opens (or reuses) a PERSISTENT session via `async_open_session`
+    and holds it past the trigger so `subscribe_ota_progress` can reuse it to stream
+    progress; it only falls back to a short-lived temp connection when
+    `async_open_session` returns None (device unavailable)."""
 
     @pytest.fixture(autouse=True)
     def _manifest_published(self):
@@ -9429,7 +9448,8 @@ class TestAsyncTriggerOtaSessionReuse:
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
     ) -> None:
         """When an active session exists for the mac, OTA is triggered through it
-        instead of opening a fresh DeviceConnection."""
+        (reused by `async_open_session`) instead of opening a fresh
+        DeviceConnection."""
         mac = "AA:BB:CC:DD:EE:FF"
         manager.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50")
         manager._build_flags[mac] = {"ethernet_enabled": False}
@@ -9439,7 +9459,14 @@ class TestAsyncTriggerOtaSessionReuse:
         seeded.async_execute_service = AsyncMock()
         manager._active_connections[mac] = seeded
 
-        with patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_cls:
+        # `async_open_session` finds the seeded live connection and reuses it, so
+        # no fresh DeviceConnection is constructed. Stub the grace-window release
+        # scheduler so the reuse assertion isn't muddied by a lingering timer
+        # (the release handoff is covered by the preflight suite).
+        with (
+            patch("custom_components.eppgrid.device_manager.DeviceConnection") as mock_cls,
+            patch.object(manager, "_schedule_ota_session_release"),
+        ):
             await manager.async_trigger_ota(mac)
             mock_cls.assert_not_called()  # session reused, no fresh conn
 
@@ -9452,8 +9479,9 @@ class TestAsyncTriggerOtaSessionReuse:
     async def test_async_trigger_ota_falls_back_to_temp_conn_when_no_session(
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
     ) -> None:
-        """Without an active session, OTA opens a fresh DeviceConnection and
-        triggers via async_execute_service on it."""
+        """When `async_open_session` returns None (device unavailable), OTA opens
+        a fresh short-lived DeviceConnection and triggers via
+        async_execute_service on it, then disconnects."""
         mac = "AA:BB:CC:DD:EE:FF"
         manager.devices[mac] = ManagedDevice(mac=mac, name="EPP", host="192.168.1.50")
         manager._build_flags[mac] = {"ethernet_enabled": True}
@@ -9463,9 +9491,12 @@ class TestAsyncTriggerOtaSessionReuse:
         mock_conn.async_execute_service = AsyncMock()
         mock_conn.async_disconnect = AsyncMock()
 
-        with patch(
-            "custom_components.eppgrid.device_manager.DeviceConnection",
-            return_value=mock_conn,
+        with (
+            patch.object(manager, "async_open_session", new=AsyncMock(return_value=None)),
+            patch(
+                "custom_components.eppgrid.device_manager.DeviceConnection",
+                return_value=mock_conn,
+            ),
         ):
             await manager.async_trigger_ota(mac)
 
@@ -9478,7 +9509,7 @@ class TestAsyncTriggerOtaSessionReuse:
     async def test_async_trigger_ota_session_translation_error_propagates(
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
     ) -> None:
-        """If the session raises HomeAssistantError (e.g. service missing),
+        """If the held session raises HomeAssistantError (e.g. service missing),
         propagate it rather than wrapping it as a generic 'could not contact'."""
         from homeassistant.exceptions import HomeAssistantError
 
@@ -9489,15 +9520,19 @@ class TestAsyncTriggerOtaSessionReuse:
         seeded = MagicMock()
         seeded.connected = True
         seeded.async_execute_service = AsyncMock(side_effect=HomeAssistantError("translated"))
-        manager._active_connections[mac] = seeded
 
-        with pytest.raises(HomeAssistantError, match="translated"):
+        # The held session comes from `async_open_session`; its ref is released
+        # on the failure path (identity no-op here — not in _active_connections).
+        with (
+            patch.object(manager, "async_open_session", new=AsyncMock(return_value=seeded)),
+            pytest.raises(HomeAssistantError, match="translated"),
+        ):
             await manager.async_trigger_ota(mac)
 
     async def test_async_trigger_ota_session_unexpected_error_wrapped(
         self, hass: HomeAssistant, store: EPPGridStore, manager: DeviceManager
     ) -> None:
-        """A non-HomeAssistantError raised by the session is wrapped with a
+        """A non-HomeAssistantError raised by the held session is wrapped with a
         stable, user-readable message (so the panel doesn't surface raw
         aioesphomeapi internals)."""
         from homeassistant.exceptions import HomeAssistantError
@@ -9509,9 +9544,11 @@ class TestAsyncTriggerOtaSessionReuse:
         seeded = MagicMock()
         seeded.connected = True
         seeded.async_execute_service = AsyncMock(side_effect=ConnectionError("socket gone"))
-        manager._active_connections[mac] = seeded
 
-        with pytest.raises(HomeAssistantError, match="Could not contact device"):
+        with (
+            patch.object(manager, "async_open_session", new=AsyncMock(return_value=seeded)),
+            pytest.raises(HomeAssistantError, match="Could not contact device"),
+        ):
             await manager.async_trigger_ota(mac)
 
     async def test_async_trigger_ota_temp_conn_unexpected_error_wrapped(
@@ -9530,6 +9567,7 @@ class TestAsyncTriggerOtaSessionReuse:
         mock_conn.async_disconnect = AsyncMock()
 
         with (
+            patch.object(manager, "async_open_session", new=AsyncMock(return_value=None)),
             patch(
                 "custom_components.eppgrid.device_manager.DeviceConnection",
                 return_value=mock_conn,
@@ -9558,6 +9596,7 @@ class TestAsyncTriggerOtaSessionReuse:
         mock_conn.async_disconnect = AsyncMock()
 
         with (
+            patch.object(manager, "async_open_session", new=AsyncMock(return_value=None)),
             patch(
                 "custom_components.eppgrid.device_manager.DeviceConnection",
                 return_value=mock_conn,

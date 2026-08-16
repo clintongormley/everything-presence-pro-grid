@@ -87,6 +87,14 @@ _REBOOT_OFFLINE_TIMEOUT_S = 12
 # didn't recover, so we raise rather than flash a non-responsive device.
 _REBOOT_ONLINE_TIMEOUT_S = 90
 
+# How long `async_trigger_ota` keeps the session it opened alive after the
+# trigger, waiting for `subscribe_ota_progress` to reuse it. The device refuses
+# NEW API connections once the download starts, so the session must be opened
+# BEFORE the trigger and held across the gap until the panel subscribes (~12s
+# observed under a bulk "Update all"). Generous margin; the subscriber's own ref
+# becomes the keep-alive once it attaches.
+_OTA_SESSION_GRACE_S = 45
+
 # Transient errors that justify retrying the build-flags fetch on next call.
 # Anything else (AttributeError, TypeError, ...) signals a programmer bug and
 # should propagate so the test suite catches it instead of getting silently
@@ -209,6 +217,13 @@ class DeviceManager:
         # async_stop can cancel any in-flight handles instead of leaking them
         # past the config entry's lifetime.
         self._entity_update_clear_cancels: dict[str, Any] = {}
+        # Cancel callables for the grace-window timers scheduled by
+        # `_schedule_ota_session_release`, keyed by mac. The trigger opens a
+        # session and holds it past the OTA trigger so `subscribe_ota_progress`
+        # can reuse it to stream progress; this timer drops the trigger's own
+        # ref after the grace window. Tracked so `async_stop` can cancel any
+        # in-flight handle instead of leaking it past the config entry.
+        self._ota_session_releases: dict[str, Any] = {}
         self._build_flags: dict[str, dict[str, Any]] = {}
         # One connection per device, kept alive for the frontend session
         self._active_connections: dict[str, DeviceConnection] = {}
@@ -583,6 +598,9 @@ class DeviceManager:
         for cancel in self._entity_update_clear_cancels.values():
             cancel()
         self._entity_update_clear_cancels.clear()
+        for cancel in self._ota_session_releases.values():
+            cancel()
+        self._ota_session_releases.clear()
         # Cancel pending debounce timers from `_request_push`. They're
         # `asyncio.sleep` waits, so cancellation lands inside the helper's
         # CancelledError handler which returns cleanly. Await the gather
@@ -928,15 +946,22 @@ class DeviceManager:
                 # real cancellation still propagates.
                 _LOGGER.warning("Pre-OTA reboot of %s failed; attempting the update anyway", mac, exc_info=True)
 
-            # Prefer the live session if one exists — opening a second connection
-            # would race against the device's per-API-client connection cap.
-            session = self.get_session(mac)
-            if session is not None:
+            # Open (or reuse) a PERSISTENT session and trigger over it, then hold
+            # it open. Progress can only stream over a session that exists BEFORE
+            # the download starts: once the device is downloading it refuses new
+            # API connections (field-confirmed — every re-open reads the device
+            # unavailable for the whole download). `subscribe_ota_progress` reuses
+            # THIS session to stream 0->100%. `async_open_session` reuses an
+            # existing live session when there is one (so it never opens a second
+            # connection against the device's per-API-client cap) and takes one
+            # subscriber ref, which `_schedule_ota_session_release` drops after a
+            # grace window once the panel has had time to subscribe.
+            conn = await self.async_open_session(mac)
+            if conn is not None:
                 try:
-                    await session.async_execute_service("set_update_manifest", {"url": manifest_url})
-                    _LOGGER.info("Triggered OTA via session for %s (manifest=%s)", mac, manifest_url)
-                    return
+                    await conn.async_execute_service("set_update_manifest", {"url": manifest_url})
                 except HomeAssistantError:
+                    self.release_session(mac, conn)
                     raise
                 except Exception as err:
                     # Wrap aioesphomeapi (and any other unexpected) exceptions so
@@ -944,20 +969,29 @@ class DeviceManager:
                     # technical text from a third-party library. Carry
                     # translation metadata so the websocket / Repairs surfaces
                     # can localize the message — the docstring promises a
-                    # translation_key on every failure path.
-                    _LOGGER.warning("OTA via session for %s failed", mac, exc_info=True)
+                    # translation_key on every failure path. Drop OUR ref first
+                    # so a failed trigger doesn't strand the held session.
+                    self.release_session(mac, conn)
+                    _LOGGER.warning("OTA via held session for %s failed", mac, exc_info=True)
                     raise HomeAssistantError(
                         f"Could not contact device {mac}: {err}",
                         translation_domain=_DOMAIN,
                         translation_key="ota_trigger_failed",
                         translation_placeholders={"mac": mac, "error": str(err)},
                     ) from err
+                _LOGGER.info("Triggered OTA via held session for %s (manifest=%s)", mac, manifest_url)
+                self._schedule_ota_session_release(mac, conn)
+                return
 
-            # No session — fall back to a fresh, short-lived connection.
+            # `async_open_session` returned None: HA marks the device unavailable
+            # (entity state can briefly lag the post-reboot reconnect). Fall back to
+            # a short-lived connection so the trigger still lands — this device then
+            # rides the sessionless outcome watch (no incremental bar, but success/
+            # failure is still reported).
             try:
-                async with self._temp_connection(mac) as conn:
-                    await conn.async_execute_service("set_update_manifest", {"url": manifest_url})
-                _LOGGER.info("Triggered OTA via temp conn for %s (manifest=%s)", mac, manifest_url)
+                async with self._temp_connection(mac) as tconn:
+                    await tconn.async_execute_service("set_update_manifest", {"url": manifest_url})
+                _LOGGER.info("Triggered OTA via temp conn for %s (no held session; manifest=%s)", mac, manifest_url)
             except HomeAssistantError:
                 raise
             except Exception as err:
@@ -2849,6 +2883,29 @@ class DeviceManager:
             return None
         self._session_refcounts.pop(mac, None)
         return self.schedule_close_session(mac)
+
+    def _schedule_ota_session_release(self, mac: str, conn: DeviceConnection) -> None:
+        """Release the ref `async_trigger_ota` took, after a grace window.
+
+        The trigger opens a session and holds it past the trigger so the imminent
+        `subscribe_ota_progress` can reuse it and stream progress (the device
+        won't accept a NEW connection once the download starts). This drops OUR
+        ref after `_OTA_SESSION_GRACE_S`: if a subscriber attached it holds its
+        own ref and the session survives the download; if none arrived, this
+        release takes the count to zero and closes it. `release_session` is
+        identity-checked and no-ops while stopping, so a stale/duplicate release
+        is safe. Tracked so `async_stop` can drop the timer cleanly (HA 2026.4+
+        fails the test if a timer outlives the config entry).
+        """
+        if (cancel := self._ota_session_releases.pop(mac, None)) is not None:
+            cancel()
+
+        @callback
+        def _release(_now: Any) -> None:
+            self._ota_session_releases.pop(mac, None)
+            self.release_session(mac, conn)
+
+        self._ota_session_releases[mac] = async_call_later(self._hass, _OTA_SESSION_GRACE_S, _release)
 
     async def async_close_session(self, mac: str) -> None:
         """Force-close the frontend session connection for a device.
