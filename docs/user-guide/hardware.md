@@ -3,8 +3,10 @@
 The Everything Presence Pro packs several sensors into one small unit: two
 mmWave radars, a PIR (passive infrared) motion sensor, environmental sensors for
 illuminance, temperature, humidity, an optional CO₂ sensor, and a network
-interface. Each presence sensor has its own blind spots, which is why Everything
-Presence Pro Grid combines all three into a single Occupancy signal.
+interface. Each of the Pro's presence sensors has its own blind spots, which is
+why Everything Presence Pro Grid combines all three into a single Occupancy
+signal. The Everything Presence Lite carries a subset of this hardware — see
+[Models](#models) below.
 
 ## Models
 
@@ -104,7 +106,9 @@ Each presence sensor has a blind spot that at least one of the others covers:
 
 The **Occupancy** binary sensor in Home Assistant — the one you'll typically
 automate against — combines all three presence signals into a single entity.
-Each sensor on its own has gaps; together they cover each other.
+Each sensor on its own has gaps; together they cover each other. On the
+Everything Presence Lite, which has only the LD2450, occupancy comes from target
+tracking alone — see [Models](#models).
 
 For example: someone walks into the bedroom and climbs into bed. The motion
 sensor catches the entry in a fraction of a second, so the main lights come on

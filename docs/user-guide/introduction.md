@@ -22,7 +22,8 @@ mmWave radar gives it two big advantages over a regular motion sensor: it can
 detect people who are sitting or lying still, and it tracks them as they move
 around the room — which is what makes zone-based automations possible.
 
-The EPP contains three main sensors:
+The Everything Presence Pro contains three main sensors (the Lite has only the
+LD2450 target tracking radar — see the [models comparison](hardware.md#models)):
 
 - **PIR (passive infrared) motion sensor.** Reacts the instant someone enters
     the room — ideal for triggering main lights.
