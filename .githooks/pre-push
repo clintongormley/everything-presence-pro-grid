@@ -102,6 +102,24 @@ else
     fail "Translations — see errors above"
 fi
 
+# -- Repo hygiene --
+# This repo has no root npm project (the only npm project is frontend/). A stray
+# root package.json / package-lock.json / node_modules — usually from an npm
+# command run at the repo root by mistake — breaks `npm ci` there (ENOENT) and
+# must never be committed. .gitignore covers the accidental `git add`; this also
+# blocks an already-tracked or force-added (git add -f) one from being pushed.
+# Pathspecs are :(top)-anchored to the repo root, so the check is correct even
+# when `git push` is invoked from a subdirectory (e.g. frontend/) — a plain
+# pathspec resolves relative to cwd and would wrongly match frontend/'s own
+# package-lock.json.
+step "Repo hygiene"
+stray_npm=$(git ls-files -- ':(top)package.json' ':(top)package-lock.json' ':(top)npm-shrinkwrap.json' ':(top)node_modules' || true)
+if [ -z "$stray_npm" ]; then
+    pass "No stray root npm artifacts"
+else
+    fail "Stray root npm artifact(s) tracked (npm project is frontend/, not root) — remove with: git rm -r --cached $(echo "$stray_npm" | tr '\n' ' ')"
+fi
+
 # -- Python (only if Python code changed) --
 
 if [ -n "$py_changed" ]; then
