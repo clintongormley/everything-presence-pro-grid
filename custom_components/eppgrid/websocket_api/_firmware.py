@@ -514,12 +514,14 @@ async def websocket_subscribe_ota_progress(
         Bumps the shared watcher refcount (subscribing device logs + raising the
         log level on the FIRST watcher), then subscribes to UpdateState + error
         logs. On success sets the outer ``device_conn`` to ``conn`` and returns
-        True; on a subscribe failure it unwinds (revert the bump / drop the log
-        sub if we were the last watcher, release the session reference) and
-        returns False with ``device_conn`` left None, so the caller stays on the
-        sessionless outcome watch. Used both for the session opened at subscribe
-        time and for one re-opened by the background retry once the device
-        becomes reachable during the download.
+        True; on ANY attach-step failure (subscribe_logs, the state subscribe, or
+        add_log_callback) it unwinds (revert the bump / drop the log sub if we were
+        the last watcher, release the session reference) and returns False with
+        ``device_conn`` left None, so the caller stays on the sessionless outcome
+        watch — it never propagates an ordinary exception. Used both for the
+        session opened at subscribe time (where ``_unsub`` isn't registered yet, so
+        this self-unwind is the only cleanup path) and for one re-opened by the
+        background retry once the device becomes reachable during the download.
         """
         nonlocal device_conn
         device_conn = conn
@@ -528,46 +530,53 @@ async def websocket_subscribe_ota_progress(
         # subscription and ONE log-level bump, reverted only when the last
         # watcher releases.
         conn.ota.watchers += 1
-        if conn.ota.watchers == 1:
-            if not conn.is_log_subscribed:
-                conn.subscribe_logs(ESPLogLevel.LOG_LEVEL_ERROR)
-                conn.ota.started_log_sub = True
-
-            # Firmware silences the ESPHome logger to NONE on boot, so even ERROR
-            # messages from http_request.ota / http_request.update never leave the
-            # device — the subscribe-logs surface above reads nothing. Bump the
-            # system log level to Error here so OTA failures actually reach the
-            # frontend. Older firmware that doesn't expose this action is left
-            # alone (older firmware also doesn't silence to NONE, so it works).
-            try:
-                await conn.async_execute_service(
-                    "epp_set_log_level",
-                    {"category": _OTA_LOG_CATEGORY, "level": _OTA_LOG_LEVEL},
-                )
-                conn.ota.bumped_log_level = True
-            except HomeAssistantError:
-                # Older firmware doesn't expose epp_set_log_level — fine; the
-                # ESPHome OTA logger isn't silenced on those builds anyway.
-                _LOGGER.debug("Device %s does not expose epp_set_log_level", mac)
-            except Exception:
-                _LOGGER.debug("Failed to bump device log level for OTA visibility", exc_info=True)
-
         try:
+            if conn.ota.watchers == 1:
+                if not conn.is_log_subscribed:
+                    conn.subscribe_logs(ESPLogLevel.LOG_LEVEL_ERROR)
+                    conn.ota.started_log_sub = True
+
+                # Firmware silences the ESPHome logger to NONE on boot, so even
+                # ERROR messages from http_request.ota / http_request.update never
+                # leave the device — the subscribe-logs surface above reads nothing.
+                # Bump the system log level to Error here so OTA failures actually
+                # reach the frontend. This bump is best-effort (older firmware
+                # doesn't expose the action, and doesn't silence to NONE anyway), so
+                # its OWN failure must not unwind the attach — hence the inner catch.
+                try:
+                    await conn.async_execute_service(
+                        "epp_set_log_level",
+                        {"category": _OTA_LOG_CATEGORY, "level": _OTA_LOG_LEVEL},
+                    )
+                    conn.ota.bumped_log_level = True
+                except HomeAssistantError:
+                    # Older firmware doesn't expose epp_set_log_level — fine; the
+                    # ESPHome OTA logger isn't silenced on those builds anyway.
+                    _LOGGER.debug("Device %s does not expose epp_set_log_level", mac)
+                except Exception:
+                    _LOGGER.debug("Failed to bump device log level for OTA visibility", exc_info=True)
+
             await conn.subscribe_states(_on_state)
+            conn.add_log_callback(_on_log)
         except Exception:
-            # Connection raced to close after the bump — undo this watcher's
-            # contributions (revert the bump / drop the log sub if we're the
-            # last watcher, release the session reference), then downgrade to the
-            # sessionless outcome watch rather than abandoning the update.
+            # Any attach step (subscribe_logs, subscribe_states, add_log_callback)
+            # raised — typically the connection raced to close after the watcher
+            # bump. Undo this watcher's contributions (revert the bump / drop the
+            # log sub if we're the last watcher, release the session reference),
+            # then downgrade to the sessionless outcome watch rather than abandoning
+            # the update. At subscribe time `_unsub` isn't registered yet, so this
+            # is the ONLY cleanup path there. `CancelledError` is deliberately NOT
+            # caught (it derives from BaseException, not Exception): a cancel
+            # propagates so the canceller — `_unsub` — owns the single release,
+            # avoiding a double free.
             _LOGGER.debug(
-                "Failed to subscribe to states for OTA progress on %s; using sessionless watch",
+                "Failed to attach live OTA session on %s; using sessionless watch",
                 mac,
                 exc_info=True,
             )
             _release_watcher()
             device_conn = None
             return False
-        conn.add_log_callback(_on_log)
         return True
 
     if device_conn is not None:
@@ -666,23 +675,13 @@ async def websocket_subscribe_ota_progress(
                 # release the just-opened reference and stop.
                 manager.release_session(mac, conn)
                 return
-            try:
-                if await _attach_live_session(conn):
-                    return
-                # Attach failed (subscribe raced closed): `_attach_live_session`
-                # already unwound its own contributions and reset device_conn —
-                # retry on the next tick.
-            except Exception:
-                # An unexpected raise AFTER `_attach_live_session` set
-                # device_conn=conn (e.g. subscribe_logs): its own subscribe_states
-                # unwind never ran, so unwind here — release the watcher/session
-                # reference it took and clear device_conn. Otherwise the loop's
-                # `device_conn is not None` guard would wedge the retry instead of
-                # letting it keep trying.
-                _LOGGER.debug("OTA live-session retry: attach failed for %s", mac, exc_info=True)
-                if device_conn is conn:
-                    _release_watcher()
-                    device_conn = None
+            if await _attach_live_session(conn):
+                return
+            # Attach failed — the connection raced closed during the subscribe.
+            # `_attach_live_session` self-unwinds on any ordinary error (releases
+            # the session reference it was given and resets device_conn), so just
+            # loop and retry on the next tick. A cancel (unsubscribe) propagates out
+            # of the awaited attach, ending this task; `_unsub` owns that release.
 
     if device_conn is None:
         # No `_on_state` to arm the outer safety-net timer, so arm it here — the

@@ -1278,6 +1278,51 @@ class TestSubscribeOtaProgress:
         assert device_conn.ota.bumped_log_level is False
         assert device_conn.ota.started_log_sub is False
 
+    async def test_subscribe_logs_failure_at_subscribe_time_downgrades_to_sessionless(
+        self,
+        hass: HomeAssistant,
+        config_entry: MockConfigEntry,
+    ) -> None:
+        """If `subscribe_logs` raises while attaching the session that was open at
+        subscribe time, the handler must NOT abort. `_unsub` isn't registered until
+        after the attach, so an unguarded raise would escape the handler and leak
+        the watcher bump + session reference with no cleanup path. Instead it must
+        unwind (release the session) and downgrade to the sessionless outcome watch,
+        exactly like a subscribe_states failure."""
+        log_svc = MagicMock()
+        mock_dm = await setup_integration(hass, config_entry)
+        device_conn = make_mock_device_conn(services={"epp_set_log_level": log_svc})
+        device_conn.is_log_subscribed = False
+        # subscribe_logs is the FIRST attach step (before the log-level bump); make
+        # it raise so the failure lands ahead of subscribe_states' own guard.
+        device_conn.subscribe_logs = MagicMock(side_effect=RuntimeError("connection is closed"))
+        device_conn.unsubscribe_logs = MagicMock()
+        mock_dm.async_open_session = AsyncMock(return_value=device_conn)
+        mock_dm.async_wait_for_ota_outcome = AsyncMock(return_value="success")
+
+        from custom_components.eppgrid.websocket_api import websocket_subscribe_ota_progress
+
+        connection = MagicMock()
+        connection.subscriptions = {}
+        msg = {"id": 1, "type": "eppgrid/subscribe_ota_progress", "mac": "AA:BB:CC:DD:EE:FF"}
+        # Must not raise out of the handler (that would abort the WS command and
+        # leak the bump/session — `_unsub` isn't registered yet to clean it up).
+        await call_async_handler(hass, websocket_subscribe_ota_progress, connection, msg)
+
+        # Downgrades to the sessionless watch — no error, subscription established.
+        connection.send_error.assert_not_called()
+        connection.send_result.assert_called_once_with(1)
+        mock_dm.async_wait_for_ota_outcome.assert_awaited()
+
+        # The session reference taken on subscribe was released, not leaked.
+        mock_dm.release_session.assert_called_once_with("AA:BB:CC:DD:EE:FF", device_conn)
+        # Shared watcher state rolled back for the next subscriber. We never
+        # "started" the log sub (subscribe_logs itself raised), so it isn't dropped.
+        assert device_conn.ota.watchers == 0
+        assert device_conn.ota.bumped_log_level is False
+        assert device_conn.ota.started_log_sub is False
+        device_conn.unsubscribe_logs.assert_not_called()
+
     async def test_two_watchers_share_one_bump_and_log_subscription(
         self,
         hass: HomeAssistant,
