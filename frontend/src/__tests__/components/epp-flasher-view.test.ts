@@ -1341,6 +1341,7 @@ describe("USB flash view — state-driven", () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
 		(el as any).usbFlashState = null;
+		(el as any)._selectedModel = "pro";
 		document.body.appendChild(el);
 		await el.updateComplete;
 
@@ -1404,6 +1405,7 @@ describe("USB flash view — state-driven", () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
 		(el as any).usbFlashState = null;
+		(el as any)._selectedModel = "pro";
 		(el as any)._selectedVariant = "wifi";
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -1422,6 +1424,7 @@ describe("USB flash view — state-driven", () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
 		(el as any).usbFlashState = null;
+		(el as any)._selectedModel = "pro";
 		(el as any)._selectedVariant = "ethernet";
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -1440,6 +1443,7 @@ describe("USB flash view — state-driven", () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
 		(el as any).usbFlashState = null;
+		(el as any)._selectedModel = "pro";
 		(el as any)._selectedVariant = "ethernet";
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -1486,6 +1490,7 @@ describe("variant selector styling", () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
 		(el as any).usbFlashState = null;
+		(el as any)._selectedModel = "pro";
 		(el as any)._selectedVariant = "ethernet";
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -2570,9 +2575,43 @@ describe("USB flash — model selection", () => {
 		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-co2");
 	});
 
-	it("defaults to the Pro so the existing flow is unchanged", () => {
+	it("selects no model by default, so nothing is flashed until the user chooses", () => {
+		// Regression guard (#361 review): defaulting to Pro silently flashed Pro
+		// firmware onto a Lite for anyone who didn't notice the selector. The
+		// Lite's I2C/UART/LED pins differ, so the wrong image leaves a
+		// non-functional device — the model has to be a deliberate choice.
 		const el = createView();
-		expect((el as any)._selectedModel).toBe("pro");
-		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-co2");
+		expect((el as any)._selectedModel).toBeNull();
+	});
+
+	it("keeps the flash button disabled until a model is chosen, then enables it", async () => {
+		const el = createView();
+		(el as any)._showUsbFlash = true;
+		(el as any).usbFlashState = null;
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const flashBtn = () =>
+			el.shadowRoot!.querySelector(
+				'.confirm-actions epp-button[variant="primary"]',
+			) as HTMLElement & { disabled: boolean };
+		expect(flashBtn().disabled).toBe(true);
+
+		const modelBtns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="model"] epp-button',
+		);
+		(modelBtns[0] as HTMLElement).click();
+		await el.updateComplete;
+		expect(flashBtn().disabled).toBe(false);
+	});
+
+	it("does not dispatch usb-flash while no model is selected", () => {
+		const el = createView();
+		const events: CustomEvent[] = [];
+		el.addEventListener("usb-flash", ((e: CustomEvent) => {
+			events.push(e);
+		}) as EventListener);
+		(el as any)._dispatchUsbFlash();
+		expect(events.length).toBe(0);
 	});
 });
