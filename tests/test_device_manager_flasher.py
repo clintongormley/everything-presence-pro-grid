@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
@@ -136,12 +137,13 @@ class TestListFlashableDevices:
         assert len(result) == 1
         assert result[0]["firmware_type"] == "eppgrid"
 
-    async def test_surfaces_esphome_name_when_device_renamed(self, hass: HomeAssistant, mock_store) -> None:
-        """A user-renamed device surfaces its original ESPHome node name in
-        `device_name`, so the flasher row can show both (e.g. "EPP Bathroom 2"
-        with "Everything Presence Pro 29be5c" alongside)."""
+    async def test_surfaces_area_name(self, hass: HomeAssistant, mock_store) -> None:
+        """A device assigned to an HA area surfaces that area's name in `area`,
+        so the flasher row shows where the device lives."""
         dev_reg = dr.async_get(hass)
         ent_reg = er.async_get(hass)
+        area_reg = ar.async_get(hass)
+        area = area_reg.async_get_or_create("Bathroom")
         device, _ = _create_esphome_device(
             hass,
             dev_reg,
@@ -151,26 +153,29 @@ class TestListFlashableDevices:
             host="192.168.20.220",
             has_firmware_version=True,
         )
-        dev_reg.async_update_device(device.id, name_by_user="EPP Bathroom 2")
+        dev_reg.async_update_device(device.id, area_id=area.id)
 
         manager = DeviceManager(hass, mock_store)
         result = await manager.list_flashable_devices()
 
-        assert result[0]["name"] == "EPP Bathroom 2"
-        assert result[0]["device_name"] == "Everything Presence Pro 29be5c"
+        assert result[0]["name"] == "Everything Presence Pro 29be5c"
+        assert result[0]["area"] == "Bathroom"
 
-    async def test_surfaces_parent_node_name_for_sub_device(self, hass: HomeAssistant, mock_store) -> None:
-        """When the flashable device is a sub-device (via_device -> the ESPHome
-        node), surface the parent node's name in `device_name`."""
+    async def test_sub_device_inherits_parent_area(self, hass: HomeAssistant, mock_store) -> None:
+        """A sub-device (via_device -> the ESPHome node) with no area of its own
+        inherits the parent ESPHome node's area."""
         dev_reg = dr.async_get(hass)
         ent_reg = er.async_get(hass)
+        area_reg = ar.async_get(hass)
+        area = area_reg.async_get_or_create("Lounge")
         esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.20.210"}, title="node")
         esphome_entry.add_to_hass(hass)
-        dev_reg.async_get_or_create(
+        parent = dev_reg.async_get_or_create(
             config_entry_id=esphome_entry.entry_id,
             identifiers={("esphome", "node-282a60")},
             name="Everything Presence Pro 282a60",
         )
+        dev_reg.async_update_device(parent.id, area_id=area.id)
         child = dev_reg.async_get_or_create(
             config_entry_id=esphome_entry.entry_id,
             connections={(dr.CONNECTION_NETWORK_MAC, "28:2A:60:00:00:01")},
@@ -188,18 +193,16 @@ class TestListFlashableDevices:
 
         row = next(r for r in result if r["mac"] == dr.format_mac("28:2A:60:00:00:01").upper())
         assert row["name"] == "EPP Lounge Bathroom"
-        assert row["device_name"] == "Everything Presence Pro 282a60"
+        assert row["area"] == "Lounge"
 
-    async def test_sub_device_prefers_parent_node_name_over_parent_rename(
-        self, hass: HomeAssistant, mock_store
-    ) -> None:
-        """When the parent ESPHome node itself was renamed in HA, `device_name`
-        must still surface the node's registry name (the stable ESPHome node
-        name), not the friendly rename — that's what lets the row be matched
-        back to the ESPHome device, and it keeps this branch consistent with the
-        single-device rename branch (which also reports the node name)."""
+    async def test_sub_device_own_area_beats_parent_area(self, hass: HomeAssistant, mock_store) -> None:
+        """A sub-device with its own area assignment reports that area, not the
+        parent node's — the device's own placement wins."""
         dev_reg = dr.async_get(hass)
         ent_reg = er.async_get(hass)
+        area_reg = ar.async_get(hass)
+        parent_area = area_reg.async_get_or_create("Hallway")
+        child_area = area_reg.async_get_or_create("Bathroom")
         esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.20.212"}, title="node")
         esphome_entry.add_to_hass(hass)
         parent = dev_reg.async_get_or_create(
@@ -207,8 +210,7 @@ class TestListFlashableDevices:
             identifiers={("esphome", "node-282a61")},
             name="Everything Presence Pro 282a61",
         )
-        # The user renamed the PARENT node in HA.
-        dev_reg.async_update_device(parent.id, name_by_user="Lounge Hub")
+        dev_reg.async_update_device(parent.id, area_id=parent_area.id)
         child = dev_reg.async_get_or_create(
             config_entry_id=esphome_entry.entry_id,
             connections={(dr.CONNECTION_NETWORK_MAC, "28:2A:61:00:00:01")},
@@ -217,6 +219,7 @@ class TestListFlashableDevices:
             model="Everything Presence Pro",
             via_device=("esphome", "node-282a61"),
         )
+        dev_reg.async_update_device(child.id, area_id=child_area.id)
         ent_reg.async_get_or_create(
             "sensor", "esphome", "28:2A:61:00:00:01-firmware_version", device_id=child.id, config_entry=esphome_entry
         )
@@ -226,12 +229,12 @@ class TestListFlashableDevices:
 
         row = next(r for r in result if r["mac"] == dr.format_mac("28:2A:61:00:00:01").upper())
         assert row["name"] == "EPP Lounge Bathroom"
-        # The stable node name, NOT the parent's "Lounge Hub" rename.
-        assert row["device_name"] == "Everything Presence Pro 282a61"
+        # The device's own area, NOT the parent node's "Hallway".
+        assert row["area"] == "Bathroom"
 
-    async def test_no_device_name_when_not_renamed_and_no_parent(self, hass: HomeAssistant, mock_store) -> None:
-        """A plain device (no user rename, no parent node) reports device_name
-        None — nothing extra to show beyond the primary name."""
+    async def test_no_area_when_unassigned(self, hass: HomeAssistant, mock_store) -> None:
+        """A device with no area (and no parent area) reports area None — nothing
+        extra to show beyond the primary name."""
         dev_reg = dr.async_get(hass)
         ent_reg = er.async_get(hass)
         _create_esphome_device(
@@ -248,7 +251,7 @@ class TestListFlashableDevices:
         result = await manager.list_flashable_devices()
 
         assert result[0]["name"] == "Everything Presence Pro 29be5c"
-        assert result[0]["device_name"] is None
+        assert result[0]["area"] is None
 
     async def test_recognises_v3_unique_id_firmware_version(self, hass: HomeAssistant, mock_store) -> None:
         """HA 2026.8+ (aioesphomeapi version-3 unique_ids) devices are eppgrid.

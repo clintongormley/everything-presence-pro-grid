@@ -39,6 +39,7 @@ from ..storage import EPPGridStore
 from ._connection import DeviceConnection
 from ._connection import OtaWatcherState as OtaWatcherState  # re-export for tests
 from ._helpers import ZONE_TYPE_DEFAULTS as ZONE_TYPE_DEFAULTS  # re-export for tests
+from ._helpers import _area_name
 from ._helpers import _compare_firmware_version
 from ._helpers import _compute_pipeline
 from ._helpers import _esphome_object_id
@@ -3043,11 +3044,7 @@ class DeviceManager:
             fw_ver = self.read_firmware_version(dev.device_id, entries=entries)
             registry_entry = dev_reg.async_get(dev.device_id) if dev.device_id else None
             fresh_name = ((registry_entry.name_by_user or registry_entry.name) if registry_entry else None) or dev.name
-            area_name: str | None = None
-            if registry_entry and registry_entry.area_id:
-                area = area_reg.async_get_area(registry_entry.area_id)
-                if area is not None:
-                    area_name = area.name
+            area_name = _area_name(area_reg, registry_entry.area_id if registry_entry else None)
             device_entry = {
                 "mac": mac,
                 "name": config.get("name", fresh_name) if config else fresh_name,
@@ -3073,6 +3070,7 @@ class DeviceManager:
         """Return all ESPHome EPP devices — both original and EPP Grid firmware."""
         dev_reg = dr.async_get(self._hass)
         ent_reg = er.async_get(self._hass)
+        area_reg = ar.async_get(self._hass)
         result: list[dict[str, Any]] = []
         seen_macs: set[str] = set()
 
@@ -3137,30 +3135,22 @@ class DeviceManager:
             )
             sw_fallback = (device.sw_version or "").split(" (")[0] or "unknown"
             display_name = device.name_by_user or device.name or "EPP Device"
-            # The ESPHome node name ("Everything Presence Pro <suffix>"), surfaced
-            # alongside a friendly rename so a row can be matched to its ESPHome
-            # device. Two registry shapes cover it: the device was renamed in HA
-            # (its original `name` is the node name), or it's a sub-device linked
-            # to the node via `via_device`. None when there's nothing extra to add.
-            device_name: str | None = None
-            if device.name_by_user and device.name and device.name != device.name_by_user:
-                device_name = device.name
-            elif device.via_device_id:
+            # The HA area this device lives in, surfaced on the flasher row so a
+            # device can be placed at a glance. Prefer the device's own area; for
+            # a sub-device linked to the ESPHome node via `via_device` that has no
+            # area of its own, fall back to the parent node's area. None when
+            # neither is assigned.
+            area_id = device.area_id
+            if area_id is None and device.via_device_id:
                 parent = dev_reg.async_get(device.via_device_id)
                 if parent is not None:
-                    # Prefer the parent's registry `name` (the stable ESPHome node
-                    # name) over `name_by_user`: if the node itself was renamed in
-                    # HA, surfacing the rename would defeat the "match back to the
-                    # ESPHome device" goal, and it keeps this consistent with the
-                    # rename branch above (which also reports the node name).
-                    candidate = parent.name or parent.name_by_user
-                    if candidate and candidate != display_name:
-                        device_name = candidate
+                    area_id = parent.area_id
+            area_name = _area_name(area_reg, area_id)
             result.append(
                 {
                     "mac": mac,
                     "name": display_name,
-                    "device_name": device_name,
+                    "area": area_name,
                     "host": host,
                     "available": available,
                     "firmware_type": "eppgrid" if has_firmware_version else "original",

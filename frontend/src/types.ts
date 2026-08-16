@@ -42,9 +42,11 @@ export interface WizardCorner {
 export interface FlashableDevice {
 	mac: string;
 	name: string;
-	/** The ESPHome node device name (e.g. "Everything Presence Pro 29be5c")
-	 *  shown alongside a friendly rename; null when there's nothing extra. */
-	device_name: string | null;
+	/** The HA area the device lives in (e.g. "Bathroom"), shown under the
+	 *  friendly name. For a sub-device linked to the ESPHome node via
+	 *  `via_device` with no area of its own, this is the parent node's area.
+	 *  Null when neither the device nor its parent has an area assigned. */
+	area: string | null;
 	host: string | null;
 	available: boolean;
 	firmware_type: "original" | "eppgrid";

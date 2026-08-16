@@ -9,6 +9,7 @@ from typing import NoReturn
 from aioesphomeapi import LogLevel
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 
@@ -372,6 +373,19 @@ def _extract_mac(device: dr.DeviceEntry) -> str | None:
         if conn_type == "mac":
             return dr.format_mac(conn_id).upper()
     return None
+
+
+def _area_name(area_reg: ar.AreaRegistry, area_id: str | None) -> str | None:
+    """Resolve an HA area_id to its display name, or None if unset/unknown.
+
+    Shared by the device-list serializers so the "area_id -> name" null-guard
+    lives in one place. Takes the already-resolved registry so callers keep the
+    getter hoisted out of their per-device loop.
+    """
+    if not area_id:
+        return None
+    area = area_reg.async_get_area(area_id)
+    return area.name if area is not None else None
 
 
 try:
