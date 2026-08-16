@@ -36,7 +36,11 @@ def manager(hass: HomeAssistant) -> DeviceManager:
 
 
 async def _run_trigger(manager: DeviceManager, local_url: str | None) -> str:
-    """Trigger OTA with reboot + head stubbed; return the URL handed to the device."""
+    """Trigger OTA with reboot + head stubbed; return the URL handed to the device.
+
+    The trigger hands the manifest over the persistent session `async_open_session`
+    returns, then schedules a grace-window release. Stub the release scheduler so
+    the test doesn't leak a lingering timer; we only care about the URL here."""
     session = MagicMock()
     session.async_execute_service = AsyncMock()
     with (
@@ -45,7 +49,8 @@ async def _run_trigger(manager: DeviceManager, local_url: str | None) -> str:
             return_value=_fake_head_session(200),
         ),
         patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
-        patch.object(manager, "get_session", return_value=session),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=session)),
+        patch.object(manager, "_schedule_ota_session_release"),
         patch(
             "custom_components.eppgrid.device_manager.async_local_ota_manifest_url",
             new=AsyncMock(return_value=local_url),
@@ -80,7 +85,8 @@ async def test_trigger_forces_github_when_prefer_local_false(manager: DeviceMana
             return_value=_fake_head_session(200),
         ),
         patch.object(manager, "async_reboot_and_wait", new=AsyncMock()),
-        patch.object(manager, "get_session", return_value=session),
+        patch.object(manager, "async_open_session", new=AsyncMock(return_value=session)),
+        patch.object(manager, "_schedule_ota_session_release"),
         patch("custom_components.eppgrid.device_manager.async_local_ota_manifest_url", new=local_mock),
     ):
         await manager.async_trigger_ota(MAC, prefer_local=False)
