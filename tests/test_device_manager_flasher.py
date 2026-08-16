@@ -190,6 +190,45 @@ class TestListFlashableDevices:
         assert row["name"] == "EPP Lounge Bathroom"
         assert row["device_name"] == "Everything Presence Pro 282a60"
 
+    async def test_sub_device_prefers_parent_node_name_over_parent_rename(
+        self, hass: HomeAssistant, mock_store
+    ) -> None:
+        """When the parent ESPHome node itself was renamed in HA, `device_name`
+        must still surface the node's registry name (the stable ESPHome node
+        name), not the friendly rename — that's what lets the row be matched
+        back to the ESPHome device, and it keeps this branch consistent with the
+        single-device rename branch (which also reports the node name)."""
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.20.212"}, title="node")
+        esphome_entry.add_to_hass(hass)
+        parent = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            identifiers={("esphome", "node-282a61")},
+            name="Everything Presence Pro 282a61",
+        )
+        # The user renamed the PARENT node in HA.
+        dev_reg.async_update_device(parent.id, name_by_user="Lounge Hub")
+        child = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={(dr.CONNECTION_NETWORK_MAC, "28:2A:61:00:00:01")},
+            name="EPP Lounge Bathroom",
+            manufacturer="EverythingSmartTechnology",
+            model="Everything Presence Pro",
+            via_device=("esphome", "node-282a61"),
+        )
+        ent_reg.async_get_or_create(
+            "sensor", "esphome", "28:2A:61:00:00:01-firmware_version", device_id=child.id, config_entry=esphome_entry
+        )
+
+        manager = DeviceManager(hass, mock_store)
+        result = await manager.list_flashable_devices()
+
+        row = next(r for r in result if r["mac"] == dr.format_mac("28:2A:61:00:00:01").upper())
+        assert row["name"] == "EPP Lounge Bathroom"
+        # The stable node name, NOT the parent's "Lounge Hub" rename.
+        assert row["device_name"] == "Everything Presence Pro 282a61"
+
     async def test_no_device_name_when_not_renamed_and_no_parent(self, hass: HomeAssistant, mock_store) -> None:
         """A plain device (no user rename, no parent node) reports device_name
         None — nothing extra to show beyond the primary name."""

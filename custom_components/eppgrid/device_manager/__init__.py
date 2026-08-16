@@ -3032,7 +3032,12 @@ class DeviceManager:
             elif device.via_device_id:
                 parent = dev_reg.async_get(device.via_device_id)
                 if parent is not None:
-                    candidate = parent.name_by_user or parent.name
+                    # Prefer the parent's registry `name` (the stable ESPHome node
+                    # name) over `name_by_user`: if the node itself was renamed in
+                    # HA, surfacing the rename would defeat the "match back to the
+                    # ESPHome device" goal, and it keeps this consistent with the
+                    # rename branch above (which also reports the node name).
+                    candidate = parent.name or parent.name_by_user
                     if candidate and candidate != display_name:
                         device_name = candidate
             result.append(
