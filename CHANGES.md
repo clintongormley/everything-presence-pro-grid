@@ -4,6 +4,18 @@ User-facing changes to Everything Presence Pro Grid. For full release assets and
 firmware downloads, see the
 [GitHub releases page](https://github.com/clintongormley/everything-presence-pro-grid/releases).
 
+## v1.9.0 — unreleased
+
+### New features
+
+- **A new "Tracking Sensor" entity shows when the tracker has failed.** If the
+    tracking sensor stops responding, presence and motion can keep working (they
+    come from separate sensors) while target dots silently disappear and Target
+    Presence stays clear — making a hardware failure look like an empty room.
+    The new Tracking Sensor entity reads Connected while the tracker is sending
+    data and Disconnected when it has gone quiet or never started, so a failed
+    tracker is easy to spot (#407).
+
 ## v1.8.0 — 2026-08-16
 
 ### New features
@@ -11,9 +23,9 @@ firmware downloads, see the
 - **Czech translation.** The panel and dashboard card are now available in Czech
     (čeština), shown automatically when Home Assistant is set to Czech.
 - **Firmware updates no longer need internet access.** Home Assistant now serves
-    firmware to your devices over your local network, so a sensor with no internet
-    access of its own can still update. Devices that do have internet fall back to
-    downloading from GitHub.
+    firmware to your devices over your local network, so a sensor with no
+    internet access of its own can still update. Devices that do have internet
+    fall back to downloading from GitHub.
 - **The installed devices list shows each device's area.** The flasher's
     Installed Devices list now shows the Home Assistant area each device is in,
     making it easier to tell similar devices apart at a glance.
@@ -27,8 +39,8 @@ firmware downloads, see the
     loads however you open it and reloads itself to the new version.
 - **The heatmap no longer logs "unknown" warnings.** The `sensor.*_heatmap`
     entity was logging "state is longer than 255, falling back to unknown"
-    (#365). The heatmap is now delivered directly to the panel and card and is no
-    longer a Home Assistant sensor entity; the old entity is removed
+    (#365). The heatmap is now delivered directly to the panel and card and is
+    no longer a Home Assistant sensor entity; the old entity is removed
     automatically after you update the firmware.
 
 ## v1.7.0 — 2026-08-07
