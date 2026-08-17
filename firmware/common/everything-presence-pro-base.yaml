@@ -9,7 +9,7 @@ esphome:
   min_version: "2026.5.3"
   project:
     name: EverythingSmartTechnology.Everything Presence Pro
-    version: "1.8.0"
+    version: "1.9.0-rc.1"
   on_boot:
     - priority: 200
       then:
@@ -59,6 +59,16 @@ epp:
     name: "Target Presence"
     device_class: occupancy
     disabled_by_default: true
+  # Connectivity of the LD2450 tracker itself — ON while frames are arriving
+  # (even in an empty room, the LD2450 streams ~10Hz), OFF if it goes silent or
+  # never comes up after boot. Distinct from Target Presence (targets seen): a
+  # dead/disconnected tracker reads Disconnected here instead of looking like an
+  # empty room (#407). Enabled by default so the fault is visible without
+  # hunting through hidden entities.
+  tracking_health:
+    name: "Tracking Sensor"
+    device_class: connectivity
+    entity_category: diagnostic
   firmware_version:
     name: "Firmware Version"
     entity_category: diagnostic

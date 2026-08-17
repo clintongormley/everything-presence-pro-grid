@@ -92,6 +92,16 @@ entity is exposed.
     Sensor calibration to nudge the average closer to a reference. Treat them as
     trend indicators rather than reliable climate sensors.
 
+## Diagnostics
+
+Device-health entities. Unlike the groups above, these aren't toggled under
+Settings → Entities — they're always enabled and appear under the device's
+**Diagnostic** section in Home Assistant.
+
+| Entity                                                         | Default | What it reports                                                                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Tracking Sensor** (`binary_sensor.<device>_tracking_sensor`) | On      | Whether the LD2450 tracker is sending data. **Connected** while frames are arriving (the tracker streams continuously, even in an empty room); **Disconnected** if it goes silent or never starts. Distinct from **Target presence** — a failed or disconnected tracker reads Disconnected here instead of just looking like an empty room. |
+
 ## Update rate
 
 Both the Zone-level and Target-level groups end with an **Update rate** dropdown

@@ -51,22 +51,23 @@ appropriate. The integration manages enable/disable/rename.
 
 ### Enabled by Default
 
-| Entity                 | Type          | Source                                                                                        |
-| ---------------------- | ------------- | --------------------------------------------------------------------------------------------- |
-| Occupancy              | binary_sensor | zone engine processed (active/pending = on, inactive = off)                                   |
-| Zone Engine Version    | text_sensor   | firmware version string                                                                       |
-| Config Protocol        | sensor        | config protocol version integer (e.g. `1`)                                                    |
-| Current Connections    | sensor        | current API client count (diagnostic, accuracy_decimals=0)                                    |
-| Heap Free              | sensor        | current free heap bytes (diagnostic, 60s update via `debug` platform)                         |
-| Heap Largest Block     | sensor        | largest free contiguous block — TLS handshake limiter (diagnostic)                            |
-| Heap Min Free          | sensor        | all-time low-water mark via `heap_caps_get_minimum_free_size` (diagnostic)                    |
-| Loop Time              | sensor        | ESPHome main loop time in ms (diagnostic)                                                     |
-| WiFi Signal            | sensor        | RSSI in dBm via `wifi_signal` — wifi-ble-co2 variant (diagnostic, 60s)                        |
-| WiFi Disconnects       | sensor        | outages since boot — the retry storm inside one outage counts once (wifi variant)             |
-| WiFi Disconnect Reason | text_sensor   | IDF reason code + name for the last drop, e.g. `Beacon Timeout (200)`                         |
-| WiFi Disconnect Signal | sensor        | RSSI in dBm at the instant of the last drop (from the IDF event; no state_class — it latches) |
-| WiFi Downtime          | sensor        | seconds the last WiFi outage lasted (published on reconnect; no state_class — it latches)     |
-| WiFi BSSID             | text_sensor   | BSSID of the associated AP via `wifi_info` — detects mesh steering                            |
+| Entity                 | Type          | Source                                                                                                               |
+| ---------------------- | ------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Occupancy              | binary_sensor | zone engine processed (active/pending = on, inactive = off)                                                          |
+| Tracking Sensor        | binary_sensor | LD2450 link health (connectivity): on = frames arriving (~10Hz, even empty), off = silent/never-came-up (diagnostic) |
+| Zone Engine Version    | text_sensor   | firmware version string                                                                                              |
+| Config Protocol        | sensor        | config protocol version integer (e.g. `1`)                                                                           |
+| Current Connections    | sensor        | current API client count (diagnostic, accuracy_decimals=0)                                                           |
+| Heap Free              | sensor        | current free heap bytes (diagnostic, 60s update via `debug` platform)                                                |
+| Heap Largest Block     | sensor        | largest free contiguous block — TLS handshake limiter (diagnostic)                                                   |
+| Heap Min Free          | sensor        | all-time low-water mark via `heap_caps_get_minimum_free_size` (diagnostic)                                           |
+| Loop Time              | sensor        | ESPHome main loop time in ms (diagnostic)                                                                            |
+| WiFi Signal            | sensor        | RSSI in dBm via `wifi_signal` — wifi-ble-co2 variant (diagnostic, 60s)                                               |
+| WiFi Disconnects       | sensor        | outages since boot — the retry storm inside one outage counts once (wifi variant)                                    |
+| WiFi Disconnect Reason | text_sensor   | IDF reason code + name for the last drop, e.g. `Beacon Timeout (200)`                                                |
+| WiFi Disconnect Signal | sensor        | RSSI in dBm at the instant of the last drop (from the IDF event; no state_class — it latches)                        |
+| WiFi Downtime          | sensor        | seconds the last WiFi outage lasted (published on reconnect; no state_class — it latches)                            |
+| WiFi BSSID             | text_sensor   | BSSID of the associated AP via `wifi_info` — detects mesh steering                                                   |
 
 ### Disabled by Default
 

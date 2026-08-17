@@ -230,6 +230,22 @@ void EPPComponent::loop() {
     was_stale_ = stale;
   }
 
+  // Tracker connectivity health — are frames arriving at all? — independent of
+  // whether any target is present (the LD2450 streams ~10Hz even in an empty
+  // room). Drives the Tracking Sensor entity published in Timer 5 below. Here
+  // it also surfaces the dead-from-boot case (#407) that the was_stale_ edge
+  // above cannot: that log is gated on has_received_frame_, so a tracker that
+  // never sends a first frame stays silent. Warn once, when the tracker has
+  // been silent for STALE_FRAME_MS since boot with still no frame seen.
+  TrackerHealth health = tracker_health(now, last_frame_ms_, has_received_frame_,
+                                        boot_ms_, STALE_FRAME_MS);
+  if (health == TrackerHealth::OFFLINE && !has_received_frame_ && !never_came_up_warned_) {
+    ESP_LOGW(TAG, "LD2450 has sent no frames %ums after boot; tracking sensor may be "
+                  "disconnected or dead",
+             now - boot_ms_);
+    never_came_up_warned_ = true;
+  }
+
   // Static const so we don't pay the value-init cost (ProcessingResult holds a
   // log buffer) on every loop tick. Both default to "all inactive / no log".
   static const WindowOutput STALE_WIN{};
@@ -447,6 +463,15 @@ void EPPComponent::loop() {
     publish_bool_if_changed(mmwave_output_,
                             result.mmwave,
                             last_mmwave_published_);
+    // Tracking-sensor connectivity (frames arriving?). Held unpublished during
+    // STARTING (the first-frame grace) so a healthy sensor's first published
+    // state is "connected" and a dead-from-boot one's is "disconnected" — never
+    // a transient wrong value. device_class connectivity: on = connected.
+    if (health != TrackerHealth::STARTING) {
+      publish_bool_if_changed(tracking_health_sensor_,
+                              health == TrackerHealth::ONLINE,
+                              last_tracking_health_published_);
+    }
 
     // Relay evaluation.
     // Gate side-effecting relay state changes until boot has settled — see
@@ -522,6 +547,7 @@ void EPPComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "    system:        %u (fixed)", SYSTEM_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Sensor wiring:");
   ESP_LOGCONFIG(TAG, "    device_tracking:  %s", device_tracking_sensor_ ? "yes" : "no");
+  ESP_LOGCONFIG(TAG, "    tracking_health:  %s", tracking_health_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    firmware_version: %s", firmware_version_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    zone_state:       %s", zone_state_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    static_input:     %s", static_presence_sensor_ ? "yes" : "no");

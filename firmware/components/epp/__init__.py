@@ -18,6 +18,7 @@ epp_ns = cg.esphome_ns.namespace("epp")
 EPPComponent = epp_ns.class_("EPPComponent", cg.Component)
 
 CONF_DEVICE_TRACKING = "device_tracking"
+CONF_TRACKING_HEALTH = "tracking_health"
 CONF_FIRMWARE_VERSION = "firmware_version"
 CONF_ZONE_OCCUPANCY = "zone_occupancy"
 CONF_TARGET_POSITIONS = "target_positions"
@@ -60,6 +61,7 @@ CONFIG_SCHEMA = cv.Schema(
     {
         cv.GenerateID(): cv.declare_id(EPPComponent),
         cv.Optional(CONF_DEVICE_TRACKING): binary_sensor.binary_sensor_schema(),
+        cv.Optional(CONF_TRACKING_HEALTH): binary_sensor.binary_sensor_schema(),
         cv.Optional(CONF_FIRMWARE_VERSION): text_sensor.text_sensor_schema(),
         cv.Optional(CONF_ZONE_OCCUPANCY): ZONE_OCCUPANCY_SCHEMA,
         cv.Optional(CONF_TARGET_POSITIONS): TARGET_POSITIONS_SCHEMA,
@@ -93,6 +95,10 @@ async def to_code(config):
     if CONF_DEVICE_TRACKING in config:
         sens = await binary_sensor.new_binary_sensor(config[CONF_DEVICE_TRACKING])
         cg.add(var.set_device_tracking_sensor(sens))
+
+    if CONF_TRACKING_HEALTH in config:
+        sens = await binary_sensor.new_binary_sensor(config[CONF_TRACKING_HEALTH])
+        cg.add(var.set_tracking_health_sensor(sens))
 
     # Firmware version text sensor
     if CONF_FIRMWARE_VERSION in config:

@@ -37,4 +37,49 @@ inline bool is_frame_stale(uint32_t now_ms, uint32_t last_frame_ms,
   return (now_ms - last_frame_ms) >= threshold_ms;
 }
 
+/// Health of the LD2450 link, for a user-facing connectivity signal.
+///
+/// `is_frame_stale` collapses "no frame yet" and "frames stopped" into one
+/// bool and reports stale from t=0. That is right for the publish-throttles
+/// but too coarse for a health entity: a sensor that is dead from boot (#407)
+/// must read OFFLINE, yet a healthy-but-slow-to-start sensor must not be
+/// flagged before its first frame has had a fair chance to arrive. This
+/// three-state view keeps the still-starting state distinct so the caller can
+/// leave the entity unpublished until the link's state is actually known.
+enum class TrackerHealth : uint8_t {
+  STARTING,  //< No frame yet, still within the first-frame grace window.
+  ONLINE,    //< A frame arrived within the staleness threshold.
+  OFFLINE,   //< Frames went stale, or none arrived within the threshold since boot.
+};
+
+/// Classify the LD2450 link.
+///
+/// `now_ms` / `last_frame_ms` / `has_frame` / `stale_threshold_ms` — as for
+/// `is_frame_stale`.
+/// `boot_ms` — millis() captured at boot, so the never-seen-frame grace is
+/// measured from boot rather than from t=0.
+///
+/// The startup grace deliberately reuses `stale_threshold_ms` (not a separate,
+/// shorter boot-settle window): "silent for `stale_threshold_ms`" then means
+/// the same thing at boot as mid-stream, so a healthy tracker whose first frame
+/// merely arrives late is held STARTING rather than flapping to OFFLINE and
+/// back. The frame stream is decoupled from target presence — the LD2450 emits
+/// ~10Hz even in an empty room — so ONLINE means "frames are arriving", never
+/// "someone is present". OFFLINE covers both a link that went silent and one
+/// that never came up within `stale_threshold_ms` of boot.
+inline TrackerHealth tracker_health(uint32_t now_ms, uint32_t last_frame_ms,
+                                    bool has_frame, uint32_t boot_ms,
+                                    uint32_t stale_threshold_ms) {
+  if (!is_frame_stale(now_ms, last_frame_ms, has_frame, stale_threshold_ms)) {
+    return TrackerHealth::ONLINE;
+  }
+  // Stale. A never-seen frame within `stale_threshold_ms` of boot is just a
+  // slow first frame, not a fault. Unsigned subtraction keeps the
+  // elapsed-since-boot measurement correct across millis() wraparound.
+  if (!has_frame && (now_ms - boot_ms) < stale_threshold_ms) {
+    return TrackerHealth::STARTING;
+  }
+  return TrackerHealth::OFFLINE;
+}
+
 }  // namespace epp

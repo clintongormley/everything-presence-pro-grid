@@ -69,3 +69,74 @@ TEST_CASE("threshold of 0 means 'always stale once we have a frame'") {
   // We don't expect callers to use this, but the predicate must remain sane.
   CHECK(is_frame_stale(/*now*/1000, /*last*/1000, true, 0) == true);
 }
+
+// ---------------------------------------------------------------------------
+// tracker_health: three-state classification of the LD2450 link.
+//
+// is_frame_stale collapses "no frame yet (cold start)" and "frames went
+// silent" into one bool, and returns stale from t=0. That is right for the
+// publish-throttles (publish "no signal" immediately) but too coarse for a
+// user-facing health entity: a sensor that is dead FROM BOOT (issue #407)
+// must read OFFLINE, but a healthy-but-slow-to-start sensor must not be
+// flagged before it has had a fair chance to send its first frame.
+// tracker_health separates the "still starting" state so callers can hold the
+// entity unpublished until the link's state is actually known. The startup
+// grace uses the SAME threshold as mid-stream staleness, so "silent for
+// `threshold_ms`" means the same thing whether at boot or after running: a
+// healthy tracker whose first frame merely arrives late is never mislabelled.
+// ---------------------------------------------------------------------------
+
+TEST_CASE("tracker_health: a fresh frame is ONLINE") {
+  CHECK(tracker_health(/*now*/1000, /*last*/1000, /*has_frame*/true,
+                       /*boot*/0, THRESHOLD) == TrackerHealth::ONLINE);
+}
+
+TEST_CASE("tracker_health: an empty room still streaming (frame within threshold) is ONLINE") {
+  // The LD2450 streams frames at ~10Hz even with nobody present, so a fresh
+  // frame with all-zero targets keeps last_frame_ms current. Health must NOT
+  // depend on target presence — only on frames arriving.
+  CHECK(tracker_health(/*now*/4000, /*last*/1000, /*has_frame*/true,
+                       /*boot*/0, THRESHOLD) == TrackerHealth::ONLINE);
+}
+
+TEST_CASE("tracker_health: a sensor that WAS alive then went silent is OFFLINE") {
+  CHECK(tracker_health(/*now*/10000, /*last*/1000, /*has_frame*/true,
+                       /*boot*/0, THRESHOLD) == TrackerHealth::OFFLINE);
+}
+
+TEST_CASE("tracker_health: a healthy tracker whose first frame is merely slow is never OFFLINE") {
+  // Regression for the boot/mid-stream asymmetry: no frame yet but only 3s
+  // since boot (under the 5s threshold) must stay STARTING, exactly as a 3s
+  // mid-stream gap stays ONLINE — not a spurious "Disconnected" blip.
+  CHECK(tracker_health(/*now*/3000, /*last*/0, /*has_frame*/false,
+                       /*boot*/0, THRESHOLD) == TrackerHealth::STARTING);
+}
+
+TEST_CASE("tracker_health: never-alive is STARTING within the grace, OFFLINE once it elapses (#407)") {
+  // A tracker that has sent no frame is held as STARTING (first frame still
+  // plausibly in flight) right up to the staleness boundary, then flips to
+  // OFFLINE at it (inclusive >=). The boundary is the dead-from-boot
+  // regression: before #407 this case surfaced nothing at all.
+  CHECK(tracker_health(/*now*/THRESHOLD - 1, /*last*/0, /*has_frame*/false,
+                       /*boot*/0, THRESHOLD) == TrackerHealth::STARTING);
+  CHECK(tracker_health(/*now*/THRESHOLD, /*last*/0, /*has_frame*/false,
+                       /*boot*/0, THRESHOLD) == TrackerHealth::OFFLINE);
+}
+
+TEST_CASE("tracker_health: startup grace measured from boot_ms, not zero") {
+  // Device booted at millis()=100000; 4s later, still no frame → STARTING.
+  CHECK(tracker_health(/*now*/104000, /*last*/0, /*has_frame*/false,
+                       /*boot*/100000, THRESHOLD) == TrackerHealth::STARTING);
+  // 5s after that boot with still no frame → OFFLINE.
+  CHECK(tracker_health(/*now*/105000, /*last*/0, /*has_frame*/false,
+                       /*boot*/100000, THRESHOLD) == TrackerHealth::OFFLINE);
+}
+
+TEST_CASE("tracker_health: startup grace elapsed since boot survives millis() wraparound") {
+  // Booted just before wrap; 'now' has rolled past zero. Unsigned subtraction
+  // must still measure real elapsed time (here ~10s) so a never-alive sensor
+  // near the wrap boundary isn't mislabelled STARTING forever.
+  uint32_t boot = 0xFFFFF000u;  // ~4s before wrap
+  CHECK(tracker_health(/*now*/6000, /*last*/0, /*has_frame*/false, boot,
+                       THRESHOLD) == TrackerHealth::OFFLINE);
+}

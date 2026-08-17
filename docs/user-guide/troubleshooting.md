@@ -16,6 +16,23 @@ how Home Assistant 2026.8 labels ESPHome entities internally.
 Presence Pro Grid → Update), then reload it or restart Home Assistant. The
 device is recognised again with no re-flash needed.
 
+## No target dots, and Target Presence stays clear
+
+Presence and motion still work, but nobody shows up on the panel and **Target
+Presence** never turns on. Presence and motion come from separate sensors (a PIR
+and the mmWave presence sensor), so they keep working even when the tracking
+sensor (the LD2450, which draws the moving dots) has gone quiet.
+
+Check the **Tracking Sensor** entity on the device:
+
+- **Connected** — the tracker is sending data. If there are still no dots, the
+    people are likely beyond its range (~6 m); walk closer to the sensor, and
+    check your **target distance** in **Settings → Detection Ranges**.
+- **Disconnected** — the tracker isn't sending anything. Fully power-cycle the
+    device (unplug for ~10 seconds), or press the **Reboot Tracking Sensor**
+    button. If it stays Disconnected after that, the tracking sensor itself has
+    most likely failed.
+
 ## Device keeps going unavailable
 
 Each device exposes several diagnostic entities under **Settings → Devices &
