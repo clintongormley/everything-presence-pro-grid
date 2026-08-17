@@ -62,6 +62,9 @@ class EPPComponent : public esphome::Component {
   void set_device_tracking_sensor(esphome::binary_sensor::BinarySensor *sensor) {
     device_tracking_sensor_ = sensor;
   }
+  void set_tracking_health_sensor(esphome::binary_sensor::BinarySensor *sensor) {
+    tracking_health_sensor_ = sensor;
+  }
   void set_firmware_version_sensor(esphome::text_sensor::TextSensor *sensor) {
     firmware_version_sensor_ = sensor;
   }
@@ -223,6 +226,10 @@ class EPPComponent : public esphome::Component {
 
   // Sensor pointers
   esphome::binary_sensor::BinarySensor *device_tracking_sensor_{nullptr};
+  // Connectivity of the LD2450 link itself (frames arriving?), distinct from
+  // device_tracking_sensor_ (targets present?). ON = frames streaming, OFF =
+  // the tracker went silent or never came up. See tracker_health / #407.
+  esphome::binary_sensor::BinarySensor *tracking_health_sensor_{nullptr};
   esphome::text_sensor::TextSensor *firmware_version_sensor_{nullptr};
   esphome::binary_sensor::BinarySensor *zone_occupancy_sensors_[MAX_ZONE_SLOTS]{};
   esphome::text_sensor::TextSensor *target_position_sensors_[MAX_TARGETS]{};
@@ -308,6 +315,7 @@ class EPPComponent : public esphome::Component {
   // but the API event still fires every call. Skip when the value matches our
   // last publish to keep HA's event stream quiet. -1 sentinel = never published.
   int8_t last_device_tracking_published_ = -1;
+  int8_t last_tracking_health_published_ = -1;
   int8_t last_static_presence_published_ = -1;
   int8_t last_motion_presence_published_ = -1;
   int8_t last_occupancy_published_ = -1;
@@ -347,6 +355,12 @@ class EPPComponent : public esphome::Component {
   uint32_t last_frame_ms_ = 0;
   bool has_received_frame_ = false;
   bool was_stale_ = false;  // edge-detect for one-shot stale/recover log lines
+  // One-shot latch for the "never came up" warning (#407): a tracker that is
+  // dead from boot never sets has_received_frame_, so the was_stale_ edge log
+  // above (gated on has_received_frame_) never fires for it. Logged once when
+  // the tracker has been silent for STALE_FRAME_MS since boot with still no
+  // frame seen.
+  bool never_came_up_warned_ = false;
   static constexpr uint32_t STALE_FRAME_MS = 5000;
 };
 
