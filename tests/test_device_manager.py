@@ -36,6 +36,7 @@ from custom_components.eppgrid.device_manager import _compare_firmware_version
 from custom_components.eppgrid.device_manager import _extract_host
 from custom_components.eppgrid.device_manager import _extract_mac
 from custom_components.eppgrid.device_manager._streams import StateStream
+from custom_components.eppgrid.dr_compat import all_devices
 from custom_components.eppgrid.storage import EPPGridStore
 
 # ---------------------------------------------------------------------------
@@ -6716,7 +6717,7 @@ class TestEventCallbacks:
         )
         # The mock device_id "dev123" won't match the real one, but we override
         # the lookup result through the reverse map. Refit it.
-        real_device = next(d for d in dev_reg.devices.values() if d.name == "EPP")
+        real_device = next(d for d in all_devices(dev_reg) if d.name == "EPP")
         manager.devices[mac].device_id = real_device.id
         manager._device_id_to_mac.pop("dev123", None)
         manager._device_id_to_mac[real_device.id] = mac

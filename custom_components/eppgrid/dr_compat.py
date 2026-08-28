@@ -52,3 +52,23 @@ def device_by_connection(
     if config_entry_id and hasattr(registry, "async_get_device_by_connection"):
         return registry.async_get_device_by_connection(connection, config_entry_id)
     return registry.async_get_device(connections={connection})
+
+
+def all_devices(registry: DeviceRegistry) -> list[DeviceEntry]:
+    """Return every main device entry, portably across HA 2025.2 → 2026.9+.
+
+    HA 2026.9 wrapped ``DeviceRegistry.devices`` in a view whose iteration yields
+    the ``DeviceEntry`` values (the supported way to enumerate the registry),
+    while using it *as a mapping* — ``.values()``, ``[]``, ``.get()`` — is
+    deprecated (and raises in the test harness). On HA 2025.2 ``.devices`` is a
+    plain ``id -> entry`` mapping, so iterating it yields *keys*, not entries, and
+    the entries are read via ``.values()``.
+
+    Feature-detect the 2026.9 API (``async_get_devices``, which lands together
+    with the view) and iterate the view directly on new HA; fall back to
+    ``.values()`` on older HA. ``async_get_devices`` itself is *not* usable here
+    — with no identifiers/connections it returns an empty list, not all devices.
+    """
+    if hasattr(registry, "async_get_devices"):
+        return list(registry.devices)
+    return list(registry.devices.values())

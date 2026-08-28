@@ -33,6 +33,7 @@ from homeassistant.helpers.event import async_track_state_change_event
 from ..const import FIRMWARE_VERSION
 from ..const import MAX_ZONES
 from ..const import empty_zone_slots
+from ..dr_compat import all_devices
 from ..firmware_cache import FW_CACHE_URL_PREFIX
 from ..firmware_cache import async_local_ota_manifest_url
 from ..storage import EPPGridStore
@@ -3074,7 +3075,7 @@ class DeviceManager:
         result: list[dict[str, Any]] = []
         seen_macs: set[str] = set()
 
-        for device in dev_reg.devices.values():
+        for device in all_devices(dev_reg):
             # Must be an EPP device (check manufacturer + model)
             if not _is_epp_device(device):
                 continue

@@ -1,12 +1,14 @@
 """Call-site tests for the HA 2026.8+ entry-scoped device-registry path.
 
-The installed HA (≤2026.7) has no ``async_get_device_by_identifier`` /
-``async_get_device_by_connection``, so the real-registry suites only ever
-exercise the pre-2026.8 fallback branch of `dr_compat`. These tests install a
-faithful stand-in for the 2026.8 API on the real registry — an entry-scoped
-lookup that returns a device **only** when it belongs to the given config entry,
-exactly as per-config-entry uniqueness behaves — and prove each call site
-forwards the *correct* owning config-entry id.
+The HA 2025.2 floor (``hacs.json``) has no ``async_get_device_by_identifier`` /
+``async_get_device_by_connection``, so on it the real-registry suites only ever
+exercise the pre-2026.8 fallback branch of `dr_compat`; latest HA now ships the
+real methods. Either way these tests install a *controlled* stand-in for the
+entry-scoped API on the real registry — an entry-scoped lookup that returns a
+device **only** when it belongs to the given config entry, exactly as
+per-config-entry uniqueness behaves — so the scoping is deterministic across the
+whole supported range, and prove each call site forwards the *correct* owning
+config-entry id.
 
 Teeth: under strict scoping the compat helper commits to the entry-scoped method
 (it does not fall back once the method exists and a truthy id is supplied), so a
@@ -35,6 +37,8 @@ from custom_components.eppgrid.const import DOMAIN
 from custom_components.eppgrid.device_groups._registry import build_source_index
 
 from ._esphome_helpers import register_esphome_source
+from ._registry_helpers import get_device_by_connection
+from ._registry_helpers import get_device_by_identifier
 
 # The two config-entry-setup tests below need frontend/panel_custom stubbed; the
 # build_source_index test doesn't set up the entry but the fixture is harmless there.
@@ -46,13 +50,13 @@ def _simulate_ha_2026_8(monkeypatch, hass: HomeAssistant) -> None:
     reg = dr.async_get(hass)
 
     def by_identifier(identifier, config_entry_id):
-        dev = reg.async_get_device(identifiers={identifier})
+        dev = get_device_by_identifier(reg, identifier)
         if dev is None or config_entry_id not in dev.config_entries:
             return None
         return dev
 
     def by_connection(connection, config_entry_id):
-        dev = reg.async_get_device(connections={connection})
+        dev = get_device_by_connection(reg, connection)
         if dev is None or config_entry_id not in dev.config_entries:
             return None
         return dev
@@ -85,7 +89,7 @@ async def test_area_reconcile_uses_our_entry_id(
     )
     await hass.async_block_till_done()
 
-    dev = dr.async_get(hass).async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")})
+    dev = get_device_by_identifier(dr.async_get(hass), (DOMAIN, f"device_group:{group['id']}"))
     assert dev is not None
     assert dev.area_id == area.id
 
@@ -108,8 +112,8 @@ async def test_delete_removes_device_using_our_entry_id(
     await hass.async_block_till_done()
 
     dr_ = dr.async_get(hass)
-    ident = {(DOMAIN, f"device_group:{group['id']}")}
-    assert dr_.async_get_device(identifiers=ident) is not None
+    ident = (DOMAIN, f"device_group:{group['id']}")
+    assert get_device_by_identifier(dr_, ident) is not None
 
     _simulate_ha_2026_8(monkeypatch, hass)
 
@@ -119,7 +123,7 @@ async def test_delete_removes_device_using_our_entry_id(
     assert msg["success"] is True
     await hass.async_block_till_done()
 
-    assert dr_.async_get_device(identifiers=ident) is None
+    assert get_device_by_identifier(dr_, ident) is None
 
 
 async def test_build_source_index_uses_esphome_entry_id(
@@ -132,7 +136,7 @@ async def test_build_source_index_uses_esphome_entry_id(
     register_esphome_source(hass, mac, "occupancy")
 
     dr_ = dr.async_get(hass)
-    dev = dr_.async_get_device(connections={(dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac))})
+    dev = get_device_by_connection(dr_, (dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac)))
     assert dev is not None
     esphome_entry_id = next(iter(dev.config_entries))
 
