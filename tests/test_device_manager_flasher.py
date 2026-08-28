@@ -14,6 +14,8 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.eppgrid.device_manager import DeviceManager
 from custom_components.eppgrid.storage import EPPGridStore
 
+from ._registry_helpers import create_sub_device
+
 
 @pytest.fixture
 def mock_store():
@@ -176,13 +178,14 @@ class TestListFlashableDevices:
             name="Everything Presence Pro 282a60",
         )
         dev_reg.async_update_device(parent.id, area_id=area.id)
-        child = dev_reg.async_get_or_create(
+        child = create_sub_device(
+            dev_reg,
+            parent,
             config_entry_id=esphome_entry.entry_id,
             connections={(dr.CONNECTION_NETWORK_MAC, "28:2A:60:00:00:01")},
             name="EPP Lounge Bathroom",
             manufacturer="EverythingSmartTechnology",
             model="Everything Presence Pro",
-            via_device=("esphome", "node-282a60"),
         )
         ent_reg.async_get_or_create(
             "sensor", "esphome", "28:2A:60:00:00:01-firmware_version", device_id=child.id, config_entry=esphome_entry
@@ -211,13 +214,14 @@ class TestListFlashableDevices:
             name="Everything Presence Pro 282a61",
         )
         dev_reg.async_update_device(parent.id, area_id=parent_area.id)
-        child = dev_reg.async_get_or_create(
+        child = create_sub_device(
+            dev_reg,
+            parent,
             config_entry_id=esphome_entry.entry_id,
             connections={(dr.CONNECTION_NETWORK_MAC, "28:2A:61:00:00:01")},
             name="EPP Lounge Bathroom",
             manufacturer="EverythingSmartTechnology",
             model="Everything Presence Pro",
-            via_device=("esphome", "node-282a61"),
         )
         dev_reg.async_update_device(child.id, area_id=child_area.id)
         ent_reg.async_get_or_create(

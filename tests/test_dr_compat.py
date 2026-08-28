@@ -15,6 +15,7 @@ exercise the fallback branch.
 
 from __future__ import annotations
 
+from custom_components.eppgrid.dr_compat import all_devices
 from custom_components.eppgrid.dr_compat import device_by_connection
 from custom_components.eppgrid.dr_compat import device_by_identifier
 
@@ -119,3 +120,60 @@ class TestDeviceByConnection:
 
         assert result is sentinel
         assert reg.bare_calls == [(None, {_CONNECTION})]
+
+
+class _EntriesView:
+    """HA 2026.9+ ``DeviceRegistry.devices``: iterating yields ``DeviceEntry``
+    values (the supported enumeration); mapping access such as ``.values()`` is
+    deprecated and now raises in the test harness."""
+
+    def __init__(self, entries: list[object]) -> None:
+        self._entries = entries
+
+    def __iter__(self):
+        return iter(self._entries)
+
+    def values(self):  # pragma: no cover - must never be called on new HA
+        raise AssertionError("`.values()` is deprecated on the 2026.9 devices view; iterate instead")
+
+
+class _ViewRegistry:
+    """HA 2026.9+ registry: ``.devices`` is the entry-yielding view and the
+    non-deprecated ``async_get_devices`` bulk lookup is present."""
+
+    def __init__(self, entries: list[object]) -> None:
+        self.devices = _EntriesView(entries)
+
+    def async_get_devices(self, *, identifiers=None, connections=None, config_entry_id=None):
+        return list(self.devices)
+
+
+class _DictRegistry:
+    """Floor HA (≤2025.2): ``.devices`` is a plain id->entry mapping and there is
+    no ``async_get_devices``; entries are read via ``.values()``."""
+
+    def __init__(self, mapping: dict[str, object]) -> None:
+        self.devices = dict(mapping)
+
+
+class TestAllDevices:
+    def test_new_ha_iterates_view_entries(self) -> None:
+        e1, e2 = object(), object()
+        reg = _ViewRegistry([e1, e2])
+
+        assert all_devices(reg) == [e1, e2]
+
+    def test_old_ha_reads_mapping_values(self) -> None:
+        e1, e2 = object(), object()
+        reg = _DictRegistry({"id1": e1, "id2": e2})
+
+        assert all_devices(reg) == [e1, e2]
+
+    def test_returns_a_fresh_list_not_a_live_view(self) -> None:
+        """Callers may mutate the registry while iterating the result, so the
+        helper must return an independent list, not a live view/values object."""
+        reg = _DictRegistry({"id1": object()})
+
+        result = all_devices(reg)
+
+        assert isinstance(result, list)

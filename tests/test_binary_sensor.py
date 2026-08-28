@@ -17,6 +17,7 @@ from pytest_homeassistant_custom_component.common import MockConfigEntry
 from custom_components.eppgrid.const import DOMAIN
 
 from ._esphome_helpers import register_esphome_source
+from ._registry_helpers import get_device_by_identifier
 
 
 @pytest.fixture(autouse=True)
@@ -131,7 +132,7 @@ async def test_presence_entity_name_is_translation_driven(
 async def test_helper_has_virtual_device_in_registry(hass: HomeAssistant, integration_with_group: dict) -> None:
     group = integration_with_group["group"]
     dr_ = dr.async_get(hass)
-    device = dr_.async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")})
+    device = get_device_by_identifier(dr_, (DOMAIN, f"device_group:{group['id']}"))
     assert device is not None
     assert device.name == "Master Bedroom Presence"
 
@@ -387,7 +388,7 @@ async def test_group_area_id_applied_to_device_registry(
     await hass.async_block_till_done()
 
     dr_ = dr.async_get(hass)
-    dev = dr_.async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")})
+    dev = get_device_by_identifier(dr_, (DOMAIN, f"device_group:{group['id']}"))
     assert dev is not None
     assert dev.area_id == area.id
 
@@ -417,7 +418,7 @@ async def test_clearing_group_area_id_clears_device_registry_area(
     await hass.async_block_till_done()
 
     dr_ = dr.async_get(hass)
-    dev = dr_.async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")})
+    dev = get_device_by_identifier(dr_, (DOMAIN, f"device_group:{group['id']}"))
     assert dev is not None and dev.area_id == area.id
 
     # Clear the area.
@@ -430,7 +431,7 @@ async def test_clearing_group_area_id_clears_device_registry_area(
     )
     await hass.async_block_till_done()
 
-    dev = dr_.async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")})
+    dev = get_device_by_identifier(dr_, (DOMAIN, f"device_group:{group['id']}"))
     assert dev is not None
     assert dev.area_id is None
 
@@ -459,7 +460,7 @@ async def test_presence_change_does_not_overwrite_manual_area(
     ar_ = ar.async_get(hass)
     area = ar_.async_create("Bedroom")
     dr_ = dr.async_get(hass)
-    dev = dr_.async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")})
+    dev = get_device_by_identifier(dr_, (DOMAIN, f"device_group:{group['id']}"))
     # User manually assigns the group device to an area in HA.
     dr_.async_update_device(dev.id, area_id=area.id)
 
@@ -467,7 +468,7 @@ async def test_presence_change_does_not_overwrite_manual_area(
     hass.states.async_set(a.entity_id, STATE_ON)
     await hass.async_block_till_done()
 
-    dev = dr_.async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")})
+    dev = get_device_by_identifier(dr_, (DOMAIN, f"device_group:{group['id']}"))
     assert dev.area_id == area.id
 
 
@@ -499,13 +500,13 @@ async def test_late_created_group_device_gets_configured_area(
 
     dr_ = dr.async_get(hass)
     # No device yet — the only source slot is disabled.
-    assert dr_.async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")}) is None
+    assert get_device_by_identifier(dr_, (DOMAIN, f"device_group:{group['id']}")) is None
 
     # Enable the source -> registry event -> sync creates the entity + device.
     er_.async_update_entity(a.entity_id, disabled_by=None)
     await hass.async_block_till_done()
 
-    dev = dr_.async_get_device(identifiers={(DOMAIN, f"device_group:{group['id']}")})
+    dev = get_device_by_identifier(dr_, (DOMAIN, f"device_group:{group['id']}"))
     assert dev is not None
     assert dev.area_id == area.id
 
