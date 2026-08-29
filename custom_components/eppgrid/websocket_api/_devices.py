@@ -36,6 +36,7 @@ from . import _connection_is_closed
 from . import _get_manager
 from . import _require_known_device
 from . import _require_manager
+from . import _send_exception
 from . import _send_no_session
 from . import _validate_zone_slots
 from . import finite_float
@@ -1041,6 +1042,39 @@ async def websocket_subscribe_heatmap(
         make_on_state=lambda mac, device_conn: _make_heatmap_on_state(connection, msg["id"]),
         poll_fn=lambda conn: conn.async_fetch_heatmap(),
     )
+
+
+@websocket_api.websocket_command(
+    {
+        vol.Required("type"): "eppgrid/clear_heatmap_device",
+        vol.Required("mac"): MAC_SCHEMA,
+    }
+)
+@websocket_api.require_admin
+@websocket_api.async_response
+@_require_manager
+async def websocket_clear_heatmap_device(
+    hass: HomeAssistant,
+    connection: websocket_api.ActiveConnection,
+    msg: dict[str, Any],
+    manager: Any,
+) -> None:
+    """Clear a device's heatmap (RAM + NVS) by mac — the admin panel's
+    counterpart to the card-facing eppgrid/clear_heatmap (which resolves a
+    device_id server-side). A display-data reset, not a config mutation."""
+    if not _require_known_device(connection, manager, msg):
+        return
+    mac = msg["mac"]
+    session = manager.get_session(mac)
+    if session is None:
+        _send_no_session(connection, msg["id"])
+        return
+    try:
+        await session.async_clear_heatmap()
+    except Exception as err:
+        _send_exception(connection, msg["id"], "clear_heatmap_failed", err)
+        return
+    connection.send_result(msg["id"])
 
 
 # -- set_entity_enabled --
