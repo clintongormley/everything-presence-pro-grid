@@ -303,9 +303,11 @@ Admin-only HA action — registered via `async_register_admin_service` in
 `__init__.py`, declared in `services.yaml`, named/described via `strings.json` →
 `services.clear_heatmap`. Clears the on-device activity heatmap (RAM accumulator
 \+ NVS blob — see [Activity Heatmap](#activity-heatmap-firmware)) for one or more
-devices. This is the admin-facing counterpart of the non-admin
-`eppgrid/clear_heatmap` WS command documented under *Overview Card Commands*
-below, which the dashboard card uses instead.
+devices. Two WebSocket commands clear the same on-device heatmap for a single
+device: the non-admin, `device_id`-based `eppgrid/clear_heatmap` (under
+*Overview Card Commands* below), which the dashboard card uses, and the admin,
+MAC-based `eppgrid/clear_heatmap_device`, which the panel's Heatmap **Clear**
+button uses.
 
 Accepts a standard HA `target:` (`device_id` / `entity_id` / `area_id` /
 `label_id`, any combination, each optionally a list).
@@ -972,6 +974,25 @@ Errors: `device_not_found` for an unknown MAC (standard `_require_known_device`
 check), `no_session` / `no_active_session` when no live session exists
 (including known-but-offline devices), `dismiss_failed` when the firmware
 service call fails.
+
+### `eppgrid/clear_heatmap_device`
+
+Clears the on-device activity heatmap (RAM accumulator + NVS blob — see
+[Activity Heatmap](#activity-heatmap-firmware)) for one device, resolved by MAC.
+The panel's Heatmap layer uses this behind the **Clear** button that sits beside
+the heatmap toggle on the live overview and the zone/overlay editor. A
+*display-data* reset, not a config mutation — it calls the same
+`DeviceConnection.async_clear_heatmap()` the `eppgrid.clear_heatmap` action and
+the card's `eppgrid/clear_heatmap` command use. Admin only (`@require_admin`),
+like every other panel-facing device command; it is the MAC-based, admin
+counterpart of the card's non-admin, `device_id`-based `eppgrid/clear_heatmap`.
+
+**Request:** `{ "type": "eppgrid/clear_heatmap_device", "mac": str }`
+
+Errors: `device_not_found` for an unknown MAC (standard `_require_known_device`
+check), `no_session` when no live session exists (including known-but-offline
+devices), `clear_heatmap_failed` when the firmware clear call raises or times
+out.
 
 ### `set_show_room_calibration_tutorial`
 
