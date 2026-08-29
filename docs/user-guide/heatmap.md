@@ -61,8 +61,13 @@ unavailable on that device — there's nothing to fix.
 ## Clearing the heatmap
 
 If you want to start the picture over — after rearranging furniture, moving the
-sensor, or just to wipe old activity — there are two ways to clear it:
+sensor, or just to wipe old activity — there are a few ways to clear it:
 
+- **From the panel.** A **Clear** button (a small delete-sweep icon) sits next
+    to the Heatmap switch on the live overview and the zone/overlay editor.
+    Click it, confirm, and the heatmap is wiped for the device you're viewing.
+    It's there whenever the heatmap is available — you don't need the layer
+    switched on to clear it.
 - **From a dashboard card.** If the card is set to **Toggle and clear on card**
     (see [Overview dashboard card](overview-card.md)), a Clear button sits next
     to the heatmap switch on the map. It asks you to confirm before clearing.
