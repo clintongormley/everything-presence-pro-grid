@@ -235,3 +235,163 @@ describe("heatmap restore on device load", () => {
 		expect(localStorage.getItem(`epp_heatmap_enabled_${MAC}`)).toBe("1");
 	});
 });
+
+describe("panel clear heatmap", () => {
+	it("shows the clear button on the live overview when heatmap is available", () => {
+		const panel = createPanel() as any;
+		selectCalibratedDevice(panel, { firmware_status: "compatible" });
+		panel._view = "live";
+		const c = renderTo(panel._renderLiveOverview());
+
+		expect(c.querySelector("epp-icon-button")).not.toBeNull();
+	});
+
+	it("shows the clear button in the editor too", () => {
+		const panel = createPanel() as any;
+		selectCalibratedDevice(panel, { firmware_status: "compatible" });
+		panel._view = "editor";
+		panel._sidebarTab = "zones";
+		const c = renderTo(panel._renderEditor());
+
+		expect(c.querySelector("epp-icon-button")).not.toBeNull();
+	});
+
+	it("hides the clear button when firmware is behind", () => {
+		const panel = createPanel() as any;
+		selectCalibratedDevice(panel, { firmware_status: "firmware_behind" });
+		panel._view = "live";
+		const c = renderTo(panel._renderLiveOverview());
+
+		expect(c.querySelector("epp-icon-button")).toBeNull();
+	});
+
+	it("hides the clear button when the build flag is false (no_memory)", () => {
+		const panel = createPanel() as any;
+		selectCalibratedDevice(panel, {
+			firmware_status: "compatible",
+			heatmap: false,
+		});
+		panel._view = "live";
+		const c = renderTo(panel._renderLiveOverview());
+
+		expect(c.querySelector("epp-icon-button")).toBeNull();
+	});
+
+	it("clicking the clear button opens the confirm dialog", () => {
+		const panel = createPanel() as any;
+		selectCalibratedDevice(panel, { firmware_status: "compatible" });
+		panel._view = "live";
+		const c = renderTo(panel._renderLiveOverview());
+
+		const btn = c.querySelector("epp-icon-button") as HTMLElement;
+		expect(btn).not.toBeNull();
+		btn.dispatchEvent(
+			new CustomEvent("click", { bubbles: true, composed: true }),
+		);
+
+		expect(panel._showClearHeatmapDialog).toBe(true);
+	});
+
+	it("confirming sends the WS command and clears local cells on success", async () => {
+		const panel = createPanel() as any;
+		panel._selectedMac = MAC;
+		panel.hass = { callWS: vi.fn().mockResolvedValue({}) };
+		panel._heatmapCells = [1, 2, 3];
+
+		panel._onClearHeatmapClick(); // capture the selected device
+		await panel._onClearHeatmapConfirm();
+
+		expect(panel.hass.callWS).toHaveBeenCalledWith({
+			type: "eppgrid/clear_heatmap_device",
+			mac: MAC,
+		});
+		expect(panel._heatmapCells).toEqual([]);
+		expect(panel._clearHeatmapError).toBe(false);
+		expect(panel._showClearHeatmapDialog).toBe(false);
+	});
+
+	it("does NOT clear local cells when the WS call fails", async () => {
+		const panel = createPanel() as any;
+		panel._selectedMac = MAC;
+		panel.hass = { callWS: vi.fn().mockRejectedValue(new Error("network")) };
+		panel._heatmapCells = [1, 2, 3];
+		const consoleError = vi
+			.spyOn(console, "error")
+			.mockImplementation(() => {});
+
+		panel._onClearHeatmapClick(); // capture the selected device
+		await panel._onClearHeatmapConfirm();
+
+		expect(panel._heatmapCells).toEqual([1, 2, 3]);
+		expect(panel._clearHeatmapError).toBe(true);
+		consoleError.mockRestore();
+	});
+
+	it("clears the device the dialog was opened for, even if the selection auto-switches", async () => {
+		const MAC_B = "AA:BB:CC:DD:EE:02";
+		const panel = createPanel() as any;
+		panel._selectedMac = MAC;
+		panel.hass = { callWS: vi.fn().mockResolvedValue({}) };
+
+		// User opens the dialog while viewing device A...
+		panel._onClearHeatmapClick();
+		// ...then the selected device auto-switches to B (e.g. A was removed
+		// from HA — onDeviceListChanged reassigns _selectedMac) before confirm.
+		panel._selectedMac = MAC_B;
+
+		await panel._onClearHeatmapConfirm();
+
+		// The clear must target A (what the user confirmed), never B.
+		expect(panel.hass.callWS).toHaveBeenCalledWith({
+			type: "eppgrid/clear_heatmap_device",
+			mac: MAC,
+		});
+	});
+
+	it("keeps the on-screen heatmap when the cleared device is no longer selected", async () => {
+		const MAC_B = "AA:BB:CC:DD:EE:02";
+		const panel = createPanel() as any;
+		panel._selectedMac = MAC;
+		panel.hass = { callWS: vi.fn().mockResolvedValue({}) };
+
+		panel._onClearHeatmapClick(); // capture A
+		panel._selectedMac = MAC_B; // now viewing B
+		panel._heatmapCells = [4, 5, 6]; // B's heat on screen
+
+		await panel._onClearHeatmapConfirm(); // clears A
+
+		// B's displayed heat must be left untouched — only A was cleared.
+		expect(panel._heatmapCells).toEqual([4, 5, 6]);
+	});
+
+	it("renders the confirm dialog with danger + heading, bound to _showClearHeatmapDialog", () => {
+		const panel = createPanel() as any;
+		panel._showClearHeatmapDialog = true;
+		const c = renderTo(panel._renderClearHeatmapDialog());
+
+		const dialog = c.querySelector("epp-confirm-dialog") as any;
+		expect(dialog).not.toBeNull();
+		expect(dialog.danger).toBe(true);
+		expect(dialog.heading).toBeTruthy();
+		expect(dialog.open).toBe(true);
+
+		panel._showClearHeatmapDialog = false;
+		render(panel._renderClearHeatmapDialog(), c);
+		expect((c.querySelector("epp-confirm-dialog") as any).open).toBe(false);
+	});
+
+	it("renders the error dialog with hideCancel, bound to _clearHeatmapError", () => {
+		const panel = createPanel() as any;
+		panel._clearHeatmapError = true;
+		const c = renderTo(panel._renderClearHeatmapErrorDialog());
+
+		const dialog = c.querySelector("epp-confirm-dialog") as any;
+		expect(dialog).not.toBeNull();
+		expect(dialog.hideCancel).toBe(true);
+		expect(dialog.open).toBe(true);
+
+		panel._clearHeatmapError = false;
+		render(panel._renderClearHeatmapErrorDialog(), c);
+		expect((c.querySelector("epp-confirm-dialog") as any).open).toBe(false);
+	});
+});

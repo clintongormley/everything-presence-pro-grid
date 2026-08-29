@@ -12,7 +12,12 @@
 	"grid": {
 		"heatmap_toggle": "Heatmap",
 		"heatmap_needs_firmware": "Heatmap needs firmware 1.3.0 or newer.",
-		"heatmap_no_memory": "Heatmap is unavailable on this device — not enough memory."
+		"heatmap_no_memory": "Heatmap is unavailable on this device — not enough memory.",
+		"clear_heatmap": "Clear heatmap",
+		"clear_heatmap_confirm": "Clear all accumulated heatmap data for this device? This can't be undone.",
+		"clear_heatmap_error": "Couldn't clear the heatmap — the device may be offline.",
+		"clear": "Clear",
+		"ok": "OK"
 	},
 	"furniture": {
 		"armchair": "Armchair",

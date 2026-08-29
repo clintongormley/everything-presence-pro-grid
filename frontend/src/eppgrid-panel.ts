@@ -3,6 +3,7 @@ import { property, state } from "lit/decorators.js";
 
 import "./ui/index.js";
 import "./components/epp-configuration-dialogs.js";
+import "./components/epp-confirm-dialog.js";
 import "./components/epp-device-setup.js";
 import "./components/epp-flasher-view.js";
 import "./components/epp-furniture-sidebar.js";
@@ -566,10 +567,14 @@ export const layoutStyles = css`
     flex-direction: column;
   }
 
-  /* Space the heatmap toggle off the bottom of the grid card. The grid column is
-     a flex column with no gap, so without this the toggle row touches the card's
-     bounding box. Token-driven so it follows the spacing scale. */
-  .heatmap-toggle {
+  /* Space the heatmap toggle row off the bottom of the grid card. The grid
+     column is a flex column with no gap, so without this the row touches the
+     card's bounding box. Token-driven so it follows the spacing scale. The
+     row also holds the danger "clear heatmap" button to the toggle's left. */
+  .heatmap-toggle-row {
+    display: flex;
+    align-items: center;
+    gap: var(--epp-space-2, 8px);
     margin-top: var(--epp-space-3, 12px);
   }
 
@@ -933,6 +938,8 @@ export class EPPGridPanel extends LitElement {
 	// Not `private`: part of the NavigationGuardHost contract (the guard
 	// raises/clears it; the panel renders the dialog).
 	@state() _showUnsavedDialog = false;
+	@state() private _showClearHeatmapDialog = false;
+	@state() private _clearHeatmapError = false;
 	@state() _showConfigurationBackup = false;
 	@state() _showConfigurationRestore = false;
 	@state() _configurationName = "";
@@ -2619,6 +2626,8 @@ export class EPPGridPanel extends LitElement {
 					@click=${() => this._navGuard.discardAndNavigate()}
 				>${this._localize("common.discard")}</epp-button>
 			</epp-dialog>
+      ${this._renderClearHeatmapDialog()}
+      ${this._renderClearHeatmapErrorDialog()}
       <epp-dialog
 				?open=${this._showDeleteCalibrationDialog}
 				heading=${this._localize("dialogs.delete_calibration_title")}
@@ -3315,10 +3324,105 @@ export class EPPGridPanel extends LitElement {
 		></epp-toggle>`;
 		// Disabled state always carries its reason via epp-tooltip — never a
 		// raw title= attribute.
-		return disabled
+		const toggleWithHint = disabled
 			? html`<epp-tooltip content=${hint}>${toggle}</epp-tooltip>`
 			: toggle;
+		const clearLabel = this._localize("grid.clear_heatmap");
+		const clearButton = disabled
+			? nothing
+			: html`<epp-tooltip content=${clearLabel}>
+					<epp-icon-button
+						icon="mdi:delete-sweep"
+						variant="danger"
+						.label=${clearLabel}
+						@click=${this._onClearHeatmapClick}
+					></epp-icon-button>
+				</epp-tooltip>`;
+		return html`<div class="heatmap-toggle-row">${clearButton}${toggleWithHint}</div>`;
 	}
+
+	private _renderClearHeatmapDialog() {
+		return html`<epp-confirm-dialog
+			.open=${this._showClearHeatmapDialog}
+			.heading=${this._localize("grid.clear_heatmap")}
+			.message=${this._localize("grid.clear_heatmap_confirm")}
+			.confirmLabel=${this._localize("grid.clear")}
+			.cancelLabel=${this._localize("common.cancel")}
+			.danger=${true}
+			@confirm=${this._onClearHeatmapConfirm}
+			@cancel=${this._onClearHeatmapCancel}
+		></epp-confirm-dialog>`;
+	}
+
+	// Alert dialog shown when a clear attempt fails (network error, offline
+	// device, etc.) — surfaces the failure to the viewer instead of only
+	// logging it to the console. Single-button (hideCancel): there's nothing
+	// to confirm, just an acknowledgement.
+	private _renderClearHeatmapErrorDialog() {
+		return html`<epp-confirm-dialog
+			.open=${this._clearHeatmapError}
+			.heading=${this._localize("grid.clear_heatmap")}
+			.message=${this._localize("grid.clear_heatmap_error")}
+			.confirmLabel=${this._localize("grid.ok")}
+			.danger=${true}
+			.hideCancel=${true}
+			@confirm=${this._onClearHeatmapErrorDismiss}
+			@cancel=${this._onClearHeatmapErrorDismiss}
+		></epp-confirm-dialog>`;
+	}
+
+	// The MAC the clear dialog was opened for, captured at open time. The panel's
+	// selected device can auto-switch while the dialog is open (onDeviceListChanged
+	// reassigns _selectedMac when the current device is removed from HA), so
+	// reading _selectedMac at confirm time could clear a device the user never
+	// confirmed — an irreversible action. Not @state: it drives no rendering.
+	private _clearHeatmapMac = "";
+
+	private _onClearHeatmapClick = (): void => {
+		this._clearHeatmapMac = this._selectedMac;
+		this._showClearHeatmapDialog = true;
+	};
+
+	private _onClearHeatmapCancel = (): void => {
+		this._showClearHeatmapDialog = false;
+	};
+
+	private _onClearHeatmapErrorDismiss = (): void => {
+		this._clearHeatmapError = false;
+	};
+
+	// Clear-on-success only: the locally-rendered heatmap is blanked ONLY
+	// after the WS call resolves. A failure leaves `_heatmapCells` untouched
+	// — no optimistic clear — so a rejected/offline call doesn't lie to the
+	// viewer about data that's still on the device.
+	private _onClearHeatmapConfirm = async (): Promise<void> => {
+		this._showClearHeatmapDialog = false;
+		// Use the device captured when the dialog opened, not the (possibly
+		// auto-switched) current selection.
+		const mac = this._clearHeatmapMac;
+		if (!mac) return;
+		try {
+			// Fail honestly when callWS is unavailable: hass?.callWS?.(...) would
+			// otherwise evaluate to `undefined`, `await undefined` resolves
+			// immediately, and success would be reported without ever contacting
+			// the backend.
+			if (!this.hass?.callWS) {
+				throw new Error("Home Assistant connection unavailable");
+			}
+			await this.hass.callWS({ type: "eppgrid/clear_heatmap_device", mac });
+			// Blank the on-screen overlay only when the cleared device is still
+			// the one being displayed — if the selection auto-switched, wiping
+			// `_heatmapCells` would erase the newly-selected device's heat. It's
+			// a @state() field, so the assignment schedules the re-render on its
+			// own (unlike the card, whose `_heatmapCells` is a plain field).
+			if (mac === this._selectedMac) {
+				this._heatmapCells = [];
+			}
+		} catch (err) {
+			console.error("Failed to clear heatmap:", err);
+			this._clearHeatmapError = true;
+		}
+	};
 
 	private _renderLiveGrid() {
 		// Pure render: last-in-room-position tracking for the pending-target

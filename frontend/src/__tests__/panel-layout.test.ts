@@ -481,14 +481,15 @@ describe("layout styles", () => {
 		expect(tabRule).toMatch(/min-height:\s*var\(--epp-control-height/);
 	});
 
-	it("separates the heatmap toggle from the grid card with a top margin", () => {
-		// The heatmap toggle (<epp-toggle class="heatmap-toggle">) is rendered
-		// directly below the bordered .grid-container card in the grid column, which
-		// has no flex gap. Without a margin the toggle touches the card's bounding
-		// box. It gets a top margin (spacing token, not a hardcoded px) so it
-		// breathes. Both the live overview and the editor render the same class, so
-		// a single rule covers both views.
-		const match = layoutCss.match(/\.heatmap-toggle\s*\{([^}]*)\}/);
+	it("separates the heatmap toggle row from the grid card with a top margin", () => {
+		// The heatmap toggle row (<div class="heatmap-toggle-row">, holding the
+		// clear-heatmap button and the <epp-toggle class="heatmap-toggle">) is
+		// rendered directly below the bordered .grid-container card in the grid
+		// column, which has no flex gap. Without a margin the row touches the
+		// card's bounding box. It gets a top margin (spacing token, not a
+		// hardcoded px) so it breathes. Both the live overview and the editor
+		// render the same class, so a single rule covers both views.
+		const match = layoutCss.match(/\.heatmap-toggle-row\s*\{([^}]*)\}/);
 		expect(match).not.toBeNull();
 		expect(match![1]).toMatch(/margin-top:\s*var\(--epp-space-/);
 	});
