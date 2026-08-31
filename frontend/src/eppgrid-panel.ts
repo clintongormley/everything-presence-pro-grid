@@ -3916,7 +3916,14 @@ export class EPPGridPanel extends LitElement {
               ${gridTemplate}
             </div>
             ${this._renderHeatmapToggle()}
-            ${!this._isMobile && (this._sidebarTab === "zones" || this._sidebarTab === "overlays") ? this._renderDebugLog() : nothing}
+            ${
+							// Render the detection log on every desktop editor tab (not just
+							// zones/overlays). Gating it to two tabs made the grid card ~one
+							// log-header taller on Furniture, so the map jumped size on tab
+							// switch (#412 follow-up). Still gated off mobile, where the editor
+							// has no room for it.
+							!this._isMobile ? this._renderDebugLog() : nothing
+						}
           </div>
           <epp-sheet inline open class="editor-controls">
             <div slot="peek">${this._renderSidebarTabs()}</div>

@@ -6096,7 +6096,7 @@ const Ws={},Js=ii(class extends si{constructor(){super(...arguments),this.ot=Ws}
               ${s}
             </div>
             ${this._renderHeatmapToggle()}
-            ${this._isMobile||"zones"!==this._sidebarTab&&"overlays"!==this._sidebarTab?j:this._renderDebugLog()}
+            ${this._isMobile?j:this._renderDebugLog()}
           </div>
           <epp-sheet inline open class="editor-controls">
             <div slot="peek">${this._renderSidebarTabs()}</div>
