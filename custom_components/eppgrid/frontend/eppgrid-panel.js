@@ -5126,7 +5126,20 @@ const Ws={},Js=ii(class extends si{constructor(){super(...arguments),this.ot=Ws}
 `,vh=a`
   :host {
     display: flex;
-    height: 100%;
+    /* Viewport-relative height, NOT height:100%. HA renders the panel inside
+       <partial-panel-resolver> / <home-assistant-main>, which are
+       display:inline; height:auto — so a percentage height has no definite
+       ancestor to resolve against and collapses to auto. The panel would then
+       size to its own CONTENT instead of the viewport, leaving the whole #338
+       flex chain unbounded: the editor shell grows to its taller track, the grid
+       card overshoots into whitespace (or collapses to a sliver for a narrow
+       room), and the sidebar's Save/Cancel is pushed below the fold instead of
+       the sheet scrolling (issue #412, seen identically in Chrome and Firefox).
+       dvh tracks the dynamic viewport (collapsing mobile toolbars); the vh line
+       above it is the fallback for engines without dvh. The panel is a full-page
+       custom panel with no HA app-header above it, so the viewport IS its box. */
+    height: 100vh;
+    height: 100dvh;
     background: var(--primary-background-color, #fafafa);
     color: var(--primary-text-color, #212121);
     font-family: var(--ha-font-family-body, "Roboto", sans-serif);
@@ -5290,7 +5303,7 @@ const Ws={},Js=ii(class extends si{constructor(){super(...arguments),this.ot=Ws}
       min-width: 0;
       /* Full-height flex column so the editor's controls panel fills the space
          below the grid down to the viewport bottom (nothing extends past it).
-         height:100% resolves against :host (which is height:100%). Clipping our
+         height:100% resolves against :host (which is a definite 100dvh). Clipping our
          own overflow makes the inner regions (sheet body / sidebar) scroll
          instead of the page. (Mobile @media only — desktop is byte-identical.) */
       display: flex;
@@ -6083,7 +6096,7 @@ const Ws={},Js=ii(class extends si{constructor(){super(...arguments),this.ot=Ws}
               ${s}
             </div>
             ${this._renderHeatmapToggle()}
-            ${this._isMobile||"zones"!==this._sidebarTab&&"overlays"!==this._sidebarTab?j:this._renderDebugLog()}
+            ${this._isMobile?j:this._renderDebugLog()}
           </div>
           <epp-sheet inline open class="editor-controls">
             <div slot="peek">${this._renderSidebarTabs()}</div>

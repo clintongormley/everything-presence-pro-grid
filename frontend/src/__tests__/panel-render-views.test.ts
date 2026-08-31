@@ -540,6 +540,22 @@ describe("render() dispatches to correct view", () => {
 		expect(cm.querySelector(".debug-log-container")).toBeNull();
 	});
 
+	it("editor debug log renders on the furniture tab too (desktop), so the grid doesn't jump between tabs", () => {
+		// The detection log sits in the grid column and used to be gated to the
+		// zones/overlays tabs only. That made the grid card ~one log-header taller on
+		// Furniture, so the map visibly resized on tab switch (#412 follow-up). It now
+		// renders on every desktop editor tab so the grid column is identical across
+		// all three and the map keeps its size.
+		const desk = createPanel() as any;
+		desk._view = "editor";
+		desk._isMobile = false;
+		desk._grid = initGridFromRoom(3000, 4000);
+		desk._sidebarTab = "furniture";
+		desk._showDebugLog = true; // expand so .debug-log-container renders if present
+		const cd = renderTo(desk._renderEditor());
+		expect(cd.querySelector(".debug-log-container")).not.toBeNull();
+	});
+
 	it("flips _isMobile when the media query change fires", () => {
 		const a = createPanel() as any;
 		// _onMql mirrors MediaQueryListEvent.matches onto _isMobile.
