@@ -156,6 +156,20 @@ class _DictRegistry:
         self.devices = dict(mapping)
 
 
+class _MiddleRegistry:
+    """HA 2026.8.x: ``async_get_devices`` already exists, but ``.devices`` is
+    still a plain id->entry mapping whose iteration yields *keys*, not entries —
+    the entry-yielding view only lands in 2026.9. A shim that treats
+    ``async_get_devices`` as a proxy for "iteration yields entries" reads device
+    id *strings* here and hands them to callers expecting ``DeviceEntry`` objects."""
+
+    def __init__(self, mapping: dict[str, object]) -> None:
+        self.devices = dict(mapping)
+
+    def async_get_devices(self, *, identifiers=None, connections=None, config_entry_id=None):
+        return []
+
+
 class TestAllDevices:
     def test_new_ha_iterates_view_entries(self) -> None:
         e1, e2 = object(), object()
@@ -166,6 +180,14 @@ class TestAllDevices:
     def test_old_ha_reads_mapping_values(self) -> None:
         e1, e2 = object(), object()
         reg = _DictRegistry({"id1": e1, "id2": e2})
+
+        assert all_devices(reg) == [e1, e2]
+
+    def test_ha_2026_8_has_async_get_devices_but_key_yielding_mapping(self) -> None:
+        """HA 2026.8.x has ``async_get_devices`` yet still iterates keys — the
+        helper must return entries (via ``.values()``), never the id strings."""
+        e1, e2 = object(), object()
+        reg = _MiddleRegistry({"id1": e1, "id2": e2})
 
         assert all_devices(reg) == [e1, e2]
 
