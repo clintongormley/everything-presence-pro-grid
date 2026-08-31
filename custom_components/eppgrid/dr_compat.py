@@ -60,15 +60,24 @@ def all_devices(registry: DeviceRegistry) -> list[DeviceEntry]:
     HA 2026.9 wrapped ``DeviceRegistry.devices`` in a view whose iteration yields
     the ``DeviceEntry`` values (the supported way to enumerate the registry),
     while using it *as a mapping* — ``.values()``, ``[]``, ``.get()`` — is
-    deprecated (and raises in the test harness). On HA 2025.2 ``.devices`` is a
+    deprecated (and raises in the test harness). On HA ≤ 2026.8 ``.devices`` is a
     plain ``id -> entry`` mapping, so iterating it yields *keys*, not entries, and
     the entries are read via ``.values()``.
 
-    Feature-detect the 2026.9 API (``async_get_devices``, which lands together
-    with the view) and iterate the view directly on new HA; fall back to
-    ``.values()`` on older HA. ``async_get_devices`` itself is *not* usable here
-    — with no identifiers/connections it returns an empty list, not all devices.
+    Detect which shape we have by the *actual value* iteration yields, not by a
+    proxy capability: ``async_get_devices`` shipped in 2026.8.x — a full release
+    before the entry-yielding view — so keying the branch off it wrongly reads
+    id *strings* on 2026.8.x and hands them to callers expecting ``DeviceEntry``.
+    A registry key is always a ``str``; a ``DeviceEntry`` never is, so peeking at
+    the first yielded item discriminates the two exactly. On the 2026.9 view we
+    then iterate (the supported enumeration) and never touch the deprecated
+    ``.values()``; on older HA we read ``.values()`` (non-deprecated there).
     """
-    if hasattr(registry, "async_get_devices"):
-        return list(registry.devices)
-    return list(registry.devices.values())
+    first = next(iter(registry.devices), None)
+    if first is None:
+        return []  # empty registry — same result either shape
+    if isinstance(first, str):
+        # HA ≤ 2026.8: iteration yielded an id key → read entries via .values().
+        return list(registry.devices.values())
+    # HA 2026.9+: iteration yields DeviceEntry values directly.
+    return list(registry.devices)
