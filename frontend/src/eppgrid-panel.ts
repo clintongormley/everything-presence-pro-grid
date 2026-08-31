@@ -390,7 +390,7 @@ export const panelStyles = css`
       min-width: 0;
       /* Full-height flex column so the editor's controls panel fills the space
          below the grid down to the viewport bottom (nothing extends past it).
-         height:100% resolves against :host (which is height:100%). Clipping our
+         height:100% resolves against :host (which is a definite 100dvh). Clipping our
          own overflow makes the inner regions (sheet body / sidebar) scroll
          instead of the page. (Mobile @media only — desktop is byte-identical.) */
       display: flex;
