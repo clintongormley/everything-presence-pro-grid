@@ -70,10 +70,19 @@ const VIEWPORT: Record<
 	mobileLandscape: [667, 375],
 };
 
-/** Mount the real panel on the live-overview view, in a real full-height page. */
-async function mountLivePanel(): Promise<EPPGridPanel> {
-	// HA gives the panel host a definite height; :host is `height: 100%`, so the
-	// chain needs html/body to be full-height too or the whole model is unbounded.
+/**
+ * Mount the real panel on the live-overview view, in a real full-height page.
+ *
+ * `parent` defaults to <body>; pass a wrapper element to mount the panel under a
+ * different ancestor (used to reproduce HA's height:auto `partial-panel-resolver`).
+ */
+async function mountLivePanel(
+	parent: HTMLElement = document.body,
+): Promise<EPPGridPanel> {
+	// Give the page a realistic full-height frame. :host is now viewport-relative
+	// (100dvh — see the #412 test at the bottom of this file), so the panel is
+	// bounded regardless; forcing html/body full-height here just matches how HA
+	// lays the page out so these geometry assertions read against a real full page.
 	document.documentElement.style.height = "100%";
 	document.body.style.height = "100%";
 	document.body.style.margin = "0";
@@ -148,7 +157,7 @@ async function mountLivePanel(): Promise<EPPGridPanel> {
 	a._targetTrails = [];
 	a._showBackendDebugLog = false;
 
-	document.body.appendChild(el);
+	parent.appendChild(el);
 	mounted.push(el);
 	await settle(el);
 	return el;
@@ -767,5 +776,38 @@ describe("mobile editor map fits its flex-bounded column (420x900)", () => {
 		expect(map.bottom).toBeLessThanOrEqual(card.bottom + 1);
 		expect(map.height).toBeLessThanOrEqual(0.45 * window.innerHeight + 2);
 		expect(scrollAncestors(gridEl(panel))).toEqual([]);
+	});
+});
+
+describe("the panel is viewport-bounded, not content-bounded (issue #412)", () => {
+	// Real HA renders the panel inside <partial-panel-resolver> / <home-assistant-main>,
+	// which are display:inline; height:auto — they hand :host NO definite height. So a
+	// `:host { height: 100% }` (a percentage) resolves to `auto`, and the panel sizes to
+	// its own CONTENT instead of the viewport. The whole #338 flex chain is then unbounded:
+	// the editor shell grows to the taller of its two tracks, the grid card overshoots into
+	// whitespace (or collapses to a sliver for a narrow room), and the sidebar's Save/Cancel
+	// is pushed below the fold instead of the sheet scrolling. Two users hit this in #412.
+	//
+	// Every other test here is BLIND to it: mountLivePanel() forces `body { height: 100% }`,
+	// the definite ancestor real HA lacks, so the percentage resolves and the panel fills the
+	// page. Reproduce the real shape by inserting a height:auto wrapper between <body> and the
+	// panel (the partial-panel-resolver), and require the panel to fill the viewport anyway —
+	// which only a viewport-relative host height (100dvh), not a percentage, can guarantee.
+	it("fills the viewport under a height:auto ancestor, rather than sizing to content", async () => {
+		await page.viewport(1200, 800);
+		const wrapper = document.createElement("div");
+		// The partial-panel-resolver shape: no definite height for `height:100%` to resolve
+		// against. Kept block (not inline) so only the height axis is under test — the panel
+		// still gets its full width.
+		wrapper.style.height = "auto";
+		document.body.appendChild(wrapper);
+		mounted.push(wrapper);
+
+		const panel = await mountLivePanel(wrapper);
+
+		// The panel must track the viewport, not balloon to (or collapse below) its content.
+		expect(
+			Math.abs(panel.clientHeight - window.innerHeight),
+		).toBeLessThanOrEqual(2);
 	});
 });
