@@ -2543,6 +2543,8 @@ class TestAsyncTriggerOta:
 
         The two models differ in pinout (I2C, LD2450 UART, LED), so flashing a
         Pro image onto a Lite yields a device that boots and detects nothing.
+        The Lite ships a single CO2-capable build, so a Lite reporting
+        co2_enabled=False still routes to it.
         """
         self._setup_device(manager)
         manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
@@ -2556,7 +2558,7 @@ class TestAsyncTriggerOta:
             await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
 
         _name, payload = mock_conn.async_execute_service.await_args.args
-        assert payload["url"].endswith("/wifi-ble-lite.json"), payload["url"]
+        assert payload["url"].endswith("/wifi-lite-co2.json"), payload["url"]
 
     async def test_routes_lite_with_co2_addon_to_the_co2_build(
         self, hass: HomeAssistant, manager: DeviceManager
@@ -2577,15 +2579,18 @@ class TestAsyncTriggerOta:
             await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
 
         _name, payload = mock_conn.async_execute_service.await_args.args
-        assert payload["url"].endswith("/wifi-ble-lite-co2.json"), payload["url"]
+        assert payload["url"].endswith("/wifi-lite-co2.json"), payload["url"]
 
-    async def test_bare_lite_is_never_offered_the_co2_build(self, hass: HomeAssistant, manager: DeviceManager) -> None:
-        """The failure this prevents is silent and confusing.
+    async def test_bare_lite_still_resolves_to_the_co2_build(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A Lite reporting no CO2 add-on still gets the sole Lite build.
 
-        scd4x on a board with no module cannot reach its I2C device, so ESPHome
-        fails the component and parks the app in error state: the status LED
-        blinks forever and stops honouring manual control, with nothing in HA
-        saying why.
+        The Lite now ships one CO2-capable build. Flashing it to a board with
+        no SCD40 used to park the app in error state (scd4x cannot reach its
+        I2C device, so the status LED blinks forever), but the build now clears
+        that component's error on an interval, so a bare board behaves fine.
+        The old bare `wifi-ble-lite` build is gone, so co2_enabled=False must
+        route to wifi-lite-co2 rather than 404 on a build that no longer
+        exists.
         """
         self._setup_device(manager)
         manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
@@ -2598,7 +2603,7 @@ class TestAsyncTriggerOta:
             await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
 
         _name, payload = mock_conn.async_execute_service.await_args.args
-        assert payload["url"].endswith("/wifi-ble-lite.json"), payload["url"]
+        assert payload["url"].endswith("/wifi-lite-co2.json"), payload["url"]
 
     async def test_lite_ignores_a_stale_ethernet_flag(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """No ethernet variant exists for the Lite, so the lookup must fail loudly.

@@ -87,7 +87,7 @@ def test_pull_request_compiles_cover_every_model() -> None:
     _main_list, pr_list = _firmware_workflow_variant_lists()
     on_disk = _variants_on_disk()
     assert pr_list <= on_disk, f"PR matrix names variants that do not exist: {sorted(pr_list - on_disk)}"
-    models = {"lite" if v.endswith("-lite") else "pro" for v in pr_list}
+    models = {"lite" if "-lite" in v else "pro" for v in pr_list}
     assert models == {"lite", "pro"}, (
         f"the PR compile matrix {sorted(pr_list)} only covers {sorted(models)}; "
         f"it must build at least one variant per model."

@@ -1,18 +1,19 @@
-# Everything Presence Lite, bare board — no CO2 add-on fitted.
+# Everything Presence Lite — the single Lite firmware build.
 #
-# The SCD40 sits on the Lite's expansion header and is genuinely optional, so on
-# a bare board it is not compiled in at all: ESPHome marks a component that
-# cannot reach its I2C device as failed, and a permanently-failed component with
-# a forever-unavailable CO2 entity is dead weight on a board that will never have
-# the module. (wifi-ble-lite-co2.yaml keeps the status LED from blinking for that
-# failure, so a CO2 board flashed without the module fitted still behaves — but
-# this bare variant avoids the unreachable hardware entirely.) Boards with the
-# add-on use wifi-ble-lite-co2.yaml.
-#
-# The Lite is WiFi-only, so unlike the Pro there is no ethernet counterpart.
+# The SCD40 CO2 sensor sits on the Lite's expansion header and is optional, but
+# this build always includes it: on a board without the module the scd4x
+# component can't reach its I2C device and fails, and co2-lite-base.yaml clears
+# that one component's error so the status LED does not blink for a CO2 module
+# the owner simply didn't fit (it still blinks for genuine faults). The CO2
+# entity just stays unavailable. This means one Lite image works whether or not
+# the add-on is fitted, so there is no separate bare build.
 dashboard_import:
-  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-ble-lite.yaml@main
+  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-lite-co2.yaml@main
   import_full_config: false
+
+substitutions:
+  device_config:
+    co2_enabled: true
 
 esp32:
   board: esp32dev
@@ -27,7 +28,7 @@ packages:
    bh1750_base: !include ../common/bh1750-base.yaml
    lite_base: !include ../common/everything-presence-lite-base.yaml
    ld2450_lite_base: !include ../common/ld2450-lite-base.yaml
-   bluetooth_base: !include ../common/bluetooth-base.yaml
+   co2_lite_base: !include ../common/co2-lite-base.yaml
    wifi_base: !include ../common/wifi-base.yaml
 
 esphome:
@@ -39,7 +40,7 @@ update:
   - platform: http_request
     id: update_http_request
     name: Firmware Update
-    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/wifi-ble-lite.json
+    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/wifi-lite-co2.json
     # The eppgrid integration pins FIRMWARE_VERSION and surfaces version
     # mismatches via HA Repairs, so device-side polling (default 6h) is
     # redundant. set_update_manifest action and the OTA button still drive

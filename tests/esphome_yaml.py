@@ -29,8 +29,11 @@ LITE_BASE_YAML = REPO_ROOT / "firmware" / "common" / "everything-presence-lite-b
 CORE_YAML = REPO_ROOT / "firmware" / "common" / "epp-core.yaml"
 WIFI_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-ble-co2.yaml"
 ETHERNET_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "ethernet-ble-co2.yaml"
-LITE_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-ble-lite.yaml"
-LITE_CO2_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-ble-lite-co2.yaml"
+# The Lite ships a single CO2-capable build; both names resolve to it. (The
+# old bare `wifi-ble-lite.yaml` was removed once the CO2 build learned to cope
+# with a missing SCD40 module — see firmware/common/co2-lite-base.yaml.)
+LITE_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-lite-co2.yaml"
+LITE_CO2_VARIANT_YAML = REPO_ROOT / "firmware" / "variants" / "wifi-lite-co2.yaml"
 
 
 class ESPHomeLoader(yaml.SafeLoader):

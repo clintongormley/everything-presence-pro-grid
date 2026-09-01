@@ -26,7 +26,6 @@ from __future__ import annotations
 import json
 
 from tests.esphome_yaml import LITE_CO2_VARIANT_YAML
-from tests.esphome_yaml import LITE_VARIANT_YAML
 from tests.esphome_yaml import find_by_platform
 from tests.esphome_yaml import load_variant
 
@@ -44,7 +43,7 @@ def test_lite_co2_build_clears_scd40_error():
         if "scd40" in json.dumps(entry) and "status_clear_error" in json.dumps(entry)
     ]
     assert clearing, (
-        "wifi-ble-lite-co2 must clear the scd40 component error on an interval so an "
+        "wifi-lite-co2 must clear the scd40 component error on an interval so an "
         "absent CO2 module does not park the status LED in a permanent error blink"
     )
 
@@ -56,13 +55,3 @@ def test_lite_co2_keeps_status_led():
         "the Lite's fault indicator must remain a status_led; demoting it to a plain "
         "light would silence WiFi / API / BLE faults too"
     )
-
-
-def test_bare_lite_build_has_no_scd40_reference():
-    """The clearing logic lives in the CO2 package only — a bare Lite compiles no scd4x to reference."""
-    config = json.dumps(load_variant(LITE_VARIANT_YAML))
-    assert "scd40" not in config, (
-        "the bare Lite build compiles no scd4x; a stray id(scd40) reference (e.g. the "
-        "error-clear interval placed in the shared lite base) would fail to compile"
-    )
-    assert "status_clear_error" not in config

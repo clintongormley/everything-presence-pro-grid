@@ -25,7 +25,7 @@ set -euo pipefail
 : "${ARTIFACTS:=artifacts}"
 : "${STAGE_LATEST:=1}"
 
-VARIANTS=(wifi-ble-co2 ethernet-ble-co2 wifi-ble-lite wifi-ble-lite-co2)
+VARIANTS=(wifi-ble-co2 ethernet-ble-co2 wifi-lite-co2)
 
 variant_label() {
   # Human-readable label for the manifest `name` field — shown in the
@@ -35,8 +35,7 @@ variant_label() {
   case "$1" in
     wifi-ble-co2)     echo "WiFi + BLE + CO2" ;;
     ethernet-ble-co2) echo "Ethernet + BLE + CO2" ;;
-    wifi-ble-lite)     echo "Lite, WiFi + BLE" ;;
-    wifi-ble-lite-co2) echo "Lite, WiFi + BLE + CO2" ;;
+    wifi-lite-co2)    echo "Lite, WiFi + CO2" ;;
     *)                echo "$1" ;;
   esac
 }

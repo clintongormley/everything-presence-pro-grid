@@ -101,21 +101,24 @@ OTA_MANIFEST_BASE_URL = f"https://{GITHUB_OWNER}.github.io/{GITHUB_REPO}/fw/v{FI
 # Keyed by (model, network, co2) because a variant is exactly the combination of
 # hardware a build was compiled for, and the models differ on both axes:
 #   - the Lite has no ethernet hardware, so no ethernet build exists for it
-#   - the Lite's SCD40 is an add-on, so it has both a CO2 and a bare build,
-#     while every Pro build includes CO2
+#   - the Lite now has a single CO2-capable build. Its SCD40 is an add-on, but
+#     the build copes with the module being absent (it clears the scd40
+#     component's error on an interval so the status LED does not blink for
+#     missing hardware), so both co2 flags map to that one build — a Lite
+#     reporting co2_enabled=False still resolves rather than 404ing. Every Pro
+#     build includes CO2.
 #
 # A missing combination raises rather than falling back. Sending the wrong
-# variant is not a cosmetic error: flashing a CO2 build onto a board with no
-# SCD40 leaves that component unable to reach its I2C device, which fails it and
-# parks the whole app in error state.
+# variant is not a cosmetic error: a Pro image on a Lite (or vice versa) has the
+# wrong pinout and detects nothing.
 #
 # All three keys come from `get_build_flags` — `model` verbatim, `network`
 # derived from `ethernet_enabled`, `co2` from `co2_enabled`.
 FIRMWARE_VARIANTS: dict[tuple[str, str, bool], str] = {
     ("everything-presence-pro", "wifi", True): "wifi-ble-co2",
     ("everything-presence-pro", "ethernet", True): "ethernet-ble-co2",
-    ("everything-presence-lite", "wifi", True): "wifi-ble-lite-co2",
-    ("everything-presence-lite", "wifi", False): "wifi-ble-lite",
+    ("everything-presence-lite", "wifi", True): "wifi-lite-co2",
+    ("everything-presence-lite", "wifi", False): "wifi-lite-co2",
 }
 
 # Model reported by firmware that predates the `model` build flag. Those builds

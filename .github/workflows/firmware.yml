@@ -34,7 +34,7 @@ jobs:
         # Pushes to main compile every variant; PRs compile a subset to keep
         # the check fast, but that subset must cover both models — a Lite-only
         # firmware change is invisible to a Pro-only build.
-        variant: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && fromJSON('["wifi-ble-co2","ethernet-ble-co2","wifi-ble-lite","wifi-ble-lite-co2"]') || fromJSON('["wifi-ble-co2","wifi-ble-lite"]') }}
+        variant: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && fromJSON('["wifi-ble-co2","ethernet-ble-co2","wifi-lite-co2"]') || fromJSON('["wifi-ble-co2","wifi-lite-co2"]') }}
     name: "Compile ${{ matrix.variant }}"
     steps:
       - uses: actions/checkout@v5

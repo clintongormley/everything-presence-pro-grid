@@ -150,14 +150,6 @@ api:
         - lambda: |-
             ESP_LOGI("epp", "epp_set_stuck_target_timeout: timeout=%.1fs", timeout);
             id(epp_component).set_stuck_target_timeout(timeout);
-    - action: epp_set_assisted_clear
-      variables:
-        enabled: bool
-        timeout: float
-      then:
-        - lambda: |-
-            ESP_LOGI("epp", "epp_set_assisted_clear: enabled=%s timeout=%.1f", enabled ? "true" : "false", timeout);
-            id(epp_component).set_assisted_clear(enabled, timeout);
     - action: epp_set_tracking
       variables:
         max_range: float
@@ -255,6 +247,9 @@ api:
               root["has_static_presence"]  = ${ device_config.has_static_presence | lower };
               root["has_led"]              = ${ device_config.has_led | lower };
               root["has_relay"]            = ${ device_config.has_relay | lower };
+              root["has_target_presence"]  = ${ device_config.has_target_presence | lower };
+              root["has_mmwave_presence"]  = ${ device_config.has_mmwave_presence | lower };
+              root["has_assisted_clear"]   = ${ device_config.has_assisted_clear | lower };
     - action: epp_clear_heatmap
       then:
         - lambda: 'id(epp_component).clear_heatmap();'

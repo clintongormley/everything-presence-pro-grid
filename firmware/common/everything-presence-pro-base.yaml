@@ -36,6 +36,19 @@ epp:
     device_class: motion
     disabled_by_default: true
   relay_switch: system_alarm_relay
+  # Target Presence and mmWave Presence are Pro-only. Both are LD2450/zone
+  # derived (Target = any enabled zone occupied; mmWave = static active OR any
+  # zone occupied), so on a sensorless Lite they collapse into Occupancy —
+  # Target Presence is identical to it, mmWave a near-duplicate. The Lite
+  # publishes Occupancy alone and omits these; see epp-entities.yaml.
+  device_tracking:
+    name: "Target Presence"
+    device_class: occupancy
+    disabled_by_default: true
+  mmwave_output:
+    name: "mmWave Presence"
+    device_class: occupancy
+    disabled_by_default: true
 
 globals:
   - id: env_temp_offset
@@ -59,6 +72,19 @@ globals:
 
 api:
   actions:
+    # Sensor-assisted clear force-clears a pending zone once the static + PIR
+    # sensors confirm the room is empty. Pro-only: the zone engine gates it on
+    # `sensors_ever_active_`, so on a sensorless Lite it never fires — the action
+    # (and the panel's Assisted Clear card, via has_assisted_clear) is dropped
+    # there rather than exposing a control that does nothing.
+    - action: epp_set_assisted_clear
+      variables:
+        enabled: bool
+        timeout: float
+      then:
+        - lambda: |-
+            ESP_LOGI("epp", "epp_set_assisted_clear: enabled=%s timeout=%.1f", enabled ? "true" : "false", timeout);
+            id(epp_component).set_assisted_clear(enabled, timeout);
     - action: epp_set_env_calibration
       variables:
         temperature_offset: float

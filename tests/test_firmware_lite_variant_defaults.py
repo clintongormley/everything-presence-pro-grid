@@ -33,7 +33,9 @@ from tests.esphome_yaml import load_yaml
 LITE_DEFAULTS = "firmware/common/lite-variant-defaults.yaml"
 PRO_DEFAULTS = "firmware/common/variant-defaults.yaml"
 
-VARIANTS = {"pro": WIFI_VARIANT_YAML, "lite": LITE_VARIANT_YAML, "lite-co2": LITE_CO2_VARIANT_YAML}
+# The Lite ships a single CO2-capable build (LITE_VARIANT_YAML and
+# LITE_CO2_VARIANT_YAML both resolve to it), so there is one Lite entry here.
+VARIANTS = {"pro": WIFI_VARIANT_YAML, "lite": LITE_CO2_VARIANT_YAML}
 
 
 def _device_config(variant_yaml) -> dict:
@@ -72,6 +74,13 @@ CAPABILITIES = {
     },
     "has_led": {"actions": {"epp_set_led"}},
     "has_relay": {"epp_keys": {"relay_switch"}, "actions": {"epp_set_relay"}},
+    # Target Presence / mmWave Presence are LD2450/zone derived and collapse into
+    # Occupancy on a sensorless Lite (Target Presence is identical to it), so it
+    # drops them and keeps only Occupancy; assisted-clear leans on the static/PIR
+    # sensors to confirm a zone emptied and is inert without them.
+    "has_target_presence": {"epp_keys": {"device_tracking"}},
+    "has_mmwave_presence": {"epp_keys": {"mmwave_output"}},
+    "has_assisted_clear": {"actions": {"epp_set_assisted_clear"}},
 }
 
 
@@ -164,6 +173,26 @@ def test_lite_is_wifi_only() -> None:
     assert _device_config(LITE_VARIANT_YAML)["ethernet_enabled"] is False
 
 
+def test_lite_does_not_compile_bluetooth() -> None:
+    """The Lite hardware has no usable Bluetooth, so the firmware must not pull
+    in the BLE controller / proxy — it only burns heap on a board that can't use it.
+
+    bluetooth-base.yaml is what declares esp32_ble / esp32_ble_tracker /
+    bluetooth_proxy, so the check is that the merged Lite config carries none of
+    those components (i.e. the Lite variant does not `!include` that package).
+    """
+    config = load_variant(LITE_VARIANT_YAML)
+    for component in ("esp32_ble", "esp32_ble_tracker", "bluetooth_proxy"):
+        assert component not in config, f"the Lite must not compile in {component!r} — it has no usable Bluetooth."
+
+
+def test_lite_reports_bluetooth_disabled() -> None:
+    """`bluetooth_enabled` reaches the panel via get_build_flags; with the BLE
+    proxy gone it must report false so the panel offers no BLE control for a
+    radio the board can't use."""
+    assert _device_config(LITE_VARIANT_YAML)["bluetooth_enabled"] is False
+
+
 def test_lite_env_calibration_takes_the_same_arguments_as_the_pro() -> None:
     """ESPHome matches a user action by name *and* argument list.
 
@@ -253,8 +282,14 @@ def test_defaults_files_are_not_cross_wired() -> None:
 
 
 # ---------------------------------------------------------------------------
-# The SCD40 is an add-on on the Lite, so it needs a build that omits it
+# The Lite's single CO2-capable build
 # ---------------------------------------------------------------------------
+#
+# The SCD40 sits on the Lite's expansion header and is genuinely optional, but
+# the sole Lite build (`wifi-lite-co2`) compiles it in and copes when the
+# module is absent (co2-lite-base.yaml clears the scd40 component error on an
+# interval so the status LED does not blink for missing hardware). So there is
+# one Lite build, and it always contains scd4x.
 
 
 def _sensor_platforms(variant) -> set[str]:
@@ -265,39 +300,20 @@ def _i2c_bus_ids(variant) -> set[str]:
     return {b["id"] for b in load_variant(variant).get("i2c", []) if isinstance(b, dict) and "id" in b}
 
 
-def test_bare_lite_compiles_no_scd4x() -> None:
-    """A board without the module must not compile the component in at all.
-
-    ESPHome marks a component that cannot reach its I2C device as failed, which
-    parks the whole app in error state — the status LED blinks continuously and
-    stops honouring manual control, and the failure is otherwise silent.
-    """
-    assert "scd4x" not in _sensor_platforms(LITE_VARIANT_YAML)
-    assert "bus_b" not in _i2c_bus_ids(LITE_VARIANT_YAML), "the bare Lite declares the CO2 I2C bus with nothing on it"
-
-
-def test_lite_co2_variant_compiles_scd4x() -> None:
+def test_lite_variant_compiles_scd4x() -> None:
     assert "scd4x" in _sensor_platforms(LITE_CO2_VARIANT_YAML)
     assert "bus_b" in _i2c_bus_ids(LITE_CO2_VARIANT_YAML)
 
 
 def test_co2_enabled_flag_matches_what_each_build_contains() -> None:
-    """`co2_enabled` is what the OTA router keys on to pick between the two
-    Lite builds, so a flag that disagrees with the build sends a device the
-    firmware that breaks it."""
-    for variant in (LITE_VARIANT_YAML, LITE_CO2_VARIANT_YAML, WIFI_VARIANT_YAML):
+    """`co2_enabled` must agree with whether scd4x is compiled in.
+
+    The panel gates its CO2 control on this flag, so a flag that disagrees with
+    the build shows (or hides) a control that does not match the hardware.
+    """
+    for variant in (LITE_CO2_VARIANT_YAML, WIFI_VARIANT_YAML):
         claimed = _device_config(variant)["co2_enabled"]
         present = "scd4x" in _sensor_platforms(variant)
         assert claimed is present, (
             f"{variant.name}: co2_enabled={claimed} but scd4x {'is missing' if claimed else 'is compiled in'}"
         )
-
-
-def test_both_lite_builds_are_otherwise_identical() -> None:
-    """The CO2 add-on is the only difference; anything else has drifted."""
-    bare = load_variant(LITE_VARIANT_YAML)
-    co2 = load_variant(LITE_CO2_VARIANT_YAML)
-    assert _epp_keys(LITE_VARIANT_YAML) == _epp_keys(LITE_CO2_VARIANT_YAML)
-    assert _i2c_bus_ids(LITE_VARIANT_YAML) | {"bus_b"} == _i2c_bus_ids(LITE_CO2_VARIANT_YAML)
-    assert _sensor_platforms(LITE_VARIANT_YAML) | {"scd4x"} == _sensor_platforms(LITE_CO2_VARIANT_YAML)
-    assert bare["substitutions"]["name"] == co2["substitutions"]["name"]

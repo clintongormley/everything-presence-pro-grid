@@ -16,8 +16,7 @@ jobs:
         variant:
           - wifi-ble-co2
           - ethernet-ble-co2
-          - wifi-ble-lite
-          - wifi-ble-lite-co2
+          - wifi-lite-co2
     name: "Build ${{ matrix.variant }}"
     steps:
       - uses: actions/checkout@v5
@@ -74,7 +73,7 @@ jobs:
           # model claim), but `name` is what ESP Web Tools shows the user in the
           # flash dialog, so it has to name the board they are holding.
           case "${{ matrix.variant }}" in
-            *-lite) MODEL="Everything Presence Lite" ;;
+            *lite*) MODEL="Everything Presence Lite" ;;
             *)      MODEL="Everything Presence Pro" ;;
           esac
           cat > "dist/${VARIANT}-manifest.json" << EOF

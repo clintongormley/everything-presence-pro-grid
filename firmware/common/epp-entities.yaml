@@ -1,17 +1,17 @@
 # Model-agnostic `epp:` entity definitions, shared by both model bases.
 #
-# Every zone / target / occupancy entity the zone engine publishes is identical
-# across the Pro and the Lite — the engine itself is the same code. Inputs that
-# only one board has (`static_presence`, `motion_presence`, their outputs, and
-# `relay_switch`) are wired up in that board's own base, where the hardware
-# they point at is defined.
+# The zone/target/occupancy entities here (zones, target positions/counts, the
+# `Occupancy` output, LD2450 `tracking_health`) are identical across the Pro and
+# the Lite — the engine itself is the same code. What lives in a board's own
+# base instead: the inputs only that board has (`static_presence`,
+# `motion_presence`, their outputs, `relay_switch`), and — Pro-only —
+# `device_tracking` ("Target Presence") and `mmwave_output` ("mmWave Presence").
+# Those two are LD2450/zone derived, but on a sensorless Lite they collapse into
+# `Occupancy` (Target Presence is identical to it; mmWave a near-duplicate), so
+# the Lite publishes `Occupancy` from the zone engine alone.
 
 epp:
   id: epp_component
-  device_tracking:
-    name: "Target Presence"
-    device_class: occupancy
-    disabled_by_default: true
   # Connectivity of the LD2450 tracker itself — ON while frames are arriving
   # (even in an empty room, the LD2450 streams ~10Hz), OFF if it goes silent or
   # never comes up after boot. Distinct from Target Presence (targets seen): a
@@ -214,7 +214,3 @@ epp:
     id: epp_occupancy
     name: "Occupancy"
     device_class: occupancy
-  mmwave_output:
-    name: "mmWave Presence"
-    device_class: occupancy
-    disabled_by_default: true

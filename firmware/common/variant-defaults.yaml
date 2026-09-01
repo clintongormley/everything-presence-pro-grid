@@ -32,3 +32,6 @@ substitutions:
     has_static_presence: true
     has_led: true
     has_relay: true
+    has_target_presence: true
+    has_mmwave_presence: true
+    has_assisted_clear: true

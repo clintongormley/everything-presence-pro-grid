@@ -102,16 +102,19 @@ def test_lite_has_no_ethernet_variant() -> None:
     assert not [k for k in FIRMWARE_VARIANTS if k[0] == "everything-presence-lite" and k[1] == "ethernet"]
 
 
-def test_lite_has_both_co2_shapes() -> None:
-    """The SCD40 is an add-on on the Lite, so both builds must exist.
+def test_lite_both_co2_flags_map_to_the_single_build() -> None:
+    """The Lite ships one CO2-capable build, and both co2 flags route to it.
 
-    A board without the module needs a build that omits scd4x entirely —
-    compiling it in fails the component and parks the device in error state.
+    The SCD40 is an add-on, but the build now copes with the module being
+    absent (it clears the scd40 component error on an interval so the status
+    LED does not blink for missing hardware). So a device reporting
+    co2_enabled=False must still resolve — to the same wifi-lite-co2 build,
+    not a 404.
     """
     from custom_components.eppgrid.const import FIRMWARE_VARIANTS
 
     lite = {k[2]: v for k, v in FIRMWARE_VARIANTS.items() if k[0] == "everything-presence-lite"}
-    assert lite == {False: "wifi-ble-lite", True: "wifi-ble-lite-co2"}
+    assert lite == {False: "wifi-lite-co2", True: "wifi-lite-co2"}
 
 
 def test_every_pro_variant_has_co2() -> None:

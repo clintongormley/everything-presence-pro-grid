@@ -20,10 +20,10 @@ substitutions:
   device_config:
     ethernet_enabled: false
     # The SCD40 is an add-on on the Lite's expansion header, not on the board.
-    # wifi-ble-lite-co2.yaml overrides this; the bare board must not compile in
+    # wifi-lite-co2.yaml overrides this; the bare board must not compile in
     # a sensor it cannot reach.
     co2_enabled: false
-    bluetooth_enabled: true
+    bluetooth_enabled: false
     board_revision: "1.0"
     # LD2450 only. The Lite's radar sits in a socket that also takes an LD2410 /
     # MR24HPC1 / SEN0395 / SEN0609, but the zone engine needs the LD2450's
@@ -38,3 +38,12 @@ substitutions:
     has_static_presence: false
     has_led: false
     has_relay: false
+    # The Lite keeps only Occupancy among the presence outputs. Target Presence
+    # and mmWave Presence are LD2450/zone derived and collapse into Occupancy on
+    # a sensorless board (Target Presence is identical to it), so they'd only
+    # duplicate it. Sensor-assisted clear uses the static/PIR sensors to confirm
+    # a zone emptied and the engine gates it on those ever being active, so it's
+    # inert here.
+    has_target_presence: false
+    has_mmwave_presence: false
+    has_assisted_clear: false
