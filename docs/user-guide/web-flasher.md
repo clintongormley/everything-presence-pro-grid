@@ -62,7 +62,7 @@ Connect over an Ethernet cable (PoE optional).
 
 The Lite is Wi-Fi only. After flashing, set up Wi-Fi right here in the browser.
 
-<esp-web-install-button manifest="../../fw/latest/wifi-ble-lite.json">
+<esp-web-install-button manifest="../../fw/latest/wifi-lite-co2.json">
   <button slot="activate">Flash Lite firmware</button>
 </esp-web-install-button>
 

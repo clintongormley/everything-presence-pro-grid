@@ -14,9 +14,9 @@ Everything Presence Pro Grid runs on two hardware models. Both share the same
 firmware core and the same zone engine, so the spatial features — zones, the
 grid, target tracking, room calibration, and heatmaps — work identically on
 each. The **Everything Presence Lite** is a lower-cost subset of the
-**Everything Presence Pro**: it keeps all the spatial features, plus CO₂,
-Bluetooth, and light level, and drops the static-presence radar, motion sensor,
-temperature/humidity, relay, addressable RGB LED, and Ethernet.
+**Everything Presence Pro**: it keeps all the spatial features, plus CO₂ and
+light level, and drops the static-presence radar, motion sensor,
+temperature/humidity, relay, addressable RGB LED, Bluetooth, and Ethernet.
 
 | Feature                                 | Everything Presence Pro | Everything Presence Lite |
 | --------------------------------------- | :---------------------: | :----------------------: |
@@ -26,10 +26,13 @@ temperature/humidity, relay, addressable RGB LED, and Ethernet.
 | Stuck-target clearing & pipeline tuning |            ✓            |            ✓             |
 | CO₂ sensor (SCD4x)                      |            ✓            |            ✓             |
 | Illuminance / light level (BH1750)      |            ✓            |            ✓             |
-| Bluetooth LE proxy                      |            ✓            |            ✓             |
 | OTA updates & diagnostics               |            ✓            |            ✓             |
+| Occupancy (fused room presence)         |            ✓            |            ✓             |
+| Bluetooth LE proxy                      |            ✓            |            —             |
 | Static-presence radar (SEN0609)         |            ✓            |            —             |
 | Motion sensor (PIR)                     |            ✓            |            —             |
+| Target Presence & mmWave Presence       |            ✓            |            —             |
+| Sensor-assisted clear                   |            ✓            |            —             |
 | Temperature & humidity (SHTC3)          |            ✓            |            —             |
 | Relay output                            |            ✓            |            —             |
 | Addressable RGB LED (modes & effects)   |            ✓            |     Status LED only      |
@@ -169,15 +172,18 @@ Two firmware variants differ only in which network interface is active:
     data and power.
 
 **The Everything Presence Lite is Wi-Fi only** — there's no Ethernet build. It
-ships a single `wifi-ble-lite` variant. See [Models](#models).
+ships a single `wifi-lite-co2` variant. It's CO2-capable and works whether or
+not the SCD40 add-on is fitted — a missing module is handled gracefully. See
+[Models](#models).
 
-Every variant — the Lite included — also runs **Bluetooth LE**. Home Assistant
-exposes each device as a Bluetooth proxy for nearby BLE devices like temperature
-tags, buttons, or presence badges. If you've got BLE hardware around the house,
-each device becomes another reception point.
+The **Pro variants** also run **Bluetooth LE**. Home Assistant exposes each Pro
+as a Bluetooth proxy for nearby BLE devices like temperature tags, buttons, or
+presence badges. If you've got BLE hardware around the house, each device
+becomes another reception point. The Lite has no usable Bluetooth, so its build
+leaves BLE out entirely.
 
-A **BLE Scan** switch under the device's Configuration entities lets you turn
-the scan off when you don't need the proxy — useful if you have heavy
+On the Pro, a **BLE Scan** switch under the device's Configuration entities lets
+you turn the scan off when you don't need the proxy — useful if you have heavy
 proxied-BLE load and need to claw back heap headroom (each proxied device adds
 ~5-10 KB resident, plus transient processing spikes). See
 [Troubleshooting → Free up memory by disabling BLE](troubleshooting.md#free-up-memory-by-disabling-ble)

@@ -27,28 +27,34 @@ your browser. Once flashed, future updates happen over the air — see
 
 1. Open the **Flash Firmware** tab in the Everything Presence Pro Grid panel.
 
-1. Click **Flash Firmware**.
+1. Click **Flash via USB**.
 
     ![Flash firmware page](../images/flashing-firmware/flash-firmware.png "Flash firmware page")
-
-1. Choose your model — **Everything Presence Pro** or **Everything Presence
-    Lite**. See the [hardware comparison](hardware.md#models) if you're not
-    sure which you have.
-
-1. Pick the firmware variant based on how you want the device to connect to your
-    network, then click **Flash via USB**:
-
-    - **WiFi** — connect over Wi-Fi.
-    - **Ethernet** — connect over an Ethernet cable (PoE optional). Pro only —
-        the Everything Presence Lite is Wi-Fi only, so this option doesn't appear
-        for it.
-
-    ![Choose wifi or ethernet variant](../images/flashing-firmware/variant.png "Choose wifi or ethernet variant")
 
 1. In the browser's serial-port picker, select your device and click
     **Connect**.
 
     ![Connecting to the device over USB](../images/flashing-firmware/usb-connect.png "Connecting to the device over USB")
+
+1. The panel identifies the connected device and picks its firmware
+    automatically:
+
+    - **Everything Presence Lite** — flashing starts straight away; there's
+        nothing to choose.
+
+    - **Everything Presence Pro** — pick how it connects to your network, then
+        flashing starts:
+
+        - **WiFi** — connect over Wi-Fi.
+        - **Ethernet** — connect over an Ethernet cable (PoE optional). Pro only;
+            the Wi-Fi-only Lite never shows this.
+
+        ![Choose wifi or ethernet variant](../images/flashing-firmware/variant.png "Choose wifi or ethernet variant")
+
+    - **Couldn't identify it** (for example a blank board) — choose the model,
+        and the network type for a Pro, by hand. See the
+        [hardware comparison](hardware.md#models) if you're not sure which you
+        have.
 
 1. The device flashes and reboots automatically when done.
 

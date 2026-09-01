@@ -494,7 +494,10 @@ Returns discovered EPP devices.
             "has_motion_presence": true,
             "has_static_presence": true,
             "has_led": true,
-            "has_relay": true
+            "has_relay": true,
+            "has_target_presence": true,
+            "has_mmwave_presence": true,
+            "has_assisted_clear": true
         }
     ]
 }
@@ -514,7 +517,8 @@ HA or ESPHome are reflected on the next call.
 The build flag fields (`bluetooth_enabled`, `co2_enabled`, `ethernet_enabled`,
 `heatmap`, `board_revision`, `sensor_variant`, `firmware_channel`, `model`,
 `has_temperature`, `has_humidity`, `has_illuminance`, `has_motion_presence`,
-`has_static_presence`, `has_led`, `has_relay`) are optional — they are only
+`has_static_presence`, `has_led`, `has_relay`, `has_target_presence`,
+`has_mmwave_presence`, `has_assisted_clear`) are optional — they are only
 present after the device has connected and build flags have been fetched via the
 `get_build_flags` API action. Build flags are merged without overriding the base
 fields above (`mac`, `name`, `host`, `available`, `configured`, `area`,
@@ -527,13 +531,19 @@ manifest URL is keyed on it (`FIRMWARE_VARIANTS` in `const.py`), so it must
 match the value the firmware reports verbatim.
 
 The `has_*` fields are per-board hardware capability flags: the Pro reports all
-seven `true`, while the Lite reports `has_temperature`, `has_humidity`,
-`has_motion_presence`, `has_static_presence`, `has_led` and `has_relay` as
-`false` (it keeps `has_illuminance`). The panel hides the controls for any
-hardware a board lacks, so a flag that overstates the hardware leaves the user a
-control whose firmware service was never declared — it would save and push
-nowhere. Read them through `hasCapability()`, which treats an absent flag as
-present so firmware predating the flags keeps showing every control.
+ten `true`, while the Lite reports `has_temperature`, `has_humidity`,
+`has_motion_presence`, `has_static_presence`, `has_led`, `has_relay`,
+`has_target_presence`, `has_mmwave_presence` and `has_assisted_clear` as `false`
+(it keeps `has_illuminance`). The last three cover `Target Presence`,
+`mmWave Presence`, and sensor-assisted clear. `Target Presence` and
+`mmWave Presence` are LD2450/zone derived and collapse into `Occupancy` on a
+sensorless Lite (`Target Presence` is identical to it), so it keeps only the
+`Occupancy` output; sensor-assisted clear uses the static/PIR sensors and is
+inert without them. The panel hides the controls for any hardware a board lacks,
+so a flag that overstates the hardware leaves the user a control whose firmware
+service was never declared — it would save and push nowhere. Read them through
+`hasCapability()`, which treats an absent flag as present so firmware predating
+the flags keeps showing every control.
 
 `heatmap` reflects whether the connected firmware build compiled in the
 activity-heatmap accumulator (`EPP_HEATMAP_ENABLED`) — some variants omit it to

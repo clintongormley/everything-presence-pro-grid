@@ -270,8 +270,11 @@ The shipping firmware variants — each is a thin top-level YAML that includes t
 
 - `wifi-ble-co2.yaml` — Everything Presence Pro, Wi-Fi, with BLE and CO2.
 - `ethernet-ble-co2.yaml` — Everything Presence Pro, Ethernet, with BLE and CO2.
-- `wifi-ble-lite.yaml` — Everything Presence Lite, with BLE and CO2. The Lite is
-    Wi-Fi-only, so it has no Ethernet counterpart.
+- `wifi-lite-co2.yaml` — Everything Presence Lite, Wi-Fi, with CO2 (no BLE — the
+    Lite hardware has no usable Bluetooth). The one Lite build; it is
+    CO2-capable and copes with the SCD40 add-on being absent (a missing module
+    no longer parks the status LED in an error blink). The Lite is Wi-Fi-only,
+    so it has no Ethernet counterpart.
 
 ### `common/`
 
