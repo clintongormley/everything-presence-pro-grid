@@ -8,6 +8,14 @@ firmware downloads, see the
 
 ### New features
 
+- **Support for the Everything Presence Lite.** Everything Presence Pro Grid now
+    runs on the Everything Presence Lite, which shares the Pro's zone engine,
+    grid, target tracking, and room calibration. Flashing over USB detects the
+    model automatically and installs the right firmware — a Lite needs no model
+    choice at all. The panel hides the controls for hardware the Lite doesn't
+    have (static-presence radar, PIR motion, relay, addressable RGB LED,
+    Bluetooth), leaving the occupancy, zones, CO2, and light-level features it
+    supports. Contributed by @HaniKazmi (#416).
 - **A new "Tracking Sensor" entity shows when the tracker has failed.** If the
     tracking sensor stops responding, presence and motion can keep working (they
     come from separate sensors) while target dots silently disappear and Target
