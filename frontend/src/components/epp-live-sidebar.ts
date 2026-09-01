@@ -236,12 +236,14 @@ export class EppLiveSidebar extends LitElement {
 			},
 			{
 				id: "target_presence",
+				capability: "has_target_presence",
 				label: this.localize("live.target_presence"),
 				on: ss.target_presence,
 				info: this.localize("info.target_presence"),
 			},
 			{
 				id: "mmwave",
+				capability: "has_mmwave_presence",
 				label: this.localize("live.mmwave"),
 				on: ss.mmwave,
 				info: this.localize("info.mmwave"),

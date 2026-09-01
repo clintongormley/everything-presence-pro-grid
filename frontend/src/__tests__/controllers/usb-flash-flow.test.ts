@@ -43,6 +43,12 @@ vi.mock("../../lib/improv-serial.js", () => ({
 	ERROR_UNABLE_TO_CONNECT: 0x03,
 }));
 
+// Mock model auto-detection so we drive the flow without real serial I/O.
+vi.mock("../../lib/device-model.js", () => ({
+	readDeviceModel: vi.fn(),
+}));
+
+import { readDeviceModel } from "../../lib/device-model.js";
 import {
 	detectIpAddress,
 	flashFirmware,
@@ -1795,5 +1801,170 @@ describe("_addToHa handoff", () => {
 		vi.spyOn(ctrl, "addEsphomeDevice").mockResolvedValue({ type: "added" });
 		await ctrl.handleRetryHaAdd();
 		expect(spy).toHaveBeenCalledWith("1.2.3.4", undefined);
+	});
+});
+
+describe("handleUsbFlashAuto (auto-detect model on connect)", () => {
+	let ctrl: FlasherController;
+	let mockPort: ReturnType<typeof makeMockPort>;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetServiceMocks();
+		ctrl = createCtrl();
+		mockPort = makeMockPort();
+		vi.stubGlobal("navigator", {
+			...navigator,
+			serial: { requestPort: vi.fn().mockResolvedValue(mockPort) },
+		});
+	});
+
+	it("flashes the Lite build automatically when the device identifies as a Lite", async () => {
+		(readDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue("lite");
+
+		await ctrl.handleUsbFlashAuto();
+
+		expect(flashFirmware).toHaveBeenCalledWith(
+			mockPort,
+			"wifi-lite-co2",
+			expect.any(Function),
+			expect.any(Object),
+		);
+	});
+
+	it("connects only once (reuses the detected port) on the Lite path", async () => {
+		(readDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue("lite");
+
+		await ctrl.handleUsbFlashAuto();
+
+		expect(navigator.serial.requestPort).toHaveBeenCalledTimes(1);
+	});
+
+	it("does not flash a Pro — it asks for the network variant instead", async () => {
+		(readDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue("pro");
+
+		await ctrl.handleUsbFlashAuto();
+
+		expect(flashFirmware).not.toHaveBeenCalled();
+		expect(ctrl.usbFlashState).toMatchObject({
+			step: "select_variant",
+			detectedModel: "pro",
+		});
+	});
+
+	it("falls back to the manual picker when the device does not identify itself", async () => {
+		(readDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue(null);
+
+		await ctrl.handleUsbFlashAuto();
+
+		expect(flashFirmware).not.toHaveBeenCalled();
+		expect(ctrl.usbFlashState).toMatchObject({
+			step: "select_variant",
+			detectedModel: null,
+		});
+	});
+
+	it("keeps the port so a subsequent manual flash does not prompt again", async () => {
+		(readDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue("pro");
+		await ctrl.handleUsbFlashAuto();
+		(navigator.serial.requestPort as ReturnType<typeof vi.fn>).mockClear();
+
+		await ctrl.handleUsbFlash("wifi-ble-co2");
+
+		expect(navigator.serial.requestPort).not.toHaveBeenCalled();
+		expect(flashFirmware).toHaveBeenCalledWith(
+			mockPort,
+			"wifi-ble-co2",
+			expect.any(Function),
+			expect.any(Object),
+		);
+	});
+});
+
+describe("handleUsbFlashAuto — error & cancellation paths", () => {
+	let ctrl: FlasherController;
+	let mockPort: ReturnType<typeof makeMockPort>;
+
+	beforeEach(() => {
+		vi.clearAllMocks();
+		resetServiceMocks();
+		ctrl = createCtrl();
+		mockPort = makeMockPort();
+		(readDeviceModel as ReturnType<typeof vi.fn>).mockResolvedValue("lite");
+		vi.stubGlobal("navigator", {
+			...navigator,
+			serial: { requestPort: vi.fn().mockResolvedValue(mockPort) },
+		});
+	});
+
+	it("shows a fatal error when another op is already running", async () => {
+		ctrl.opRunning = true;
+		await ctrl.handleUsbFlashAuto();
+		expect(ctrl.usbFlashState).toMatchObject({
+			step: "error",
+			fatal: true,
+			errorKey: "usb.errors.serial_port_busy",
+		});
+	});
+
+	it("returns to idle (not error) when the user dismisses the port chooser", async () => {
+		(
+			navigator.serial.requestPort as ReturnType<typeof vi.fn>
+		).mockRejectedValue(new DOMException("No port selected", "NotFoundError"));
+		const resetSpy = vi.spyOn(ctrl, "resetUsbState");
+		await ctrl.handleUsbFlashAuto();
+		expect(resetSpy).toHaveBeenCalled();
+		expect(readDeviceModel).not.toHaveBeenCalled();
+	});
+
+	it("shows an error when the port can't be opened", async () => {
+		(
+			navigator.serial.requestPort as ReturnType<typeof vi.fn>
+		).mockRejectedValue(new Error("USB exploded"));
+		await ctrl.handleUsbFlashAuto();
+		expect(ctrl.usbFlashState).toMatchObject({
+			step: "error",
+			errorKey: "usb.errors.port_open_failed",
+		});
+	});
+
+	it("bails after connect when the op is superseded (tab switch)", async () => {
+		(
+			navigator.serial.requestPort as ReturnType<typeof vi.fn>
+		).mockImplementation(async () => {
+			ctrl.bumpOpId();
+			return mockPort;
+		});
+		await ctrl.handleUsbFlashAuto();
+		expect(readDeviceModel).not.toHaveBeenCalled();
+		expect(flashFirmware).not.toHaveBeenCalled();
+	});
+
+	it("bails after detect when the op is superseded, without flashing", async () => {
+		(readDeviceModel as ReturnType<typeof vi.fn>).mockImplementation(
+			async () => {
+				ctrl.bumpOpId();
+				return "lite";
+			},
+		);
+		await ctrl.handleUsbFlashAuto();
+		expect(flashFirmware).not.toHaveBeenCalled();
+	});
+
+	it("registers the probe so cancelling aborts it and releases the port", async () => {
+		let captured: AbortSignal | undefined;
+		(readDeviceModel as ReturnType<typeof vi.fn>).mockImplementation(
+			(_port: any, _timeout: any, signal: AbortSignal) =>
+				// Mirror the real readDeviceModel: settle (null) once aborted.
+				new Promise((resolve) => {
+					captured = signal;
+					signal.addEventListener("abort", () => resolve(null));
+				}),
+		);
+		void ctrl.handleUsbFlashAuto();
+		await Promise.resolve();
+		expect(flowOf(ctrl)._wifiCheckAbort).not.toBeNull();
+		await flowOf(ctrl).cancelAndTearDown();
+		expect(captured?.aborted).toBe(true);
 	});
 });

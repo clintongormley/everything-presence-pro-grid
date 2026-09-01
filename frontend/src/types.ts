@@ -34,6 +34,9 @@ export interface DeviceCapabilities {
 	has_static_presence?: boolean;
 	has_led?: boolean;
 	has_relay?: boolean;
+	has_target_presence?: boolean;
+	has_mmwave_presence?: boolean;
+	has_assisted_clear?: boolean;
 }
 
 /** A capability is present unless the firmware explicitly said otherwise. */
@@ -103,6 +106,8 @@ export type HaAddResult =
 export type UsbFlashStep =
 	| "idle"
 	| "connecting"
+	| "detecting"
+	| "select_variant"
 	| "flashing"
 	| "wifi_check"
 	| "wifi_scan"
@@ -127,6 +132,12 @@ export interface UsbFlashState {
 	haAddAttempt?: number;
 	haAddMaxAttempts?: number;
 	mac?: string;
+	/** Model auto-detected over Improv on connect, surfaced on the
+	 *  `select_variant` step so the manual picker can preselect it. "pro" when a
+	 *  Pro was detected (still needs a wifi/ethernet choice); null when the
+	 *  device didn't identify itself (blank board → full manual choice). A
+	 *  detected Lite never reaches this step — it flashes automatically. */
+	detectedModel?: "pro" | "lite" | null;
 }
 
 export type OtaState = "updating" | "success" | "error";

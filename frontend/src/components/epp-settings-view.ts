@@ -252,6 +252,10 @@ export class EppSettingsView extends LitElement {
 	@property({ attribute: false }) entitiesConfig: Record<string, boolean> = {};
 	@property({ attribute: false }) logLevels: Record<string, string> = {};
 	@property({ type: Boolean }) co2Enabled = false;
+	/** Whether the board compiled in Bluetooth. Defaults true so firmware that
+	 *  predates the flag (and every BLE board) keeps the BLE log category; only
+	 *  an explicit false (the Lite, which compiles BLE out) hides it. */
+	@property({ type: Boolean }) bluetoothEnabled = true;
 
 	@property({ type: String }) ledMode = "Manual Control";
 	@property({ type: Number }) ledBrightness = 1.0;
@@ -957,7 +961,9 @@ export class EppSettingsView extends LitElement {
         </epp-card>
         `,
 					)}
-        <epp-card heading=${this.localize("settings.assisted_clear")}>
+        ${
+					this._has("has_assisted_clear")
+						? html`<epp-card heading=${this.localize("settings.assisted_clear")}>
           <!-- .setting-row conversion deferred — see comment above -->
           <div class="setting-row">
             <label>${this.localize("settings.assisted_clear_enabled")}</label>
@@ -983,7 +989,9 @@ export class EppSettingsView extends LitElement {
 						tip: "info.assisted_clear_timeout",
 						disabled: !this.assistedClearEnabled,
 					})}
-        </epp-card>
+        </epp-card>`
+						: nothing
+				}
         <epp-card heading=${this.localize("settings.environmental")}>
           <!-- .setting-row conversion deferred — see comment above -->
           ${this._has("has_illuminance") ? this.renderEnvOffset(this.localize("settings.illuminance_offset"), () => this.sensorState.illuminance, "illuminance", -500, 500, 1, "lux", 1, this.localize("info.illuminance_offset"), 0) : nothing}
@@ -1069,12 +1077,14 @@ export class EppSettingsView extends LitElement {
 			{
 				label: "entities.target_presence",
 				key: "room_target_presence",
+				capability: "has_target_presence",
 				defaultValue: false,
 				tip: "info.room_target_presence",
 			},
 			{
 				label: "entities.mmwave",
 				key: "room_mmwave",
+				capability: "has_mmwave_presence",
 				defaultValue: false,
 				tip: "info.room_mmwave",
 			},
@@ -1238,7 +1248,9 @@ export class EppSettingsView extends LitElement {
           <!-- .setting-row conversion to epp-section-row is deferred: _resetSlider
                uses closest(".setting-row") and slider rows don't map cleanly to
                the label/control shape. -->
-          ${LOG_CATEGORIES.map((c) => {
+          ${LOG_CATEGORIES.filter(
+						(c) => c.key !== "ble" || this.bluetoothEnabled,
+					).map((c) => {
 						const overrides = this._overrides.logLevels || {};
 						const current = overrides[c.key] ?? this.logLevels[c.key] ?? "None";
 						return html`

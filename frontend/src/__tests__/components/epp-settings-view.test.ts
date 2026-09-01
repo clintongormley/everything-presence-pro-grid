@@ -312,6 +312,25 @@ describe("renderDetectionRanges", () => {
 	});
 });
 
+describe("logging categories", () => {
+	it("hides the Bluetooth log category when the board has no BLE (Lite)", () => {
+		const sv = createView({ bluetoothEnabled: false });
+		const c = renderTo((sv as any).renderLogging());
+		expect(c.innerHTML).not.toContain("settings.log_ble");
+		// A shared category stays as a control.
+		expect(c.innerHTML).toContain("settings.log_epp");
+		document.body.removeChild(c);
+	});
+
+	it("keeps the Bluetooth log category on a BLE board and on pre-flag firmware", () => {
+		// Default (true) covers firmware that predates the flag — must not hide it.
+		const sv = createView({});
+		const c = renderTo((sv as any).renderLogging());
+		expect(c.innerHTML).toContain("settings.log_ble");
+		document.body.removeChild(c);
+	});
+});
+
 describe("sensor-assisted clear", () => {
 	function assistedClearTimeoutRow(c: HTMLElement): HTMLElement {
 		const rows = Array.from(
@@ -325,6 +344,24 @@ describe("sensor-assisted clear", () => {
 		if (!row) throw new Error("assisted-clear timeout row not found");
 		return row;
 	}
+
+	it("hides the assisted-clear card on a board that lacks the static/PIR sensors (Lite)", () => {
+		// Assisted clear force-clears a zone once the static + PIR sensors confirm
+		// the room emptied; the zone engine gates it on those sensors ever being
+		// active, so on a sensorless Lite it never fires — has_assisted_clear:false
+		// drops the card rather than showing a control that does nothing.
+		const sv = createView({ capabilities: { has_assisted_clear: false } });
+		const c = renderTo((sv as any).renderSensitivities());
+		expect(c.innerHTML).not.toContain("settings.assisted_clear");
+		document.body.removeChild(c);
+	});
+
+	it("keeps the assisted-clear card with the sensors and on pre-flag firmware", () => {
+		const sv = createView({ capabilities: {} });
+		const c = renderTo((sv as any).renderSensitivities());
+		expect(c.innerHTML).toContain("settings.assisted_clear");
+		document.body.removeChild(c);
+	});
 
 	it("greys out (row-disabled) the timeout slider when the toggle is off", () => {
 		const sv = createView({ assistedClearEnabled: false });

@@ -546,6 +546,10 @@ export class FlasherController implements ReactiveController {
 		return this._flow.handleUsbFlash(variant);
 	}
 
+	handleUsbFlashAuto(): Promise<void> {
+		return this._flow.handleUsbFlashAuto();
+	}
+
 	handleUsbWifiConfig(): Promise<void> {
 		return this._flow.handleUsbWifiConfig();
 	}

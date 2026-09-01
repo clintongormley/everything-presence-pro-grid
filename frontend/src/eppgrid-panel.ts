@@ -827,6 +827,9 @@ export class EPPGridPanel extends LitElement {
 	@state() _staticOnDelay = 0;
 	@state() _logLevels: Record<string, string> = {};
 	@state() private _co2Enabled = false;
+	// Defaults true so pre-flag firmware and every BLE board keep the Bluetooth
+	// log category; only the Lite (BLE compiled out) reports false.
+	@state() private _bluetoothEnabled = true;
 	@state() _ledMode = "Manual Control";
 	@state() _ledBrightness = 1.0;
 	@state() _ledPresenceColor = "#CC33FF";
@@ -1796,6 +1799,7 @@ export class EPPGridPanel extends LitElement {
 		const dev = this._devices.find((d) => d.mac === mac);
 		if (dev) {
 			this._co2Enabled = dev.co2_enabled ?? false;
+			this._bluetoothEnabled = dev.bluetooth_enabled ?? true;
 		}
 		// Restore the persisted per-device heatmap preference and (re-)apply it
 		// to the freshly (re)wired DeviceController — a stale "on" flag must
@@ -2805,6 +2809,9 @@ export class EPPGridPanel extends LitElement {
 					@usb-flash=${(e: CustomEvent) => {
 						void this._flasherCtrl.handleUsbFlash(e.detail.variant);
 					}}
+					@usb-flash-auto=${() => {
+						void this._flasherCtrl.handleUsbFlashAuto();
+					}}
 					@usb-wifi-config=${() => {
 						void this._flasherCtrl.handleUsbWifiConfig();
 					}}
@@ -3765,6 +3772,7 @@ export class EPPGridPanel extends LitElement {
           .staticOnDelay=${this._staticOnDelay}
           .logLevels=${this._logLevels}
           .co2Enabled=${this._co2Enabled}
+          .bluetoothEnabled=${this._bluetoothEnabled}
           .capabilities=${activeDevice ?? EMPTY_CAPABILITIES}
           .ledMode=${this._ledMode}
           .ledBrightness=${this._ledBrightness}
