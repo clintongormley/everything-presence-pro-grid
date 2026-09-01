@@ -57,7 +57,11 @@ FIRMWARE_VERSION = "1.9.0-rc.1"
 # board contributes one entry — a board missing from here is invisible to
 # discovery even with our firmware on it.
 EPP_MANUFACTURER = "EverythingSmartTechnology"
-EPP_MODELS = ("Everything Presence Pro", "Everything Presence Lite")
+# Named so call sites reference the intended model rather than an index into
+# EPP_MODELS (which reads as "Pro" only by tuple position).
+EPP_MODEL_PRO = "Everything Presence Pro"
+EPP_MODEL_LITE = "Everything Presence Lite"
+EPP_MODELS = (EPP_MODEL_PRO, EPP_MODEL_LITE)
 
 # Repository the firmware artifacts are published from. Both URLs below derive
 # from these, so a fork repoints its devices by editing GITHUB_OWNER alone.

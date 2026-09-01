@@ -21,7 +21,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import EPP_MANUFACTURER
-from custom_components.eppgrid.const import EPP_MODELS
+from custom_components.eppgrid.const import EPP_MODEL_PRO
 from custom_components.eppgrid.device_manager import DeviceManager
 from custom_components.eppgrid.device_manager._helpers import _esphome_object_id
 from custom_components.eppgrid.storage import EPPGridStore
@@ -80,7 +80,7 @@ def _make_v3_epp_device(hass: HomeAssistant, *, mac: str, host: str, version: st
         connections={(dr.CONNECTION_NETWORK_MAC, mac)},
         name="Everything Presence Pro 445566",
         manufacturer=EPP_MANUFACTURER,
-        model=EPP_MODELS[0],
+        model=EPP_MODEL_PRO,
         sw_version=version,
     )
     mac_hex = mac.replace(":", "").lower()

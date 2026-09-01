@@ -25,6 +25,7 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import EPP_MANUFACTURER
+from custom_components.eppgrid.const import EPP_MODEL_PRO
 from custom_components.eppgrid.const import EPP_MODELS
 from custom_components.eppgrid.const import FIRMWARE_VERSION
 from custom_components.eppgrid.const import GITHUB_OWNER
@@ -4563,7 +4564,7 @@ class TestEventCallbacks:
             connections={("mac", "ff:ee:dd:cc:bb:aa")},
             name="EPP New",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODELS[0],
+            model=EPP_MODEL_PRO,
         )
 
         entity = ent_reg.async_get_or_create(
@@ -4614,7 +4615,7 @@ class TestEventCallbacks:
             connections={("mac", "aa:bb:cc:dd:ee:ff")},
             name="EPP Known",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODELS[0],
+            model=EPP_MODEL_PRO,
         )
 
         entity = ent_reg.async_get_or_create(
@@ -4680,7 +4681,7 @@ class TestEventCallbacks:
             connections={("mac", "ff:ee:dd:cc:bb:aa")},
             name="EPP New",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODELS[0],
+            model=EPP_MODEL_PRO,
         )
         entities = [
             ent_reg.async_get_or_create(
@@ -7319,7 +7320,7 @@ class TestEventCallbacks:
             connections={("mac", "aa:bb:cc:dd:ee:ff")},
             name="EPP",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODELS[0],
+            model=EPP_MODEL_PRO,
         )
         ent_reg.async_get_or_create(
             "sensor",
@@ -8797,7 +8798,7 @@ class TestUniqueIdMatchingAnchors:
             connections={(dr.CONNECTION_NETWORK_MAC, "AA:BB:CC:DD:EE:FF")},
             name="EPP",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODELS[0],
+            model=EPP_MODEL_PRO,
         )
 
         # An unrelated sensor whose object_id happens to contain "firmware_version"
@@ -12242,7 +12243,7 @@ class TestIsEppDevice:
     def test_rejects_a_matching_model_from_another_manufacturer(self) -> None:
         from custom_components.eppgrid.device_manager._helpers import _is_epp_device
 
-        device = self._device(manufacturer="SomeoneElse", model=EPP_MODELS[0])
+        device = self._device(manufacturer="SomeoneElse", model=EPP_MODEL_PRO)
         assert _is_epp_device(device) is False
 
     def test_rejects_a_device_with_no_model(self) -> None:
