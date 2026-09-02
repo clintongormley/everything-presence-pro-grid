@@ -6,6 +6,12 @@ firmware downloads, see the
 
 ## v1.9.0 — unreleased
 
+**The integration is now called Everything Presence Grid** (formerly Everything
+Presence Pro Grid), since it runs on both the Everything Presence Pro and the
+new Everything Presence Lite. Nothing changes for existing installs — the same
+devices, entities, and settings carry over; only the name shown in Home
+Assistant and HACS is different.
+
 ### New features
 
 - **Support for the Everything Presence Lite.** Everything Presence Grid now

@@ -1,8 +1,9 @@
 # Installation
 
-Everything Presence Grid is in **HACS**'s default integration list, so you can
-install it directly. HACS handles installs and updates the same way as for any
-other integration. You'll need a working Home Assistant install to add it to.
+Everything Presence Grid (formerly Everything Presence Pro Grid) is in
+**HACS**'s default integration list, so you can install it directly. HACS
+handles installs and updates the same way as for any other integration. You'll
+need a working Home Assistant install to add it to.
 
 ## Prerequisites
 

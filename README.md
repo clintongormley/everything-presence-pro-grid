@@ -5,7 +5,8 @@
 [![Hassfest](https://github.com/clintongormley/everything-presence-pro-grid/actions/workflows/hassfest.yml/badge.svg)](https://github.com/clintongormley/everything-presence-pro-grid/actions/workflows/hassfest.yml)
 [![Active installations](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=active%20installations&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.eppgrid.total)](https://analytics.home-assistant.io/)
 
-Everything Presence Grid is a Home Assistant integration for the
+Everything Presence Grid (formerly Everything Presence Pro Grid) is a Home
+Assistant integration for the
 [Everything Presence Pro](https://shop.everythingsmart.io/products/everything-presence-pro)
 and the lower-cost
 [Everything Presence Lite](https://shop.everythingsmart.io/products/everything-presence-lite)

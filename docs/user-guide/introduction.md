@@ -1,12 +1,12 @@
 # Introduction
 
-Everything Presence Grid is a Home Assistant integration for the Everything
-Presence Pro and the lower-cost Everything Presence Lite mmWave radar sensors.
-It ships with custom firmware that runs all the detection work — target
-smoothing, zone tracking, presence logic — on the device itself. The integration
-provides a Home Assistant panel for configuration, calibration, live overview,
-and firmware flashing, built around a calibrated grid that matches the real
-geometry of your room.
+Everything Presence Grid (formerly Everything Presence Pro Grid) is a Home
+Assistant integration for the Everything Presence Pro and the lower-cost
+Everything Presence Lite mmWave radar sensors. It ships with custom firmware
+that runs all the detection work — target smoothing, zone tracking, presence
+logic — on the device itself. The integration provides a Home Assistant panel
+for configuration, calibration, live overview, and firmware flashing, built
+around a calibrated grid that matches the real geometry of your room.
 
 Both models share the same firmware core and zone engine, so the spatial
 features work identically on each; the Lite is a hardware subset of the Pro. See

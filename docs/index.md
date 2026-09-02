@@ -7,7 +7,8 @@ hide:
 # Everything Presence Grid
 
 An alternate firmware and Home Assistant integration for the Everything Presence
-Pro and Everything Presence Lite presence sensors.
+Pro and Everything Presence Lite presence sensors. (Formerly Everything Presence
+Pro Grid.)
 
 It provides:
 
