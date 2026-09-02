@@ -6,7 +6,31 @@ on:
   pull_request:
 
 jobs:
+  # Classify the diff once (see .github/filters.yml) so each job below can skip
+  # when nothing it cares about changed. A skipped required check satisfies the
+  # ruleset, so a doc-only or version-bump PR goes green without the full matrix.
+  changes:
+    runs-on: ubuntu-latest
+    name: Detect changed paths
+    # Fail OPEN: if the filter step errors (API change, transient outage), treat
+    # every category as changed so the real jobs run. Skipping them instead
+    # would make each required check go green-by-skip and silently bypass CI.
+    outputs:
+      python: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.python }}
+      frontend: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.frontend }}
+      cpp: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.cpp }}
+      docs: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.docs }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        continue-on-error: true
+        with:
+          filters: .github/filters.yml
+
   python:
+    needs: changes
+    if: ${{ needs.changes.outputs.python == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -62,6 +86,8 @@ jobs:
         run: pytest tests/ -v --cov=custom_components/eppgrid --cov-report=term-missing
 
   frontend:
+    needs: changes
+    if: ${{ needs.changes.outputs.frontend == 'true' }}
     runs-on: ubuntu-latest
     name: Frontend
     defaults:
@@ -87,6 +113,8 @@ jobs:
         run: npm run test:browser
 
   cpp:
+    needs: changes
+    if: ${{ needs.changes.outputs.cpp == 'true' }}
     runs-on: ubuntu-latest
     name: C++ Tests
     steps:
@@ -135,6 +163,8 @@ jobs:
           path: firmware/lib/epp_zone_engine/build/coverage-html/
 
   docs:
+    needs: changes
+    if: ${{ needs.changes.outputs.docs == 'true' }}
     runs-on: ubuntu-latest
     name: Docs
     steps:

@@ -6,7 +6,27 @@ on:
   pull_request:
 
 jobs:
+  # See .github/filters.yml — skip when the change can't affect the integration
+  # manifest/structure (e.g. a doc-only PR). A skipped required check satisfies
+  # the "Main branch" ruleset, so the PR still goes green.
+  changes:
+    runs-on: ubuntu-latest
+    name: Detect changed paths
+    # Fail OPEN: on a filter error, run hassfest rather than skip it — a skipped
+    # required check goes green-by-skip and would silently bypass CI.
+    outputs:
+      integration: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.integration }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        continue-on-error: true
+        with:
+          filters: .github/filters.yml
+
   hassfest:
+    needs: changes
+    if: ${{ needs.changes.outputs.integration == 'true' }}
     runs-on: ubuntu-latest
     name: Hassfest
     steps:

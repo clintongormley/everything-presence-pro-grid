@@ -200,7 +200,17 @@ If any step fails, the push aborts. Fix the issue, re-stage, and push again.
     [commit style](#commit-message-style) below.
 1. When ready, open a PR against `main`.
 1. CI runs the same checks as the pre-push hook, plus the firmware-compile
-    matrix and HACS / Hassfest / CodeQL.
+    matrix and HACS / Hassfest / CodeQL. Jobs are **path-gated** via
+    `.github/filters.yml`: a `changes` job in each workflow classifies the
+    diff, and a job whose paths didn't change is *skipped*. Because a skipped
+    required check satisfies the branch ruleset, a doc-only PR (or the
+    automated `manifest.json` version bump) goes green running only the jobs
+    its files can affect — the full Python / Frontend / C++ / CodeQL matrix
+    does not run for a change that can't touch them. Editing a workflow or
+    `filters.yml` re-runs the full suite it governs. Do **not** convert these to
+    workflow-level `paths:` filters: a required check that never posts leaves
+    the PR blocked forever, which is why the gating is done per-job with `if:`
+    instead.
 1. Respond to review comments inline. The repo uses **regular merge commits**
     (not squash) as its merge strategy — keep your history clean before
     requesting merge.
