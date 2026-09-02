@@ -31,6 +31,9 @@ python:
 
 frontend:
   - 'frontend/**'
+  # The committed, shipped bundles live outside frontend/ — include them so a
+  # bundle-only change (rare, but possible) still runs the frontend checks.
+  - 'custom_components/eppgrid/frontend/**'
   - '.github/workflows/tests.yml'
   - '.github/filters.yml'
 
@@ -69,6 +72,8 @@ codeql_python:
   - '.github/filters.yml'
 codeql_frontend:
   - 'frontend/**'
+  # Also scan the shipped bundles, which live outside frontend/ (Copilot #426).
+  - 'custom_components/eppgrid/frontend/**'
   - '.github/workflows/codeql.yml'
   - '.github/filters.yml'
 codeql_cpp:
