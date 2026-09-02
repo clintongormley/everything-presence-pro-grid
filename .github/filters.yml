@@ -11,13 +11,11 @@
 # is SKIPPED by its `if:` is treated as satisfied by the ruleset — green PR, no
 # wasted compute.
 #
-# Two carve-outs the ruleset forces (see docs/developers/contributing.md):
-#   - The Python and CodeQL jobs are MATRIX jobs. A job-level `if:` skip fires
-#     before the matrix expands, so the required "Python (HA …)" / "analyze (…)"
-#     contexts never post and the PR blocks. Those jobs gate at the STEP level
-#     instead, keeping the matrix (and its contexts) intact.
-#   - CodeQL is not gated at all: the ruleset's code_scanning rule requires
-#     CodeQL results on every PR, so a skipped/no-op scan blocks the merge.
+# One carve-out the ruleset forces (see docs/developers/contributing.md): the
+# Python and CodeQL jobs are MATRIX jobs. A job-level `if:` skip fires before the
+# matrix expands, so the required "Python (HA …)" / "analyze (…)" contexts never
+# post and the PR blocks. Those jobs gate at the STEP level instead, keeping the
+# matrix (and its contexts) intact.
 #
 # Each filter includes the CI plumbing itself (this file + the relevant
 # workflow), so editing CI re-runs the full suite that CI governs.
@@ -58,6 +56,22 @@ integration:
   - '.github/workflows/hacs.yml'
   - '.github/filters.yml'
 
-# NB: CodeQL is deliberately NOT gated here — the ruleset's code_scanning rule
-# requires CodeQL results on every PR, so codeql.yml always analyses all three
-# languages regardless of the diff. See the header comment in codeql.yml.
+# CodeQL analyses actual source, per language. These are narrower than the build
+# filters above on purpose: a version bump touches only manifest.json (not a line
+# of Python), so scanning the whole codebase for it would be pure waste — a
+# source-file trigger keeps CodeQL off both bumps and docs. Underscored keys (not
+# hyphens) so `outputs.codeql_python` isn't read as subtraction in an expression.
+# Safe to gate only because the ruleset's code_scanning rule was removed; the
+# "analyze (…)" status checks stay required (see codeql.yml header).
+codeql_python:
+  - '**/*.py'
+  - '.github/workflows/codeql.yml'
+  - '.github/filters.yml'
+codeql_frontend:
+  - 'frontend/**'
+  - '.github/workflows/codeql.yml'
+  - '.github/filters.yml'
+codeql_cpp:
+  - 'firmware/**'
+  - '.github/workflows/codeql.yml'
+  - '.github/filters.yml'
