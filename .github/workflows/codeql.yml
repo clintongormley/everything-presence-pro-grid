@@ -5,10 +5,13 @@ on:
 
 jobs:
   # Classify the diff (see .github/filters.yml) so each language leg can skip
-  # when none of its source changed. The matrix below is kept intact so the
-  # required check contexts stay exactly "analyze (python|javascript-typescript
-  # |c-cpp)"; a leg whose `changed` is not 'true' skips all its real steps and
-  # the job still reports success, satisfying the "Main branch" ruleset.
+  # when none of its source changed. The matrix stays LANGUAGE-ONLY so the
+  # required check contexts remain exactly "analyze (python|javascript-
+  # typescript|c-cpp)" — adding a second matrix key would rename them to
+  # "analyze (python, …)" and the required checks would never post. Each leg
+  # gates its real steps on its own category; a leg with nothing to scan runs no
+  # steps and the job still reports success, satisfying the "Main branch"
+  # ruleset.
   changes:
     runs-on: ubuntu-latest
     name: Detect changed paths
@@ -33,23 +36,30 @@ jobs:
       matrix:
         include:
           - language: python
-            changed: ${{ needs.changes.outputs.python }}
           - language: javascript-typescript
-            changed: ${{ needs.changes.outputs.frontend }}
           - language: c-cpp
-            changed: ${{ needs.changes.outputs.cpp }}
     steps:
+      # One expression maps this leg's language to its filter category; reused on
+      # every real step so the leg is a no-op (green) when its source is untouched.
+      - name: Decide whether to analyze this language
+        id: gate
+        env:
+          RUN: >-
+            ${{ (matrix.language == 'python' && needs.changes.outputs.python == 'true')
+             || (matrix.language == 'javascript-typescript' && needs.changes.outputs.frontend == 'true')
+             || (matrix.language == 'c-cpp' && needs.changes.outputs.cpp == 'true') }}
+        run: echo "run=$RUN" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v5
-        if: matrix.changed == 'true'
+        if: steps.gate.outputs.run == 'true'
       - uses: github/codeql-action/init@v4
-        if: matrix.changed == 'true'
+        if: steps.gate.outputs.run == 'true'
         with:
           languages: ${{ matrix.language }}
       - name: Build C++ (required for CodeQL)
-        if: matrix.changed == 'true' && matrix.language == 'c-cpp'
+        if: steps.gate.outputs.run == 'true' && matrix.language == 'c-cpp'
         run: |
           cd firmware/lib/epp_zone_engine
           cmake -B build -DCMAKE_BUILD_TYPE=Debug -DEPP_BUILD_TOOLS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build build
       - uses: github/codeql-action/analyze@v4
-        if: matrix.changed == 'true'
+        if: steps.gate.outputs.run == 'true'
