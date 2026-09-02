@@ -3,13 +3,21 @@
 # version bump therefore no longer drags the whole matrix through.
 #
 # HOW THE SKIP STAYS SAFE WITH REQUIRED CHECKS: the "Main branch" ruleset marks
-# Python/Frontend/C++/Hassfest/HACS/analyze as REQUIRED. A required check that
-# never posts blocks the PR forever, so we must NOT add workflow-level `paths:`
-# filters to these workflows. Instead every workflow keeps triggering on all
-# PRs, a `changes` job classifies the diff via this file, and each heavy job is
-# gated with `if: needs.changes.outputs.<name> == 'true'`. A required job that
+# Python/Frontend/C++/Hassfest/HACS as REQUIRED status checks. A required check
+# that never posts blocks the PR forever, so we must NOT add workflow-level
+# `paths:` filters to these workflows. Instead every workflow keeps triggering on
+# all PRs, a `changes` job classifies the diff via this file, and each heavy job
+# is gated with `if: needs.changes.outputs.<name> == 'true'`. A required job that
 # is SKIPPED by its `if:` is treated as satisfied by the ruleset — green PR, no
-# wasted compute. See the PR-process section of docs/developers/contributing.md.
+# wasted compute.
+#
+# Two carve-outs the ruleset forces (see docs/developers/contributing.md):
+#   - The Python and CodeQL jobs are MATRIX jobs. A job-level `if:` skip fires
+#     before the matrix expands, so the required "Python (HA …)" / "analyze (…)"
+#     contexts never post and the PR blocks. Those jobs gate at the STEP level
+#     instead, keeping the matrix (and its contexts) intact.
+#   - CodeQL is not gated at all: the ruleset's code_scanning rule requires
+#     CodeQL results on every PR, so a skipped/no-op scan blocks the merge.
 #
 # Each filter includes the CI plumbing itself (this file + the relevant
 # workflow), so editing CI re-runs the full suite that CI governs.
@@ -50,21 +58,6 @@ integration:
   - '.github/workflows/hacs.yml'
   - '.github/filters.yml'
 
-# CodeQL analyses actual source, per language. These are narrower than the
-# build filters above on purpose: a version bump touches only manifest.json (not
-# a single line of Python), so scanning the whole Python codebase for it would
-# be pure waste — a source-file trigger keeps CodeQL off both bumps and docs.
-# Underscored keys (not hyphens) so `outputs.codeql_python` isn't read as
-# subtraction in a GitHub expression.
-codeql_python:
-  - '**/*.py'
-  - '.github/workflows/codeql.yml'
-  - '.github/filters.yml'
-codeql_frontend:
-  - 'frontend/**'
-  - '.github/workflows/codeql.yml'
-  - '.github/filters.yml'
-codeql_cpp:
-  - 'firmware/**'
-  - '.github/workflows/codeql.yml'
-  - '.github/filters.yml'
+# NB: CodeQL is deliberately NOT gated here — the ruleset's code_scanning rule
+# requires CodeQL results on every PR, so codeql.yml always analyses all three
+# languages regardless of the diff. See the header comment in codeql.yml.
