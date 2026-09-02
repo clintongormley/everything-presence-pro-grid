@@ -216,9 +216,11 @@ If any step fails, the push aborts. Fix the issue, re-stage, and push again.
         required `Python (HA …)` / `analyze (…)` contexts never post and the PR
         blocks; step-gating keeps the matrix (and its contexts) intact while the
         real work still skips.
-    - **CodeQL is never gated** — the ruleset's code-scanning rule requires
-        CodeQL results on every PR, so it always analyses all three languages
-        even for a doc-only change.
+    - **CodeQL is gated like everything else** — it no-ops on a doc-only or
+        version-bump PR. This is only safe because the ruleset's code-scanning
+        merge rule was removed; CodeQL findings are now advisory (Security tab),
+        not a merge gate. The `analyze (…)` status checks stay required, so
+        CodeQL still runs on any PR that touches source.
 1. Respond to review comments inline. The repo uses **regular merge commits**
     (not squash) as its merge strategy — keep your history clean before
     requesting merge.
