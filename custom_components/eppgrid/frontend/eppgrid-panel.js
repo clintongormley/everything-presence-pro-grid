@@ -2965,7 +2965,7 @@ const Ws={},Js=ii(class extends si{constructor(){super(...arguments),this.ot=Ws}
 	`,e([ue({attribute:!1})],no.prototype,"hass",void 0),e([ue({attribute:!1})],no.prototype,"localize",void 0),e([ge()],no.prototype,"_dismissedCode",void 0),e([ge()],no.prototype,"_nudge",void 0),customElements.get("epp-language-banner")||customElements.define("epp-language-banner",no);const co=["occupancy","static_presence","motion_presence","target_presence","mmwave_presence"],ho="rest_of_room";class po extends ce{constructor(){super(...arguments),this.sensorState={occupancy:!1,static_presence:!1,motion_presence:!1,target_presence:!1,mmwave:!1,illuminance:null,temperature:null,humidity:null,co2:null},this.zoneState={occupancy:{},target_counts:{},frame_count:0},this.zoneConfigs=[],this.hasPerspective=!1,this.localize=jt,this.presenceKeys=null,this.capabilities={},this.showZones=!0,this.envKeys=null,this.interactive=!0,this.showInfoTips=!0}_renderRow(e){const t=!e.uncalibrated&&e.on,i=e.uncalibrated?this.localize("live.not_calibrated"):t?this.localize("live.detected"):this.localize("live.clear"),s=void 0!==e.color?N`
 					<div
 						class="live-sensor-dot"
-						style=${e.color?`background: ${e.color};${e.on?` box-shadow: 0 0 6px 2px ${e.color};`:""}`:"background: #fff; border: 1px solid #ccc;"+(e.on?" box-shadow: 0 0 6px 2px #999;":"")}
+						style=${e.color?`background: ${e.color};${t?` box-shadow: 0 0 6px 2px ${e.color};`:""}`:"background: #fff; border: 1px solid #ccc;"+(t?" box-shadow: 0 0 6px 2px #999;":"")}
 					></div>
 				`:N`<div class="live-sensor-dot ${t?"on":"off"}"></div>`;return N`
 			<div class="live-sensor-row">

@@ -582,6 +582,9 @@ async def test_async_discover_creates_repair_issue_for_outdated_device(hass: Hom
 
     with patch.object(manager, "_on_device_available", new=AsyncMock()):
         await manager.async_discover()
+        # Discovery fire-and-forgets `_on_device_available` for the already-online
+        # device; drain it while still stubbed so no task lingers into teardown.
+        await hass.async_block_till_done()
 
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"firmware_behind_{mac}")
     assert issue is not None, "discovering a device on older firmware must raise a Repairs issue"

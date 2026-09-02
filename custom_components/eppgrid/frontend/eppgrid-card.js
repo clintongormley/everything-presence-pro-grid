@@ -739,7 +739,7 @@ class st extends at{}st.directiveName="unsafeSVG",st.resultType=2;const lt=ot(st
     `],e([ue({type:String})],Lo.prototype,"text",void 0),e([ue({attribute:!1})],Lo.prototype,"localize",void 0),customElements.get("epp-info-tip")||customElements.define("epp-info-tip",Lo);class Do extends ce{constructor(){super(...arguments),this.sensorState={occupancy:!1,static_presence:!1,motion_presence:!1,target_presence:!1,mmwave:!1,illuminance:null,temperature:null,humidity:null,co2:null},this.zoneState={occupancy:{},target_counts:{},frame_count:0},this.zoneConfigs=[],this.hasPerspective=!1,this.localize=Ao,this.presenceKeys=null,this.capabilities={},this.showZones=!0,this.envKeys=null,this.interactive=!0,this.showInfoTips=!0}_renderRow(e){const t=!e.uncalibrated&&e.on,o=e.uncalibrated?this.localize("live.not_calibrated"):t?this.localize("live.detected"):this.localize("live.clear"),r=void 0!==e.color?G`
 					<div
 						class="live-sensor-dot"
-						style=${e.color?`background: ${e.color};${e.on?` box-shadow: 0 0 6px 2px ${e.color};`:""}`:"background: #fff; border: 1px solid #ccc;"+(e.on?" box-shadow: 0 0 6px 2px #999;":"")}
+						style=${e.color?`background: ${e.color};${t?` box-shadow: 0 0 6px 2px ${e.color};`:""}`:"background: #fff; border: 1px solid #ccc;"+(t?" box-shadow: 0 0 6px 2px #999;":"")}
 					></div>
 				`:G`<div class="live-sensor-dot ${t?"on":"off"}"></div>`;return G`
 			<div class="live-sensor-row">

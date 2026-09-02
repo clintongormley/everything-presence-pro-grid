@@ -196,8 +196,8 @@ export class EppLiveSidebar extends LitElement {
 						class="live-sensor-dot"
 						style=${
 							s.color
-								? `background: ${s.color};${s.on ? ` box-shadow: 0 0 6px 2px ${s.color};` : ""}`
-								: `background: #fff; border: 1px solid #ccc;${s.on ? " box-shadow: 0 0 6px 2px #999;" : ""}`
+								? `background: ${s.color};${on ? ` box-shadow: 0 0 6px 2px ${s.color};` : ""}`
+								: `background: #fff; border: 1px solid #ccc;${on ? " box-shadow: 0 0 6px 2px #999;" : ""}`
 						}
 					></div>
 				`
