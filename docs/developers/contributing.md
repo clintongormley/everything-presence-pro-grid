@@ -200,17 +200,25 @@ If any step fails, the push aborts. Fix the issue, re-stage, and push again.
     [commit style](#commit-message-style) below.
 1. When ready, open a PR against `main`.
 1. CI runs the same checks as the pre-push hook, plus the firmware-compile
-    matrix and HACS / Hassfest / CodeQL. Jobs are **path-gated** via
+    matrix and HACS / Hassfest / CodeQL. Most jobs are **path-gated** via
     `.github/filters.yml`: a `changes` job in each workflow classifies the
     diff, and a job whose paths didn't change is *skipped*. Because a skipped
     required check satisfies the branch ruleset, a doc-only PR (or the
     automated `manifest.json` version bump) goes green running only the jobs
-    its files can affect — the full Python / Frontend / C++ / CodeQL matrix
-    does not run for a change that can't touch them. Editing a workflow or
-    `filters.yml` re-runs the full suite it governs. Do **not** convert these to
-    workflow-level `paths:` filters: a required check that never posts leaves
-    the PR blocked forever, which is why the gating is done per-job with `if:`
-    instead.
+    its files can affect — the heavy Python / Frontend / C++ test work does not
+    run for a change that can't touch it. Editing a workflow or `filters.yml`
+    re-runs the full suite it governs. Two constraints the ruleset imposes:
+    - Do **not** convert the gating to workflow-level `paths:` filters: a
+        required check that never posts leaves the PR blocked forever, which is
+        why the gating is per-job with `if:` instead.
+    - The **Python and CodeQL matrix jobs gate at the *step* level**, not the
+        job. A job-level `if:` skip fires before the matrix expands, so the
+        required `Python (HA …)` / `analyze (…)` contexts never post and the PR
+        blocks; step-gating keeps the matrix (and its contexts) intact while the
+        real work still skips.
+    - **CodeQL is never gated** — the ruleset's code-scanning rule requires
+        CodeQL results on every PR, so it always analyses all three languages
+        even for a doc-only change.
 1. Respond to review comments inline. The repo uses **regular merge commits**
     (not squash) as its merge strategy — keep your history clean before
     requesting merge.

@@ -30,7 +30,6 @@ jobs:
 
   python:
     needs: changes
-    if: ${{ needs.changes.outputs.python == 'true' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -44,11 +43,24 @@ jobs:
             python-version: "3.14"
     name: "Python (HA ${{ matrix.ha-version }})"
     steps:
+      # Gate at the STEP level, not the job: a job-level `if:` skips the whole
+      # matrix job BEFORE it expands, so the required contexts
+      # "Python (HA 2025.2.0|stable|dev)" never post and the PR stays blocked.
+      # This always-run step keeps the matrix expanding (contexts post) and the
+      # leg green, while the real work below runs only when Python changed.
+      - name: Decide whether to run the Python suite
+        id: gate
+        env:
+          RUN: ${{ needs.changes.outputs.python }}
+        run: echo "run=$RUN" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v5
+        if: steps.gate.outputs.run == 'true'
       - uses: actions/setup-python@v6
+        if: steps.gate.outputs.run == 'true'
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install dependencies
+        if: steps.gate.outputs.run == 'true'
         run: |
           if [ "${{ matrix.ha-version }}" = "dev" ]; then
             pip install git+https://github.com/home-assistant/core.git
@@ -70,8 +82,10 @@ jobs:
               -r requirements_test.txt -c /tmp/ha-constraint.txt
           fi
       - name: Ruff lint
+        if: steps.gate.outputs.run == 'true'
         run: ruff check custom_components/ tests/ firmware/
       - name: Ruff format
+        if: steps.gate.outputs.run == 'true'
         run: ruff format --check custom_components/ tests/ firmware/
       - name: Mypy (type check)
         # Type-check on the floor job only: [tool.mypy] pins python_version and
@@ -80,9 +94,10 @@ jobs:
         # place mypy ran; CI itself never type-checked, so a union-attr
         # regression reached main via a GitHub merge (server-side merges don't
         # run the local hook).
-        if: matrix.ha-version == '2025.2.0'
+        if: steps.gate.outputs.run == 'true' && matrix.ha-version == '2025.2.0'
         run: mypy
       - name: Pytest
+        if: steps.gate.outputs.run == 'true'
         run: pytest tests/ -v --cov=custom_components/eppgrid --cov-report=term-missing
 
   frontend:
