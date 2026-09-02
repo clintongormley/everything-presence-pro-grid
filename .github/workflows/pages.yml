@@ -181,7 +181,14 @@ jobs:
             echo "::error::could not parse FIRMWARE_VERSION from custom_components/eppgrid/const.py — cannot verify the pinned OTA manifests"
             exit 1
           fi
+          # fw/latest only carries the variants in the promoted-latest release:
+          # a variant newer than stable is staged under fw/v{pinned}/ but skipped
+          # for fw/latest (stage-firmware.sh) until its release is promoted, so
+          # checking fw/latest for it would 404. Derive the set from what staging
+          # actually wrote rather than assuming every variant is in stable.
+          LATEST_VARIANTS=$(find site/fw/latest -maxdepth 1 -name '*.json' -exec basename {} .json \; 2>/dev/null | paste -sd, -)
           python3 .github/scripts/verify_deployed_firmware.py \
             --base-url "$PAGE_URL" \
             --version "$PINNED" \
-            --latest-version "${LATEST#v}"
+            --latest-version "${LATEST#v}" \
+            --latest-variants "$LATEST_VARIANTS"

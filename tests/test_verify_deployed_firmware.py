@@ -71,6 +71,24 @@ def test_expected_manifests_includes_latest_when_given():
     ]
 
 
+def test_latest_channel_uses_its_own_variant_subset():
+    # A variant only in the pinned pre-release (not yet in the promoted latest)
+    # must be checked under fw/v{pinned}/ but NOT under fw/latest/ — otherwise
+    # a variant newer than the stable channel 404s fw/latest forever.
+    ms = vdf.expected_manifests(
+        "https://x.io/eppgrid",
+        "1.9.0-rc.3",
+        "1.8.0",
+        ["wifi-ble-co2", "wifi-lite-co2"],
+        latest_variants=["wifi-ble-co2"],
+    )
+    assert [(m.url, m.expected_version) for m in ms] == [
+        ("https://x.io/eppgrid/fw/v1.9.0-rc.3/wifi-ble-co2.json", "1.9.0-rc.3"),
+        ("https://x.io/eppgrid/fw/v1.9.0-rc.3/wifi-lite-co2.json", "1.9.0-rc.3"),
+        ("https://x.io/eppgrid/fw/latest/wifi-ble-co2.json", "1.8.0"),
+    ]
+
+
 # --- check_once -----------------------------------------------------------
 
 
