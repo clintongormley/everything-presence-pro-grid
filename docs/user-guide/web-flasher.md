@@ -60,11 +60,14 @@ Connect over an Ethernet cable (PoE optional).
 
 ### Everything Presence Lite
 
-The Lite is Wi-Fi only. After flashing, set up Wi-Fi right here in the browser.
+The Lite is Wi-Fi only.
 
-<esp-web-install-button manifest="../../fw/latest/wifi-lite-co2.json">
-  <button slot="activate">Flash Lite firmware</button>
-</esp-web-install-button>
+!!! note
+
+    Browser flashing for the Everything Presence Lite arrives with the v1.9.0 stable
+    release. Until then, flash a Lite from the **Flash Firmware** tab inside the
+    Everything Presence Pro Grid panel — it detects the Lite and installs the right
+    firmware automatically. See [Flashing firmware](flashing-firmware.md).
 
 !!! warning
 
