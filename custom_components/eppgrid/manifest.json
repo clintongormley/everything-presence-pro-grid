@@ -1,6 +1,6 @@
 {
   "domain": "eppgrid",
-  "name": "Everything Presence Pro Grid",
+  "name": "Everything Presence Grid",
   "codeowners": ["@clintongormley"],
   "config_flow": true,
   "dependencies": ["frontend", "http", "panel_custom", "repairs", "websocket_api"],

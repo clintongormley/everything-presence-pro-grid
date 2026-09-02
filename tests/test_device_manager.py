@@ -1613,7 +1613,7 @@ class TestDeviceManager:
             identifiers={("esphome", mac)},
             connections={(dr.CONNECTION_NETWORK_MAC, mac)},
             manufacturer="Everything Smart Technology",
-            model="Everything Presence Pro Grid",
+            model="Everything Presence Grid",
         )
         manager.devices[mac].device_id = device.id
         ent = ent_reg.async_get_or_create(

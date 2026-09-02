@@ -126,7 +126,7 @@ const EMPTY_ENTITIES_CONFIG: Record<string, boolean> = Object.freeze({});
 // the check then no-ops.
 const CURRENT_BUNDLE_HASH = parseBundleHash(import.meta.url);
 
-// Everything Presence Pro Grid logo, inlined from custom_components/eppgrid/
+// Everything Presence Grid logo, inlined from custom_components/eppgrid/
 // brand/icon.svg so it ships in the bundle (no extra static path / request).
 // Sized via the .epp-logo CSS rule; viewBox preserved for crisp scaling.
 const EPP_LOGO = html`
@@ -134,7 +134,7 @@ const EPP_LOGO = html`
 		class="epp-logo"
 		viewBox="0 0 256 256"
 		role="img"
-		aria-label="Everything Presence Pro Grid"
+		aria-label="Everything Presence Grid"
 	>
 		<rect width="256" height="256" rx="48" fill="#0f172a" />
 		<g stroke="#4d6d9f" stroke-width="3">

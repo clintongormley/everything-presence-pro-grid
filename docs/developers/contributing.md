@@ -1,10 +1,9 @@
 # Contributing
 
-Everything Presence Pro Grid is four subsystems (Python integration,
-TypeScript/Lit panel, ESPHome firmware, MkDocs docs) in one repo. Contributing
-usually means touching one or two of them. This page covers the shared
-dev-environment setup, how to run the tests the pre-push hook enforces, and the
-PR process.
+Everything Presence Grid is four subsystems (Python integration, TypeScript/Lit
+panel, ESPHome firmware, MkDocs docs) in one repo. Contributing usually means
+touching one or two of them. This page covers the shared dev-environment setup,
+how to run the tests the pre-push hook enforces, and the PR process.
 
 ## Prerequisites
 

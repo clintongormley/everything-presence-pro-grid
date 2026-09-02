@@ -34,7 +34,7 @@ class TestConfigFlow:
         flow.hass = hass
         result = await flow.async_step_user(user_input={})
         assert result["type"] == "create_entry"
-        assert result["title"] == "Everything Presence Pro Grid"
+        assert result["title"] == "Everything Presence Grid"
         assert result["data"] == {}
 
     async def test_step_user_singleton(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:

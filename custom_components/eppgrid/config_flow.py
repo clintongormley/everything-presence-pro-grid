@@ -1,4 +1,4 @@
-"""Config flow for Everything Presence Pro Grid."""
+"""Config flow for Everything Presence Grid."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class EPPGridConfigFlow(ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
             return self.async_abort(reason="single_instance_allowed")
 
         if user_input is not None:
-            return self.async_create_entry(title="Everything Presence Pro Grid", data={})
+            return self.async_create_entry(title="Everything Presence Grid", data={})
 
         return self.async_show_form(step_id="user")
 

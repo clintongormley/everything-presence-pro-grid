@@ -72,8 +72,8 @@ sensor, or just to wipe old activity — there are a few ways to clear it:
     (see [Overview dashboard card](overview-card.md)), a Clear button sits next
     to the heatmap switch on the map. It asks you to confirm before clearing.
 - **With the `eppgrid.clear_heatmap` action.** Run it from Developer tools or an
-    automation to clear one or more sensors, or every Everything Presence Pro
-    Grid sensor at once — see [Automations](automations.md).
+    automation to clear one or more sensors, or every Everything Presence Grid
+    sensor at once — see [Automations](automations.md).
 
 Either way, clearing wipes the accumulated data permanently — there's no undo —
 and the cleared state survives a device reboot, so the heatmap starts building

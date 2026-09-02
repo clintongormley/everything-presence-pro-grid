@@ -4,13 +4,13 @@ The Everything Presence Pro packs several sensors into one small unit: two
 mmWave radars, a PIR (passive infrared) motion sensor, environmental sensors for
 illuminance, temperature, humidity, an optional CO₂ sensor, and a network
 interface. Each of the Pro's presence sensors has its own blind spots, which is
-why Everything Presence Pro Grid combines all three into a single Occupancy
-signal. The Everything Presence Lite carries a subset of this hardware — see
+why Everything Presence Grid combines all three into a single Occupancy signal.
+The Everything Presence Lite carries a subset of this hardware — see
 [Models](#models) below.
 
 ## Models
 
-Everything Presence Pro Grid runs on two hardware models. Both share the same
+Everything Presence Grid runs on two hardware models. Both share the same
 firmware core and the same zone engine, so the spatial features — zones, the
 grid, target tracking, room calibration, and heatmaps — work identically on
 each. The **Everything Presence Lite** is a lower-cost subset of the
@@ -67,7 +67,7 @@ Two mmWave radars cover different jobs.
 The
 [LD2450](https://www.tinytronics.nl/product_files/006000_HLK-LD2450-Instruction-Manual.pdf)
 is the workhorse. It reports 2D coordinates for up to three moving targets,
-which Everything Presence Pro Grid uses to drive zone detection and target-count
+which Everything Presence Grid uses to drive zone detection and target-count
 entities.
 
 - **Field of view:** 120° horizontal × 70° vertical.

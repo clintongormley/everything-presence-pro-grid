@@ -1,6 +1,6 @@
 # Web flasher
 
-Flash Everything Presence Pro Grid firmware straight from this page — no Home
+Flash Everything Presence Grid firmware straight from this page — no Home
 Assistant needed.
 
 !!! tip "When to use this"
@@ -66,7 +66,7 @@ The Lite is Wi-Fi only.
 
     Browser flashing for the Everything Presence Lite arrives with the v1.9.0 stable
     release. Until then, flash a Lite from the **Flash Firmware** tab inside the
-    Everything Presence Pro Grid panel — it detects the Lite and installs the right
+    Everything Presence Grid panel — it detects the Lite and installs the right
     firmware automatically. See [Flashing firmware](flashing-firmware.md).
 
 !!! warning
@@ -88,8 +88,8 @@ set up Wi-Fi over USB once the device reboots.
     add ESPHome manually with the device's hostname (typically
     `everything-presence-pro-<suffix>.local`) or IP address.
 
-Once the device is on ESPHome, it shows up in the Everything Presence Pro Grid
-panel within a few seconds.
+Once the device is on ESPHome, it shows up in the Everything Presence Grid panel
+within a few seconds.
 
 For the full walkthrough — including how the in-panel flasher works and detailed
 troubleshooting — see [Flashing firmware](flashing-firmware.md).

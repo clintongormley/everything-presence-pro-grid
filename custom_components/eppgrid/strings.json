@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Everything Presence Pro Grid",
+        "title": "Everything Presence Grid",
         "description": "Set up the EPP Grid calibration UI and device management."
       }
     },
@@ -20,7 +20,7 @@
       }
     },
     "abort": {
-      "not_loaded": "The Everything Presence Pro Grid integration is not loaded. Fix or reload the integration, then change its options."
+      "not_loaded": "The Everything Presence Grid integration is not loaded. Fix or reload the integration, then change its options."
     }
   },
   "exceptions": {
@@ -65,7 +65,7 @@
         "step": {
           "confirm": {
             "title": "Update {device_name} firmware",
-            "description": "The Everything Presence Pro Grid integration expects firmware **{required_version}** but **{device_name}** is running **{current_version}**. Click **Submit** to install the required firmware over the air now. The device will reboot once flashing completes — this usually takes a minute or two. Some integration features may not work correctly until the firmware is updated."
+            "description": "The Everything Presence Grid integration expects firmware **{required_version}** but **{device_name}** is running **{current_version}**. Click **Submit** to install the required firmware over the air now. The device will reboot once flashing completes — this usually takes a minute or two. Some integration features may not work correctly until the firmware is updated."
           },
           "failed": {
             "title": "Update failed",
@@ -79,13 +79,13 @@
     },
     "firmware_ahead": {
       "title": "{device_name} integration update required",
-      "description": "{device_name} is running firmware **{current_version}** but the Everything Presence Pro Grid integration is pinned to **{required_version}**. Update the integration via HACS so it can talk to the newer firmware. Some integration features may not work correctly until the integration is updated."
+      "description": "{device_name} is running firmware **{current_version}** but the Everything Presence Grid integration is pinned to **{required_version}**. Update the integration via HACS so it can talk to the newer firmware. Some integration features may not work correctly until the integration is updated."
     }
   },
   "services": {
     "clear_heatmap": {
       "name": "Clear heatmap",
-      "description": "Clear the accumulated presence heatmap for the targeted Everything Presence Pro Grid sensors. With no target, clears every managed sensor."
+      "description": "Clear the accumulated presence heatmap for the targeted Everything Presence Grid sensors. With no target, clears every managed sensor."
     }
   }
 }

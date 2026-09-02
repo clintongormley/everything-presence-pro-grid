@@ -1058,7 +1058,7 @@ server-side `apply_configuration` command.
 #### `list_flashable_devices`
 
 Returns all ESPHome devices matching EPP manufacturer/model, regardless of
-whether they run original or Everything Presence Pro Grid firmware.
+whether they run original or Everything Presence Grid firmware.
 
 **Request:** `{ "type": "eppgrid/list_flashable_devices" }` **Response:**
 
@@ -1087,7 +1087,7 @@ parent ESPHome node's area for a sub-device (linked via `via_device`) that has
 no area of its own. It is `null` when neither is assigned. `firmware_type` is
 `"original"` (no `firmware_version` entity) or `"eppgrid"` (has
 `firmware_version` entity). `update_available` is `true` when the device runs
-Everything Presence Pro Grid firmware and a newer version is available.
+Everything Presence Grid firmware and a newer version is available.
 `firmware_version` is the current firmware version string. `firmware_status` is
 `"compatible"`, `"firmware_behind"`, `"firmware_ahead"`, `"unknown"`, or
 `"unavailable"`.
@@ -1440,7 +1440,7 @@ entity-creation flow.
 
 The integration implements the HA diagnostics platform (`diagnostics.py`). Users
 can download a JSON dump from Settings > Devices & Services > Everything
-Presence Pro Grid.
+Presence Grid.
 
 **Contents:**
 

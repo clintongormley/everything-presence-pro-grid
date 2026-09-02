@@ -1,17 +1,30 @@
-# Everything Presence Pro Grid
+# Everything Presence Grid
 
 [![Tests](https://github.com/clintongormley/everything-presence-pro-grid/actions/workflows/tests.yml/badge.svg)](https://github.com/clintongormley/everything-presence-pro-grid/actions/workflows/tests.yml)
 [![HACS Validation](https://github.com/clintongormley/everything-presence-pro-grid/actions/workflows/hacs.yml/badge.svg)](https://github.com/clintongormley/everything-presence-pro-grid/actions/workflows/hacs.yml)
 [![Hassfest](https://github.com/clintongormley/everything-presence-pro-grid/actions/workflows/hassfest.yml/badge.svg)](https://github.com/clintongormley/everything-presence-pro-grid/actions/workflows/hassfest.yml)
 [![Active installations](https://img.shields.io/badge/dynamic/json?color=41BDF5&logo=home-assistant&label=active%20installations&suffix=%20installs&cacheSeconds=15600&url=https://analytics.home-assistant.io/custom_integrations.json&query=$.eppgrid.total)](https://analytics.home-assistant.io/)
 
-Everything Presence Pro Grid is a Home Assistant integration for the
+Everything Presence Grid (formerly Everything Presence Pro Grid) is a Home
+Assistant integration for the
 [Everything Presence Pro](https://shop.everythingsmart.io/products/everything-presence-pro)
-mmWave radar sensor. It ships with custom firmware that runs all the detection
+and the lower-cost
+[Everything Presence Lite](https://shop.everythingsmart.io/products/everything-presence-lite)
+mmWave radar sensors. It ships with custom firmware that runs all the detection
 work — target smoothing, zone tracking, presence logic — on the device itself.
 The integration provides a Home Assistant panel for configuration, calibration,
 live overview, and firmware flashing, built around a calibrated grid that
 matches the real geometry of your room.
+
+Both models share the same firmware core and zone engine, so the spatial
+features — zones, the grid, target tracking, room calibration, and heatmaps —
+work identically on each. The Lite is a subset of the Pro: it keeps the spatial
+features plus CO₂ and light level, and drops the static-presence radar, motion
+sensor, and other extras. See
+[Hardware → Models](https://clintongormley.github.io/everything-presence-pro-grid/user-guide/hardware/#models)
+for the full comparison. When you flash over USB the model is detected
+automatically, and the panel hides the controls for hardware a Lite doesn't
+have.
 
 📖 **Full documentation:**
 <https://clintongormley.github.io/everything-presence-pro-grid/>
@@ -41,8 +54,8 @@ The EPP contains three main sensors:
 ## What this integration does differently
 
 The original firmware does basic "in zone or not" detection on the device and
-forwards raw target data to Home Assistant. Everything Presence Pro Grid
-replaces that with:
+forwards raw target data to Home Assistant. Everything Presence Grid replaces
+that with:
 
 - **Perspective-corrected grid.** A four-corner calibration wizard maps the
     radar view onto your actual room. Walls are straight, and zones line up with
@@ -85,18 +98,17 @@ for worked examples.
 
 ### HACS (recommended)
 
-Everything Presence Pro Grid is in the **HACS** default list — search for it and
+Everything Presence Grid is in the **HACS** default list — search for it and
 install it directly.
 
 [![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=clintongormley&repository=everything-presence-pro-grid&category=integration)
 
 Or install it from the HACS list:
 
-1. Open **HACS** in Home Assistant and search for **Everything Presence Pro
-    Grid**.
+1. Open **HACS** in Home Assistant and search for **Everything Presence Grid**.
 1. Click **Download**, then restart Home Assistant.
 1. Go to **Settings → Devices & Services → Add Integration** and choose
-    **Everything Presence Pro Grid**.
+    **Everything Presence Grid**.
 
 ### Manual
 
@@ -112,4 +124,5 @@ firmware flashing.
 
 - [Documentation](https://clintongormley.github.io/everything-presence-pro-grid/)
 - [Everything Presence Pro hardware](https://shop.everythingsmart.io/products/everything-presence-pro)
+- [Everything Presence Lite hardware](https://shop.everythingsmart.io/products/everything-presence-lite)
 - [Everything Smart Technology](https://shop.everythingsmart.io/)

@@ -1,7 +1,7 @@
 # Flashing firmware
 
-The first flash of Everything Presence Pro Grid firmware happens over USB from
-your browser. Once flashed, future updates happen over the air — see
+The first flash of Everything Presence Grid firmware happens over USB from your
+browser. Once flashed, future updates happen over the air — see
 [Firmware upgrades](firmware-upgrades.md).
 
 !!! tip "Flash buttons greyed out?"
@@ -25,7 +25,7 @@ your browser. Once flashed, future updates happen over the air — see
 
 ## Flashing
 
-1. Open the **Flash Firmware** tab in the Everything Presence Pro Grid panel.
+1. Open the **Flash Firmware** tab in the Everything Presence Grid panel.
 
 1. Click **Flash via USB**.
 
@@ -79,13 +79,13 @@ via ESPHome. If not — or if you flashed the Ethernet variant — add it manual
     **ESPHome**, and enter the device's hostname (typically
     `everything-presence-pro-<suffix>.local`) or IP address.
 
-Once the device is added to ESPHome, it shows up in the Everything Presence Pro
-Grid panel within a few seconds.
+Once the device is added to ESPHome, it shows up in the Everything Presence Grid
+panel within a few seconds.
 
 ## After flashing
 
-Once the device joins your network, the Everything Presence Pro Grid panel
-detects it and opens a dialog to finish setup:
+Once the device joins your network, the Everything Presence Grid panel detects
+it and opens a dialog to finish setup:
 
 1. Enter a **Device name** (for example, "Living Room").
 1. Assign an **Area** so it groups with the rest of that room.
@@ -99,9 +99,9 @@ page where **Calibrate room size** is available.
 
 !!! note
 
-    Everything Presence Pro Grid identifies each device by its MAC address.
-    Re-flashing or swapping variants keeps your saved zones, calibration, and
-    settings — they're keyed to the MAC.
+    Everything Presence Grid identifies each device by its MAC address. Re-flashing
+    or swapping variants keeps your saved zones, calibration, and settings — they're
+    keyed to the MAC.
 
 ## Reconfiguring Wi-Fi
 
@@ -115,12 +115,12 @@ re-flash:
 
 ## Troubleshooting
 
-| Symptom                                                                        | Likely cause                                         | Fix                                                                                       |
-| ------------------------------------------------------------------------------ | ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
-| Browser port picker shows no devices                                           | Charge-only USB cable                                | Swap for a data cable.                                                                    |
-| Repeated error messages while flashing                                         | Browser's USB serial connection got into a bad state | Refresh the page and try again.                                                           |
-| Device flashed but doesn't appear in HA                                        | ESPHome hasn't discovered it yet                     | Add ESPHome manually with the device's hostname or IP, per the steps above.               |
-| Device is on ESPHome but not showing in the Everything Presence Pro Grid panel | Device is still running the original firmware        | Check for a **Firmware Version** sensor on the ESPHome device page. If missing, re-flash. |
+| Symptom                                                                    | Likely cause                                         | Fix                                                                                       |
+| -------------------------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Browser port picker shows no devices                                       | Charge-only USB cable                                | Swap for a data cable.                                                                    |
+| Repeated error messages while flashing                                     | Browser's USB serial connection got into a bad state | Refresh the page and try again.                                                           |
+| Device flashed but doesn't appear in HA                                    | ESPHome hasn't discovered it yet                     | Add ESPHome manually with the device's hostname or IP, per the steps above.               |
+| Device is on ESPHome but not showing in the Everything Presence Grid panel | Device is still running the original firmware        | Check for a **Firmware Version** sensor on the ESPHome device page. If missing, re-flash. |
 
 ## Where to next
 

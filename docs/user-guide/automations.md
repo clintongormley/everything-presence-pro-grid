@@ -264,8 +264,8 @@ script) rather than for household members — for that, use the dashboard card's
 **Toggle and clear on card** button instead.
 
 Target it at a device, entity, area, or label the same way as any other HA
-action; leave the target empty to clear every Everything Presence Pro Grid
-sensor at once.
+action; leave the target empty to clear every Everything Presence Grid sensor at
+once.
 
 ```yaml
 action: eppgrid.clear_heatmap
@@ -274,7 +274,7 @@ target:
 ```
 
 ```yaml
-# Clear every Everything Presence Pro Grid sensor's heatmap
+# Clear every Everything Presence Grid sensor's heatmap
 action: eppgrid.clear_heatmap
 ```
 

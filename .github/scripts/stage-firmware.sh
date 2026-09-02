@@ -78,7 +78,7 @@ for VARIANT in "${VARIANTS[@]}"; do
 
   cat > "${DEST}/${VARIANT}.json" <<EOF
 {
-  "name": "Everything Presence Pro Grid (${LABEL})",
+  "name": "Everything Presence Grid (${LABEL})",
   "version": "${VERSION}",
   "home_assistant_domain": "esphome",
   "builds": [

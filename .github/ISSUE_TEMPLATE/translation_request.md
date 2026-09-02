@@ -1,11 +1,11 @@
 ---
 name: Translation request
-about: Ask for the Everything Presence Pro Grid panel in your language
+about: Ask for the Everything Presence Grid panel in your language
 title: 'Translation request: '
 labels: translation
 ---
 
-I'd like Everything Presence Pro Grid to be translated into:
+I'd like Everything Presence Grid to be translated into:
 
 <!-- Your language, e.g. Français (fr), Português (Brasil) (pt-BR) -->
 

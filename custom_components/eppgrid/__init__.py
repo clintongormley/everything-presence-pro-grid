@@ -1,4 +1,4 @@
-"""Everything Presence Pro Grid — calibration UI and device management."""
+"""Everything Presence Grid — calibration UI and device management."""
 
 from __future__ import annotations
 
@@ -159,7 +159,7 @@ def _hash_file(path: str) -> str:
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Set up Everything Presence Pro Grid from a config entry."""
+    """Set up Everything Presence Grid from a config entry."""
     store = EPPGridStore(hass)
     await store.async_load()
 
@@ -399,7 +399,7 @@ async def _register_panel(hass: HomeAssistant, module_url: str) -> None:
         frontend_url_path=DOMAIN,
         webcomponent_name="eppgrid-panel",
         module_url=module_url,
-        sidebar_title="Everything Presence Pro Grid",
+        sidebar_title="Everything Presence Grid",
         sidebar_icon="mdi:radar",
         require_admin=True,
         config={},
