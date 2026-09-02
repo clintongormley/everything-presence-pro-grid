@@ -58,13 +58,22 @@ def expected_manifests(
     version: str,
     latest_version: str | None,
     variants: list[str],
+    latest_variants: list[str] | None = None,
 ) -> list[Manifest]:
     """The manifests a deploy should publish for ``version`` (and, if given,
-    the ``fw/latest`` mirror at ``latest_version``)."""
+    the ``fw/latest`` mirror at ``latest_version``).
+
+    ``latest_variants`` is the subset actually present in the promoted-latest
+    release; it defaults to ``variants``. It can be narrower because a variant
+    added after the current stable release (e.g. a new board) is staged under
+    ``fw/v{pinned}/`` but not ``fw/latest/`` until a release carrying it is
+    promoted — checking ``fw/latest`` for it would 404 forever.
+    """
     base = base_url.rstrip("/")
+    latest_variants = variants if latest_variants is None else latest_variants
     manifests = [Manifest(f"{base}/fw/v{version}/{v}.json", version) for v in variants]
     if latest_version:
-        manifests += [Manifest(f"{base}/fw/latest/{v}.json", latest_version) for v in variants]
+        manifests += [Manifest(f"{base}/fw/latest/{v}.json", latest_version) for v in latest_variants]
     return manifests
 
 
@@ -134,6 +143,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--latest-version", default="", help="Version behind fw/latest/ (optional)")
     parser.add_argument("--variants", default=",".join(VARIANTS), help="Comma-separated variants")
     parser.add_argument(
+        "--latest-variants",
+        default="",
+        help="Comma-separated variants present in the promoted-latest release "
+        "(fw/latest/). Defaults to --variants; narrow it when a variant is only "
+        "in the pinned pre-release and not yet in stable.",
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
         default=float(DEFAULT_TIMEOUT_SECONDS),
@@ -143,7 +159,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     variants = [v for v in args.variants.split(",") if v]
-    manifests = expected_manifests(args.base_url, args.version, args.latest_version or None, variants)
+    latest_variants = [v for v in args.latest_variants.split(",") if v] or None
+    manifests = expected_manifests(args.base_url, args.version, args.latest_version or None, variants, latest_variants)
     for manifest in manifests:
         print(f"verifying {manifest.url} (expect version {manifest.expected_version})")
 
