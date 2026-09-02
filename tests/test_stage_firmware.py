@@ -170,3 +170,34 @@ def test_assertion_helper_catches_absolute_url(tmp_path: Path) -> None:
 
     with pytest.raises(AssertionError, match=r"\.\."):
         _assert_path_is_safe_relative_filename("..", "ota")
+
+
+def test_stage_skips_a_variant_absent_from_the_release(tmp_path: Path) -> None:
+    """A variant added after an older release was cut isn't in that release's
+    assets. Staging that release (e.g. `fw/latest` still on it) must skip the
+    new variant, not hard-fail — otherwise adding a variant breaks Pages until
+    a release carrying it is promoted."""
+    artifacts = tmp_path / "artifacts"
+    _make_artifacts(artifacts)
+    for suffix in (".bin", ".ota.bin", "-bootloader.bin", "-partitions.bin"):
+        (artifacts / f"everything-presence-pro-wifi-lite-co2{suffix}").unlink()
+    env = {**os.environ, "VERSION": "1.8.0", "ARTIFACTS": str(artifacts)}
+    result = subprocess.run(["bash", str(SCRIPT)], cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert result.returncode == 0, result.stdout + result.stderr
+    # The variants that ARE in the release still stage.
+    assert (tmp_path / "fw/latest/wifi-ble-co2.json").is_file()
+    assert (tmp_path / "fw/v1.8.0/ethernet-ble-co2.json").is_file()
+    # The absent variant is skipped, not half-written.
+    assert not (tmp_path / "fw/latest/wifi-lite-co2.json").exists()
+    assert not (tmp_path / "fw/v1.8.0/wifi-lite-co2.json").exists()
+
+
+def test_stage_fails_on_a_partially_present_variant(tmp_path: Path) -> None:
+    """A variant with SOME files but not all means a corrupt/incomplete release
+    — that must still fail loud, not be silently skipped."""
+    artifacts = tmp_path / "artifacts"
+    _make_artifacts(artifacts)
+    (artifacts / "everything-presence-pro-wifi-lite-co2.bin").unlink()  # one missing
+    env = {**os.environ, "VERSION": "1.9.0", "ARTIFACTS": str(artifacts)}
+    result = subprocess.run(["bash", str(SCRIPT)], cwd=tmp_path, env=env, capture_output=True, text=True)
+    assert result.returncode != 0, "a partially-present variant must fail staging"
