@@ -43,11 +43,11 @@ full-featured unit. The
 [**Everything Presence Lite**](https://shop.everythingsmart.io/products/everything-presence-lite)
 is a lower-cost version that keeps the spatial features this integration is
 built around — zones, the grid, target tracking, room calibration, and heatmaps
-— along with CO₂, Bluetooth, and light-level sensing. It drops the
-static-presence radar, the PIR motion sensor, temperature/humidity, the relay,
-the addressable RGB LED, and Ethernet. Everything in this guide applies to both
-models except where noted; see the [hardware comparison](hardware.md#models) for
-the full breakdown.
+— along with CO₂ and light-level sensing. It drops the static-presence radar,
+the PIR motion sensor, temperature/humidity, the relay, the addressable RGB LED,
+Bluetooth, and Ethernet. Everything in this guide applies to both models except
+where noted; see the [hardware comparison](hardware.md#models) for the full
+breakdown.
 
 ## Problems with the original firmware
 
