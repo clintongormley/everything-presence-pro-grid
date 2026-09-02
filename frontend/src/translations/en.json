@@ -377,7 +377,7 @@
 	},
 	"protocol": {
 		"firmware_behind": "This sensor's firmware needs to be updated to work with this version of the integration.",
-		"firmware_ahead": "This sensor's firmware is newer than the integration. Update the Everything Presence Pro Grid integration via HACS.",
+		"firmware_ahead": "This sensor's firmware is newer than the integration. Update the Everything Presence Grid integration via HACS.",
 		"open_hacs": "Open in HACS",
 		"unavailable": "Device is offline — firmware version cannot be determined.",
 		"update_firmware": "Update Firmware"
@@ -395,7 +395,7 @@
 		"title": "Flash Firmware",
 		"devices_on_network": "Installed Devices",
 		"no_devices": "No Everything Presence Pro devices installed.",
-		"no_eppgrid_devices": "No devices with Everything Presence Pro Grid firmware found.",
+		"no_eppgrid_devices": "No devices with Everything Presence Grid firmware found.",
 		"flash_from_tab": "Flash your devices from the Flash Firmware tab",
 		"offline": "Offline",
 		"online": "Online",
@@ -463,7 +463,7 @@
 		"update_all": "Update all",
 		"integration_update": "Integration update needed",
 		"integration_outdated_title": "Integration update required",
-		"integration_outdated_body": "One or more devices have firmware that is newer than this version of the integration. Update the Everything Presence Pro Grid integration to restore full functionality.",
+		"integration_outdated_body": "One or more devices have firmware that is newer than this version of the integration. Update the Everything Presence Grid integration to restore full functionality.",
 		"open_hacs": "Open in HACS",
 		"ota_retry": "Retry",
 		"ota_download_github": "Download from GitHub",
@@ -541,14 +541,14 @@
 		"load_configuration": "Restoring the configuration failed. It may be in an old format — re-save it and try again."
 	},
 	"language_request": {
-		"message": "Your Home Assistant language is {language}, but Everything Presence Pro Grid isn't translated into it yet.",
+		"message": "Your Home Assistant language is {language}, but Everything Presence Grid isn't translated into it yet.",
 		"action": "Request a translation",
 		"dismiss": "Dismiss"
 	},
 	"card": {
 		"offline": "Device offline",
 		"loading": "Loading…",
-		"uncalibrated": "This device isn't calibrated yet. Open the Everything Presence Pro Grid panel to set up the room.",
+		"uncalibrated": "This device isn't calibrated yet. Open the Everything Presence Grid panel to set up the room.",
 		"no_device": "Select a device in the card editor.",
 		"nothing_to_show": "Enable the map or sensors to show this card.",
 		"heatmap_toggle": "Heatmap",

@@ -7,14 +7,14 @@ the problem isn't there, open a GitHub issue.
 ## A flashed device still shows "Flash firmware over USB"
 
 On **Home Assistant 2026.8 and newer**, a device already running Everything
-Presence Pro Grid firmware could be listed under **Flash Firmware** as still
-needing to be flashed over USB — and could be missing from the panel's device
-list, with its zones and settings unavailable. This was caused by a change in
-how Home Assistant 2026.8 labels ESPHome entities internally.
+Presence Grid firmware could be listed under **Flash Firmware** as still needing
+to be flashed over USB — and could be missing from the panel's device list, with
+its zones and settings unavailable. This was caused by a change in how Home
+Assistant 2026.8 labels ESPHome entities internally.
 
 **Fix:** update the integration to **1.7.0 or newer** (HACS → Everything
-Presence Pro Grid → Update), then reload it or restart Home Assistant. The
-device is recognised again with no re-flash needed.
+Presence Grid → Update), then reload it or restart Home Assistant. The device is
+recognised again with no re-flash needed.
 
 ## No target dots, and Target Presence stays clear
 
@@ -200,7 +200,7 @@ useful diagnosis fast, gather the diagnostics and debug logs *before* filing.
 ### 1. Collect diagnostics
 
 1. In Home Assistant, go to **Settings → Devices & services**.
-1. Find **Everything Presence Pro Grid** in the integration list.
+1. Find **Everything Presence Grid** in the integration list.
 1. Click the three-dot menu on the integration card → **Download diagnostics**.
 1. Save the JSON file — you'll attach it to the issue below.
 
@@ -218,8 +218,7 @@ care about to **Debug**. For zone-related issues that's typically **Zone
 Engine**; for connectivity issues, **Network** or **System**.
 
 **Enable debug logging on the integration in Home Assistant.** Go to **Settings
-→ Devices & services → Everything Presence Pro Grid → ⋮ → Enable debug
-logging**.
+→ Devices & services → Everything Presence Grid → ⋮ → Enable debug logging**.
 
 ![Enabling debug logging.](../images/settings/logging/debug-logging.png "Enabling debug logging.")
 
@@ -251,7 +250,7 @@ Open the issue at
 Include the following in the issue description:
 
 - **Home Assistant version** (e.g. 2026.4.2).
-- **Everything Presence Pro Grid integration version** (from HACS, or the
+- **Everything Presence Grid integration version** (from HACS, or the
     `manifest.json`).
 - **Device firmware version** (from the device's **Firmware Version** sensor).
 - **Steps to reproduce** — numbered, starting from a known state.

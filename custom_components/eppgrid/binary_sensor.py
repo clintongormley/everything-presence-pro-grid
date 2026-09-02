@@ -226,7 +226,7 @@ class DeviceGroupPresenceEntity(BinarySensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"device_group:{group['id']}")},
             name=group["name"],
-            manufacturer="Everything Presence Pro Grid",
+            manufacturer="Everything Presence Grid",
             model="Device Group",
         )
 
@@ -274,7 +274,7 @@ class DeviceGroupZoneGroupEntity(BinarySensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"device_group:{group['id']}")},
             name=group["name"],
-            manufacturer="Everything Presence Pro Grid",
+            manufacturer="Everything Presence Grid",
             model="Device Group",
         )
 
@@ -332,7 +332,7 @@ class DeviceGroupZonePassthroughEntity(BinarySensorEntity):
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, f"device_group:{group['id']}")},
             name=group["name"],
-            manufacturer="Everything Presence Pro Grid",
+            manufacturer="Everything Presence Grid",
             model="Device Group",
         )
 

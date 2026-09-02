@@ -815,13 +815,13 @@ picker.
 monkey-patching `port.close` to a no-op before creating Transport, restoring
 after disconnect. Port stays open for WiFi provisioning after flash.
 
-**Firmware updates** for Everything Presence Pro Grid devices use a custom
-ESPHome API action, `set_update_manifest`, which sets the source URL on the
-device's `http_request`-platform `update` entity and then calls `update.perform`
-on it. The flow is triggered by the integration via the
-`eppgrid/update_firmware` WebSocket command. Raw OTA push is not used — newer
-ESPHome uses NOISE encryption which is incompatible with direct protocol
-implementation. Original firmware devices can only be converted via USB flash.
+**Firmware updates** for Everything Presence Grid devices use a custom ESPHome
+API action, `set_update_manifest`, which sets the source URL on the device's
+`http_request`-platform `update` entity and then calls `update.perform` on it.
+The flow is triggered by the integration via the `eppgrid/update_firmware`
+WebSocket command. Raw OTA push is not used — newer ESPHome uses NOISE
+encryption which is incompatible with direct protocol implementation. Original
+firmware devices can only be converted via USB flash.
 
 ### Library Modules
 

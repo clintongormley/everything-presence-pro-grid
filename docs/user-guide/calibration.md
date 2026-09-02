@@ -2,15 +2,15 @@
 
 The LD2450 reports target positions in its own distorted coordinate system, so
 straight physical lines (walls, the edge of a sofa) don't come back as straight
-lines. The Everything Presence Pro Grid's calibration function maps the four
-corners of your room to the corresponding sensor coordinates, and the
-integration uses that mapping to draw the grid in real-world geometry. Once
-calibrated, targets sit where they actually are in the room.
+lines. The Everything Presence Grid's calibration function maps the four corners
+of your room to the corresponding sensor coordinates, and the integration uses
+that mapping to draw the grid in real-world geometry. Once calibrated, targets
+sit where they actually are in the room.
 
 ## Before you start
 
-- **Device running Everything Presence Pro Grid firmware and visible in the
-    panel.** See [Flashing firmware](flashing-firmware.md) if not.
+- **Device running Everything Presence Grid firmware and visible in the panel.**
+    See [Flashing firmware](flashing-firmware.md) if not.
 - **A clear view of each of the four corners of the room.** You need to be able
     to stand at each one, or close to it. The wizard has an option for corners
     you can't reach.

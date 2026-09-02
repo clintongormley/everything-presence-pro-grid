@@ -1,6 +1,6 @@
 # Overview dashboard card
 
-The Everything Presence Pro Grid overview card lets you add a live sensor view
+The Everything Presence Grid overview card lets you add a live sensor view
 directly to any Home Assistant dashboard. It shows the calibrated grid map
 and/or the sidebar sensor readings for one device, and updates in real time. Any
 household user — not just admins — can see a dashboard that includes this card.
@@ -30,14 +30,14 @@ sidebar.
 ## Adding the card
 
 1. Edit the dashboard and choose **Add card**.
-1. Search for **Everything Presence Pro Grid** in the card picker. The card
-    appears under *Custom: Everything Presence Pro Grid*.
+1. Search for **Everything Presence Grid** in the card picker. The card appears
+    under *Custom: Everything Presence Grid*.
 1. Pick the device from the **Device** dropdown. The dropdown lists all
-    Everything Presence Pro Grid devices with an active HA registry entry.
+    Everything Presence Grid devices with an active HA registry entry.
 1. Adjust the options below and click **Save**.
 
 On Home Assistant 2026.6 and newer, the card is offered as a suggestion in the
-card picker when you select an entity that belongs to an Everything Presence Pro
+card picker when you select an entity that belongs to an Everything Presence
 Grid device.
 
 ![Adding the card to a dashboard.](../images/overview-card/editor.png "Adding the card to a dashboard.")
@@ -46,7 +46,7 @@ Grid device.
 
 | Option           | Default      | Description                                                                                                                                                                                                         |
 | ---------------- | ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Device**       | *(required)* | Which Everything Presence Pro Grid device to display.                                                                                                                                                               |
+| **Device**       | *(required)* | Which Everything Presence Grid device to display.                                                                                                                                                                   |
 | **Primary**      | *(empty)*    | Heading text shown above the map/sensors. Supports [Jinja templates](https://www.home-assistant.io/docs/configuration/templating/) — e.g. `{{ states('sensor.lounge_temperature') }}°C`. Plain text is shown as-is. |
 | **Secondary**    | *(empty)*    | Smaller subtitle shown below the Primary line. Also supports Jinja templates.                                                                                                                                       |
 | **Show map**     | on           | Show the live grid map.                                                                                                                                                                                             |
@@ -119,8 +119,8 @@ lovelace:
 ```
 
 Replace `<hash>` with the content hash shown in **Settings → Dashboards →
-Resources** for the Everything Presence Pro Grid card entry — or just copy the
-URL from there. The integration registers the resource automatically on UI-mode
+Resources** for the Everything Presence Grid card entry — or just copy the URL
+from there. The integration registers the resource automatically on UI-mode
 dashboards; this step is only needed in YAML mode.
 
 The card YAML for a typical two-pane layout:
@@ -135,12 +135,12 @@ layout: horizontal
 
 ## Troubleshooting
 
-| Symptom                                | Likely cause                       | Fix                                                                                                                                                                    |
-| -------------------------------------- | ---------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Card doesn't appear in the picker      | The card resource isn't registered | Go to **Settings → Dashboards → Resources** and check that an `eppgrid-card.js` entry is listed. If it's missing, reload the Everything Presence Pro Grid integration. |
-| Device dropdown is empty in the editor | No devices have been set up        | Complete the setup wizard for at least one device first.                                                                                                               |
-| Map shows "Room not yet calibrated"    | The device hasn't been calibrated  | Run the calibration wizard from the panel. See [Calibration](calibration.md).                                                                                          |
-| Card shows "Device offline"            | The device is unreachable          | Check that the device is powered and on the network. The map will restore automatically when the device reconnects.                                                    |
+| Symptom                                | Likely cause                       | Fix                                                                                                                                                                |
+| -------------------------------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Card doesn't appear in the picker      | The card resource isn't registered | Go to **Settings → Dashboards → Resources** and check that an `eppgrid-card.js` entry is listed. If it's missing, reload the Everything Presence Grid integration. |
+| Device dropdown is empty in the editor | No devices have been set up        | Complete the setup wizard for at least one device first.                                                                                                           |
+| Map shows "Room not yet calibrated"    | The device hasn't been calibrated  | Run the calibration wizard from the panel. See [Calibration](calibration.md).                                                                                      |
+| Card shows "Device offline"            | The device is unreachable          | Check that the device is powered and on the network. The map will restore automatically when the device reconnects.                                                |
 
 Still stuck? See [Troubleshooting](troubleshooting.md) for how to open an issue.
 

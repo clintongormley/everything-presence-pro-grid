@@ -4,7 +4,7 @@ hide:
   - toc
 ---
 
-# Everything Presence Pro Grid
+# Everything Presence Grid
 
 An alternate firmware and Home Assistant integration for the Everything Presence
 Pro presence sensor.

@@ -1,9 +1,9 @@
 # Firmware upgrades
 
-Once a device is running Everything Presence Pro Grid firmware and on your
-network, updates happen over the air. No USB cable needed.
+Once a device is running Everything Presence Grid firmware and on your network,
+updates happen over the air. No USB cable needed.
 
-The Everything Presence Pro Grid integration is pinned to a specific firmware
+The Everything Presence Grid integration is pinned to a specific firmware
 version. When you upgrade the integration via HACS to a release that expects a
 newer firmware than what your devices are running, the integration notifies you
 and offers to upgrade.
@@ -102,9 +102,9 @@ The panel reports a specific error and offers Retry. Common causes:
 
 ## Integration vs firmware versions
 
-If your firmware version is *newer* than your installed Everything Presence Pro
-Grid integration, the panel refuses to operate the device until the integration
-is updated. Look for the **Integration update required** banner and update the
+If your firmware version is *newer* than your installed Everything Presence Grid
+integration, the panel refuses to operate the device until the integration is
+updated. Look for the **Integration update required** banner and update the
 integration via HACS.
 
 ## Flashing a specific version

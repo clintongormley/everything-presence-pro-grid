@@ -1,6 +1,6 @@
 # Device Groups
 
-A single Everything Presence Pro Grid sensor may not cover a whole room. Device
+A single Everything Presence Grid sensor may not cover a whole room. Device
 Groups let you combine 2 or more physical sensors into a single virtual device
 in Home Assistant — so automations can target "Master Bedroom" without ORing
 multiple sensors by hand.
@@ -26,8 +26,8 @@ unavailable only when every source is unavailable.
 
 ## Creating a device group
 
-1. Open the Everything Presence Pro Grid panel and switch to the **Device
-    Groups** tab.
+1. Open the Everything Presence Grid panel and switch to the **Device Groups**
+    tab.
 1. Click **Add a device group**.
 1. Enter a **Device name**; optionally choose an **Area** to assign the virtual
     device (and its source devices) to.

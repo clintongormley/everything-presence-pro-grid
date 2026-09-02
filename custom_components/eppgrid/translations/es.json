@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Everything Presence Pro Grid",
+        "title": "Everything Presence Grid",
         "description": "Configura la interfaz de calibración y la gestión de dispositivos del EPP Grid."
       }
     },
@@ -20,7 +20,7 @@
       }
     },
     "abort": {
-      "not_loaded": "La integración Everything Presence Pro Grid no está cargada. Corrige o recarga la integración y después cambia sus opciones."
+      "not_loaded": "La integración Everything Presence Grid no está cargada. Corrige o recarga la integración y después cambia sus opciones."
     }
   },
   "exceptions": {
@@ -65,7 +65,7 @@
         "step": {
           "confirm": {
             "title": "Actualizar el firmware de {device_name}",
-            "description": "La integración Everything Presence Pro Grid requiere el firmware **{required_version}**, pero **{device_name}** está ejecutando **{current_version}**. Pulsa **Enviar** para instalar el firmware por aire ahora. El dispositivo se reiniciará al terminar — suele tardar uno o dos minutos. Algunas funciones de la integración pueden no funcionar correctamente hasta que se actualice el firmware."
+            "description": "La integración Everything Presence Grid requiere el firmware **{required_version}**, pero **{device_name}** está ejecutando **{current_version}**. Pulsa **Enviar** para instalar el firmware por aire ahora. El dispositivo se reiniciará al terminar — suele tardar uno o dos minutos. Algunas funciones de la integración pueden no funcionar correctamente hasta que se actualice el firmware."
           },
           "failed": {
             "title": "La actualización ha fallado",
@@ -79,13 +79,13 @@
     },
     "firmware_ahead": {
       "title": "{device_name}: actualización de la integración necesaria",
-      "description": "{device_name} está ejecutando el firmware **{current_version}**, pero la integración Everything Presence Pro Grid está fijada a **{required_version}**. Actualiza la integración a través de HACS para que pueda comunicarse con el firmware más reciente. Algunas funciones de la integración pueden no funcionar correctamente hasta que se actualice la integración."
+      "description": "{device_name} está ejecutando el firmware **{current_version}**, pero la integración Everything Presence Grid está fijada a **{required_version}**. Actualiza la integración a través de HACS para que pueda comunicarse con el firmware más reciente. Algunas funciones de la integración pueden no funcionar correctamente hasta que se actualice la integración."
     }
   },
   "services": {
     "clear_heatmap": {
       "name": "Borrar mapa de calor",
-      "description": "Borra el mapa de calor de presencia acumulado para los sensores Everything Presence Pro Grid indicados. Sin un objetivo, borra todos los sensores gestionados."
+      "description": "Borra el mapa de calor de presencia acumulado para los sensores Everything Presence Grid indicados. Sin un objetivo, borra todos los sensores gestionados."
     }
   }
 }

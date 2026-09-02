@@ -40,7 +40,7 @@ def _make_manifest(tmp_path: Path, version: str = "1.0.4") -> Path:
     manifest.write_text(
         "{\n"
         '  "domain": "eppgrid",\n'
-        '  "name": "Everything Presence Pro Grid",\n'
+        '  "name": "Everything Presence Grid",\n'
         '  "requirements": ["aioesphomeapi>=29.0.0"],\n'
         f'  "version": "{version}"\n'
         "}\n"

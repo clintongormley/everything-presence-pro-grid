@@ -264,7 +264,7 @@ describe("eppgrid-card setConfig", () => {
 			(c: any) => c.type === "eppgrid-card",
 		);
 		expect(entry).toBeTruthy();
-		expect(entry.name).toContain("Everything Presence Pro Grid");
+		expect(entry.name).toContain("Everything Presence Grid");
 	});
 
 	it("does not label the card as Beta in the picker", () => {

@@ -1,6 +1,6 @@
 # Changelog
 
-User-facing changes to Everything Presence Pro Grid. For full release assets and
+User-facing changes to Everything Presence Grid. For full release assets and
 firmware downloads, see the
 [GitHub releases page](https://github.com/clintongormley/everything-presence-pro-grid/releases).
 
@@ -8,7 +8,7 @@ firmware downloads, see the
 
 ### New features
 
-- **Support for the Everything Presence Lite.** Everything Presence Pro Grid now
+- **Support for the Everything Presence Lite.** Everything Presence Grid now
     runs on the Everything Presence Lite, which shares the Pro's zone engine,
     grid, target tracking, and room calibration. Flashing over USB detects the
     model automatically and installs the right firmware — a Lite needs no model
@@ -69,7 +69,7 @@ Thanks to @HaniKazmi for contributing Everything Presence Lite support (#416).
 - **Clear the heatmap on demand.** A new `eppgrid.clear_heatmap` action wipes
     the accumulated heatmap for one or more sensors — target a device, entity,
     area, or label, or leave the target empty to clear every Everything Presence
-    Pro Grid sensor at once. The card's heatmap setting gains a second toggle
+    Grid sensor at once. The card's heatmap setting gains a second toggle
     option, **Toggle and clear on card**, which adds a Clear button (with a
     confirmation dialog) next to the heatmap switch so any dashboard viewer can
     wipe it themselves. Clearing is permanent and survives a device reboot. See
@@ -79,12 +79,12 @@ Thanks to @HaniKazmi for contributing Everything Presence Lite support (#416).
 
 - **Devices are recognised again on Home Assistant 2026.8 and newer.** After
     updating Home Assistant to 2026.8, a device already running Everything
-    Presence Pro Grid firmware could be shown as still needing to be *flashed
-    over USB*, and could drop out of the panel entirely — zones, settings, and
-    device groups stopped working with it. Home Assistant 2026.8 changed the way
-    it labels ESPHome entities behind the scenes; the integration now
-    understands both the old and new form. If you are on Home Assistant 2026.8
-    or newer, update the integration to 1.7.0.
+    Presence Grid firmware could be shown as still needing to be *flashed over
+    USB*, and could drop out of the panel entirely — zones, settings, and device
+    groups stopped working with it. Home Assistant 2026.8 changed the way it
+    labels ESPHome entities behind the scenes; the integration now understands
+    both the old and new form. If you are on Home Assistant 2026.8 or newer,
+    update the integration to 1.7.0.
 
 ## v1.6.0 — 2026-07-20
 
@@ -139,14 +139,14 @@ Thanks to @HaniKazmi for contributing Everything Presence Lite support (#416).
 
 ## v1.5.1 — 2026-07-04
 
-**Everything Presence Pro Grid is now available directly in HACS.** The headline
+**Everything Presence Grid is now available directly in HACS.** The headline
 features: a live **overview dashboard card** for your Home Assistant dashboards,
 an on-device **activity heatmap**, and **text labels** for your room layout.
 
 ### New features
 
 - **Overview dashboard card.** Add a live map and/or sensor panel for any
-    Everything Presence Pro Grid device directly to a Home Assistant dashboard.
+    Everything Presence Grid device directly to a Home Assistant dashboard.
     Configure it through the visual editor — pick the device, choose whether to
     show the map, the sensors, or both, and control which sensor groups and map
     layers appear. The card heading (Primary and Secondary text) supports Jinja
@@ -169,10 +169,10 @@ an on-device **activity heatmap**, and **text labels** for your room layout.
     and support different fonts, real-world sizing, bold and italic, alignment,
     a text colour (with an auto-contrast option), and an optional background
     box.
-- **Request a translation.** If Everything Presence Pro Grid isn't translated
-    into your Home Assistant language yet, the panel now shows a dismissible
-    banner that opens a pre-filled translation request on GitHub — naming your
-    language so you can ask for it, and offer to help review it
+- **Request a translation.** If Everything Presence Grid isn't translated into
+    your Home Assistant language yet, the panel now shows a dismissible banner
+    that opens a pre-filled translation request on GitHub — naming your language
+    so you can ask for it, and offer to help review it
     ([#301](https://github.com/clintongormley/everything-presence-pro-grid/pull/301)).
 - **WiFi Signal diagnostic.** WiFi builds now expose a **WiFi Signal** (RSSI)
     diagnostic entity, so you can read signal strength at the device's mounted
@@ -204,7 +204,7 @@ an on-device **activity heatmap**, and **text labels** for your room layout.
 
 ## v1.5.0 — 2026-07-02
 
-**Everything Presence Pro Grid is now available directly in HACS.** The headline
+**Everything Presence Grid is now available directly in HACS.** The headline
 features: a live **overview dashboard card** for your Home Assistant dashboards,
 an on-device **activity heatmap**, and **text labels** for your room layout.
 
@@ -261,26 +261,26 @@ an on-device **activity heatmap**, and **text labels** for your room layout.
 ### New features
 
 - **Overview dashboard card (beta).** Add a live map and/or sensor panel for any
-    Everything Presence Pro Grid device directly to a Home Assistant dashboard.
-    The card is configured through the visual editor — pick the device, choose
+    Everything Presence Grid device directly to a Home Assistant dashboard. The
+    card is configured through the visual editor — pick the device, choose
     whether to show the map, the sensors, or both, and control which sensor
     groups and map layers appear. The card heading (Primary and Secondary text)
     supports Jinja templates, so it can show live values from any entity.
     Non-admin household users can view dashboards that include this card without
     needing admin access. Feature requested by @tuckerdude
     ([#295](https://github.com/clintongormley/everything-presence-pro-grid/issues/295)).
-- **Request a translation.** If Everything Presence Pro Grid isn't translated
-    into your Home Assistant language yet, the panel now shows a dismissible
-    banner that opens a pre-filled translation request on GitHub — naming your
-    language so you can ask for it, and offer to help review it
+- **Request a translation.** If Everything Presence Grid isn't translated into
+    your Home Assistant language yet, the panel now shows a dismissible banner
+    that opens a pre-filled translation request on GitHub — naming your language
+    so you can ask for it, and offer to help review it
     ([#301](https://github.com/clintongormley/everything-presence-pro-grid/pull/301)).
 
 ## v1.2.3 — 2026-06-24
 
 ### Fixes
 
-- **The panel reloads itself after an update.** After Everything Presence Pro
-    Grid updates to a new version, the panel now notices the new interface and
+- **The panel reloads itself after an update.** After Everything Presence Grid
+    updates to a new version, the panel now notices the new interface and
     reloads automatically, so you see the latest version instead of a stale,
     cached one. Previously you might have needed to refresh the page by hand
     after updating.
@@ -359,8 +359,8 @@ an on-device **activity heatmap**, and **text labels** for your room layout.
 
 ### New features
 
-- **Device Groups.** Combine several Everything Presence Pro Grid devices into
-    one logical presence sensor. A group exposes merged presence and per-zone
+- **Device Groups.** Combine several Everything Presence Grid devices into one
+    logical presence sensor. A group exposes merged presence and per-zone
     sensors under a single Home Assistant device and turns on whenever any
     member device detects presence — so a room covered by several radars reports
     one occupancy entity. Set groups up on the new **Device Groups** page, with

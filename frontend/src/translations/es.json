@@ -377,7 +377,7 @@
 	},
 	"protocol": {
 		"firmware_behind": "El firmware de este sensor debe actualizarse para funcionar con esta versión de la integración.",
-		"firmware_ahead": "El firmware de este sensor es más reciente que la integración. Actualiza la integración Everything Presence Pro Grid desde HACS.",
+		"firmware_ahead": "El firmware de este sensor es más reciente que la integración. Actualiza la integración Everything Presence Grid desde HACS.",
 		"open_hacs": "Abrir en HACS",
 		"unavailable": "El dispositivo no está disponible — no se puede determinar la versión del firmware.",
 		"update_firmware": "Actualizar firmware"
@@ -395,7 +395,7 @@
 		"title": "Instalar firmware",
 		"devices_on_network": "Dispositivos instalados",
 		"no_devices": "No hay dispositivos Everything Presence Pro instalados.",
-		"no_eppgrid_devices": "No se han encontrado dispositivos con firmware Everything Presence Pro Grid.",
+		"no_eppgrid_devices": "No se han encontrado dispositivos con firmware Everything Presence Grid.",
 		"flash_from_tab": "Instala el firmware de tus dispositivos desde la pestaña Instalar firmware",
 		"offline": "Sin conexión",
 		"online": "Conectado",
@@ -463,7 +463,7 @@
 		"update_all": "Actualizar todo",
 		"integration_update": "Actualización de la integración necesaria",
 		"integration_outdated_title": "Se requiere actualización de la integración",
-		"integration_outdated_body": "Uno o más dispositivos tienen un firmware más reciente que esta versión de la integración. Actualiza la integración Everything Presence Pro Grid para restaurar toda la funcionalidad.",
+		"integration_outdated_body": "Uno o más dispositivos tienen un firmware más reciente que esta versión de la integración. Actualiza la integración Everything Presence Grid para restaurar toda la funcionalidad.",
 		"open_hacs": "Abrir en HACS",
 		"ota_retry": "Reintentar",
 		"ota_download_github": "Descargar desde GitHub",
@@ -541,14 +541,14 @@
 		"load_configuration": "No se pudo restaurar la configuración. Puede que esté en un formato antiguo — vuelve a guardarla e inténtalo de nuevo."
 	},
 	"language_request": {
-		"message": "El idioma de tu Home Assistant es {language}, pero Everything Presence Pro Grid aún no está traducido a ese idioma.",
+		"message": "El idioma de tu Home Assistant es {language}, pero Everything Presence Grid aún no está traducido a ese idioma.",
 		"action": "Solicitar una traducción",
 		"dismiss": "Descartar"
 	},
 	"card": {
 		"offline": "Dispositivo sin conexión",
 		"loading": "Cargando…",
-		"uncalibrated": "Este dispositivo aún no está calibrado. Abre el panel de Everything Presence Pro Grid para configurar la habitación.",
+		"uncalibrated": "Este dispositivo aún no está calibrado. Abre el panel de Everything Presence Grid para configurar la habitación.",
 		"no_device": "Selecciona un dispositivo en el editor de tarjetas.",
 		"nothing_to_show": "Activa el mapa o los sensores para mostrar esta tarjeta.",
 		"heatmap_toggle": "Mapa de calor",

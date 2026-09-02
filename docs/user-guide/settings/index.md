@@ -1,6 +1,6 @@
 # Settings
 
-The Everything Presence Pro Grid panel's **Settings** view is where you tune the
+The Everything Presence Grid panel's **Settings** view is where you tune the
 device's behaviour after the basics are in place. Each section is covered on its
 own page:
 

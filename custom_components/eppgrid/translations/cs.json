@@ -2,8 +2,8 @@
   "config": {
     "step": {
       "user": {
-        "title": "Everything Presence Pro Grid",
-        "description": "Nastavte kalibrační rozhraní a správu zařízení Everything Presence Pro Grid."
+        "title": "Everything Presence Grid",
+        "description": "Nastavte kalibrační rozhraní a správu zařízení Everything Presence Grid."
       }
     },
     "abort": {
@@ -20,7 +20,7 @@
       }
     },
     "abort": {
-      "not_loaded": "Integrace Everything Presence Pro Grid není načtena. Opravte nebo znovu načtěte integraci a poté změňte její možnosti."
+      "not_loaded": "Integrace Everything Presence Grid není načtena. Opravte nebo znovu načtěte integraci a poté změňte její možnosti."
     }
   },
   "exceptions": {
@@ -65,7 +65,7 @@
         "step": {
           "confirm": {
             "title": "Aktualizovat firmware zařízení {device_name}",
-            "description": "Integrace Everything Presence Pro Grid očekává firmware **{required_version}**, ale zařízení **{device_name}** používá **{current_version}**. Kliknutím na **Odeslat** nyní bezdrátově nainstalujete požadovaný firmware. Po dokončení nahrávání se zařízení restartuje — obvykle to trvá minutu až dvě. Dokud firmware neaktualizujete, nemusí některé funkce integrace fungovat správně."
+            "description": "Integrace Everything Presence Grid očekává firmware **{required_version}**, ale zařízení **{device_name}** používá **{current_version}**. Kliknutím na **Odeslat** nyní bezdrátově nainstalujete požadovaný firmware. Po dokončení nahrávání se zařízení restartuje — obvykle to trvá minutu až dvě. Dokud firmware neaktualizujete, nemusí některé funkce integrace fungovat správně."
           },
           "failed": {
             "title": "Aktualizace se nezdařila",
@@ -79,13 +79,13 @@
     },
     "firmware_ahead": {
       "title": "Vyžadována aktualizace integrace pro zařízení {device_name}",
-      "description": "Zařízení {device_name} používá firmware **{current_version}**, ale integrace Everything Presence Pro Grid je připnutá na verzi **{required_version}**. Aktualizujte integraci přes HACS, aby mohla komunikovat s novějším firmwarem. Dokud integraci neaktualizujete, nemusí některé funkce fungovat správně."
+      "description": "Zařízení {device_name} používá firmware **{current_version}**, ale integrace Everything Presence Grid je připnutá na verzi **{required_version}**. Aktualizujte integraci přes HACS, aby mohla komunikovat s novějším firmwarem. Dokud integraci neaktualizujete, nemusí některé funkce fungovat správně."
     }
   },
   "services": {
     "clear_heatmap": {
       "name": "Vymazat heatmapu",
-      "description": "Vymaže nahromaděnou heatmapu přítomnosti pro cílené senzory Everything Presence Pro Grid. Bez zadaného cíle vymaže všechny spravované senzory."
+      "description": "Vymaže nahromaděnou heatmapu přítomnosti pro cílené senzory Everything Presence Grid. Bez zadaného cíle vymaže všechny spravované senzory."
     }
   }
 }

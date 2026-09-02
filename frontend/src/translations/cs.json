@@ -377,7 +377,7 @@
 	},
 	"protocol": {
 		"firmware_behind": "Firmware tohoto senzoru je potřeba aktualizovat, aby fungoval s touto verzí integrace.",
-		"firmware_ahead": "Firmware tohoto senzoru je novější než integrace. Aktualizujte integraci Everything Presence Pro Grid přes HACS.",
+		"firmware_ahead": "Firmware tohoto senzoru je novější než integrace. Aktualizujte integraci Everything Presence Grid přes HACS.",
 		"open_hacs": "Otevřít v HACS",
 		"unavailable": "Zařízení je offline — verzi firmwaru nelze zjistit.",
 		"update_firmware": "Aktualizovat firmware"
@@ -395,7 +395,7 @@
 		"title": "Nahrát firmware",
 		"devices_on_network": "Nainstalovaná zařízení",
 		"no_devices": "Nejsou nainstalována žádná zařízení Everything Presence Pro.",
-		"no_eppgrid_devices": "Nebyla nalezena žádná zařízení s firmwarem Everything Presence Pro Grid.",
+		"no_eppgrid_devices": "Nebyla nalezena žádná zařízení s firmwarem Everything Presence Grid.",
 		"flash_from_tab": "Nahrajte firmware do zařízení na kartě Nahrát firmware",
 		"offline": "Offline",
 		"online": "Online",
@@ -463,7 +463,7 @@
 		"update_all": "Aktualizovat vše",
 		"integration_update": "Je potřeba aktualizace integrace",
 		"integration_outdated_title": "Vyžadována aktualizace integrace",
-		"integration_outdated_body": "Jedno nebo více zařízení má firmware novější než tato verze integrace. Aktualizujte integraci Everything Presence Pro Grid, abyste obnovili plnou funkčnost.",
+		"integration_outdated_body": "Jedno nebo více zařízení má firmware novější než tato verze integrace. Aktualizujte integraci Everything Presence Grid, abyste obnovili plnou funkčnost.",
 		"open_hacs": "Otevřít v HACS",
 		"ota_retry": "Zkusit znovu",
 		"ota_download_github": "Stáhnout z GitHubu",
@@ -541,14 +541,14 @@
 		"load_configuration": "Obnovení konfigurace se nezdařilo. Může být ve starém formátu — znovu ji uložte a zkuste to znovu."
 	},
 	"language_request": {
-		"message": "Váš jazyk Home Assistant je {language}, ale Everything Presence Pro Grid do něj zatím není přeložen.",
+		"message": "Váš jazyk Home Assistant je {language}, ale Everything Presence Grid do něj zatím není přeložen.",
 		"action": "Požádat o překlad",
 		"dismiss": "Zavřít"
 	},
 	"card": {
 		"offline": "Zařízení offline",
 		"loading": "Načítání…",
-		"uncalibrated": "Toto zařízení ještě není zkalibrováno. Otevřete panel Everything Presence Pro Grid a nastavte místnost.",
+		"uncalibrated": "Toto zařízení ještě není zkalibrováno. Otevřete panel Everything Presence Grid a nastavte místnost.",
 		"no_device": "Vyberte zařízení v editoru karty.",
 		"nothing_to_show": "Zapněte mapu nebo senzory, aby se tato karta zobrazila.",
 		"heatmap_toggle": "Heatmapa",
