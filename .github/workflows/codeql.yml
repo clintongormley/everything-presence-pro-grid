@@ -4,7 +4,27 @@ on:
   pull_request:
 
 jobs:
+  # Classify the diff (see .github/filters.yml) so each language leg can skip
+  # when none of its source changed. The matrix below is kept intact so the
+  # required check contexts stay exactly "analyze (python|javascript-typescript
+  # |c-cpp)"; a leg whose `changed` is not 'true' skips all its real steps and
+  # the job still reports success, satisfying the "Main branch" ruleset.
+  changes:
+    runs-on: ubuntu-latest
+    name: Detect changed paths
+    outputs:
+      python: ${{ steps.filter.outputs.codeql_python }}
+      frontend: ${{ steps.filter.outputs.codeql_frontend }}
+      cpp: ${{ steps.filter.outputs.codeql_cpp }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: .github/filters.yml
+
   analyze:
+    needs: changes
     runs-on: ubuntu-latest
     permissions:
       security-events: write
@@ -13,17 +33,23 @@ jobs:
       matrix:
         include:
           - language: python
+            changed: ${{ needs.changes.outputs.python }}
           - language: javascript-typescript
+            changed: ${{ needs.changes.outputs.frontend }}
           - language: c-cpp
+            changed: ${{ needs.changes.outputs.cpp }}
     steps:
       - uses: actions/checkout@v5
+        if: matrix.changed == 'true'
       - uses: github/codeql-action/init@v4
+        if: matrix.changed == 'true'
         with:
           languages: ${{ matrix.language }}
       - name: Build C++ (required for CodeQL)
-        if: matrix.language == 'c-cpp'
+        if: matrix.changed == 'true' && matrix.language == 'c-cpp'
         run: |
           cd firmware/lib/epp_zone_engine
           cmake -B build -DCMAKE_BUILD_TYPE=Debug -DEPP_BUILD_TOOLS=OFF -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build build
       - uses: github/codeql-action/analyze@v4
+        if: matrix.changed == 'true'

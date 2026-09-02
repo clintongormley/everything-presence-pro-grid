@@ -1,0 +1,70 @@
+# Shared path filters for dorny/paths-filter, used by the CI workflows to skip
+# jobs that a change can't possibly affect. A doc-only change or a release
+# version bump therefore no longer drags the whole matrix through.
+#
+# HOW THE SKIP STAYS SAFE WITH REQUIRED CHECKS: the "Main branch" ruleset marks
+# Python/Frontend/C++/Hassfest/HACS/analyze as REQUIRED. A required check that
+# never posts blocks the PR forever, so we must NOT add workflow-level `paths:`
+# filters to these workflows. Instead every workflow keeps triggering on all
+# PRs, a `changes` job classifies the diff via this file, and each heavy job is
+# gated with `if: needs.changes.outputs.<name> == 'true'`. A required job that
+# is SKIPPED by its `if:` is treated as satisfied by the ruleset — green PR, no
+# wasted compute. See docs/developers/ci.md.
+#
+# Each filter includes the CI plumbing itself (this file + the relevant
+# workflow), so editing CI re-runs the full suite that CI governs.
+
+python:
+  - 'custom_components/**'
+  - 'tests/**'
+  - '**/*.py'
+  - 'requirements*.txt'
+  - 'pyproject.toml'
+  - '.github/workflows/tests.yml'
+  - '.github/filters.yml'
+
+frontend:
+  - 'frontend/**'
+  - '.github/workflows/tests.yml'
+  - '.github/filters.yml'
+
+cpp:
+  - 'firmware/**'
+  - '.github/workflows/tests.yml'
+  - '.github/filters.yml'
+
+docs:
+  - 'docs/**'
+  - '**/*.md'
+  - 'mkdocs.yml'
+  - 'requirements-docs.txt'
+  - '.github/workflows/tests.yml'
+  - '.github/filters.yml'
+
+# Hassfest + HACS validate the integration's manifest and structure — a bump of
+# manifest.json must still run them, a doc-only change need not.
+integration:
+  - 'custom_components/**'
+  - 'hacs.json'
+  - '.github/workflows/hassfest.yml'
+  - '.github/workflows/hacs.yml'
+  - '.github/filters.yml'
+
+# CodeQL analyses actual source, per language. These are narrower than the
+# build filters above on purpose: a version bump touches only manifest.json (not
+# a single line of Python), so scanning the whole Python codebase for it would
+# be pure waste — a source-file trigger keeps CodeQL off both bumps and docs.
+# Underscored keys (not hyphens) so `outputs.codeql_python` isn't read as
+# subtraction in a GitHub expression.
+codeql_python:
+  - '**/*.py'
+  - '.github/workflows/codeql.yml'
+  - '.github/filters.yml'
+codeql_frontend:
+  - 'frontend/**'
+  - '.github/workflows/codeql.yml'
+  - '.github/filters.yml'
+codeql_cpp:
+  - 'firmware/**'
+  - '.github/workflows/codeql.yml'
+  - '.github/filters.yml'
