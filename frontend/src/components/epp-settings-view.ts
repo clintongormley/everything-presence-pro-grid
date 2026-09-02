@@ -16,6 +16,7 @@ import {
 	settingStyles,
 	toggleStyles,
 } from "../styles.js";
+import { type DeviceCapabilities, hasCapability } from "../types.js";
 import "./epp-info-tip.js";
 import "../ui/epp-card.js";
 import "../ui/epp-toggle.js";
@@ -94,6 +95,13 @@ interface ToggleRowDescriptor {
 	tip: string;
 	/** Disable the toggle (e.g. zone entities need a calibration). */
 	disabled?: boolean;
+	/**
+	 * Hardware this entity comes from. Rows naming a capability the board lacks
+	 * are dropped: the firmware never publishes that entity, so the toggle would
+	 * offer to expose something that does not exist. Omit for entities every
+	 * model has.
+	 */
+	capability?: keyof DeviceCapabilities;
 }
 
 export interface SensorState {
@@ -244,6 +252,10 @@ export class EppSettingsView extends LitElement {
 	@property({ attribute: false }) entitiesConfig: Record<string, boolean> = {};
 	@property({ attribute: false }) logLevels: Record<string, string> = {};
 	@property({ type: Boolean }) co2Enabled = false;
+	/** Whether the board compiled in Bluetooth. Defaults true so firmware that
+	 *  predates the flag (and every BLE board) keeps the BLE log category; only
+	 *  an explicit false (the Lite, which compiles BLE out) hides it. */
+	@property({ type: Boolean }) bluetoothEnabled = true;
 
 	@property({ type: String }) ledMode = "Manual Control";
 	@property({ type: Number }) ledBrightness = 1.0;
@@ -251,6 +263,18 @@ export class EppSettingsView extends LitElement {
 
 	@property({ type: String }) relayTriggerMode = "disabled";
 	@property({ type: String }) relayContactMode = "no";
+
+	/**
+	 * Which optional hardware the selected device has. Controls for absent
+	 * hardware are hidden rather than disabled: the firmware action behind them
+	 * is not declared on that model, so they would save without pushing.
+	 */
+	@property({ attribute: false }) capabilities: DeviceCapabilities = {};
+
+	/** A capability is present unless the firmware explicitly said otherwise. */
+	private _has(capability: keyof DeviceCapabilities): boolean {
+		return hasCapability(this.capabilities, capability);
+	}
 
 	@property({ type: Number }) targetUpdateRateMs = 1000;
 	@property({ type: Number }) zoneUpdateRateMs = 1000;
@@ -455,16 +479,30 @@ export class EppSettingsView extends LitElement {
 				icon: "mdi:tune-vertical",
 			},
 			{
-				id: "led_relay",
-				label: "settings.led_and_relay",
-				icon: "mdi:led-variant-on",
-			},
-			{
 				id: "logging",
 				label: "settings.logging",
 				icon: "mdi:math-log",
 			},
 		];
+
+		// The LED/relay section is the only one that can end up empty: a board
+		// with neither (the Lite has a plain status LED and no relay) would show
+		// an accordion that opens onto nothing, so drop it entirely. Its heading
+		// also names only the hardware actually present.
+		const hasLed = this._has("has_led");
+		const hasRelay = this._has("has_relay");
+		if (hasLed || hasRelay) {
+			sections.splice(3, 0, {
+				id: "led_relay",
+				label:
+					hasLed && hasRelay
+						? "settings.led_and_relay"
+						: hasLed
+							? "settings.led"
+							: "settings.relay",
+				icon: "mdi:led-variant-on",
+			});
+		}
 
 		return html`
       <div class="settings-container">
@@ -520,7 +558,9 @@ export class EppSettingsView extends LitElement {
 			case "reporting":
 				return this.renderEntities();
 			case "led_relay":
-				return html`${this.renderLed()}${this.renderRelay()}`;
+				return html`${this._has("has_led") ? this.renderLed() : nothing}${
+					this._has("has_relay") ? this.renderRelay() : nothing
+				}`;
 			case "logging":
 				return this.renderLogging();
 			default:
@@ -733,7 +773,9 @@ export class EppSettingsView extends LitElement {
             ${this.resetBtn(targetAutoVal, "targetMaxDistance")}${this.infoTip(this.localize("info.target_max_distance"))}
           </div>
         </epp-card>
-        <epp-card heading=${this.localize("settings.static_sensor")}>
+        ${
+					this._has("has_static_presence")
+						? html`<epp-card heading=${this.localize("settings.static_sensor")}>
           <!-- .setting-row conversion deferred — see comment above -->
           <div class="setting-row">
             <label>${this.localize("settings.auto")}</label>
@@ -790,7 +832,9 @@ export class EppSettingsView extends LitElement {
 							}} /><span class="setting-value">${this.localize.formatNumber(staticMaxVal, 1)}</span><span class="setting-unit">m</span></span>
             ${this.resetBtn(staticMaxAutoVal, "staticMaxDistance")}${this.infoTip(this.localize("info.static_max_distance"))}
           </div>
-        </epp-card>
+        </epp-card>`
+						: nothing
+				}
       </div>
     `;
 	}
@@ -815,9 +859,17 @@ export class EppSettingsView extends LitElement {
 	}
 
 	renderSensitivities() {
-		const groups: { title: string; rows: SliderRowDescriptor[] }[] = [
+		// `capability` omitted means every model has the sensor. The groups that
+		// name one are dropped on boards without it: their sliders configure a
+		// firmware action that model never declares.
+		const groups: {
+			title: string;
+			capability?: keyof DeviceCapabilities;
+			rows: SliderRowDescriptor[];
+		}[] = [
 			{
 				title: "settings.motion_sensor",
+				capability: "has_motion_presence",
 				rows: [
 					{
 						label: "settings.presence_timeout",
@@ -833,6 +885,7 @@ export class EppSettingsView extends LitElement {
 			},
 			{
 				title: "settings.static_sensor",
+				capability: "has_static_presence",
 				rows: [
 					{
 						label: "settings.presence_delay",
@@ -896,8 +949,10 @@ export class EppSettingsView extends LitElement {
 
 		return html`
       <div class="settings-section">
-        ${groups.map(
-					(g) => html`
+        ${groups
+					.filter((g) => !g.capability || this._has(g.capability))
+					.map(
+						(g) => html`
         <epp-card heading=${this.localize(g.title)}>
           <!-- .setting-row conversion to epp-section-row is deferred: _resetSlider
                uses closest(".setting-row") and slider rows don't map cleanly to
@@ -905,8 +960,10 @@ export class EppSettingsView extends LitElement {
           ${g.rows.map((row) => this.renderSliderRow(row))}
         </epp-card>
         `,
-				)}
-        <epp-card heading=${this.localize("settings.assisted_clear")}>
+					)}
+        ${
+					this._has("has_assisted_clear")
+						? html`<epp-card heading=${this.localize("settings.assisted_clear")}>
           <!-- .setting-row conversion deferred — see comment above -->
           <div class="setting-row">
             <label>${this.localize("settings.assisted_clear_enabled")}</label>
@@ -932,12 +989,14 @@ export class EppSettingsView extends LitElement {
 						tip: "info.assisted_clear_timeout",
 						disabled: !this.assistedClearEnabled,
 					})}
-        </epp-card>
+        </epp-card>`
+						: nothing
+				}
         <epp-card heading=${this.localize("settings.environmental")}>
           <!-- .setting-row conversion deferred — see comment above -->
-          ${this.renderEnvOffset(this.localize("settings.illuminance_offset"), () => this.sensorState.illuminance, "illuminance", -500, 500, 1, "lux", 1, this.localize("info.illuminance_offset"), 0)}
-          ${this.renderEnvOffset(this.localize("settings.humidity_offset"), () => this.sensorState.humidity, "humidity", -50, 50, 0.1, "%", 1, this.localize("info.humidity_offset"), 0, 100)}
-          ${this.renderEnvOffset(this.localize("settings.temperature_offset"), () => this.sensorState.temperature, "temperature", -20, 20, 0.1, "°C", 1, this.localize("info.temperature_offset"))}
+          ${this._has("has_illuminance") ? this.renderEnvOffset(this.localize("settings.illuminance_offset"), () => this.sensorState.illuminance, "illuminance", -500, 500, 1, "lux", 1, this.localize("info.illuminance_offset"), 0) : nothing}
+          ${this._has("has_humidity") ? this.renderEnvOffset(this.localize("settings.humidity_offset"), () => this.sensorState.humidity, "humidity", -50, 50, 0.1, "%", 1, this.localize("info.humidity_offset"), 0, 100) : nothing}
+          ${this._has("has_temperature") ? this.renderEnvOffset(this.localize("settings.temperature_offset"), () => this.sensorState.temperature, "temperature", -20, 20, 0.1, "°C", 1, this.localize("info.temperature_offset")) : nothing}
         </epp-card>
       </div>
     `;
@@ -1004,24 +1063,28 @@ export class EppSettingsView extends LitElement {
 			{
 				label: "entities.static_presence",
 				key: "room_static_presence",
+				capability: "has_static_presence",
 				defaultValue: false,
 				tip: "info.room_static",
 			},
 			{
 				label: "entities.motion_presence",
 				key: "room_motion_presence",
+				capability: "has_motion_presence",
 				defaultValue: false,
 				tip: "info.room_motion",
 			},
 			{
 				label: "entities.target_presence",
 				key: "room_target_presence",
+				capability: "has_target_presence",
 				defaultValue: false,
 				tip: "info.room_target_presence",
 			},
 			{
 				label: "entities.mmwave",
 				key: "room_mmwave",
+				capability: "has_mmwave_presence",
 				defaultValue: false,
 				tip: "info.room_mmwave",
 			},
@@ -1079,18 +1142,21 @@ export class EppSettingsView extends LitElement {
 			{
 				label: "entities.illuminance",
 				key: "env_illuminance",
+				capability: "has_illuminance",
 				defaultValue: false,
 				tip: "info.illuminance",
 			},
 			{
 				label: "entities.humidity",
 				key: "env_humidity",
+				capability: "has_humidity",
 				defaultValue: false,
 				tip: "info.humidity",
 			},
 			{
 				label: "entities.temperature",
 				key: "env_temperature",
+				capability: "has_temperature",
 				defaultValue: false,
 				tip: "info.temperature",
 			},
@@ -1102,9 +1168,9 @@ export class EppSettingsView extends LitElement {
 			},
 		];
 		const rows = (descriptors: ToggleRowDescriptor[]) =>
-			descriptors.map((d) =>
-				this.renderEntityToggleRow(d, isOn, entityToggleHandler),
-			);
+			descriptors
+				.filter((d) => !d.capability || this._has(d.capability))
+				.map((d) => this.renderEntityToggleRow(d, isOn, entityToggleHandler));
 
 		const rateOptions = this._getOptions().rateOptions;
 
@@ -1182,7 +1248,9 @@ export class EppSettingsView extends LitElement {
           <!-- .setting-row conversion to epp-section-row is deferred: _resetSlider
                uses closest(".setting-row") and slider rows don't map cleanly to
                the label/control shape. -->
-          ${LOG_CATEGORIES.map((c) => {
+          ${LOG_CATEGORIES.filter(
+						(c) => c.key !== "ble" || this.bluetoothEnabled,
+					).map((c) => {
 						const overrides = this._overrides.logLevels || {};
 						const current = overrides[c.key] ?? this.logLevels[c.key] ?? "None";
 						return html`

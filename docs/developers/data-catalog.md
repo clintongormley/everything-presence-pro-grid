@@ -484,10 +484,20 @@ Returns discovered EPP devices.
             "co2_enabled": true,
             "ethernet_enabled": false,
             "heatmap": true,
-            "board_revision": "v2",
-            "sensor_variant": "ld2450",
+            "board_revision": "1.8",
+            "sensor_variant": "ld2450+sen0609",
             "firmware_channel": "stable",
-            "model": "epp-pro"
+            "model": "everything-presence-pro",
+            "has_temperature": true,
+            "has_humidity": true,
+            "has_illuminance": true,
+            "has_motion_presence": true,
+            "has_static_presence": true,
+            "has_led": true,
+            "has_relay": true,
+            "has_target_presence": true,
+            "has_mmwave_presence": true,
+            "has_assisted_clear": true
         }
     ]
 }
@@ -505,12 +515,35 @@ HA or ESPHome are reflected on the next call.
 `FIRMWARE_VERSION` using semver.
 
 The build flag fields (`bluetooth_enabled`, `co2_enabled`, `ethernet_enabled`,
-`heatmap`, `board_revision`, `sensor_variant`, `firmware_channel`, `model`) are
-optional — they are only present after the device has connected and build flags
-have been fetched via the `get_build_flags` API action. Build flags are merged
-without overriding the base fields above (`mac`, `name`, `host`, `available`,
-`configured`, `area`, `firmware_status`, `current_connection_count`) — flag data
-comes from the device and must not rewrite identity fields.
+`heatmap`, `board_revision`, `sensor_variant`, `firmware_channel`, `model`,
+`has_temperature`, `has_humidity`, `has_illuminance`, `has_motion_presence`,
+`has_static_presence`, `has_led`, `has_relay`, `has_target_presence`,
+`has_mmwave_presence`, `has_assisted_clear`) are optional — they are only
+present after the device has connected and build flags have been fetched via the
+`get_build_flags` API action. Build flags are merged without overriding the base
+fields above (`mac`, `name`, `host`, `available`, `configured`, `area`,
+`firmware_status`, `current_connection_count`) — flag data comes from the device
+and must not rewrite identity fields.
+
+`model` is the firmware's own model string (`everything-presence-pro` or
+`everything-presence-lite`), not a display label. It is load-bearing: the OTA
+manifest URL is keyed on it (`FIRMWARE_VARIANTS` in `const.py`), so it must
+match the value the firmware reports verbatim.
+
+The `has_*` fields are per-board hardware capability flags: the Pro reports all
+ten `true`, while the Lite reports `has_temperature`, `has_humidity`,
+`has_motion_presence`, `has_static_presence`, `has_led`, `has_relay`,
+`has_target_presence`, `has_mmwave_presence` and `has_assisted_clear` as `false`
+(it keeps `has_illuminance`). The last three cover `Target Presence`,
+`mmWave Presence`, and sensor-assisted clear. `Target Presence` and
+`mmWave Presence` are LD2450/zone derived and collapse into `Occupancy` on a
+sensorless Lite (`Target Presence` is identical to it), so it keeps only the
+`Occupancy` output; sensor-assisted clear uses the static/PIR sensors and is
+inert without them. The panel hides the controls for any hardware a board lacks,
+so a flag that overstates the hardware leaves the user a control whose firmware
+service was never declared — it would save and push nowhere. Read them through
+`hasCapability()`, which treats an absent flag as present so firmware predating
+the flags keeps showing every control.
 
 `heatmap` reflects whether the connected firmware build compiled in the
 activity-heatmap accumulator (`EPP_HEATMAP_ENABLED`) — some variants omit it to
@@ -1267,14 +1300,13 @@ looking at it:
     zero the RAM accumulator, then immediately `save_heatmap_to_nvs_()` to
     overwrite the persisted NVS blob too (rather than waiting for the hourly
     persist), and logs `Heatmap cleared (RAM + NVS)`. Invoked by the
-    `epp_clear_heatmap` ESPHome API action
-    (`firmware/common/everything-presence-pro-base.yaml`), which both the HA
-    action `eppgrid.clear_heatmap` and the WS command `eppgrid/clear_heatmap`
-    call via `DeviceConnection.async_clear_heatmap()` — see *HA Actions
-    (Services)* and *Overview Card Commands* in section 3 above. Because it also
-    rewrites NVS, the clear survives a device reboot — unlike Reset, which only
-    zeroes RAM (a subsequent geometry-change reset is always followed by the
-    normal hourly persist).
+    `epp_clear_heatmap` ESPHome API action (`firmware/common/epp-core.yaml`),
+    which both the HA action `eppgrid.clear_heatmap` and the WS command
+    `eppgrid/clear_heatmap` call via `DeviceConnection.async_clear_heatmap()` —
+    see *HA Actions (Services)* and *Overview Card Commands* in section 3 above.
+    Because it also rewrites NVS, the clear survives a device reboot — unlike
+    Reset, which only zeroes RAM (a subsequent geometry-change reset is always
+    followed by the normal hourly persist).
 
 **Build flag:** `EPP_HEATMAP_ENABLED` (default `1`) now gates only the reported
 `heatmap` capability flag — there's no `Heatmap` sensor left for it to gate

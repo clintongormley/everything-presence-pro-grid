@@ -81,6 +81,10 @@ This stops a long *pending* state (a Bed zone holds it for ten minutes) from
 keeping **Occupancy** and **mmWave Presence** `on` after everyone has left. See
 [How detection works → Sensor-assisted clear](../how-detection-works.md#sensor-assisted-clear).
 
+**Pro only.** Sensor-assisted clear relies on the static and PIR sensors to
+confirm the room emptied, so it is absent on the Everything Presence Lite (which
+has neither) — the card does not appear there.
+
 ![Sensor-assisted clear.](../../images/settings/sensor-calibration/sensor-assisted-clear.png "Sensor-assisted clear.")
 
 | Control         | Default | Notes                                                                                                                                                   |

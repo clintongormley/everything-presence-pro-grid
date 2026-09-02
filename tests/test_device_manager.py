@@ -25,8 +25,11 @@ from homeassistant.helpers import entity_registry as er
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import EPP_MANUFACTURER
-from custom_components.eppgrid.const import EPP_MODEL
+from custom_components.eppgrid.const import EPP_MODEL_PRO
+from custom_components.eppgrid.const import EPP_MODELS
 from custom_components.eppgrid.const import FIRMWARE_VERSION
+from custom_components.eppgrid.const import GITHUB_OWNER
+from custom_components.eppgrid.const import GITHUB_REPO
 from custom_components.eppgrid.const import MAX_ZONES
 from custom_components.eppgrid.device_manager import DeviceConnection
 from custom_components.eppgrid.device_manager import DeviceManager
@@ -2533,8 +2536,137 @@ class TestAsyncTriggerOta:
         # Pinned-version manifest on GitHub Pages — same origin as the OTA bin
         # so the ESP32 only opens one TLS context.
         assert url.endswith("/wifi-ble-co2.json"), url
-        assert "clintongormley.github.io/everything-presence-pro-grid/fw/v" in url, url
+        assert f"{GITHUB_OWNER}.github.io/{GITHUB_REPO}/fw/v" in url, url
         mock_conn.async_disconnect.assert_awaited_once()
+
+    async def test_routes_lite_model_to_the_lite_variant(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A Lite must be offered Lite firmware, not the Pro build.
+
+        The two models differ in pinout (I2C, LD2450 UART, LED), so flashing a
+        Pro image onto a Lite yields a device that boots and detects nothing.
+        The Lite ships a single CO2-capable build, so a Lite reporting
+        co2_enabled=False still routes to it.
+        """
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
+            "bluetooth_enabled": True,
+            "co2_enabled": False,
+            "model": "everything-presence-lite",
+        }
+        mock_conn = self._make_mock_conn()
+
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        _name, payload = mock_conn.async_execute_service.await_args.args
+        assert payload["url"].endswith("/wifi-lite-co2.json"), payload["url"]
+
+    async def test_routes_lite_with_co2_addon_to_the_co2_build(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """A Lite reporting the add-on must get the build that includes it.
+
+        The bare build omits scd4x entirely, so a board with the module would
+        silently lose its CO2 sensor.
+        """
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
+            "co2_enabled": True,
+            "model": "everything-presence-lite",
+        }
+        mock_conn = self._make_mock_conn()
+
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        _name, payload = mock_conn.async_execute_service.await_args.args
+        assert payload["url"].endswith("/wifi-lite-co2.json"), payload["url"]
+
+    async def test_bare_lite_still_resolves_to_the_co2_build(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """A Lite reporting no CO2 add-on still gets the sole Lite build.
+
+        The Lite now ships one CO2-capable build. Flashing it to a board with
+        no SCD40 used to park the app in error state (scd4x cannot reach its
+        I2C device, so the status LED blinks forever), but the build now clears
+        that component's error on an interval, so a bare board behaves fine.
+        The old bare `wifi-ble-lite` build is gone, so co2_enabled=False must
+        route to wifi-lite-co2 rather than 404 on a build that no longer
+        exists.
+        """
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
+            "co2_enabled": False,
+            "model": "everything-presence-lite",
+        }
+        mock_conn = self._make_mock_conn()
+
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        _name, payload = mock_conn.async_execute_service.await_args.args
+        assert payload["url"].endswith("/wifi-lite-co2.json"), payload["url"]
+
+    async def test_lite_ignores_a_stale_ethernet_flag(self, hass: HomeAssistant, manager: DeviceManager) -> None:
+        """No ethernet variant exists for the Lite, so the lookup must fail loudly.
+
+        Falling through to the network-only mapping would hand a Lite the
+        ethernet Pro build. There is no Lite firmware that could be right here,
+        so refusing is the only safe answer.
+        """
+        from homeassistant.exceptions import HomeAssistantError
+
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {
+            "ethernet_enabled": True,
+            "model": "everything-presence-lite",
+        }
+        mock_conn = self._make_mock_conn()
+
+        with (
+            patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn),
+            pytest.raises(HomeAssistantError),
+        ):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        mock_conn.async_execute_service.assert_not_awaited()
+
+    async def test_unknown_model_refuses_rather_than_guessing(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """A model this integration version has never heard of gets no firmware.
+
+        Guessing would push whichever variant happened to be first onto unknown
+        hardware; the user sees an error and updates the integration instead.
+        """
+        from homeassistant.exceptions import HomeAssistantError
+
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {"model": "everything-presence-mini"}
+        mock_conn = self._make_mock_conn()
+
+        with (
+            patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn),
+            pytest.raises(HomeAssistantError),
+        ):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+    async def test_firmware_without_a_model_flag_is_treated_as_pro(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """Builds predating the `model` flag are all Pro, and must stay upgradable.
+
+        Those devices are in the field today; if a missing flag stopped
+        resolving, their OTA button would break on upgrade.
+        """
+        self._setup_device(manager)
+        manager._build_flags["AA:BB:CC:DD:EE:FF"] = {"ethernet_enabled": False}
+        mock_conn = self._make_mock_conn()
+
+        with patch("custom_components.eppgrid.device_manager.DeviceConnection", return_value=mock_conn):
+            await manager.async_trigger_ota("AA:BB:CC:DD:EE:FF")
+
+        _name, payload = mock_conn.async_execute_service.await_args.args
+        assert payload["url"].endswith("/wifi-ble-co2.json"), payload["url"]
 
     async def test_async_trigger_ota_passes_noise_psk_to_temp_connection(
         self, hass: HomeAssistant, manager: DeviceManager
@@ -4432,7 +4564,7 @@ class TestEventCallbacks:
             connections={("mac", "ff:ee:dd:cc:bb:aa")},
             name="EPP New",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODEL,
+            model=EPP_MODEL_PRO,
         )
 
         entity = ent_reg.async_get_or_create(
@@ -4483,7 +4615,7 @@ class TestEventCallbacks:
             connections={("mac", "aa:bb:cc:dd:ee:ff")},
             name="EPP Known",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODEL,
+            model=EPP_MODEL_PRO,
         )
 
         entity = ent_reg.async_get_or_create(
@@ -4549,7 +4681,7 @@ class TestEventCallbacks:
             connections={("mac", "ff:ee:dd:cc:bb:aa")},
             name="EPP New",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODEL,
+            model=EPP_MODEL_PRO,
         )
         entities = [
             ent_reg.async_get_or_create(
@@ -7188,7 +7320,7 @@ class TestEventCallbacks:
             connections={("mac", "aa:bb:cc:dd:ee:ff")},
             name="EPP",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODEL,
+            model=EPP_MODEL_PRO,
         )
         ent_reg.async_get_or_create(
             "sensor",
@@ -8666,7 +8798,7 @@ class TestUniqueIdMatchingAnchors:
             connections={(dr.CONNECTION_NETWORK_MAC, "AA:BB:CC:DD:EE:FF")},
             name="EPP",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODEL,
+            model=EPP_MODEL_PRO,
         )
 
         # An unrelated sensor whose object_id happens to contain "firmware_version"
@@ -12076,3 +12208,46 @@ class TestPanelStreamRecovery:
         connection.subscriptions[1]()
         await manager.async_stop()
         await hass.async_block_till_done()
+
+
+class TestIsEppDevice:
+    """Model matching for discovery.
+
+    `_is_epp_device` is the one predicate behind discovery, the entity-create
+    pre-filter and the delete-guard. It has to accept every board this
+    integration supports and nothing else: too narrow and a Lite running our
+    firmware never appears in the panel, too broad and the delete-guard starts
+    protecting devices that are not ours.
+    """
+
+    @staticmethod
+    def _device(*, manufacturer: str, model: str | None) -> MagicMock:
+        device = MagicMock()
+        device.manufacturer = manufacturer
+        device.model = model
+        return device
+
+    @pytest.mark.parametrize("model", EPP_MODELS)
+    def test_accepts_every_supported_model(self, model: str) -> None:
+        from custom_components.eppgrid.device_manager._helpers import _is_epp_device
+
+        assert _is_epp_device(self._device(manufacturer=EPP_MANUFACTURER, model=model)) is True
+
+    def test_rejects_another_model_from_the_same_manufacturer(self) -> None:
+        """Everything Smart Technology ships other devices; only ours qualify."""
+        from custom_components.eppgrid.device_manager._helpers import _is_epp_device
+
+        device = self._device(manufacturer=EPP_MANUFACTURER, model="Everything Smart Thermostat")
+        assert _is_epp_device(device) is False
+
+    def test_rejects_a_matching_model_from_another_manufacturer(self) -> None:
+        from custom_components.eppgrid.device_manager._helpers import _is_epp_device
+
+        device = self._device(manufacturer="SomeoneElse", model=EPP_MODEL_PRO)
+        assert _is_epp_device(device) is False
+
+    def test_rejects_a_device_with_no_model(self) -> None:
+        """ESPHome leaves `model` unset on devices with no project block."""
+        from custom_components.eppgrid.device_manager._helpers import _is_epp_device
+
+        assert _is_epp_device(self._device(manufacturer=EPP_MANUFACTURER, model=None)) is False

@@ -1,0 +1,48 @@
+# Everything Presence Lite — the single Lite firmware build.
+#
+# The SCD40 CO2 sensor sits on the Lite's expansion header and is optional, but
+# this build always includes it: on a board without the module the scd4x
+# component can't reach its I2C device and fails, and co2-lite-base.yaml clears
+# that one component's error so the status LED does not blink for a CO2 module
+# the owner simply didn't fit (it still blinks for genuine faults). The CO2
+# entity just stays unavailable. This means one Lite image works whether or not
+# the add-on is fitted, so there is no separate bare build.
+dashboard_import:
+  package_import_url: github://${epp_repo_owner}/${epp_repo_name}/firmware/variants/wifi-lite-co2.yaml@main
+  import_full_config: false
+
+substitutions:
+  device_config:
+    co2_enabled: true
+
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+    version: recommended
+
+packages:
+   variant_defaults: !include ../common/lite-variant-defaults.yaml
+   epp_core: !include ../common/epp-core.yaml
+   epp_entities: !include ../common/epp-entities.yaml
+   bh1750_base: !include ../common/bh1750-base.yaml
+   lite_base: !include ../common/everything-presence-lite-base.yaml
+   ld2450_lite_base: !include ../common/ld2450-lite-base.yaml
+   co2_lite_base: !include ../common/co2-lite-base.yaml
+   wifi_base: !include ../common/wifi-base.yaml
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  name_add_mac_suffix: True
+
+update:
+  - platform: http_request
+    id: update_http_request
+    name: Firmware Update
+    source: https://${epp_repo_owner}.github.io/${epp_repo_name}/fw/latest/wifi-lite-co2.json
+    # The eppgrid integration pins FIRMWARE_VERSION and surfaces version
+    # mismatches via HA Repairs, so device-side polling (default 6h) is
+    # redundant. set_update_manifest action and the OTA button still drive
+    # this component for explicit checks/installs.
+    update_interval: never

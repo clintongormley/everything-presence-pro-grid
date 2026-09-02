@@ -76,7 +76,7 @@ def _init_repo(tmp_path: Path, *, branch: str = "main", dirty: bool = False) -> 
     )
     (tmp_path / "custom_components" / "eppgrid" / "const.py").write_text('FIRMWARE_VERSION = "0.92.0"\n')
     (tmp_path / "firmware" / "common").mkdir(parents=True)
-    (tmp_path / "firmware" / "common" / "everything-presence-pro-base.yaml").write_text(
+    (tmp_path / "firmware" / "common" / "epp-core.yaml").write_text(
         'substitutions:\n  project:\n    version: "0.92.0"\n'
     )
     (tmp_path / "firmware" / "components" / "epp").mkdir(parents=True)
@@ -167,7 +167,7 @@ def test_integration_only_release_bumps_manifest_only(tmp_path: Path):
     const_py = (tmp_path / "custom_components" / "eppgrid" / "const.py").read_text()
     assert 'FIRMWARE_VERSION = "0.92.0"' in const_py
 
-    base_yaml = (tmp_path / "firmware" / "common" / "everything-presence-pro-base.yaml").read_text()
+    base_yaml = (tmp_path / "firmware" / "common" / "epp-core.yaml").read_text()
     assert 'version: "0.92.0"' in base_yaml
 
     header = (tmp_path / "firmware" / "components" / "epp" / "epp_component.h").read_text()
@@ -198,7 +198,7 @@ def test_firmware_release_bumps_three_versions(tmp_path: Path):
     const_py = (tmp_path / "custom_components" / "eppgrid" / "const.py").read_text()
     assert 'FIRMWARE_VERSION = "0.93.0"' in const_py
 
-    base_yaml = (tmp_path / "firmware" / "common" / "everything-presence-pro-base.yaml").read_text()
+    base_yaml = (tmp_path / "firmware" / "common" / "epp-core.yaml").read_text()
     assert 'version: "0.93.0"' in base_yaml
 
     header = (tmp_path / "firmware" / "components" / "epp" / "epp_component.h").read_text()
@@ -230,7 +230,7 @@ def test_succeeds_when_versions_already_at_target(tmp_path: Path):
         '{\n  "domain": "eppgrid",\n  "version": "0.93.0"\n}\n'
     )
     (tmp_path / "custom_components" / "eppgrid" / "const.py").write_text('FIRMWARE_VERSION = "0.93.0"\n')
-    (tmp_path / "firmware" / "common" / "everything-presence-pro-base.yaml").write_text(
+    (tmp_path / "firmware" / "common" / "epp-core.yaml").write_text(
         'substitutions:\n  project:\n    version: "0.93.0"\n'
     )
     (tmp_path / "firmware" / "common" / "hardware.yaml").write_text("# fake firmware code change\n")

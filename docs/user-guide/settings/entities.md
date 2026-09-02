@@ -22,6 +22,13 @@ Room-wide presence and target counts.
 | **Target presence** (`binary_sensor.<device>_target_presence`) | Off     | True whenever the LD2450 is actively tracking at least one target. Independent of any zone.                                                                                                                              |
 | **Target count** (`sensor.<device>_target_count`)              | Off     | Number of targets the LD2450 is currently tracking (0–3), independent of any zone.                                                                                                                                       |
 
+**On the Everything Presence Lite:** only **Occupancy** and **Target count** are
+present here. The Lite has no static-presence radar or PIR, so **Static
+presence** and **Motion presence** don't exist. **Target presence** and **mmWave
+Presence** are Pro-only too: both are derived from LD2450 zone activity, and on
+the sensorless Lite they collapse into **Occupancy** (Target presence is
+identical to it), so the Lite exposes Occupancy alone.
+
 ## Zone level
 
 Per-zone state. There are eight zone slots: zone 0 (the **Rest of room**,

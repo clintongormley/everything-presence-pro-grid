@@ -1,0 +1,19 @@
+# BH1750 ambient light sensor — present on both the Pro and the Lite, on
+# `bus_a` at the same address. Only the bus pins differ, and those are declared
+# in each model's own `i2c:` block.
+
+sensor:
+  - platform: bh1750
+    name: Illuminance
+    id: illuminance_sensor
+    disabled_by_default: true
+    i2c_id: bus_a
+    address: 0x23
+    update_interval: 2s
+    filters:
+      - lambda: "return x + id(env_illuminance_offset);"
+      - or:
+          - throttle: 30s
+          - delta: 2
+      - clamp:
+          min_value: 0

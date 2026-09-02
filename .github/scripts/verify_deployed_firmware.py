@@ -32,7 +32,7 @@ from urllib.request import urlopen
 
 # Kept in sync with .github/scripts/stage-firmware.sh's VARIANTS — the manifest
 # filenames it publishes are {variant}.json.
-VARIANTS = ("wifi-ble-co2", "ethernet-ble-co2")
+VARIANTS = ("wifi-ble-co2", "ethernet-ble-co2", "wifi-lite-co2")
 
 # GitHub Pages serves these manifests with `cache-control: max-age=600`, so an
 # edge that cached the *previous* release's fw/latest manifest can keep serving

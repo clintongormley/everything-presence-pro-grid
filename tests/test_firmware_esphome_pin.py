@@ -21,14 +21,12 @@ version you actually build and test with, nor pin below your own declared floor.
 import re
 from pathlib import Path
 
-import yaml
-
-from tests.esphome_yaml import ESPHomeLoader
+from tests.esphome_yaml import CORE_YAML
+from tests.esphome_yaml import load_yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 REQUIREMENTS = REPO_ROOT / "firmware" / "requirements.txt"
-BASE_YAML = REPO_ROOT / "firmware" / "common" / "everything-presence-pro-base.yaml"
 WORKFLOWS = [
     REPO_ROOT / ".github" / "workflows" / "firmware-release.yml",
     REPO_ROOT / ".github" / "workflows" / "firmware.yml",
@@ -49,12 +47,13 @@ def _read_pin() -> str:
 
 
 def _read_min_version() -> str:
-    doc = yaml.load(BASE_YAML.read_text(), Loader=ESPHomeLoader)
+    doc = load_yaml(CORE_YAML)
     min_version = (doc or {}).get("esphome", {}).get("min_version")
     assert min_version, (
-        "esphome.min_version must be set in everything-presence-pro-base.yaml — "
-        "it is the only floor over DIY adopters who build from package_import_url "
-        "with their own ESPHome; the CI pin cannot reach them."
+        "esphome.min_version must be set in epp-core.yaml — it is the only floor "
+        "over DIY adopters who build from package_import_url with their own "
+        "ESPHome; the CI pin cannot reach them. It lives in the shared core so "
+        "both models declare the same floor."
     )
     return str(min_version)
 

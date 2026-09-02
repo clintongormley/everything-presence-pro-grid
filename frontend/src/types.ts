@@ -12,7 +12,42 @@ export interface RawTarget {
 	raw_y: number | null;
 }
 
-export interface DeviceInfo {
+/**
+ * Which optional hardware a board actually has, from the firmware's
+ * `get_build_flags` action (see `firmware/common/epp-core.yaml`).
+ *
+ * The settings view hides the controls for anything absent. That is not
+ * cosmetic: the firmware action behind each of those controls is only declared
+ * on the model that has the hardware, and `async_push_config` skips a service
+ * it cannot find — so an ungated control would save happily and push nowhere.
+ *
+ * Every flag is optional, for the same reason `heatmap` is: undefined until the
+ * flags have been fetched, and permanently undefined on firmware predating
+ * them. Read them through a helper that treats undefined as present, so a
+ * device on older firmware keeps showing exactly what it showed before.
+ */
+export interface DeviceCapabilities {
+	has_temperature?: boolean;
+	has_humidity?: boolean;
+	has_illuminance?: boolean;
+	has_motion_presence?: boolean;
+	has_static_presence?: boolean;
+	has_led?: boolean;
+	has_relay?: boolean;
+	has_target_presence?: boolean;
+	has_mmwave_presence?: boolean;
+	has_assisted_clear?: boolean;
+}
+
+/** A capability is present unless the firmware explicitly said otherwise. */
+export function hasCapability(
+	capabilities: DeviceCapabilities | undefined,
+	capability: keyof DeviceCapabilities,
+): boolean {
+	return capabilities?.[capability] !== false;
+}
+
+export interface DeviceInfo extends DeviceCapabilities {
 	mac: string;
 	name: string;
 	host: string | null;
@@ -71,6 +106,8 @@ export type HaAddResult =
 export type UsbFlashStep =
 	| "idle"
 	| "connecting"
+	| "detecting"
+	| "select_variant"
 	| "flashing"
 	| "wifi_check"
 	| "wifi_scan"
@@ -95,6 +132,12 @@ export interface UsbFlashState {
 	haAddAttempt?: number;
 	haAddMaxAttempts?: number;
 	mac?: string;
+	/** Model auto-detected over Improv on connect, surfaced on the
+	 *  `select_variant` step so the manual picker can preselect it. "pro" when a
+	 *  Pro was detected (still needs a wifi/ethernet choice); null when the
+	 *  device didn't identify itself (blank board → full manual choice). A
+	 *  detected Lite never reaches this step — it flashes automatically. */
+	detectedModel?: "pro" | "lite" | null;
 }
 
 export type OtaState = "updating" | "success" | "error";

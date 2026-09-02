@@ -1,3 +1,4 @@
+import { readDeviceModel } from "../lib/device-model.js";
 import { releaseReader, type WifiNetwork } from "../lib/improv-serial.js";
 import {
 	detectIpAddress,
@@ -193,6 +194,79 @@ export class UsbFlashFlow {
 		}
 	}
 
+	/**
+	 * Connect, ask the device which board it is over Improv, and route:
+	 *  - Lite  → flash the sole Lite build immediately (no user choice).
+	 *  - Pro   → stop on `select_variant` so the user picks wifi/ethernet
+	 *            (the model is known but the network type isn't detectable).
+	 *  - blank / unidentifiable → `select_variant` for a full manual choice.
+	 * The opened port is retained across the hand-off so the manual paths reuse
+	 * it rather than prompting for the port again.
+	 */
+	async handleUsbFlashAuto(): Promise<void> {
+		const host = this._host;
+		if (host.opRunning) {
+			host.updateUsbState({
+				step: "error",
+				errorKey: "usb.errors.serial_port_busy",
+				fatal: true,
+			});
+			return;
+		}
+		const myOp = host.opId;
+		host.opRunning = true;
+		try {
+			host.updateUsbState({ step: "connecting" });
+			const port = await navigator.serial.requestPort();
+			if (host.opId !== myOp) {
+				host.opRunning = false;
+				return;
+			}
+			this._serialPort = port;
+
+			host.updateUsbState({ step: "detecting" });
+			// Track the probe as an in-flight op (same handles the wifi_check uses)
+			// so a cancel/teardown aborts it and awaits its settlement before
+			// closing the port — otherwise close() races the reader lock the probe
+			// still holds and an immediate retry hits a half-open port.
+			const abortCtrl = new AbortController();
+			this._wifiCheckAbort = abortCtrl;
+			const probePromise = readDeviceModel(port, 4000, abortCtrl.signal);
+			this._wifiCheckPromise = probePromise;
+			const model = await probePromise;
+			this._wifiCheckAbort = null;
+			this._wifiCheckPromise = null;
+			if (host.opId !== myOp) {
+				host.opRunning = false;
+				return;
+			}
+
+			if (model === "lite") {
+				// Hand off to the normal flash pipeline, which reuses the port
+				// we just opened. Release opRunning first so its own guard passes.
+				host.opRunning = false;
+				return this.handleUsbFlash("wifi-lite-co2");
+			}
+
+			// Pro (network type isn't detectable) or an unidentifiable device:
+			// fall back to the manual picker, preselected where we can.
+			host.opRunning = false;
+			host.updateUsbState({ step: "select_variant", detectedModel: model });
+		} catch (err: any) {
+			host.opRunning = false;
+			if (host.opId !== myOp) return;
+			if (err?.name === "NotFoundError") {
+				// User dismissed the port chooser — back to idle, no error.
+				void host.resetUsbState();
+				return;
+			}
+			host.updateUsbState({
+				step: "error",
+				errorKey: "usb.errors.port_open_failed",
+			});
+		}
+	}
+
 	async handleUsbFlash(variant: string): Promise<void> {
 		const host = this._host;
 		if (host.opRunning) {
@@ -206,9 +280,12 @@ export class UsbFlashFlow {
 		const myOp = host.opId;
 		host.opRunning = true;
 		try {
-			// Step 1: Request serial port
+			// Step 1: Request serial port — reuse the one auto-detect already
+			// opened (handleUsbFlashAuto retains it after reading the model), so
+			// the manual-picker fallback doesn't prompt for the port a second
+			// time.
 			host.updateUsbState({ step: "connecting" });
-			const port = await navigator.serial.requestPort();
+			const port = this._serialPort ?? (await navigator.serial.requestPort());
 			if (host.opId !== myOp) {
 				host.opRunning = false;
 				return;

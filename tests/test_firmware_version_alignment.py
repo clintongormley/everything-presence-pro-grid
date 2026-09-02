@@ -3,8 +3,10 @@
 The device firmware version is nominally three things, but after
 simplification it collapses to two:
 
-  1. firmware/common/everything-presence-pro-base.yaml  esphome.project.version
-       — the single source-of-truth for what the device firmware is.
+  1. firmware/common/epp-core.yaml  esphome.project.version
+       — the single source-of-truth for what the device firmware is. It lives
+         in the shared core, not in a per-model base, so the Pro and the Lite
+         cannot report different versions.
   2. custom_components/eppgrid/const.py  FIRMWARE_VERSION
        — what the integration expects devices to report. HACS only ships the
          custom_components/ folder, so the integration cannot read the yaml at
@@ -27,9 +29,10 @@ releases can bump manifest without touching firmware. See
 import re
 from pathlib import Path
 
-import yaml
-
-from tests.esphome_yaml import ESPHomeLoader
+from tests.esphome_yaml import BASE_YAML
+from tests.esphome_yaml import CORE_YAML
+from tests.esphome_yaml import LITE_BASE_YAML
+from tests.esphome_yaml import load_yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
@@ -44,22 +47,43 @@ def _read_const_firmware_version() -> str:
 def _read_yaml_firmware_version() -> str:
     # Parse the yaml properly so formatting changes (indent, quote style)
     # don't silently break this test.
-    text = (REPO_ROOT / "firmware" / "common" / "everything-presence-pro-base.yaml").read_text()
-    doc = yaml.load(text, Loader=ESPHomeLoader)
+    doc = load_yaml(CORE_YAML)
     version = (doc or {}).get("esphome", {}).get("project", {}).get("version")
-    assert version, "esphome.project.version not found in everything-presence-pro-base.yaml"
+    assert version, "esphome.project.version not found in epp-core.yaml"
     return str(version)
 
 
 def test_const_py_and_base_yaml_firmware_versions_match():
-    """const.py must match base.yaml or the UI will nag about updates."""
+    """const.py must match epp-core.yaml or the UI will nag about updates."""
     const_ver = _read_const_firmware_version()
     yaml_ver = _read_yaml_firmware_version()
     assert const_ver == yaml_ver, (
         f"custom_components/eppgrid/const.py FIRMWARE_VERSION={const_ver!r} "
-        f"but firmware/common/everything-presence-pro-base.yaml project.version={yaml_ver!r}. "
+        f"but firmware/common/epp-core.yaml project.version={yaml_ver!r}. "
         f"These must match — bump both together."
     )
+
+
+def test_no_model_base_overrides_the_shared_project_version():
+    """`project.version` is declared once, in the shared core, and never overridden.
+
+    A model base that set its own `project.version` would ship claiming a
+    version nothing else in the repo bumps: `bin/release.sh` and
+    `validate-release.sh` both write and read `epp-core.yaml` alone, so the
+    override would survive every release and the device would report a stale
+    version forever while the integration's Repairs flow kept offering it an
+    upgrade it already had.
+    """
+    for base in (BASE_YAML, LITE_BASE_YAML):
+        project = (load_yaml(base) or {}).get("esphome", {}).get("project", {})
+        assert "version" not in project, (
+            f"{base.name} sets esphome.project.version. Remove it — the version is "
+            f"declared once in epp-core.yaml so every model reports the same one."
+        )
+        assert project.get("name"), (
+            f"{base.name} must set esphome.project.name — it is the only per-model "
+            f"field in the project block, and ESP Web Tools shows it to the user."
+        )
 
 
 def test_epp_component_header_uses_esphome_project_version_macro():

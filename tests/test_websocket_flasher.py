@@ -504,7 +504,7 @@ class TestDeleteEsphomeDevice:
         from homeassistant.helpers import device_registry as dr
 
         from custom_components.eppgrid.const import EPP_MANUFACTURER
-        from custom_components.eppgrid.const import EPP_MODEL
+        from custom_components.eppgrid.const import EPP_MODEL_PRO
 
         dev_reg = dr.async_get(hass)
         dev_reg.async_get_or_create(
@@ -512,7 +512,7 @@ class TestDeleteEsphomeDevice:
             connections={(dr.CONNECTION_NETWORK_MAC, "aa:bb:cc:dd:ee:ff")},
             name="EPP",
             manufacturer=EPP_MANUFACTURER,
-            model=EPP_MODEL,
+            model=EPP_MODEL_PRO,
         )
 
     async def test_deletes_config_entry(self, hass: HomeAssistant, config_entry: MockConfigEntry) -> None:

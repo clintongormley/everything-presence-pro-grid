@@ -44,15 +44,15 @@ stripped — see `_strip_cpp_comments`.
 
 import re
 
-from tests.esphome_yaml import BASE_YAML
+from tests.esphome_yaml import ETHERNET_VARIANT_YAML
 from tests.esphome_yaml import WIFI_VARIANT_YAML
 from tests.esphome_yaml import find_by_id
 from tests.esphome_yaml import find_by_platform
-from tests.esphome_yaml import load_yaml
+from tests.esphome_yaml import load_variant
 
 
 def _variant() -> dict:
-    return load_yaml(WIFI_VARIANT_YAML)
+    return load_variant(WIFI_VARIANT_YAML)
 
 
 def _sensor(sensor_id: str) -> dict | None:
@@ -379,13 +379,14 @@ def test_wifi_diagnostics_absent_from_shared_base():
     text sensor in the shared base fails the ethernet config outright with
     `requires component wifi`. Keep all of this in the wifi variant.
     """
-    base = load_yaml(BASE_YAML)
-    assert find_by_platform(base.get("text_sensor"), "wifi_info") is None, (
-        "wifi_info must not live in everything-presence-pro-base.yaml — the "
-        "ethernet-ble-co2 variant includes the base but has no `wifi:` "
-        "component, so ESPHome fails its config."
+    # Assert against the ethernet variant's *merged* config rather than any one
+    # source file: what actually breaks the build is a wifi-only component
+    # reaching the ethernet build, and that stays true wherever the shared
+    # packages move it to.
+    ethernet = load_variant(ETHERNET_VARIANT_YAML)
+    assert find_by_platform(ethernet.get("text_sensor"), "wifi_info") is None, (
+        "wifi_info must not reach the ethernet build — it has no `wifi:` "
+        "component, so ESPHome fails its config with `requires component wifi`."
     )
     for sensor_id in ("wifi_disconnect_count_sensor", "wifi_disconnect_rssi_sensor", "wifi_downtime_sensor"):
-        assert find_by_id(base.get("sensor"), sensor_id) is None, (
-            f"{sensor_id} must live in the wifi variant, not the shared base"
-        )
+        assert find_by_id(ethernet.get("sensor"), sensor_id) is None, f"{sensor_id} must not reach the ethernet build"

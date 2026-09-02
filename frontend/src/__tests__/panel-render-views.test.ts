@@ -1401,6 +1401,19 @@ describe("_renderSettings", () => {
 		const sv = await renderSettings(a);
 		expect(sv.shadowRoot!.querySelectorAll(".accordion-body").length).toBe(3);
 	});
+
+	it("reuses one stable capabilities object across renders when no device is selected", async () => {
+		// Regression guard (#361 review): `activeDevice ?? {}` allocated a fresh
+		// object every render, so epp-settings-view.capabilities changed identity
+		// each cycle and Lit re-rendered the settings subtree needlessly.
+		const a = createPanel() as any;
+		a._view = "settings";
+		a._selectedMac = "no-such-device";
+		const caps1 = (await renderSettings(a)).capabilities;
+		const caps2 = (await renderSettings(a)).capabilities;
+		expect(caps1).toBe(caps2);
+		expect(Object.keys(caps1 as object)).toHaveLength(0);
+	});
 });
 
 describe("_renderSettingsSection (via EppSettingsView)", () => {

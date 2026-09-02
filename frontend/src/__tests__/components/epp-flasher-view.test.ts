@@ -1188,14 +1188,37 @@ describe("USB flash view — state-driven", () => {
 		expect(c.textContent).toContain("42%");
 	});
 
-	it("renders variant selector in idle state", () => {
+	it("renders a single auto-detect flash button in idle state", () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
 		(el as any).usbFlashState = null;
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
-		expect(c.querySelector(".variant-selector")).not.toBeNull();
+		// Idle no longer shows a model/network picker — the device is identified
+		// automatically on connect. Just the primary flash button.
+		expect(c.querySelector(".variant-selector")).toBeNull();
+		expect(
+			c.querySelector('.confirm-actions epp-button[variant="primary"]'),
+		).not.toBeNull();
+	});
+
+	it("dispatches usb-flash-auto when the idle flash button is clicked", async () => {
+		const el = createView();
+		(el as any)._showUsbFlash = true;
+		(el as any).usbFlashState = null;
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const events: Event[] = [];
+		el.addEventListener("usb-flash-auto", (e) => events.push(e));
+
+		const flashBtn = el.shadowRoot!.querySelector(
+			'.confirm-actions epp-button[variant="primary"]',
+		) as HTMLElement;
+		flashBtn.click();
+
+		expect(events.length).toBe(1);
 	});
 
 	it("shows firmware version in card title in idle state", () => {
@@ -1337,10 +1360,14 @@ describe("USB flash view — state-driven", () => {
 		expect(c.textContent).toContain("adding_device");
 	});
 
-	it("dispatches usb-flash event with variant when Flash via USB clicked", async () => {
+	it("dispatches usb-flash event with variant when Flash clicked on the manual picker", async () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
-		(el as any).usbFlashState = null;
+		// select_variant is the manual picker; a detected Pro is preselected.
+		(el as any).usbFlashState = {
+			step: "select_variant",
+			detectedModel: "pro",
+		};
 		document.body.appendChild(el);
 		await el.updateComplete;
 
@@ -1400,32 +1427,46 @@ describe("USB flash view — state-driven", () => {
 		expect(events.length).toBe(1);
 	});
 
-	it("clicking ethernet variant button in USB flash idle updates _selectedVariant", async () => {
+	it("clicking ethernet variant button in the picker updates _selectedVariant", async () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
-		(el as any).usbFlashState = null;
-		(el as any)._selectedVariant = "wifi";
+		(el as any).usbFlashState = {
+			step: "select_variant",
+			detectedModel: "pro",
+		};
 		document.body.appendChild(el);
+		await el.updateComplete;
+		// The select_variant seed sets the model in updated(), scheduling a
+		// second render that puts the network row on screen.
 		await el.updateComplete;
 
 		const root = el.shadowRoot!;
-		const variantBtns = root.querySelectorAll(".variant-selector epp-button");
+		const variantBtns = root.querySelectorAll(
+			'[data-selector="network"] epp-button',
+		);
 		// Second button is ethernet
 		(variantBtns[1] as HTMLElement).click();
 
 		expect((el as any)._selectedVariant).toBe("ethernet");
 	});
 
-	it("clicking wifi variant button in USB flash idle updates _selectedVariant", async () => {
+	it("clicking wifi variant button in the picker updates _selectedVariant", async () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
-		(el as any).usbFlashState = null;
-		(el as any)._selectedVariant = "ethernet";
+		(el as any).usbFlashState = {
+			step: "select_variant",
+			detectedModel: "pro",
+		};
 		document.body.appendChild(el);
+		await el.updateComplete;
+		// Start from ethernet (post-seed) so clicking wifi is a real change.
+		(el as any)._selectedVariant = "ethernet";
 		await el.updateComplete;
 
 		const root = el.shadowRoot!;
-		const variantBtns = root.querySelectorAll(".variant-selector epp-button");
+		const variantBtns = root.querySelectorAll(
+			'[data-selector="network"] epp-button',
+		);
 		// First button is wifi
 		(variantBtns[0] as HTMLElement).click();
 
@@ -1436,6 +1477,7 @@ describe("USB flash view — state-driven", () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
 		(el as any).usbFlashState = null;
+		(el as any)._selectedModel = "pro";
 		(el as any)._selectedVariant = "ethernet";
 		document.body.appendChild(el);
 		await el.updateComplete;
@@ -1481,13 +1523,17 @@ describe("variant selector styling", () => {
 	it("USB flash variant selector uses variant attribute (selected=primary)", async () => {
 		const el = createView();
 		(el as any)._showUsbFlash = true;
-		(el as any).usbFlashState = null;
-		(el as any)._selectedVariant = "ethernet";
+		(el as any).usbFlashState = {
+			step: "select_variant",
+			detectedModel: "pro",
+		};
 		document.body.appendChild(el);
+		await el.updateComplete;
+		(el as any)._selectedVariant = "ethernet";
 		await el.updateComplete;
 
 		const root = el.shadowRoot!;
-		const btns = root.querySelectorAll(".variant-selector epp-button");
+		const btns = root.querySelectorAll('[data-selector="network"] epp-button');
 		expect((btns[0] as any).getAttribute("variant")).toBe("neutral");
 		expect((btns[1] as any).getAttribute("variant")).toBe("primary");
 	});
@@ -2463,5 +2509,163 @@ describe("Upgrade all button", () => {
 		});
 		const c = renderTo((el as any).render());
 		expect(c.querySelector(".upgrade-all-btn")).toBeNull();
+	});
+});
+
+describe("USB flash — model selection", () => {
+	afterEach(() => {
+		document.body.innerHTML = "";
+	});
+
+	// The manual model/network picker lives on the `select_variant` step, reached
+	// when auto-detect can't finish the choice (a Pro, or an unidentified board).
+	// detectedModel null → the transition seed clears the model; the helper then
+	// selects the model under test after the first render.
+	const usbIdleView = async (model: "pro" | "lite" = "pro") => {
+		const el = createView();
+		(el as any)._showUsbFlash = true;
+		(el as any).usbFlashState = { step: "select_variant", detectedModel: null };
+		document.body.appendChild(el);
+		await el.updateComplete;
+		(el as any)._selectedModel = model;
+		if (model === "lite") (el as any)._selectedVariant = "wifi";
+		await el.updateComplete;
+		return el;
+	};
+
+	it("offers the network choice for the Pro, which has both builds", async () => {
+		const el = await usbIdleView("pro");
+		expect(
+			el.shadowRoot!.querySelector('[data-selector="network"]'),
+		).not.toBeNull();
+	});
+
+	it("hides the network choice for the Lite, which is WiFi-only", async () => {
+		// There is no ethernet-ble-lite firmware, so offering the choice would
+		// let the user pick a build that does not exist.
+		const el = await usbIdleView("lite");
+		expect(
+			el.shadowRoot!.querySelector('[data-selector="network"]'),
+		).toBeNull();
+	});
+
+	it("selecting Lite switches the model", async () => {
+		const el = await usbIdleView("pro");
+		const btns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="model"] epp-button',
+		);
+		(btns[1] as HTMLElement).click();
+		expect((el as any)._selectedModel).toBe("lite");
+	});
+
+	it("flashes Lite firmware even after ethernet was chosen for a Pro", async () => {
+		// Regression guard: _selectedVariant survives the model switch, so the
+		// model has to win the variant lookup outright. Otherwise a user who
+		// looked at the Pro's ethernet option first would flash a Lite with the
+		// Pro ethernet image — different I2C, UART and LED pins.
+		const el = await usbIdleView("pro");
+		(el as any)._selectedVariant = "ethernet";
+		await el.updateComplete;
+
+		const btns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="model"] epp-button',
+		);
+		(btns[1] as HTMLElement).click();
+		await el.updateComplete;
+
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-lite-co2");
+	});
+
+	it("maps each model and network to its firmware variant", async () => {
+		const el = await usbIdleView("pro");
+		const variantFor = (model: string, network: string) => {
+			(el as any)._selectedModel = model;
+			(el as any)._selectedVariant = network;
+			return (el as any)._getFirmwareVariant();
+		};
+		expect(variantFor("pro", "wifi")).toBe("wifi-ble-co2");
+		expect(variantFor("pro", "ethernet")).toBe("ethernet-ble-co2");
+		// The Lite has a single, CO2-capable build.
+		expect(variantFor("lite", "wifi")).toBe("wifi-lite-co2");
+	});
+
+	it("dispatches usb-flash with the selected model's variant", async () => {
+		const el = await usbIdleView("lite");
+		const events: CustomEvent[] = [];
+		el.addEventListener("usb-flash", ((e: CustomEvent) => {
+			events.push(e);
+		}) as EventListener);
+
+		(el as any)._dispatchUsbFlash();
+
+		expect(events.length).toBe(1);
+		expect(events[0].detail.variant).toBe("wifi-lite-co2");
+	});
+
+	it("switches back to the Pro, restoring the network choice", async () => {
+		// Correcting a mis-selection has to bring the WiFi/Ethernet row back, or
+		// the user is stuck on whichever variant was last set.
+		const el = await usbIdleView("lite");
+		const btns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="model"] epp-button',
+		);
+		(btns[0] as HTMLElement).click();
+		await el.updateComplete;
+
+		expect((el as any)._selectedModel).toBe("pro");
+		expect(
+			el.shadowRoot!.querySelector('[data-selector="network"]'),
+		).not.toBeNull();
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-ble-co2");
+	});
+
+	it("gives the Lite its single CO2-capable build", async () => {
+		// The Lite has one build — the CO2-capable one, which copes with a
+		// missing SCD40 add-on — so there is no CO2 choice to make.
+		const el = await usbIdleView("lite");
+		expect((el as any)._getFirmwareVariant()).toBe("wifi-lite-co2");
+	});
+
+	it("selects no model by default, so nothing is flashed until the user chooses", () => {
+		// Defaulting to Pro silently flashes Pro firmware onto a Lite for anyone
+		// who doesn't notice the selector. The Lite's I2C/UART/LED pins differ, so
+		// the wrong image leaves a non-functional device — the model has to be a
+		// deliberate choice.
+		const el = createView();
+		expect((el as any)._selectedModel).toBeNull();
+		// The variant helper must not guess "Pro" for an unset model.
+		expect((el as any)._getFirmwareVariant()).toBe("");
+	});
+
+	it("keeps the flash button disabled until a model is chosen, then enables it", async () => {
+		const el = createView();
+		(el as any)._showUsbFlash = true;
+		// An unidentified device drops to the manual picker with no model chosen.
+		(el as any).usbFlashState = { step: "select_variant", detectedModel: null };
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const flashBtn = () =>
+			el.shadowRoot!.querySelector(
+				'.confirm-actions epp-button[variant="primary"]',
+			) as HTMLElement & { disabled: boolean };
+		expect(flashBtn().disabled).toBe(true);
+
+		const modelBtns = el.shadowRoot!.querySelectorAll(
+			'[data-selector="model"] epp-button',
+		);
+		(modelBtns[0] as HTMLElement).click();
+		await el.updateComplete;
+		expect(flashBtn().disabled).toBe(false);
+	});
+
+	it("does not dispatch usb-flash while no model is selected", () => {
+		const el = createView();
+		const events: CustomEvent[] = [];
+		el.addEventListener("usb-flash", ((e: CustomEvent) => {
+			events.push(e);
+		}) as EventListener);
+		(el as any)._dispatchUsbFlash();
+		expect(events.length).toBe(0);
 	});
 });

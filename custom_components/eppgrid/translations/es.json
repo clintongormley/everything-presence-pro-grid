@@ -31,7 +31,7 @@
     "device_host_unknown": { "message": "Host del dispositivo desconocido" },
     "connection_failed": { "message": "No se ha podido conectar al dispositivo" },
     "no_active_session": { "message": "No hay sesión activa — llama primero a subscribe_device" },
-    "no_firmware_variant": { "message": "No hay variante de firmware para el tipo de red: {network}" },
+    "no_firmware_variant": { "message": "No hay variante de firmware para el modelo {model} con el tipo de red: {network}" },
     "ota_unsupported": { "message": "El dispositivo no admite actualización OTA" },
     "ota_in_progress": { "message": "Ya hay una actualización OTA en curso para este dispositivo" },
     "ota_trigger_failed": { "message": "No se pudo contactar el dispositivo {mac}: {error}" },
