@@ -574,7 +574,14 @@ async def test_async_discover_creates_repair_issue_for_outdated_device(hass: Hom
     hass.states.async_set(fw_entry.entity_id, behind_version)
 
     manager = DeviceManager(hass, EPPGridStore(hass))
-    await manager.async_discover()
+    # Discovery now kicks `_on_device_available` for an already-online device
+    # (build-flags fetch); stub it so this repair-issue test doesn't open a
+    # real connection — the issue is raised in the discovery loop itself.
+    from unittest.mock import AsyncMock
+    from unittest.mock import patch
+
+    with patch.object(manager, "_on_device_available", new=AsyncMock()):
+        await manager.async_discover()
 
     issue = ir.async_get(hass).async_get_issue(DOMAIN, f"firmware_behind_{mac}")
     assert issue is not None, "discovering a device on older firmware must raise a Repairs issue"

@@ -10,6 +10,7 @@ from collections.abc import AsyncIterator
 from collections.abc import Awaitable
 from collections.abc import Callable
 from collections.abc import Coroutine
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -493,23 +494,7 @@ class DeviceManager:
         # Push config to devices that are already available — the
         # state_changed listener only catches future transitions, so devices
         # that connected before the integration loaded would be missed.
-        ent_reg = er.async_get(self._hass)
-        for mac in list(self.devices):
-            if mac not in self._pushing:
-                dev = self.devices[mac]
-                # Only push to devices that are actually online, per the
-                # shared `_is_device_available` definition: `unknown` counts
-                # as offline just like `unavailable` (devices with no
-                # entities yet count as "unknown = try to connect").
-                entries = (
-                    er.async_entries_for_device(ent_reg, dev.device_id, include_disabled_entities=True)
-                    if dev.device_id
-                    else None
-                )
-                if not self._is_device_available(mac, entries=entries):
-                    continue
-                self._pushing.add(mac)
-                self._spawn(self._on_device_available(mac))
+        self._kick_available_devices(list(self.devices))
 
     @callback
     def _schedule_entity_update_clear(self, mac: str, delay: float = _ENTITY_UPDATE_CLEAR_DEFAULT) -> None:
@@ -1368,6 +1353,7 @@ class DeviceManager:
 
         found_new = False
         ids_changed = False
+        newly_discovered: list[str] = []
         for entry in ent_reg.entities.values():
             if entry.platform != "esphome":
                 continue
@@ -1457,6 +1443,7 @@ class DeviceManager:
 
             if is_new:
                 found_new = True
+                newly_discovered.append(mac)
                 _LOGGER.info("Discovered zone engine device: %s (%s)", device.name, mac)
                 # Always sync — the empty fallback resets stale entity registry
                 # entries left behind by a device delete+readd.
@@ -1478,6 +1465,48 @@ class DeviceManager:
             self._refresh_state_listener()
         if found_new:
             self._fire_device_list_changed()
+
+        # Kick the push/build-flags path for devices that were ALREADY online
+        # when discovery registered them (their first-appearance states land
+        # before the mac is in `self.devices`, so `_on_state_changed` drops
+        # them). Reuse the `ent_reg` already bound at the top of this method.
+        self._kick_available_devices(newly_discovered, ent_reg)
+
+    def _kick_available_devices(self, macs: Iterable[str], ent_reg: er.EntityRegistry | None = None) -> None:
+        """Spawn `_on_device_available` for each already-online mac not already
+        being pushed.
+
+        Compensates for `_on_state_changed` only catching FUTURE offline->online
+        transitions. Two callers share it:
+          - `async_start`, for devices already connected when the integration
+            loaded, and
+          - `async_discover`, for devices already online when their mac is first
+            registered.
+        Without this the config push and `_fetch_build_flags` never run and
+        `list_devices` ships no has_* flags (an uncalibrated Lite then shows
+        every presence row).
+        """
+        if ent_reg is None:
+            ent_reg = er.async_get(self._hass)
+        for mac in macs:
+            if mac in self._pushing:
+                continue
+            dev = self.devices.get(mac)
+            if dev is None:
+                continue
+            # Only push to devices that are actually online, per the shared
+            # `_is_device_available` definition: `unknown` counts as offline
+            # just like `unavailable` (devices with no entities yet count as
+            # "unknown = try to connect").
+            entries = (
+                er.async_entries_for_device(ent_reg, dev.device_id, include_disabled_entities=True)
+                if dev.device_id
+                else None
+            )
+            if not self._is_device_available(mac, entries=entries):
+                continue
+            self._pushing.add(mac)
+            self._spawn(self._on_device_available(mac))
 
     def _maybe_sync_repair_issue(self, mac: str, *, device_name: str, fw_ver: str | None) -> None:
         """Call `_sync_firmware_repair_issue` only if (fw_ver, name) changed.
