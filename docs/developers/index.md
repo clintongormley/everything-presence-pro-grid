@@ -48,3 +48,5 @@ dev-environment setup and the test commands. Then use
 [Code layout](code-layout.md) to find the area you want to change. Reach for
 [Architecture](architecture.md) and [Data catalog](data-catalog.md) as reference
 material when you need them — they're reference pages, not onboarding reads.
+
+<!-- ci-skip verification (throwaway) -->
