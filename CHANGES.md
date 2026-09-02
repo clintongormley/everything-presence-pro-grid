@@ -15,7 +15,7 @@ firmware downloads, see the
     choice at all. The panel hides the controls for hardware the Lite doesn't
     have (static-presence radar, PIR motion, relay, addressable RGB LED,
     Bluetooth), leaving the occupancy, zones, CO2, and light-level features it
-    supports. Contributed by @HaniKazmi (#416).
+    supports (#416).
 - **A new "Tracking Sensor" entity shows when the tracker has failed.** If the
     tracking sensor stops responding, presence and motion can keep working (they
     come from separate sensors) while target dots silently disappear and Target
@@ -26,9 +26,14 @@ firmware downloads, see the
 - **Clear the heatmap from the panel.** A Clear button now sits next to the
     Heatmap toggle in the panel — on the live overview and in the
     zones/overlays/furniture editor — so you can wipe a sensor's accumulated
-    heatmap without opening a dashboard card or calling the `eppgrid.clear_heatmap`
-    action. It asks for confirmation first, clears only when the sensor supports
-    it, and clearing is permanent and survives a device reboot (#411).
+    heatmap without opening a dashboard card or calling the
+    `eppgrid.clear_heatmap` action. It asks for confirmation first, clears only
+    when the sensor supports it, and clearing is permanent and survives a device
+    reboot (#411).
+
+### Contributors
+
+Thanks to @HaniKazmi for contributing Everything Presence Lite support (#416).
 
 ## v1.8.0 — 2026-08-16
 
