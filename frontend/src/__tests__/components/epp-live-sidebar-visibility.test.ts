@@ -231,3 +231,76 @@ describe("epp-live-sidebar hardware capability gating", () => {
 		expect(rowLabels(el)).toContain("live.occupancy");
 	});
 });
+
+describe("epp-live-sidebar uncalibrated presence", () => {
+	// A sensorless Lite has no static/motion sensor, so occupancy is purely
+	// zone-derived and cannot work before room calibration — the target shows
+	// on the FOV while occupancy stays Clear. Show the row as "not calibrated"
+	// rather than a misleading Clear/Detected.
+	function presenceState(
+		el: EppLiveSidebar,
+		label: string,
+	): string | undefined {
+		for (const row of el.shadowRoot!.querySelectorAll(".live-sensor-row")) {
+			const lbl = (
+				row.querySelector(".live-sensor-label")?.textContent ?? ""
+			).trim();
+			if (lbl === label)
+				return (
+					row.querySelector(".live-sensor-state")?.textContent ?? ""
+				).trim();
+		}
+		return undefined;
+	}
+
+	const LITE = {
+		has_static_presence: false,
+		has_motion_presence: false,
+		has_target_presence: false,
+		has_mmwave_presence: false,
+	};
+
+	it("shows Occupancy as 'not calibrated' on an uncalibrated sensorless Lite", async () => {
+		const el = await mount({ hasPerspective: false, capabilities: LITE });
+		expect(presenceState(el, "live.occupancy")).toBe("live.not_calibrated");
+	});
+
+	it("shows the real occupancy state once the sensorless Lite is calibrated", async () => {
+		const el = await mount({ hasPerspective: true, capabilities: LITE });
+		// sensors().occupancy === true → detected, not the calibration notice
+		expect(presenceState(el, "live.occupancy")).toBe("live.detected");
+	});
+
+	it("keeps real occupancy on an uncalibrated device that has a static sensor (Pro)", async () => {
+		// The Pro's PIR drives occupancy without calibration, so it stays live.
+		const el = await mount({
+			hasPerspective: false,
+			capabilities: { has_static_presence: true },
+		});
+		expect(presenceState(el, "live.occupancy")).toBe("live.detected");
+	});
+
+	function tipText(el: EppLiveSidebar, label: string): string | undefined {
+		for (const row of el.shadowRoot!.querySelectorAll(".live-sensor-row")) {
+			const lbl = (
+				row.querySelector(".live-sensor-label")?.textContent ?? ""
+			).trim();
+			if (lbl === label)
+				return (row.querySelector("epp-info-tip") as { text?: string } | null)
+					?.text;
+		}
+		return undefined;
+	}
+
+	it("uses the Lite occupancy tooltip on a sensorless board", async () => {
+		// The Lite has no PIR/static sensor, so the standard "PIR motion, static
+		// mmWave presence" description is wrong — occupancy comes from tracking.
+		const el = await mount({ capabilities: LITE });
+		expect(tipText(el, "live.occupancy")).toBe("info.occupancy_lite");
+	});
+
+	it("uses the standard occupancy tooltip when the board has a sensor", async () => {
+		const el = await mount({ capabilities: { has_static_presence: true } });
+		expect(tipText(el, "live.occupancy")).toBe("info.occupancy");
+	});
+});

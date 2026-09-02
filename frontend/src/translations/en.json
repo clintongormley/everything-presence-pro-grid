@@ -294,7 +294,8 @@
 			"target_left": "{target} left the room",
 			"target_moved": "{target} moved {from} → {to}",
 			"dropped": "{n} events dropped"
-		}
+		},
+		"not_calibrated": "Not calibrated"
 	},
 	"entities": {
 		"room_level": "Room level",
@@ -319,6 +320,7 @@
 	},
 	"info": {
 		"occupancy": "Combined occupancy from all sources — PIR motion, static mmWave presence, and zone tracking. Shows detected if any source detects presence.",
+		"occupancy_lite": "Occupancy detected when a target is tracked anywhere in the calibrated room.",
 		"static_presence": "mmWave radar detects stationary people by measuring micro-movements like breathing. Works through furniture and blankets.",
 		"motion_presence": "Passive infrared sensor detects movement by sensing body heat. Fast response but only triggers on motion, not stationary presence.",
 		"target_presence": "Whether any target is actively tracked by the mmWave radar. Detected when at least one target point is being reported.",
