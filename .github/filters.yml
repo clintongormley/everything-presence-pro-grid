@@ -9,7 +9,7 @@
 # PRs, a `changes` job classifies the diff via this file, and each heavy job is
 # gated with `if: needs.changes.outputs.<name> == 'true'`. A required job that
 # is SKIPPED by its `if:` is treated as satisfied by the ruleset — green PR, no
-# wasted compute. See docs/developers/ci.md.
+# wasted compute. See the PR-process section of docs/developers/contributing.md.
 #
 # Each filter includes the CI plumbing itself (this file + the relevant
 # workflow), so editing CI re-runs the full suite that CI governs.

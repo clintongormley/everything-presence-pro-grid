@@ -12,15 +12,19 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     name: Detect changed paths
+    # Fail OPEN: if the filter step errors (API change, transient outage), treat
+    # every category as changed so the real jobs run. Skipping them instead
+    # would make each required check go green-by-skip and silently bypass CI.
     outputs:
-      python: ${{ steps.filter.outputs.python }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      cpp: ${{ steps.filter.outputs.cpp }}
-      docs: ${{ steps.filter.outputs.docs }}
+      python: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.python }}
+      frontend: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.frontend }}
+      cpp: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.cpp }}
+      docs: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.docs }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
         id: filter
+        continue-on-error: true
         with:
           filters: .github/filters.yml
 

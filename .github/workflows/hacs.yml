@@ -12,12 +12,15 @@ jobs:
   changes:
     runs-on: ubuntu-latest
     name: Detect changed paths
+    # Fail OPEN: on a filter error, run HACS rather than skip it — a skipped
+    # required check goes green-by-skip and would silently bypass CI.
     outputs:
-      integration: ${{ steps.filter.outputs.integration }}
+      integration: ${{ steps.filter.outcome != 'success' && 'true' || steps.filter.outputs.integration }}
     steps:
       - uses: actions/checkout@v5
       - uses: dorny/paths-filter@v3
         id: filter
+        continue-on-error: true
         with:
           filters: .github/filters.yml
 
