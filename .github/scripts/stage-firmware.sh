@@ -51,6 +51,19 @@ for VARIANT in "${VARIANTS[@]}"; do
   ART="everything-presence-pro-${VARIANT}"
   LABEL=$(variant_label "$VARIANT")
 
+  # A variant added after this release was cut simply isn't among its assets.
+  # Skip it (rather than failing) so a newly-added variant doesn't break
+  # staging of an older release — e.g. fw/latest still on a release that
+  # predates the variant. A variant that is only PARTIALLY present is a corrupt
+  # release, so that still fails loud below.
+  present=0
+  for SUFFIX in .bin .ota.bin -bootloader.bin -partitions.bin; do
+    [ -f "${ARTIFACTS}/${ART}${SUFFIX}" ] && present=$((present + 1))
+  done
+  if [ "$present" -eq 0 ]; then
+    echo "note: ${VARIANT} not in this release — skipping" >&2
+    continue
+  fi
   for SUFFIX in .bin .ota.bin -bootloader.bin -partitions.bin; do
     [ -f "${ARTIFACTS}/${ART}${SUFFIX}" ] \
       || { echo "missing artifact: ${ARTIFACTS}/${ART}${SUFFIX}" >&2; exit 1; }
