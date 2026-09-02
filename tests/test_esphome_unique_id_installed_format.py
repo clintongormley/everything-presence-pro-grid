@@ -74,6 +74,19 @@ class TestDiscoveryInstalledFormat:
     def manager(self, hass: HomeAssistant) -> DeviceManager:
         return DeviceManager(hass, EPPGridStore(hass))
 
+    @pytest.fixture(autouse=True)
+    async def _stub_on_device_available(self, hass: HomeAssistant):
+        # Discovery now kicks `_on_device_available` for an already-online
+        # device (to fetch build flags); stub it so these discovery/firmware-
+        # read unit tests don't open a real connection, and drain the
+        # fire-and-forget task while still stubbed so none lingers into teardown.
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        with patch.object(DeviceManager, "_on_device_available", new=AsyncMock()):
+            yield
+            await hass.async_block_till_done()
+
     # None → installed default (v1 locally / on the floor, v3 on HA 2026.8+);
     # 2 → the unmangled-name path, exercised on every job.
     @pytest.mark.parametrize("uid_version", [None, 2])

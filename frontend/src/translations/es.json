@@ -294,7 +294,8 @@
 			"target_left": "{target} salió de la habitación",
 			"target_moved": "{target} se movió de {from} → {to}",
 			"dropped": "{n} eventos descartados"
-		}
+		},
+		"not_calibrated": "Sin calibrar"
 	},
 	"entities": {
 		"room_level": "Nivel de habitación",
@@ -319,6 +320,7 @@
 	},
 	"info": {
 		"occupancy": "Ocupación combinada de todas las fuentes: sensor PIR de movimiento, presencia estática por radar mmWave y seguimiento de zonas. Muestra «detectado» si alguna fuente detecta presencia.",
+		"occupancy_lite": "Ocupación detectada cuando se rastrea un objetivo en cualquier parte de la sala calibrada.",
 		"static_presence": "El radar mmWave detecta personas inmóviles midiendo micromovimientos como la respiración. Funciona a través de muebles y mantas.",
 		"motion_presence": "El sensor infrarrojo pasivo detecta movimiento captando el calor corporal. Respuesta rápida, pero solo se activa con movimiento, no con presencia estática.",
 		"target_presence": "Indica si el radar mmWave está rastreando activamente algún objetivo. Se muestra como detectado cuando se está reportando al menos un punto objetivo.",

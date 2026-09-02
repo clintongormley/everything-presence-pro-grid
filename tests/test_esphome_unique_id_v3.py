@@ -99,6 +99,19 @@ class TestDiscoveryAndFirmwareReadV3:
     def manager(self, hass: HomeAssistant) -> DeviceManager:
         return DeviceManager(hass, EPPGridStore(hass))
 
+    @pytest.fixture(autouse=True)
+    async def _stub_on_device_available(self, hass: HomeAssistant):
+        # Discovery now kicks `_on_device_available` for an already-online
+        # device (to fetch build flags); stub it so these discovery/firmware-
+        # read unit tests don't open a real connection, and drain the
+        # fire-and-forget task while still stubbed so none lingers into teardown.
+        from unittest.mock import AsyncMock
+        from unittest.mock import patch
+
+        with patch.object(DeviceManager, "_on_device_available", new=AsyncMock()):
+            yield
+            await hass.async_block_till_done()
+
     async def test_discover_finds_v3_firmware_version_device(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         _make_v3_epp_device(hass, mac="11:22:33:44:55:66", host="192.168.1.60", version="1.6.0")
 

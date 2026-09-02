@@ -178,7 +178,17 @@ export class EppLiveSidebar extends LitElement {
 		on: boolean;
 		info: string;
 		color?: string | null;
+		/** Presence row on a sensorless board before room calibration: the state
+		 *  is zone-derived and can't be computed yet, so show a neutral notice
+		 *  (off dot) instead of a misleading Clear/Detected. */
+		uncalibrated?: boolean;
 	}) {
+		const on = s.uncalibrated ? false : s.on;
+		const stateText = s.uncalibrated
+			? this.localize("live.not_calibrated")
+			: on
+				? this.localize("live.detected")
+				: this.localize("live.clear");
 		const dot =
 			s.color !== undefined
 				? html`
@@ -186,17 +196,17 @@ export class EppLiveSidebar extends LitElement {
 						class="live-sensor-dot"
 						style=${
 							s.color
-								? `background: ${s.color};${s.on ? ` box-shadow: 0 0 6px 2px ${s.color};` : ""}`
-								: `background: #fff; border: 1px solid #ccc;${s.on ? " box-shadow: 0 0 6px 2px #999;" : ""}`
+								? `background: ${s.color};${on ? ` box-shadow: 0 0 6px 2px ${s.color};` : ""}`
+								: `background: #fff; border: 1px solid #ccc;${on ? " box-shadow: 0 0 6px 2px #999;" : ""}`
 						}
 					></div>
 				`
-				: html`<div class="live-sensor-dot ${s.on ? "on" : "off"}"></div>`;
+				: html`<div class="live-sensor-dot ${on ? "on" : "off"}"></div>`;
 		return html`
 			<div class="live-sensor-row">
 				${dot}
 				<span class="live-sensor-label">${s.label}</span>
-				<span class="live-sensor-state ${s.on ? "detected" : ""}">${s.on ? this.localize("live.detected") : this.localize("live.clear")}</span>
+				<span class="live-sensor-state ${on ? "detected" : ""}">${stateText}</span>
 				${this.showInfoTips ? html`<epp-info-tip .text=${s.info} .localize=${this.localize}></epp-info-tip>` : nothing}
 			</div>
 		`;
@@ -205,6 +215,13 @@ export class EppLiveSidebar extends LitElement {
 	render() {
 		const ss = this.sensorState;
 		const zs = this.zoneState;
+
+		// A board with no static/motion sensor (the Lite) derives presence purely
+		// from the mmWave target tracker / zones — the standard tooltips and
+		// states that mention a PIR or a static sensor don't apply to it.
+		const isSensorless =
+			!hasCapability(this.capabilities, "has_static_presence") &&
+			!hasCapability(this.capabilities, "has_motion_presence");
 
 		const sensorDefs: {
 			id: string;
@@ -218,7 +235,9 @@ export class EppLiveSidebar extends LitElement {
 				id: "occupancy",
 				label: this.localize("live.occupancy"),
 				on: ss.occupancy_state ?? ss.occupancy,
-				info: this.localize("info.occupancy"),
+				info: this.localize(
+					isSensorless ? "info.occupancy_lite" : "info.occupancy",
+				),
 			},
 			{
 				id: "static_presence",
@@ -258,6 +277,12 @@ export class EppLiveSidebar extends LitElement {
 		const filteredPresence = this.presenceKeys
 			? supported.filter((s) => this.presenceKeys?.includes(s.id as never))
 			: supported;
+
+		// A sensorless board (the Lite) derives every presence state from zones,
+		// which need room calibration. Before that, a target shows on the FOV but
+		// presence stays Clear — misleading. Flag the rows as "not calibrated"
+		// instead. A Pro (has a PIR) keeps live presence.
+		const presenceNeedsCalibration = !this.hasPerspective && isSensorless;
 
 		// Zone occupancy entries: rest-of-room (slot 0) first to match editor
 		// ordering, then configured named zones in slot order.
@@ -351,7 +376,7 @@ export class EppLiveSidebar extends LitElement {
         ${
 					showPres
 						? html`<div class="live-section-header">${this.localize("live.presence")}</div>
-            ${filteredPresence.map((s) => this._renderRow(s))}`
+            ${filteredPresence.map((s) => this._renderRow({ ...s, uncalibrated: presenceNeedsCalibration }))}`
 						: nothing
 				}
         ${

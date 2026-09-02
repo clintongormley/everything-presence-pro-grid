@@ -294,7 +294,8 @@
 			"target_left": "{target} opustil místnost",
 			"target_moved": "{target} se přesunul {from} → {to}",
 			"dropped": "{n, plural, one {# událost zahozena} few {# události zahozeny} many {# události zahozeno} other {# událostí zahozeno}}"
-		}
+		},
+		"not_calibrated": "Nekalibrováno"
 	},
 	"entities": {
 		"room_level": "Úroveň místnosti",
@@ -319,6 +320,7 @@
 	},
 	"info": {
 		"occupancy": "Kombinovaná obsazenost ze všech zdrojů — PIR pohyb, statická přítomnost mmWave a sledování zón. Zobrazuje „detekováno“, pokud přítomnost zjistí kterýkoli zdroj.",
+		"occupancy_lite": "Obsazenost je detekována, když je kdekoli v kalibrované místnosti sledován cíl.",
 		"static_presence": "Radar mmWave detekuje nehybné osoby měřením mikropohybů, jako je dýchání. Funguje i přes nábytek a přikrývky.",
 		"motion_presence": "Pasivní infračervený senzor (PIR) detekuje pohyb snímáním tělesného tepla. Rychlá reakce, ale spouští se pouze při pohybu, ne při nehybné přítomnosti.",
 		"target_presence": "Zda je radarem mmWave aktivně sledován nějaký cíl. Detekováno, když je hlášen alespoň jeden cílový bod.",

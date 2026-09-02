@@ -1276,6 +1276,49 @@ class TestDeviceManager:
         assert len(fire_calls) == 1, "offline transition after rediscovery must fire broadcast"
         assert manager.devices[mac].available is False
 
+    async def test_discover_pushes_to_new_already_available_device(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """A freshly discovered device that is ALREADY online must have its
+        push/build-flags path kicked by discovery itself.
+
+        The entities publish their first-appearance (None -> value) states
+        during the ESPHome connect, which happens BEFORE async_discover
+        registers the mac — so `_on_state_changed` drops those transitions
+        (`mac not in self.devices`) and never fires `_on_device_available`.
+        With no later availability transition (the device stays online), the
+        build flags are never fetched and `list_devices` carries no has_*
+        flags — an uncalibrated Lite then shows every presence row. Mirrors
+        the setup-time "push to already-available devices" pass.
+        """
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.50"}, title="EPP Lite")
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP Lite",
+            manufacturer="EverythingSmartTechnology",
+            model="Everything Presence Lite",
+        )
+        entity = ent_reg.async_get_or_create(
+            "sensor",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FF-sensor-firmware_version",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+        # Device is already online when discovery runs (live firmware_version).
+        hass.states.async_set(entity.entity_id, "1.9.0")
+
+        with patch.object(manager, "_on_device_available", new=AsyncMock()) as on_avail:
+            await manager.async_discover()
+            await hass.async_block_till_done()
+
+        on_avail.assert_awaited_once_with("AA:BB:CC:DD:EE:FF")
+
     async def test_list_devices(self, hass: HomeAssistant, manager: DeviceManager) -> None:
         """list_devices returns serializable device list."""
         manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
@@ -3441,7 +3484,13 @@ class TestFirmwareVersion:
         )
         hass.states.async_set(fw_entry.entity_id, FIRMWARE_VERSION)
 
-        await manager.async_discover()
+        # Discovery now kicks `_on_device_available` for an already-online
+        # device (to fetch build flags); stub it so this test doesn't open a
+        # real connection — firmware_status is read from live entity state,
+        # not from that path.
+        with patch.object(manager, "_on_device_available", new=AsyncMock()):
+            await manager.async_discover()
+            await hass.async_block_till_done()
 
         assert "AA:BB:CC:DD:EE:FF" in manager.devices
         # Firmware version is read live, so list_devices should report compatible
