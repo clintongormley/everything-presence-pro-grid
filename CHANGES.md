@@ -23,6 +23,12 @@ firmware downloads, see the
     The new Tracking Sensor entity reads Connected while the tracker is sending
     data and Disconnected when it has gone quiet or never started, so a failed
     tracker is easy to spot (#407).
+- **Clear the heatmap from the panel.** A Clear button now sits next to the
+    Heatmap toggle in the panel — on the live overview and in the
+    zones/overlays/furniture editor — so you can wipe a sensor's accumulated
+    heatmap without opening a dashboard card or calling the `eppgrid.clear_heatmap`
+    action. It asks for confirmation first, clears only when the sensor supports
+    it, and clearing is permanent and survives a device reboot (#411).
 
 ## v1.8.0 — 2026-08-16
 
