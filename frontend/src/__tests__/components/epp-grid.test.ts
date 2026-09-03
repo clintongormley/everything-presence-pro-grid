@@ -1156,12 +1156,14 @@ describe("epp-grid darkness (sensor FOV)", () => {
 		const cells = el.shadowRoot!.querySelectorAll(
 			".cell",
 		) as NodeListOf<HTMLElement>;
-		// Dark cells should NOT have interference stripes (#cc3333)
-		const darkWithStripes = Array.from(cells).filter(
-			(c) =>
-				c.style.cssText.includes("c8c8c8") &&
-				c.style.cssText.includes("cc3333"),
-		);
+		// Dark cells should NOT have interference stripes (#cc3333). Read the raw
+		// `style` attribute: happy-dom drops the `background-image` longhand from
+		// cssText when a `background` shorthand precedes it, so cssText would hide
+		// a wrongly-striped dark cell (see findInterferenceCell).
+		const darkWithStripes = Array.from(cells).filter((c) => {
+			const s = c.getAttribute("style") ?? "";
+			return s.includes("c8c8c8") && s.includes("cc3333");
+		});
 		expect(darkWithStripes.length).toBe(0);
 
 		document.body.removeChild(el);
@@ -1708,7 +1710,12 @@ describe("epp-grid interference stripes", () => {
 			".cell",
 		) as NodeListOf<HTMLElement>;
 		for (const c of cells) {
-			if (c.style.cssText.includes("cc3333")) return c;
+			// Read the raw `style` attribute, not `style.cssText`: happy-dom
+			// re-serialises cssText and drops the `background-image` longhand when
+			// a `background` shorthand precedes it (as overlay cells emit), so the
+			// stripe colour vanishes from cssText. The raw attribute preserves
+			// exactly what the template emitted (see the note near line 1055).
+			if ((c.getAttribute("style") ?? "").includes("cc3333")) return c;
 		}
 		return null;
 	}
@@ -1731,7 +1738,7 @@ describe("epp-grid interference stripes", () => {
 
 		const cell = findInterferenceCell(el);
 		expect(cell).not.toBeNull();
-		const style = cell!.style.cssText;
+		const style = cell!.getAttribute("style") ?? "";
 		expect(style).toContain("-45deg");
 		expect(style).toContain("#cc3333");
 		// Single stripe pattern — not a cross-hatch
@@ -1748,7 +1755,7 @@ describe("epp-grid interference stripes", () => {
 
 		const cell = findInterferenceCell(el);
 		expect(cell).not.toBeNull();
-		const style = cell!.style.cssText;
+		const style = cell!.getAttribute("style") ?? "";
 		expect(style).toContain("-45deg");
 		expect(style).toContain("45deg");
 		expect(style).toContain("#cc3333");
