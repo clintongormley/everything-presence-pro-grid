@@ -14,6 +14,9 @@ capability check — rather than a version string, so it survives backports.
 
 from __future__ import annotations
 
+from typing import Any
+
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.device_registry import DeviceEntry
 from homeassistant.helpers.device_registry import DeviceRegistry
 
@@ -52,6 +55,32 @@ def device_by_connection(
     if config_entry_id and hasattr(registry, "async_get_device_by_connection"):
         return registry.async_get_device_by_connection(connection, config_entry_id)
     return registry.async_get_device(connections={connection})
+
+
+def config_entry_id_for_domain(hass: Any, device: DeviceEntry, domain: str) -> str | None:
+    """Return the id of ``device``'s config entry owned by ``domain`` (or ``None``).
+
+    HA 2026.9 deprecated reading ``DeviceEntry.config_entries`` directly (a runtime
+    warning now for custom integrations; removed in HA Core 2027.9) and shipped
+    ``dr.async_get_device_and_config_entry_for_domain(hass, device_id, domain=…)``,
+    which returns ``(device, config_entry)`` for a domain in one call. eppgrid still
+    supports HA 2025.2 (``hacs.json``), where that helper doesn't exist, so we
+    feature-detect it and otherwise fall back to iterating ``device.config_entries``
+    — non-deprecated on that floor — and resolving each id to its entry's domain.
+
+    Feature detection is by ``getattr`` on the ``device_registry`` module — the
+    HA-idiomatic capability check — rather than a version string, so it survives
+    backports.
+    """
+    helper = getattr(dr, "async_get_device_and_config_entry_for_domain", None)
+    if helper is not None:
+        _device, entry = helper(hass, device.id, domain=domain)
+        return entry.entry_id if entry is not None else None
+    for entry_id in device.config_entries:
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is not None and entry.domain == domain:
+            return entry_id
+    return None
 
 
 def all_devices(registry: DeviceRegistry) -> list[DeviceEntry]:

@@ -35,6 +35,7 @@ from ..const import FIRMWARE_VERSION
 from ..const import MAX_ZONES
 from ..const import empty_zone_slots
 from ..dr_compat import all_devices
+from ..dr_compat import config_entry_id_for_domain
 from ..firmware_cache import FW_CACHE_URL_PREFIX
 from ..firmware_cache import async_local_ota_manifest_url
 from ..storage import EPPGridStore
@@ -3125,13 +3126,11 @@ class DeviceManager:
                 continue
             seen_macs.add(mac)
 
-            # Find the ESPHome config entry for this device
-            esphome_config_entry_id = None
-            for entry_id in device.config_entries:
-                entry = self._hass.config_entries.async_get_entry(entry_id)
-                if entry is not None and entry.domain == "esphome":
-                    esphome_config_entry_id = entry_id
-                    break
+            # Find the ESPHome config entry for this device. The compat shim uses
+            # HA 2026.9's `async_get_device_and_config_entry_for_domain` where it
+            # exists (avoiding the deprecated `DeviceEntry.config_entries` read)
+            # and falls back to iterating `config_entries` on the HA 2025.2 floor.
+            esphome_config_entry_id = config_entry_id_for_domain(self._hass, device, "esphome")
 
             host = _extract_host(device, esphome_config_entry_id, self._hass)
 
