@@ -15,7 +15,12 @@ exercise the fallback branch.
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
+import homeassistant.helpers.device_registry as ha_dr
+
 from custom_components.eppgrid.dr_compat import all_devices
+from custom_components.eppgrid.dr_compat import config_entry_id_for_domain
 from custom_components.eppgrid.dr_compat import device_by_connection
 from custom_components.eppgrid.dr_compat import device_by_identifier
 
@@ -199,3 +204,73 @@ class TestAllDevices:
         result = all_devices(reg)
 
         assert isinstance(result, list)
+
+
+class _FallbackHass:
+    """Floor HA (<2026.9): resolves a config entry id to an entry with a domain,
+    the way ``hass.config_entries.async_get_entry`` does."""
+
+    def __init__(self, entries: dict[str, str]) -> None:
+        # entry_id -> domain
+        self.config_entries = SimpleNamespace(
+            async_get_entry=lambda entry_id: (
+                SimpleNamespace(entry_id=entry_id, domain=entries[entry_id]) if entry_id in entries else None
+            )
+        )
+
+
+class TestConfigEntryIdForDomain:
+    def test_new_ha_uses_module_helper(self, monkeypatch) -> None:
+        """HA 2026.9+: use ``async_get_device_and_config_entry_for_domain`` and
+        return the matching entry's id — never touching ``device.config_entries``."""
+        entry = SimpleNamespace(entry_id="esphome1", domain="esphome")
+        calls: list[tuple] = []
+
+        def fake(hass, device_id, *, domain):
+            calls.append((device_id, domain))
+            return (SimpleNamespace(id=device_id), entry)
+
+        monkeypatch.setattr(ha_dr, "async_get_device_and_config_entry_for_domain", fake, raising=False)
+
+        # A device whose .config_entries access blows up proves the new path
+        # never falls back to iterating it (the deprecated read).
+        class _GuardDevice:
+            id = "dev1"
+
+            @property
+            def config_entries(self):
+                raise AssertionError("must not read config_entries on new HA")
+
+        result = config_entry_id_for_domain(object(), _GuardDevice(), "esphome")
+
+        assert result == "esphome1"
+        assert calls == [("dev1", "esphome")]
+
+    def test_new_ha_returns_none_when_no_entry_for_domain(self, monkeypatch) -> None:
+        """The helper returns ``(device, None)`` when the device has no config
+        entry for the domain; the shim surfaces that as ``None``."""
+        monkeypatch.setattr(
+            ha_dr,
+            "async_get_device_and_config_entry_for_domain",
+            lambda hass, device_id, *, domain: (SimpleNamespace(id=device_id), None),
+            raising=False,
+        )
+
+        assert config_entry_id_for_domain(object(), SimpleNamespace(id="dev1"), "esphome") is None
+
+    def test_old_ha_iterates_config_entries(self, monkeypatch) -> None:
+        """Floor HA lacks the module helper, so the shim iterates the device's
+        ``config_entries`` (non-deprecated there) and returns the id of the entry
+        owned by the requested domain."""
+        monkeypatch.delattr(ha_dr, "async_get_device_and_config_entry_for_domain", raising=False)
+        hass = _FallbackHass({"other1": "mqtt", "esphome1": "esphome"})
+        device = SimpleNamespace(id="dev1", config_entries=["other1", "esphome1"])
+
+        assert config_entry_id_for_domain(hass, device, "esphome") == "esphome1"
+
+    def test_old_ha_returns_none_when_no_matching_domain(self, monkeypatch) -> None:
+        monkeypatch.delattr(ha_dr, "async_get_device_and_config_entry_for_domain", raising=False)
+        hass = _FallbackHass({"other1": "mqtt"})
+        device = SimpleNamespace(id="dev1", config_entries=["other1"])
+
+        assert config_entry_id_for_domain(hass, device, "esphome") is None
