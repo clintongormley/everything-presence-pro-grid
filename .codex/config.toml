@@ -1,0 +1,7 @@
+# Project-scoped Codex config. Codex reads AGENTS.md (a symlink to CLAUDE.md here).
+model = "gpt-6-astra"
+model_reasoning_effort = "high"
+
+[sandbox_workspace_write]
+# Closed by default; pip and the Docker HA instance need it.
+network_access = true
