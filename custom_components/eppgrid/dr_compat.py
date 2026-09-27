@@ -61,7 +61,7 @@ def config_entry_id_for_domain(hass: Any, device: DeviceEntry, domain: str) -> s
     """Return the id of ``device``'s config entry owned by ``domain`` (or ``None``).
 
     HA 2026.9 deprecated reading ``DeviceEntry.config_entries`` directly (a runtime
-    warning now for custom integrations; removed in HA Core 2027.9) and shipped
+    warning now for custom integrations; removed in HA Core 2027.10) and shipped
     ``dr.async_get_device_and_config_entry_for_domain(hass, device_id, domain=…)``,
     which returns ``(device, config_entry)`` for a domain in one call. eppgrid still
     supports HA 2025.2 (``hacs.json``), where that helper doesn't exist, so we
