@@ -1,4 +1,4 @@
-"""Portable device-registry helpers for tests, spanning HA 2025.2 → 2026.9+.
+"""Portable device-registry helpers for tests, spanning HA 2025.2 onward.
 
 HA 2026.9 escalated three long-standing ``device_registry`` deprecations to hard
 errors in the custom-integration test harness:
@@ -10,11 +10,14 @@ errors in the custom-integration test harness:
   ``.get()``) — iterate the view to get the entries instead.
 * ``async_get_or_create(via_device=…)`` — link sub-devices via ``via_device_id``.
 
+HA 2026.10 added a fourth:
+
+* ``DeviceEntry.config_entries`` — reported from HA 2026.10, and an error when
+  test code reads it; use ``config_entry_id``.
+
 eppgrid still supports the HA 2025.2 floor (``hacs.json``), where the new API
 does not exist, so tests can't simply switch to it. These helpers feature-detect
-the 2026.9 API (``async_get_devices``, which lands with the change) and fall back
-to the pre-2026.9 calls on older HA — the same version span the production
-``dr_compat`` shim covers.
+the newer API and fall back to the older calls on older HA.
 """
 
 from __future__ import annotations
@@ -38,6 +41,19 @@ def get_device_by_connection(reg: dr.DeviceRegistry, connection: tuple[str, str]
     if get_all is not None:
         return next(iter(get_all(connections={connection})), None)
     return reg.async_get_device(connections={connection})
+
+
+def device_config_entry_ids(dev: dr.DeviceEntry) -> set[str]:
+    """Return the ids of the config entries ``dev`` belongs to, portably.
+
+    HA 2026.9 gave each device a single ``config_entry_id``, and HA 2026.10
+    reports reads of the deprecated ``DeviceEntry.config_entries`` (an error
+    when test code reads it directly, a logged warning when the read goes
+    through integration code); HA before 2026.9 has only ``config_entries``.
+    """
+    if hasattr(dev, "config_entry_id"):
+        return {dev.config_entry_id}
+    return set(dev.config_entries)
 
 
 def create_sub_device(reg: dr.DeviceRegistry, parent: dr.DeviceEntry, **kwargs: Any) -> dr.DeviceEntry:
