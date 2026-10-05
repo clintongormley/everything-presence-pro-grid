@@ -37,6 +37,7 @@ from custom_components.eppgrid.const import DOMAIN
 from custom_components.eppgrid.device_groups._registry import build_source_index
 
 from ._esphome_helpers import register_esphome_source
+from ._registry_helpers import device_config_entry_ids
 from ._registry_helpers import get_device_by_connection
 from ._registry_helpers import get_device_by_identifier
 
@@ -51,13 +52,13 @@ def _simulate_ha_2026_8(monkeypatch, hass: HomeAssistant) -> None:
 
     def by_identifier(identifier, config_entry_id):
         dev = get_device_by_identifier(reg, identifier)
-        if dev is None or config_entry_id not in dev.config_entries:
+        if dev is None or config_entry_id not in device_config_entry_ids(dev):
             return None
         return dev
 
     def by_connection(connection, config_entry_id):
         dev = get_device_by_connection(reg, connection)
-        if dev is None or config_entry_id not in dev.config_entries:
+        if dev is None or config_entry_id not in device_config_entry_ids(dev):
             return None
         return dev
 
@@ -138,7 +139,7 @@ async def test_build_source_index_uses_esphome_entry_id(
     dr_ = dr.async_get(hass)
     dev = get_device_by_connection(dr_, (dr.CONNECTION_NETWORK_MAC, dr.format_mac(mac)))
     assert dev is not None
-    esphome_entry_id = next(iter(dev.config_entries))
+    esphome_entry_id = next(iter(device_config_entry_ids(dev)))
 
     # Stand in for the DeviceManager: build_source_index resolves the ESPHome
     # entry id via manager.esphome_entry_id_for_mac(mac).

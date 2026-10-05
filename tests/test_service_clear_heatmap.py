@@ -218,6 +218,8 @@ async def test_area_target_resolved_via_entity(hass, config_entry):
         config_entry=config_entry,
         device_id=device.id,
         suggested_object_id="study_occupancy",
+        # HA 2026.10+ only lets an entity with a name of its own have its own area.
+        original_name="Occupancy",
     )
     ent_reg.async_update_entity(entity.entity_id, area_id="attic")
 
