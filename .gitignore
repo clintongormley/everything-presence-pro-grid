@@ -39,6 +39,7 @@ firmware/lib/epp_component_helpers/build-coverage/
 *.egg-info/
 .venv
 docs/EppGrid TODO.txt
+docs/backlog.md
 docs/superpowers/
 docs/handoffs/
 .playwright-mcp/
