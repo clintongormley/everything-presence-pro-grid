@@ -9,8 +9,9 @@ docs_dir: docs
 site_dir: site
 
 exclude_docs: |
-  superpowers/
-  EppGrid TODO.txt
+  /superpowers/
+  /handoffs/
+  /EppGrid TODO.txt
   /backlog.md
 
 theme:
