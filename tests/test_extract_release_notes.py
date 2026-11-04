@@ -148,6 +148,21 @@ def test_section_ends_at_a_repeated_heading_for_the_same_version(tmp_path: Path)
     assert result.stdout == "- First.\n"
 
 
+@pytest.mark.parametrize("heading", ["## v1.2.1", "## v1.2.1 — 2026-06-21"])
+def test_windows_line_endings_do_not_reach_the_notes(heading: str, tmp_path: Path) -> None:
+    changes = f"# Changelog\r\n\r\n{heading}\r\n\r\n- One.\r\n- Two.\r\n\r\n## v1.2.0 — 2026-06-20\r\n\r\n- Zero.\r\n"
+    result = _run("1.2.1", changes, tmp_path)
+    assert result.returncode == 0
+    assert result.stdout == "- One.\n- Two.\n"
+
+
+def test_empty_section_with_windows_line_endings_has_no_notes(tmp_path: Path) -> None:
+    changes = "# Changelog\r\n\r\n## v1.2.1 — 2026-06-21\r\n\r\n## v1.2.0 — 2026-06-20\r\n\r\n- Zero.\r\n"
+    result = _run("1.2.1", changes, tmp_path)
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
 def test_real_changelog_v1_2_1_section(tmp_path: Path) -> None:
     """Smoke test against the committed CHANGES.md so the script and the real
     file stay compatible."""

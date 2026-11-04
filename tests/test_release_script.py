@@ -576,6 +576,11 @@ def _release_notes(repo: Path, version: str) -> subprocess.CompletedProcess:
     )
 
 
+def _release_notes_on_branch(repo: Path, version: str) -> subprocess.CompletedProcess:
+    _git("checkout", "-q", f"release-v{version}", cwd=repo)
+    return _release_notes(repo, version)
+
+
 def test_release_renames_unreleased_to_the_version_and_date(tmp_path: Path):
     _init_repo(tmp_path)
     result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
@@ -739,6 +744,87 @@ def test_aborts_when_the_unreleased_section_is_empty(tmp_path: Path, changes: st
     assert "release preparation failed" not in result.stderr
     assert _current_branch(tmp_path) == "main"
     assert _branches(tmp_path, "release-v0.93.0") == ""
+
+
+OLDER_SECTION = "## v0.92.0 — 2026-10-01\n\n- The previous release.\n"
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<!-- add entries here -->\n",
+        "<!--\n- not a real entry\n-->\n",
+        "<!-- one --> <!-- two -->\n",
+        "### Fixes\n\n<!-- add entries here -->\n",
+        "<!-- never closed\n- hidden by the comment\n",
+    ],
+    ids=["one-line", "several-lines", "two-comments", "subheading", "unclosed"],
+)
+def test_aborts_when_the_section_holds_only_a_comment(tmp_path: Path, body: str):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, f"# Changelog\n\n## Unreleased\n\n{body}\n{OLDER_SECTION}")
+
+    result = _run(tmp_path, "0.93.0", "--no-push")
+
+    assert result.returncode != 0
+    assert "is empty" in result.stdout + result.stderr
+    assert _current_branch(tmp_path) == "main"
+    assert _branches(tmp_path, "release-v0.93.0") == ""
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        "<!-- a note -->\n- A real entry.\n",
+        "- A real entry.\n<!-- a note -->\n",
+        "- A real entry. <!-- a note -->\n",
+        "<!-- a note --> - A real entry.\n",
+        "<!--\na note\n-->\n- A real entry.\n",
+    ],
+    ids=["before", "after", "same-line-after", "same-line-before", "several-lines"],
+)
+def test_an_entry_beside_a_comment_still_counts(tmp_path: Path, body: str):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, f"# Changelog\n\n## Unreleased\n\n{body}\n{OLDER_SECTION}")
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "A real entry." in _release_notes_on_branch(tmp_path, "0.93.0").stdout
+
+
+def _as_windows_file(text: str) -> str:
+    return text.replace("\n", "\r\n")
+
+
+def test_aborts_when_a_section_with_windows_line_endings_is_empty(tmp_path: Path):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, _as_windows_file(f"# Changelog\n\n## Unreleased\n\n{OLDER_SECTION}"))
+
+    result = _run(tmp_path, "0.93.0", "--no-push")
+
+    assert result.returncode != 0
+    assert "the '## Unreleased' section of CHANGES.md is empty" in result.stdout + result.stderr
+    assert _branches(tmp_path, "release-v0.93.0") == ""
+
+
+@pytest.mark.parametrize(
+    ("heading", "stays_as_written"),
+    [("## Unreleased", False), ("## v0.93.0 — unreleased", False), ("## v0.93.0", True)],
+    ids=["unreleased", "old-heading", "bare-version"],
+)
+def test_release_handles_windows_line_endings(tmp_path: Path, heading: str, stays_as_written: bool):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, _as_windows_file(f"# Changelog\n\n{heading}\n\n- The final.\n\n{OLDER_SECTION}"))
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    notes = _release_notes_on_branch(tmp_path, "0.93.0")
+    assert notes.returncode == 0, notes.stderr
+    assert notes.stdout == "- The final.\n"
+    if not stays_as_written:
+        assert "## v0.93.0 — 2026-11-04" in (tmp_path / "CHANGES.md").read_text().splitlines()
 
 
 @pytest.mark.parametrize("heading", ["## v0.93.0", "## v0.93.0 — unreleased", "## v0.93.0 — 2026-10-01"])

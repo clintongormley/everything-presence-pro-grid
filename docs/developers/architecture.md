@@ -1021,7 +1021,7 @@ independent — they only re-align when the firmware actually changes.
 A final release also checks the `CHANGES.md` section that will become the
 release notes: `## v<version>` if there is one, otherwise `## Unreleased`. The
 script stops before creating the branch if that section is missing or has no
-entries; subheadings alone do not count.
+entries; subheadings and HTML comments alone do not count.
 
 In the release commit, that heading becomes `## v<version> — <date>` if it is
 `## Unreleased` or `## v<version> — unreleased`. Any other heading stays as

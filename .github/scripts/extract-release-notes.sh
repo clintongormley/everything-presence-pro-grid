@@ -32,6 +32,7 @@ ver_re="$(printf '%s' "$VERSION" | sed 's/[.[\*^$]/\\&/g')"
 # Passed through the environment because `awk -v` strips the backslashes.
 section="$(
   VER_RE="$ver_re" awk '
+    { sub(/\r$/, "") }                                             # Windows line endings
     found && /^## / { exit }                                       # next `## ` heading: stop
     $0 ~ "^## v" ENVIRON["VER_RE"] "([ \t]|$)" { found = 1; next } # our heading: start, drop it
     found { print }

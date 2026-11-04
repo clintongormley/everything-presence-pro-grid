@@ -16,7 +16,7 @@
 # .github/scripts/extract-release-notes.sh turns them into the release notes. This
 # script picks the first `## v<version>` section, otherwise the first `## Unreleased`,
 # and stops before creating the branch if it finds neither or the section has no
-# entries.
+# entries. Subheadings and HTML comments are not entries.
 #
 # If the picked heading is `## Unreleased` or `## v<version> — unreleased`, it
 # becomes `## v<version> — <date>`. Any other heading stays as written, and so does
@@ -127,7 +127,7 @@ STAMP_CHANGELOG=false
 if [[ "$VERSION" != *-* ]]; then
   VERSION_RE="${VERSION//./\\.}"
   # The same first heading the notes script will pick.
-  SECTION=$(grep -Ensm1 "^## v${VERSION_RE}([[:blank:]]|\$)" CHANGES.md || true)
+  SECTION=$(grep -Ensm1 "^## v${VERSION_RE}([[:space:]]|\$)" CHANGES.md || true)
   if [ -z "$SECTION" ]; then
     SECTION=$(grep -Ensm1 '^## Unreleased[[:space:]]*$' CHANGES.md || true)
   fi
@@ -138,11 +138,25 @@ if [[ "$VERSION" != *-* ]]; then
   fi
   SECTION_LINE="${SECTION%%:*}"
   SECTION_HEADING="${SECTION#*:}"
+  SECTION_HEADING="${SECTION_HEADING%$'\r'}"
 
+  # What is left once HTML comments, subheadings and blank lines are gone. An
+  # unclosed comment hides the rest of the section, as it does on the release page.
   SECTION_ENTRIES=$(awk -v start="$SECTION_LINE" '
     NR <= start { next }
     /^## / { exit }
-    !/^#/ && /[^ \t]/
+    { text = text $0 "\n" }
+    END {
+      while ((opening = index(text, "<!--")) > 0) {
+        rest = substr(text, opening + 4)
+        closing = index(rest, "-->")
+        text = substr(text, 1, opening - 1) (closing > 0 ? substr(rest, closing + 3) : "")
+      }
+      count = split(text, lines, "\n")
+      for (i = 1; i <= count; i++) {
+        if (lines[i] !~ /^#/ && lines[i] ~ /[^ \t\r]/) print lines[i]
+      }
+    }
   ' CHANGES.md)
   if [ -z "$SECTION_ENTRIES" ]; then
     echo "✗ the '$SECTION_HEADING' section of CHANGES.md is empty; nothing to release" >&2
