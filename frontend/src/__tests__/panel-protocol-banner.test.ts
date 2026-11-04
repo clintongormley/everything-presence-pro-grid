@@ -2,6 +2,7 @@
  * Tests for protocol version banner rendering and config view blocking.
  */
 
+import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import type { EPPGridPanel } from "../eppgrid-panel.js";
 import "../eppgrid-panel.js";
@@ -105,6 +106,39 @@ describe("protocol banner rendering", () => {
 		const result = a._renderProtocolBanner();
 		expect(result).toBeDefined();
 		expect(typeof result).not.toBe("symbol");
+	});
+
+	it("links to the Marketplace when Home Assistant has it", () => {
+		const el = createPanel("firmware_ahead");
+		const a = el as any;
+		a.hass.config = { components: ["http", "marketplace"] };
+		const c = document.createElement("div");
+		render(a._renderProtocolBanner(), c);
+		const link = c.querySelector(".protocol-link") as HTMLAnchorElement;
+		expect(link.getAttribute("href")).toBe(
+			"/marketplace/repository/1172848595",
+		);
+		expect(link.textContent).toBe(a._localize("protocol.open_marketplace"));
+	});
+
+	it("keeps the HACS link on older Home Assistant", () => {
+		const el = createPanel("firmware_ahead");
+		const a = el as any;
+		a.hass.config = { components: ["http"] };
+		const c = document.createElement("div");
+		render(a._renderProtocolBanner(), c);
+		const link = c.querySelector(".protocol-link") as HTMLAnchorElement;
+		expect(link.getAttribute("href")).toBe("/hacs/repository/1172848595");
+		expect(link.textContent).toBe(a._localize("protocol.open_hacs"));
+	});
+
+	it("gives the panel a theme-aware background", () => {
+		const cssText = (customElements.get("eppgrid-panel") as any).elementStyles
+			.map((s: any) => s.cssText)
+			.join("");
+		expect(cssText).toContain(
+			"background: var(--ha-panel-background, var(--primary-background-color, #fafafa));",
+		);
 	});
 
 	it("renders info banner with unavailable message when device is offline", () => {

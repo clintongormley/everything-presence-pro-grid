@@ -89,6 +89,12 @@ event, and calls `e.stopPropagation()` when re-emitting a composed HA event
 | `epp-dialog`                   | **every modal**                                                                   | `open` (caller-owns), `heading?`; slots: default + `actions`; emits `dialog-dismiss` on Esc. **Slot action buttons directly** (`<epp-button slot="actions">`), not inside a wrapper `<div slot="actions">` (that breaks the flex row)                                                                                                                                                                                                                                                                                                                                                                                |
 | `epp-sheet`                    | the editor/live **controls panel** — one element, two presentations by breakpoint | `open` (caller-owns) + `inline`; slots: `peek` (always visible) + default (body) + `actions`. The handle is a **non-interactive grab indicator** — the caller controls `open` (no tap-to-toggle, no `sheet-open-changed`). **≤819px:** bottom sheet (`inline` flows it below the grid in the mobile editor; the default fixes it to the viewport bottom). **≥820px:** a relative-flow **side-panel card** (border + `--epp-radius-lg`, no grab handle), used as the desktop editor/live controls column. Presentation is purely breakpoint-driven CSS — the same `<epp-sheet inline open>` is correct at every width |
 
+**Labelled tick box:** `renderCheckRow` (`ui/check-row.ts`) is a template
+helper, not an element, so the `ha-checkbox` stays reachable from the host's
+shadow root. Add `checkRowStyles` to the host's styles. Home Assistant 2026.11
+removed `ha-formfield`, and the label is a `<span>`, because a `<label>` around
+a form-associated checkbox toggles it twice.
+
 ## Theming rules
 
 - **Chrome colours are themeable** via the `--epp-*` → HA-var indirection. The

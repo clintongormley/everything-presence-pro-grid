@@ -13,6 +13,7 @@ import { property, state } from "lit/decorators.js";
 import { literal, html as staticHtml } from "lit/static-html.js";
 import { DocumentListenerGroup } from "../lib/document-listeners.js";
 import { WEB_FLASHER_URL } from "../lib/help-url.js";
+import { integrationPageLink } from "../lib/integration-page.js";
 import "../ui/epp-button.js";
 import "../ui/epp-field.js";
 import type { WifiNetwork } from "../lib/improv-serial.js";
@@ -22,6 +23,7 @@ import type {
 	OtaDeviceState,
 	UsbFlashState,
 } from "../types.js";
+import { checkRowStyles, renderCheckRow } from "../ui/check-row.js";
 
 const WIFI_ICONS_LOCK = [
 	mdiWifiStrength1Lock,
@@ -515,11 +517,12 @@ const flasherStyles = css`
 `;
 
 export class EppFlasherView extends LitElement {
-	static styles = [flasherStyles];
+	static styles = [flasherStyles, checkRowStyles];
 
 	@property({ attribute: false }) flashableDevices: FlashableDevice[] = [];
 	@property({ type: Boolean }) loading = false;
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
+	@property({ attribute: false }) haComponents?: readonly string[];
 
 	@state() private _selectedVariant: "wifi" | "ethernet" = "wifi";
 	/**
@@ -958,16 +961,15 @@ export class EppFlasherView extends LitElement {
 								: nothing
 						}
 
-            <ha-formfield .label=${this.localize("flasher.manual_ssid")}>
-              <ha-checkbox
-                .checked=${showManual}
-                @change=${(e: Event) => {
-									this._manualSsid = (e.target as any).checked;
-									if (!this._manualSsid) this._selectedSsid = "";
-									this._wifiPassword = "";
-								}}
-              ></ha-checkbox>
-            </ha-formfield>
+            ${renderCheckRow({
+							label: this.localize("flasher.manual_ssid"),
+							checked: showManual,
+							onToggle: (checked) => {
+								this._manualSsid = checked;
+								if (!this._manualSsid) this._selectedSsid = "";
+								this._wifiPassword = "";
+							},
+						})}
 
             ${
 							showManual
@@ -1008,17 +1010,14 @@ export class EppFlasherView extends LitElement {
             `;
 						})()}
 
-            <ha-formfield
-              data-show-password
-              .label=${this.localize("flasher.show_password")}
-            >
-              <ha-checkbox
-                .checked=${this._showPassword}
-                @change=${(e: Event) => {
-									this._showPassword = (e.target as any).checked;
-								}}
-              ></ha-checkbox>
-            </ha-formfield>
+            ${renderCheckRow({
+							label: this.localize("flasher.show_password"),
+							checked: this._showPassword,
+							className: "show-password",
+							onToggle: (checked) => {
+								this._showPassword = checked;
+							},
+						})}
 
             <div class="confirm-actions">
               ${this._renderCancelButton()}
@@ -1103,6 +1102,7 @@ export class EppFlasherView extends LitElement {
 				d.firmware_type === "eppgrid" && d.firmware_status === "firmware_ahead",
 		);
 
+		const updatePage = integrationPageLink(this.haComponents);
 		return html`
       <div class="flasher-content">
         ${
@@ -1113,7 +1113,7 @@ export class EppFlasherView extends LitElement {
             <div>
               <strong>${this.localize("flasher.integration_outdated_title")}</strong>
               <p>${this.localize("flasher.integration_outdated_body")}</p>
-              <a href="/hacs/repository/1172848595" class="update-link">${this.localize("flasher.open_hacs")}</a>
+              <a href=${updatePage.href} class="update-link">${this.localize(`flasher.${updatePage.labelKey}`)}</a>
             </div>
           </div>
         `

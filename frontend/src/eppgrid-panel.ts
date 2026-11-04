@@ -46,6 +46,7 @@ import {
 	type OverlayMode,
 } from "./lib/grid.js";
 import { getHelpUrl, type PanelTab } from "./lib/help-url.js";
+import { integrationPageLink } from "./lib/integration-page.js";
 import {
 	autoDetectionRange,
 	boundsToRoomMm,
@@ -237,7 +238,7 @@ const hostStyles = css`
        custom panel with no HA app-header above it, so the viewport IS its box. */
     height: 100vh;
     height: 100dvh;
-    background: var(--primary-background-color, #fafafa);
+    background: var(--ha-panel-background, var(--primary-background-color, #fafafa));
     color: var(--primary-text-color, #212121);
     font-family: var(--ha-font-family-body, "Roboto", sans-serif);
     /* Own the desktop scroll on the panel host and ALWAYS reserve the
@@ -2795,6 +2796,7 @@ export class EPPGridPanel extends LitElement {
 					.flashableDevices=${this._flasherCtrl.flashableDevices}
 					.loading=${this._flasherCtrl.loading}
 					.localize=${this._localize}
+					.haComponents=${this.hass?.config?.components}
 					.usbFlashState=${this._flasherCtrl.usbFlashState}
 					.wifiNetworks=${this._flasherCtrl.wifiNetworks}
 					.firmwareVersion=${this._flasherCtrl.firmwareVersion}
@@ -3253,6 +3255,7 @@ export class EPPGridPanel extends LitElement {
 				: this._localize("protocol.firmware_ahead");
 
 		const isAhead = status === "firmware_ahead";
+		const updatePage = integrationPageLink(this.hass?.config?.components);
 		return html`
 			<div class="protocol-fullpage protocol-fullpage-${isBehind ? "warning" : "info"}">
 				<ha-icon icon=${isBehind ? "mdi:alert-circle-outline" : "mdi:information-outline"}></ha-icon>
@@ -3266,8 +3269,8 @@ export class EPPGridPanel extends LitElement {
 				}
 				${
 					isAhead
-						? html`<a href="/hacs/repository/1172848595" class="protocol-link"
-					>${this._localize("protocol.open_hacs")}</a>`
+						? html`<a href=${updatePage.href} class="protocol-link"
+					>${this._localize(`protocol.${updatePage.labelKey}`)}</a>`
 						: nothing
 				}
 			</div>

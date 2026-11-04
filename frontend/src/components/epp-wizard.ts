@@ -20,6 +20,7 @@ import {
 import { defaultLocalize, type LocalizeFn } from "../localize.js";
 import { buttonStyles, settingStyles } from "../styles.js";
 import type { RawTarget, WizardCorner } from "../types.js";
+import { checkRowStyles, renderCheckRow } from "../ui/check-row.js";
 import "../ui/epp-button.js";
 import "../ui/epp-field.js";
 
@@ -329,6 +330,7 @@ export class EppWizard extends LitElement {
 	static styles = [
 		buttonStyles,
 		settingStyles,
+		checkRowStyles,
 		css`
       :host {
         display: block;
@@ -829,14 +831,14 @@ export class EppWizard extends LitElement {
           </div>
         </div>
 
-        <ha-formfield class="dont-show-again" .label=${this.localize("wizard.dont_show_again")}>
-          <ha-checkbox
-            .checked=${this._dismissTutorial}
-            @change=${(e: Event) => {
-							this._dismissTutorial = (e.currentTarget as any).checked;
-						}}
-          ></ha-checkbox>
-        </ha-formfield>
+        ${renderCheckRow({
+					label: this.localize("wizard.dont_show_again"),
+					checked: this._dismissTutorial,
+					className: "dont-show-again",
+					onToggle: (checked) => {
+						this._dismissTutorial = checked;
+					},
+				})}
 
         <div style="display: flex; justify-content: space-between; margin-top: 20px;">
           <epp-button variant="text"
