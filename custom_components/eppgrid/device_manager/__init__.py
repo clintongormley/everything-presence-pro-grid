@@ -2721,7 +2721,7 @@ class DeviceManager:
             elif status == "firmware_ahead":
                 _LOGGER.warning(
                     "Skipping config push to %s (%s): device firmware %s is ahead of the integration's "
-                    "pinned %s. Device retains its persisted settings; update the integration via HACS "
+                    "pinned %s. Device retains its persisted settings; update the integration from Settings → Updates "
                     "to apply new config.",
                     dev.name,
                     mac,

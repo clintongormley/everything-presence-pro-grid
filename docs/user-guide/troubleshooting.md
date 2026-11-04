@@ -12,7 +12,7 @@ to be flashed over USB — and could be missing from the panel's device list, wi
 its zones and settings unavailable. This was caused by a change in how Home
 Assistant 2026.8 labels ESPHome entities internally.
 
-**Fix:** update the integration to **1.7.0 or newer** from **Settings >
+**Fix:** update the integration to **1.7.0 or newer** from **Settings →
 Updates**, then reload it or restart Home Assistant. The device is recognised
 again with no re-flash needed.
 

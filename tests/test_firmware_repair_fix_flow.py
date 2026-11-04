@@ -12,7 +12,7 @@ defined action. The flow has three user-visible steps:
 
 firmware_ahead issues stay unfixable: the device is on a newer version
 than the integration expects, and the resolution is to update the
-integration via HACS — which we can't drive from a Repairs flow.
+integration from Settings → Updates — which we can't drive from a Repairs flow.
 """
 
 from __future__ import annotations

@@ -93,7 +93,9 @@ event, and calls `e.stopPropagation()` when re-emitting a composed HA event
 helper, not an element, so the `ha-checkbox` stays reachable from the host's
 shadow root. Add `checkRowStyles` to the host's styles. Home Assistant 2026.11
 removed `ha-formfield`, and the label is a `<span>`, because a `<label>` around
-a form-associated checkbox toggles it twice.
+a form-associated checkbox toggles it twice. Use it to keep an existing tick box
+as a tick box without changing how it looks. New on/off settings still use
+`epp-toggle`.
 
 ## Theming rules
 

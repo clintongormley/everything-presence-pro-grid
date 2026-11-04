@@ -744,7 +744,7 @@ live under `issues.firmware_behind` / `issues.firmware_ahead` in `strings.json`.
 through a confirm step and triggers an OTA via `repairs._trigger_ota` (the same
 `set_update_manifest` API action the panel's Update Firmware button uses).
 `firmware_ahead` stays unfixable: the resolution is to update the integration
-via HACS, which the Repairs framework can't drive.
+from Settings → Updates, which the Repairs framework can't drive.
 
 Because the integration is now the source of truth for firmware-update
 detection, the device-side auto-poll on `update.http_request` is set to
@@ -1439,7 +1439,7 @@ entity-creation flow.
 ## 6. Diagnostics
 
 The integration implements the HA diagnostics platform (`diagnostics.py`). Users
-can download a JSON dump from Settings > Devices & Services > Everything
+can download a JSON dump from Settings → Devices & Services → Everything
 Presence Grid.
 
 **Contents:**

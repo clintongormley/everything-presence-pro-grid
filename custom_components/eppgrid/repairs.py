@@ -12,7 +12,7 @@ through this flow:
      failed   — error: keep the dialog open with a retry button
 
 `firmware_ahead_{mac}` issues are intentionally not fixable from here:
-the resolution is to update the integration via HACS, which we have no
+the resolution is to update the integration from Settings → Updates, which we have no
 way to drive from a Repairs flow.
 """
 

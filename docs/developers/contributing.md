@@ -7,7 +7,9 @@ how to run the tests the pre-push hook enforces, and the PR process.
 
 ## Prerequisites
 
-- **Python 3.13+** — matches the integration's `requires-python` floor.
+- **Python 3.14.2+** — the setup command below installs the latest stable Home
+    Assistant, which needs it. The integration's `requires-python` floor stays
+    3.13 for the `2025.2.0` CI job.
 - **Node.js** (LTS) and `npm` — for the frontend build and tests.
 - **CMake** and a C++17 compiler — for the zone engine library tests (only
     needed if you touch firmware).
@@ -32,7 +34,7 @@ git clone https://github.com/clintongormley/everything-presence-pro-grid
 cd everything-presence-pro-grid
 
 # Python environment
-python3 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 python scripts/ci_ha_install.py stable \
     --requirements requirements_test.txt --extra "aioesphomeapi>=29.0.0"
@@ -42,6 +44,10 @@ cd frontend
 npm install
 cd ..
 ```
+
+Use a new virtual environment when you move from Home Assistant 2026.10 or older
+to 2026.11 or newer. `pytest-homeassistant-custom-component` left installed
+beside `pytest-homeassistant` stops pytest before it collects any tests.
 
 For docs work, also install the docs dependencies:
 
@@ -117,8 +123,8 @@ pytest tests/ -x -q --cov=custom_components/eppgrid --cov-fail-under=90
     via the installed `aioesphomeapi` builder at its default version, so the
     format tracks the library (v1 on the floor, v3 on 2026.8+, whatever ships
     next) and `tests/test_esphome_unique_id_installed_format.py` fails on the
-    `dev` job if a future format stops normalising. Keep that pattern for any
-    device→integration contract.
+    nightly `dev` job if a future format stops normalising. Keep that pattern
+    for any device→integration contract.
 
 ### Frontend
 

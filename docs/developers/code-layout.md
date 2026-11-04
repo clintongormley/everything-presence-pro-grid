@@ -230,6 +230,9 @@ Pure-logic modules — no Lit, no HA, testable in isolation.
     `#furniture`, `#settings`).
 - `help-url.ts` — `(panelTab, view, sidebarTab)` → contextual user-guide URL
     (drives the help icon in the panel tab-bar).
+- `integration-page.ts` — where to update the integration: the Marketplace page
+    when `hass.config.components` includes `marketplace`, otherwise the HACS
+    page.
 - `storage.ts` — `localStorage` helper (e.g. selected device MAC).
 - `safe-unsub.ts` — wrapper around HA WebSocket unsubscribe callbacks that
     swallows the "stale subscription" error from already-torn-down connections.

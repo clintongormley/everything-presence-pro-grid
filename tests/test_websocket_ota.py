@@ -254,8 +254,9 @@ class TestSubscribeOtaProgress:
 
         async def _open(mac: str) -> object:
             # Simulate HA's async_handle_close landing mid-await: clear the
-            # subscriptions dict and swap send_message for the closed-error
-            # stub (HA does NOT cancel this background task).
+            # subscriptions dict and swap send_message (the HA 2026.10 and older
+            # shape) for the closed-error stub (HA does NOT cancel this
+            # background task).
             connection.subscriptions.clear()
             connection.send_message = connection._connect_closed_error
             return device_conn

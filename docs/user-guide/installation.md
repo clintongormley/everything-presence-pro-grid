@@ -8,7 +8,7 @@ integration. You'll need a working Home Assistant install to add it to.
 
 ## Prerequisites
 
-- Home Assistant 2026.5.0 or newer.
+- Home Assistant 2025.2.0 or newer.
 - On Home Assistant 2026.10 or older, [HACS](https://hacs.xyz/) installed
     (recommended).
 
@@ -27,7 +27,7 @@ page, then select **Install**.
 
 ### From the Marketplace
 
-1. Go to **Settings > Marketplace**. The first time you open it, Home Assistant
+1. Go to **Settings → Marketplace**. The first time you open it, Home Assistant
     warns you that everything in the Marketplace comes from the community and
     is not reviewed by the Home Assistant project. You need to accept that
     warning before you can install anything.
@@ -92,9 +92,9 @@ assigning an area — see
 
 | Symptom                                                                | Likely cause                                                                     | Fix                                                                                                                                                                                                                                                                              |
 | ---------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| The Marketplace or HACS doesn't list the integration                   | The catalog hasn't refreshed yet                                                 | Wait a few minutes and search again, or restart Home Assistant to make HACS refresh its list.                                                                                                                                                                                    |
+| The Marketplace or HACS doesn't list the integration                   | The catalog hasn't refreshed yet                                                 | Wait a few minutes and search again. On HACS, restarting Home Assistant also refreshes the list.                                                                                                                                                                                 |
 | Integration installed but the panel doesn't appear in the HA sidebar   | Integration entry hasn't been added yet, or you're signed in as a non-admin user | Confirm you're signed in as an administrator (the panel is admin-only). Otherwise go to **Settings → Devices & services → Add integration** and add **Everything Presence Grid**. If the panel still doesn't appear, hard-refresh the HA web UI (**Ctrl-F5** / **Cmd-Shift-R**). |
-| "Integration update required" banner appears immediately after install | Your device firmware is newer than the integration release you've just installed | Either update the integration from **Settings > Updates**, or downgrade the firmware to match.                                                                                                                                                                                   |
+| "Integration update required" banner appears immediately after install | Your device firmware is newer than the integration release you've just installed | Either update the integration from **Settings → Updates**, or downgrade the firmware to match.                                                                                                                                                                                   |
 | Manual install done but panel still not appearing                      | `custom_components/eppgrid/` is in the wrong place, or nested one level too deep | Verify the `eppgrid/` directory sits directly under your HA config's `custom_components/` folder, and check HA logs for import errors.                                                                                                                                           |
 
 Still stuck? See [Troubleshooting](troubleshooting.md) for how to open an issue.

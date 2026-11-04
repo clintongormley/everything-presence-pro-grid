@@ -175,7 +175,7 @@ async def test_subscribe_device_list_event_then_unsubscribe(
 # These tests drive a REAL websocket close: a real authenticated client over the
 # real websocket_api component, closed mid-await so HA's actual
 # `ActiveConnection.async_handle_close` runs (real `subscriptions.clear()`, real
-# `send_message` swap). `_connection_is_closed` is therefore exercised against
+# send-function swap). `_connection_is_closed` is therefore exercised against
 # the real HA connection object — if it ever stops matching reality, the refcount
 # leaks and these tests fail. That's the defense-in-depth the simulated tests
 # can't provide.
@@ -244,7 +244,7 @@ async def test_subscribe_device_real_close_during_open_releases_session(
         await gate.entered.wait()
 
     # Close the REAL client websocket and let HA run its real
-    # `async_handle_close` (clears subscriptions, swaps send_message).
+    # `async_handle_close` (clears subscriptions, swaps the send function).
     await client.close()
     await hass.async_block_till_done()
 

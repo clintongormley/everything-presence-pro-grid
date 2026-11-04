@@ -130,6 +130,7 @@ everything-presence-pro-grid/
 │   │       ├── furniture-tones.ts        # Per-item furniture tone from the cell underneath
 │   │       ├── view-hash.ts              # URL fragment ↔ ViewState encoding
 │   │       ├── help-url.ts               # Panel state → contextual user-guide URL
+│   │       ├── integration-page.ts       # Marketplace or HACS link for updating the integration
 │   │       ├── tablist-nav.ts            # Roving-tabindex keyboard nav for ARIA tablists
 │   │       ├── storage.ts                # localStorage helper (selected device MAC)
 │   │       ├── safe-unsub.ts             # HA WS unsubscribe wrapper (swallows stale-subscription errors)
@@ -379,20 +380,21 @@ must keep seeing frames and nothing else; the current panel bundle always opts
 in.
 
 Re-arming heals a *device* flap, but not the manager's own death. On a config-
-entry unload/reload (an options change, a HACS update) `async_stop` drops every
-stream and the fresh manager comes up with an empty registry — while the card's
-subscription is still open, now pointing at nothing. `_on_device_removed` leaves
-the same hole for one device. The client cannot detect either (an
-`available: false` from a manager teardown and one from a flap are identical on
-the wire), and re-subscribing on every `available: false` would churn the wire
-for a device the backend is merely waiting on. So a second, terminal signal —
-`on_closed()` / `StateStream.notify_closed()` — says *this stream is gone,
-re-subscribe*. It fires from those two manager-initiated teardowns ONLY: never
-on a client unsub (the client already knows) and never on a flap (the stream
-survives that). On the wire it is `{"available": false, "closed": true}` for
-`overview/subscribe` and the panel's three commands (when opted in via
-`availability: true`), and `{"closed": true}` for `overview/subscribe_heatmap`;
-all are inert-or-harmless to a bundle that predates them.
+entry unload/reload (an options change, an integration update) `async_stop`
+drops every stream and the fresh manager comes up with an empty registry — while
+the card's subscription is still open, now pointing at nothing.
+`_on_device_removed` leaves the same hole for one device. The client cannot
+detect either (an `available: false` from a manager teardown and one from a flap
+are identical on the wire), and re-subscribing on every `available: false` would
+churn the wire for a device the backend is merely waiting on. So a second,
+terminal signal — `on_closed()` / `StateStream.notify_closed()` — says *this
+stream is gone, re-subscribe*. It fires from those two manager-initiated
+teardowns ONLY: never on a client unsub (the client already knows) and never on
+a flap (the stream survives that). On the wire it is
+`{"available": false, "closed": true}` for `overview/subscribe` and the panel's
+three commands (when opted in via `availability: true`), and `{"closed": true}`
+for `overview/subscribe_heatmap`; all are inert-or-harmless to a bundle that
+predates them.
 
 The panel's own three streams (`subscribe_raw_targets`,
 `subscribe_grid_targets`, `subscribe_heatmap`, in `_devices.py`) go through this

@@ -44,16 +44,16 @@ occupation it represents.
     (turning lights off).
 
 For zone-specific actions where the number of people matters, use
-`sensor.<device>_zone_<N>_target_count`. Enable it under **Settings** >
-**Entities** > **Zone level** > **Target count**, but be aware that you could
-have two people in the same zone, both sitting very still, making the target
-count read zero.
+`sensor.<device>_zone_<N>_target_count`. Enable it under **Settings → Entities →
+Zone level → Target count**, but be aware that you could have two people in the
+same zone, both sitting very still, making the target count read zero.
 
 !!! note
 
-    Zone entities are translated by their friendly name (`Zone <name>` in the HA
-    UI), but **entity IDs stay as `zone_<N>_presence`** where `<N>` is 0–7. Use
-    entity IDs in automations so they keep working if you rename a zone.
+    Zone entities are translated by their friendly name (`Zone <name>` in the HA UI,
+    with the device name in front on Home Assistant 2026.11 or newer), but **entity
+    IDs stay as `zone_<N>_presence`** where `<N>` is 0–7. Use entity IDs in
+    automations so they keep working if you rename a zone.
 
 ## Worked example: passage light
 

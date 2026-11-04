@@ -5930,7 +5930,7 @@ class TestEventCallbacks:
         may have added required fields the older integration doesn't send.
 
         This case is NOT fixable from Repairs (user must update the
-        integration via HACS); the warning must not point them at OTA.
+        integration from Settings → Updates); the warning must not point them at OTA.
         """
         mac = "AA:BB:CC:DD:EE:FF"
         store.devices[mac] = {"calibration": {"perspective": [1.0] * 8}}

@@ -104,7 +104,7 @@ Assistant, so there is nothing else to install first.
 [Open Everything Presence Grid in your Home Assistant](https://my.home-assistant.io/redirect/hacs_repository/?owner=clintongormley&repository=everything-presence-pro-grid&category=integration),
 or find it yourself:
 
-1. Go to **Settings > Marketplace**. The first time you open it, Home Assistant
+1. Go to **Settings → Marketplace**. The first time you open it, Home Assistant
     warns you that community projects are not reviewed by the Home Assistant
     project, and you need to accept that before you can install anything.
 1. Search for **Everything Presence Grid** and open it.
