@@ -391,9 +391,11 @@ This site. MkDocs Material source.
 - **`firmware-release.yml`** — on tag push, validates that the manifest,
     `manifest.json`, and `FIRMWARE_VERSION` all agree (via
     `.github/scripts/validate-release.sh`), then compiles the firmware variants
-    and uploads ESP Web Tools manifests + binaries as release assets. Publishes
-    every release as a **pre-release** (never auto-marked `latest`); promote it
-    after testing with `bin/promote.sh <version>`.
+    and uploads ESP Web Tools manifests + binaries as release assets. Takes the
+    release notes from the version's `CHANGES.md` section, which
+    `bin/release.sh` names when it prepares a final release. Publishes every
+    release as a **pre-release** (never auto-marked `latest`); promote it after
+    testing with `bin/promote.sh <version>`.
 
 ______________________________________________________________________
 

@@ -1018,6 +1018,17 @@ on-main, clean-tree, tag-not-exists, and origin-up-to-date. Bumps
 since the previous tag) so the integration version and firmware version remain
 independent — they only re-align when the firmware actually changes.
 
+A final release also renames `## Unreleased` in `CHANGES.md` to
+`## v<version> — <date>` in the release commit. The script stops before creating
+the branch if `CHANGES.md` has neither that section nor a `## v<version>`
+heading, or if `## Unreleased` has no entries. A `## v<version>` heading that
+already exists is left alone.
+
+A pre-release (`-alpha`, `-beta`, `-rc`) leaves `CHANGES.md` alone and needs no
+entry. A candidate and the final release of a version share one section, and
+`bin/promote.sh` only flips the GitHub release, so the final release is the one
+that takes `## Unreleased`.
+
 **firmware-release.yml** — Triggered by tag push (`v*`). First runs
 `.github/scripts/validate-release.sh`, which fails the workflow if
 `manifest.json` ≠ tag, or if the three firmware-version files (manifest
@@ -1029,7 +1040,10 @@ integration keeps `FIRMWARE_VERSION` pointed at the release where the firmware
 last changed). **Every release is published as a pre-release**
 (`prerelease=true`, `make_latest=false`) — none are ever auto-marked the GitHub
 `latest`. After testing, promote with `bin/promote.sh <version>` (which runs
-`gh release edit v<version> --prerelease=false --latest=true`).
+`gh release edit v<version> --prerelease=false --latest=true`). The release
+notes are the version's `CHANGES.md` section, read by
+`.github/scripts/extract-release-notes.sh`. A tag with no section, which means
+every pre-release, gets GitHub's generated commit list instead.
 
 **pages.yml** — Triggers on push to main *and* on `release: released`. Stages
 firmware in two passes:

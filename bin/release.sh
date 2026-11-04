@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Prepares a release PR: bumps version files and opens a PR.
+# Prepares a release PR: bumps version files, puts the version on CHANGES.md and
+# opens a PR.
 #
 # Usage: bin/release.sh <version>
 #
@@ -10,6 +11,14 @@
 # release workflow. That workflow publishes the release as a PRE-RELEASE
 # (never auto-marked "latest"). Once tested, promote it with
 # `bin/promote.sh <version>`.
+#
+# A final release renames `## Unreleased` to `## v<version> — <date>`, the heading
+# .github/scripts/extract-release-notes.sh looks for when it writes the release
+# notes. Set RELEASE_DATE (YYYY-MM-DD) to choose the date; it defaults to today.
+#
+# A pre-release leaves CHANGES.md alone. A candidate and the final release of the
+# same version share one section, and promotion only flips the GitHub release, so
+# a candidate that took `## Unreleased` would leave the final with nothing.
 
 set -euo pipefail
 
@@ -105,6 +114,29 @@ if [ -z "$FW_VERSION" ]; then
   exit 1
 fi
 
+# The semver gate above only allows -alpha/-beta/-rc suffixes, so any dash means
+# a pre-release version.
+STAMP_CHANGELOG=false
+if [[ "$VERSION" != *-* ]]; then
+  UNRELEASED_RE='^## Unreleased[[:space:]]*$'
+  if ! grep -Eqs "^## v${VERSION//./\\.}( |\$)" CHANGES.md; then
+    if ! grep -Eqs "$UNRELEASED_RE" CHANGES.md; then
+      echo "✗ CHANGES.md has neither a '## Unreleased' section nor a '## $TAG' heading" >&2
+      echo "  add one so the release notes are not GitHub's commit list" >&2
+      exit 1
+    fi
+    UNRELEASED_ENTRIES=$(awk -v heading="$UNRELEASED_RE" '
+      /^## / { if (found) exit; found = ($0 ~ heading); next }
+      found && !/^#/ && /[^ \t]/
+    ' CHANGES.md)
+    if [ -z "$UNRELEASED_ENTRIES" ]; then
+      echo "✗ the '## Unreleased' section of CHANGES.md is empty; nothing to release" >&2
+      exit 1
+    fi
+    STAMP_CHANGELOG=true
+  fi
+fi
+
 BRANCH="release-$TAG"
 PUSHED=false
 BRANCH_CREATED=false
@@ -146,6 +178,13 @@ BRANCH_CREATED=true
 # Always bump manifest.json version (delegated to bump-version.sh, the single
 # owner of the manifest edit and its non-greedy sed pattern).
 "$SCRIPT_DIR/bump-version.sh" "$VERSION"
+
+if [ "$STAMP_CHANGELOG" = "true" ]; then
+  RELEASE_DATE="${RELEASE_DATE:-$(date +%Y-%m-%d)}"
+  sed -i.bak "s/$UNRELEASED_RE/## $TAG — $RELEASE_DATE/" CHANGES.md
+  rm -f CHANGES.md.bak
+  grep -q "^## $TAG — $RELEASE_DATE\$" CHANGES.md
+fi
 
 if [ "$FIRMWARE_CHANGED" = "true" ]; then
   # Bump FIRMWARE_VERSION in const.py.
