@@ -12,6 +12,8 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = REPO_ROOT / ".github" / "scripts" / "extract-release-notes.sh"
 
@@ -85,6 +87,65 @@ def test_prefix_version_does_not_match_a_longer_one(tmp_path: Path) -> None:
     """`1.2` must not match the `1.2.1` heading (substring-prefix trap)."""
     result = _run("1.2", SAMPLE, tmp_path)
     assert result.returncode != 0
+
+
+def test_dots_in_the_version_are_literal(tmp_path: Path) -> None:
+    result = _run("1.2.1", "# Changelog\n\n## v1x2x1 — 2026-06-21\n\n- Other.\n", tmp_path)
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+FINAL_AND_CANDIDATE = [
+    "# Changelog\n\n## v0.93.0 — 2026-11-04\n\n- Final.\n\n## v0.93.0-rc.1 — 2026-10-01\n\n- Candidate.\n",
+    "# Changelog\n\n## v0.93.0-rc.1 — 2026-10-01\n\n- Candidate.\n\n## v0.93.0 — 2026-11-04\n\n- Final.\n",
+]
+
+
+@pytest.mark.parametrize("changes", FINAL_AND_CANDIDATE)
+def test_final_version_does_not_pick_up_its_candidate(changes: str, tmp_path: Path) -> None:
+    result = _run("0.93.0", changes, tmp_path)
+    assert result.returncode == 0
+    assert result.stdout == "- Final.\n"
+
+
+@pytest.mark.parametrize("changes", FINAL_AND_CANDIDATE)
+def test_candidate_finds_its_own_section(changes: str, tmp_path: Path) -> None:
+    result = _run("0.93.0-rc.1", changes, tmp_path)
+    assert result.returncode == 0
+    assert result.stdout == "- Candidate.\n"
+
+
+def test_final_version_ignores_a_candidate_with_no_section_of_its_own(tmp_path: Path) -> None:
+    result = _run("0.93.0", "# Changelog\n\n## v0.93.0-rc.1 — 2026-10-01\n\n- Candidate.\n", tmp_path)
+    assert result.returncode != 0
+    assert result.stdout == ""
+
+
+@pytest.mark.parametrize(
+    "changes",
+    [
+        "# Changelog\n\n## v1.2.10 — 2026-07-01\n\n- Ten.\n\n## v1.2.1 — 2026-06-21\n\n- One.\n",
+        "# Changelog\n\n## v1.2.1 — 2026-06-21\n\n- One.\n\n## v1.2.10 — 2026-07-01\n\n- Ten.\n",
+    ],
+)
+def test_shorter_version_does_not_match_a_longer_one(changes: str, tmp_path: Path) -> None:
+    result = _run("1.2.1", changes, tmp_path)
+    assert result.returncode == 0
+    assert result.stdout == "- One.\n"
+
+
+@pytest.mark.parametrize("heading", ["## v1.2.1", "## v1.2.1 — 2026-06-21", "## v1.2.1\t— 2026-06-21"])
+def test_version_may_end_the_heading_or_be_followed_by_a_space_or_tab(heading: str, tmp_path: Path) -> None:
+    result = _run("1.2.1", f"# Changelog\n\n{heading}\n\n- One.\n\n## v1.2.0 — 2026-06-20\n\n- Zero.\n", tmp_path)
+    assert result.returncode == 0
+    assert result.stdout == "- One.\n"
+
+
+def test_section_ends_at_a_repeated_heading_for_the_same_version(tmp_path: Path) -> None:
+    changes = "# Changelog\n\n## v1.2.1\n\n- First.\n\n## v1.2.1 — 2026-06-21\n\n- Second.\n"
+    result = _run("1.2.1", changes, tmp_path)
+    assert result.returncode == 0
+    assert result.stdout == "- First.\n"
 
 
 def test_real_changelog_v1_2_1_section(tmp_path: Path) -> None:

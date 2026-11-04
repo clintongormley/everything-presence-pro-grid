@@ -211,6 +211,10 @@ If any step fails, the push aborts. Fix the issue, re-stage, and push again.
 1. Work on a feature branch cut off `main`.
 1. Make small, focused commits — one concern per commit. See
     [commit style](#commit-message-style) below.
+1. Add user-facing changes under `## Unreleased` in `CHANGES.md`, creating the
+    heading if it is missing. A final release uses that section for the release
+    notes unless a `## v<version>` section already exists, and `bin/release.sh`
+    stops if the section it would use is missing or has no entries.
 1. When ready, open a PR against `main`.
 1. CI runs the same checks as the pre-push hook, plus the firmware-compile
     matrix and HACS / Hassfest / CodeQL. Most jobs are **path-gated** via

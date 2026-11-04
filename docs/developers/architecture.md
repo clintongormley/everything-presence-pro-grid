@@ -1018,11 +1018,17 @@ on-main, clean-tree, tag-not-exists, and origin-up-to-date. Bumps
 since the previous tag) so the integration version and firmware version remain
 independent — they only re-align when the firmware actually changes.
 
-A final release also renames `## Unreleased` in `CHANGES.md` to
-`## v<version> — <date>` in the release commit. The script stops before creating
-the branch if `CHANGES.md` has neither that section nor a `## v<version>`
-heading, or if `## Unreleased` has no entries. A `## v<version>` heading that
-already exists is left alone.
+A final release also checks the `CHANGES.md` section that will become the
+release notes: `## v<version>` if there is one, otherwise `## Unreleased`. The
+script stops before creating the branch if that section is missing or has no
+entries; subheadings alone do not count.
+
+In the release commit, that heading becomes `## v<version> — <date>` if it is
+`## Unreleased` or `## v<version> — unreleased`. Any other heading stays as
+written, and so does a `## Unreleased` beside a `## v<version>` section. The
+date comes from `RELEASE_DATE` (YYYY-MM-DD) and defaults to today. When a
+heading will be dated, a value that does not fit that format stops the script
+before the branch exists.
 
 A pre-release (`-alpha`, `-beta`, `-rc`) leaves `CHANGES.md` alone and needs no
 entry. A candidate and the final release of a version share one section, and
@@ -1042,8 +1048,9 @@ last changed). **Every release is published as a pre-release**
 `latest`. After testing, promote with `bin/promote.sh <version>` (which runs
 `gh release edit v<version> --prerelease=false --latest=true`). The release
 notes are the version's `CHANGES.md` section, read by
-`.github/scripts/extract-release-notes.sh`. A tag with no section, which means
-every pre-release, gets GitHub's generated commit list instead.
+`.github/scripts/extract-release-notes.sh`. A tag with no section or an empty
+one, which today means every pre-release, gets GitHub's generated commit list
+instead.
 
 **pages.yml** — Triggers on push to main *and* on `release: released`. Stages
 firmware in two passes:

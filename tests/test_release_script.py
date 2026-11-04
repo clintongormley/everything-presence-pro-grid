@@ -1,7 +1,7 @@
 """Tests for bin/release.sh."""
 
+import datetime
 import os
-import re
 import subprocess
 from pathlib import Path
 
@@ -25,16 +25,19 @@ Intro line.
 - The previous release.
 """
 
+CHANGES_WITH_OLD_HEADING = CHANGES_WITH_UNRELEASED.replace("## Unreleased", "## v0.93.0 — unreleased")
+
 
 def _clean_env(extra: dict | None = None) -> dict:
-    """Return os.environ with all GIT_* vars stripped, plus any extras.
+    """Return os.environ without GIT_* vars or RELEASE_DATE, plus any extras.
 
     Without this, subprocess git calls in tests inherit GIT_DIR / GIT_WORK_TREE /
     GIT_INDEX_FILE from a parent context (e.g. a pre-push hook) and operate on
     the wrong repo. That caused the test fixture's `git config user.name=t` to
-    leak into the main repo's local config.
+    leak into the main repo's local config. A RELEASE_DATE exported in the
+    caller's shell would likewise change what bin/release.sh writes.
     """
-    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_") and k != "RELEASE_DATE"}
     if extra:
         env.update(extra)
     return env
@@ -167,7 +170,7 @@ def test_rejects_main_behind_origin(tmp_path: Path):
     assert "up to date" in combined or "behind" in combined
 
 
-def test_integration_only_release_bumps_manifest_only(tmp_path: Path):
+def test_integration_only_release_leaves_firmware_versions_alone(tmp_path: Path):
     _init_repo(tmp_path)
     result = _run(tmp_path, "0.93.0", "--no-push")
     assert result.returncode == 0, result.stdout + result.stderr
@@ -548,7 +551,7 @@ def test_does_not_leak_to_parent_git_dir_via_env(tmp_path: Path, monkeypatch):
 def _commit_changes(repo: Path, text: str) -> None:
     (repo / "CHANGES.md").write_text(text)
     _git("add", ".", cwd=repo)
-    _git("commit", "-qm", "docs: edit changelog", cwd=repo)
+    _git("commit", "-q", "--allow-empty", "-m", "docs: edit changelog", cwd=repo)
 
 
 def _branches(repo: Path, name: str) -> str:
@@ -561,6 +564,16 @@ def _current_branch(repo: Path) -> str:
 
 def _files_in_release_commit(repo: Path, branch: str) -> list[str]:
     return _git("show", "--name-only", "--format=", branch, cwd=repo, capture_output=True, text=True).stdout.split()
+
+
+def _release_notes(repo: Path, version: str) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [str(EXTRACT_NOTES), version],
+        cwd=repo,
+        capture_output=True,
+        text=True,
+        env=_clean_env({"CHANGES_FILE": "CHANGES.md"}),
+    )
 
 
 def test_release_renames_unreleased_to_the_version_and_date(tmp_path: Path):
@@ -576,11 +589,14 @@ def test_release_renames_unreleased_to_the_version_and_date(tmp_path: Path):
 
 def test_release_date_defaults_to_today_in_the_house_format(tmp_path: Path):
     _init_repo(tmp_path)
+    before = datetime.date.today()
     result = _run(tmp_path, "0.93.0", "--no-push")
+    after = datetime.date.today()
     assert result.returncode == 0, result.stdout + result.stderr
 
     _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
-    assert re.search(r"^## v0\.93\.0 — \d{4}-\d{2}-\d{2}$", (tmp_path / "CHANGES.md").read_text(), re.M)
+    headings = (tmp_path / "CHANGES.md").read_text().splitlines()
+    assert f"## v0.93.0 — {before}" in headings or f"## v0.93.0 — {after}" in headings
 
 
 def test_release_commit_contains_the_renamed_changelog(tmp_path: Path):
@@ -601,9 +617,66 @@ def test_extract_release_notes_reads_the_renamed_section(tmp_path: Path):
     assert result.returncode == 0, result.stdout + result.stderr
 
     _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
-    notes = subprocess.run([str(EXTRACT_NOTES), "0.93.0"], cwd=tmp_path, capture_output=True, text=True)
+    notes = _release_notes(tmp_path, "0.93.0")
     assert notes.returncode == 0, notes.stderr
     assert notes.stdout == "- A change users notice.\n"
+
+
+@pytest.mark.parametrize("trailing", ["", "  "])
+def test_release_dates_the_old_unreleased_heading(tmp_path: Path, trailing: str):
+    """Seven releases from v1.1.0 to v1.9.0 sat under this heading until they were dated by hand."""
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, CHANGES_WITH_OLD_HEADING.replace("— unreleased", f"— unreleased{trailing}"))
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    assert "CHANGES.md" in _files_in_release_commit(tmp_path, "release-v0.93.0")
+    _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
+    assert (tmp_path / "CHANGES.md").read_text() == CHANGES_WITH_UNRELEASED.replace(
+        "## Unreleased", "## v0.93.0 — 2026-11-04"
+    )
+    notes = _release_notes(tmp_path, "0.93.0")
+    assert notes.returncode == 0, notes.stderr
+    assert notes.stdout == "- A change users notice.\n"
+
+
+def test_release_dates_the_old_heading_with_a_tab_before_the_dash(tmp_path: Path):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, CHANGES_WITH_OLD_HEADING.replace("## v0.93.0 — unreleased", "## v0.93.0\t— unreleased"))
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
+    assert (tmp_path / "CHANGES.md").read_text() == CHANGES_WITH_UNRELEASED.replace(
+        "## Unreleased", "## v0.93.0 — 2026-11-04"
+    )
+
+
+def test_release_dates_an_unreleased_heading_with_trailing_spaces(tmp_path: Path):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, CHANGES_WITH_UNRELEASED.replace("## Unreleased", "## Unreleased  "))
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
+    assert (tmp_path / "CHANGES.md").read_text() == CHANGES_WITH_UNRELEASED.replace(
+        "## Unreleased", "## v0.93.0 — 2026-11-04"
+    )
+
+
+def test_old_heading_is_dated_and_an_unreleased_section_beside_it_is_kept(tmp_path: Path):
+    changes = "# Changelog\n\n## Unreleased\n\n- Later.\n\n## v0.93.0 — unreleased\n\n- Now.\n"
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, changes)
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
+    assert (tmp_path / "CHANGES.md").read_text() == changes.replace("— unreleased", "— 2026-11-04")
 
 
 @pytest.mark.parametrize(
@@ -640,6 +713,7 @@ def test_aborts_when_the_changelog_is_missing(tmp_path: Path):
     result = _run(tmp_path, "0.93.0", "--no-push")
     assert result.returncode != 0
     assert "CHANGES.md" in result.stderr
+    assert _current_branch(tmp_path) == "main"
     assert _branches(tmp_path, "release-v0.93.0") == ""
 
 
@@ -661,8 +735,115 @@ def test_aborts_when_the_unreleased_section_is_empty(tmp_path: Path, changes: st
     assert result.returncode != 0
     assert "empty" in result.stderr
     assert "CHANGES.md" in result.stderr
+    assert "## Unreleased" in result.stderr
+    assert "release preparation failed" not in result.stderr
     assert _current_branch(tmp_path) == "main"
     assert _branches(tmp_path, "release-v0.93.0") == ""
+
+
+@pytest.mark.parametrize("heading", ["## v0.93.0", "## v0.93.0 — unreleased", "## v0.93.0 — 2026-10-01"])
+@pytest.mark.parametrize(
+    "body",
+    [
+        "\n## v0.92.0 — 2026-09-01\n\n- The previous release.\n",
+        "",
+        "\n   \n\n",
+        # Headings alone tell a reader nothing.
+        "\n### Fixes\n\n## v0.92.0 — 2026-09-01\n\n- The previous release.\n",
+        "\n### Fixes\n\n### New features\n",
+        # The first of two headings for one version is the one judged.
+        "\n## v0.93.0 — 2026-10-02\n\n- Under the repeat.\n",
+    ],
+)
+def test_aborts_when_the_version_section_is_empty(tmp_path: Path, heading: str, body: str):
+    """Without entries the release gets GitHub's commit list, or a body of bare subheadings."""
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, f"# Changelog\n\n{heading}\n{body}")
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+    assert result.returncode != 0
+    assert "empty" in result.stderr
+    assert "CHANGES.md" in result.stderr
+    assert heading in result.stderr
+    assert "release preparation failed" not in result.stderr
+    assert _current_branch(tmp_path) == "main"
+    assert _branches(tmp_path, "release-v0.93.0") == ""
+
+
+def test_entries_under_unreleased_do_not_rescue_an_empty_version_section(tmp_path: Path):
+    """The notes come from the version section, so that is the one that counts."""
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, "# Changelog\n\n## Unreleased\n\n- Later.\n\n## v0.93.0\n\n## v0.92.0\n\n- Old.\n")
+
+    result = _run(tmp_path, "0.93.0", "--no-push")
+    assert result.returncode != 0
+    assert "'## v0.93.0'" in result.stderr
+    assert "release preparation failed" not in result.stderr
+    assert _current_branch(tmp_path) == "main"
+    assert _branches(tmp_path, "release-v0.93.0") == ""
+
+
+@pytest.mark.parametrize(
+    "other", ["## v0.93.0-rc.1 — 2026-10-01", "## v0.93.01 — 2026-10-01", "## v0x93x0 — 2026-10-01"]
+)
+def test_only_the_whole_version_counts_as_the_section(tmp_path: Path, other: str):
+    _init_repo(tmp_path)
+    changes = f"# Changelog\n\n## Unreleased\n\n- Now.\n\n{other}\n\n"
+    _commit_changes(tmp_path, changes)
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
+    assert (tmp_path / "CHANGES.md").read_text() == changes.replace("## Unreleased", "## v0.93.0 — 2026-11-04")
+
+
+@pytest.mark.parametrize("other", ["## v0.93.0-rc.1 — 2026-10-01", "## v0.93.01 — 2026-10-01"])
+def test_a_near_version_section_does_not_rescue_an_empty_unreleased(tmp_path: Path, other: str):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, f"# Changelog\n\n## Unreleased\n\n{other}\n\n- Other.\n")
+
+    result = _run(tmp_path, "0.93.0", "--no-push")
+    assert result.returncode != 0
+    assert "'## Unreleased'" in result.stderr
+    assert "release preparation failed" not in result.stderr
+    assert _current_branch(tmp_path) == "main"
+    assert _branches(tmp_path, "release-v0.93.0") == ""
+
+
+@pytest.mark.parametrize("changes", [CHANGES_WITH_UNRELEASED, CHANGES_WITH_OLD_HEADING], ids=["unreleased", "old"])
+@pytest.mark.parametrize(
+    "bad_date",
+    ["04/11/2026", "2026-11-4", "26-11-04", "2026-13-01", "2026-11-32", "2026-11-04x", "2026-11-04\nmore", "today"],
+)
+def test_aborts_on_a_bad_release_date_before_creating_the_branch(tmp_path: Path, changes: str, bad_date: str):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, changes)
+
+    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": bad_date})
+    assert result.returncode != 0
+    assert "✗ RELEASE_DATE must be YYYY-MM-DD" in result.stderr
+    assert bad_date in result.stderr
+    assert "release preparation failed" not in result.stderr, "stopped only after the branch existed"
+    assert _current_branch(tmp_path) == "main"
+    assert _branches(tmp_path, "release-v0.93.0") == ""
+
+
+@pytest.mark.parametrize(
+    ("version", "changes"),
+    [
+        ("0.93.0-rc.1", "# Changelog\n\n## Unreleased\n\n- Later.\n"),
+        ("0.93.0", "# Changelog\n\n## v0.93.0 — 2026-10-01\n\n- Already dated.\n"),
+        ("0.93.0", "# Changelog\n\n## v0.93.0\n\n- Deliberately undated.\n"),
+    ],
+)
+def test_bad_release_date_is_ignored_when_nothing_will_be_stamped(tmp_path: Path, version: str, changes: str):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, changes)
+
+    result = _run(tmp_path, version, "--no-push", extra_env={"RELEASE_DATE": "04/11/2026"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CHANGES.md" not in _files_in_release_commit(tmp_path, f"release-v{version}")
 
 
 @pytest.mark.parametrize(
@@ -673,9 +854,10 @@ def test_aborts_when_the_unreleased_section_is_empty(tmp_path: Path, changes: st
         # An Unreleased section beside it belongs to the release after this one.
         "# Changelog\n\n## Unreleased\n\n- Later.\n\n## v0.93.0 — 2026-10-01\n\n- Already written up.\n",
         "# Changelog\n\n## Unreleased\n\n## v0.93.0 — 2026-10-01\n\n- Already written up.\n",
+        "# Changelog\n\n## Unreleased\n\n## v0.93.0\t— 2026-10-01\n\n- Already written up.\n",
     ],
 )
-def test_already_versioned_changelog_is_left_alone(tmp_path: Path, changes: str):
+def test_dated_or_bare_version_heading_is_left_alone(tmp_path: Path, changes: str):
     _init_repo(tmp_path)
     _commit_changes(tmp_path, changes)
 
@@ -710,19 +892,32 @@ def test_pre_release_needs_no_changelog_entry(tmp_path: Path, changes: str):
     assert result.returncode == 0, result.stdout + result.stderr
 
 
+def _release_candidate_then_final(repo: Path) -> None:
+    result = _run(repo, "0.93.0-rc.1", "--no-push")
+    assert result.returncode == 0, result.stdout + result.stderr
+    _git("checkout", "-q", "main", cwd=repo)
+    _git("merge", "-q", "--ff-only", "release-v0.93.0-rc.1", cwd=repo)
+    _git("tag", "v0.93.0-rc.1", cwd=repo)
+
+    result = _run(repo, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
+    assert result.returncode == 0, result.stdout + result.stderr
+    _git("checkout", "-q", "release-v0.93.0", cwd=repo)
+
+
 def test_final_release_after_candidates_still_gets_the_whole_section(tmp_path: Path):
-    """release candidate -> merge -> tag -> final, the way v1.9.0 went out."""
+    """release candidate -> merge -> tag -> final."""
     _init_repo(tmp_path)
+    _release_candidate_then_final(tmp_path)
 
-    result = _run(tmp_path, "0.93.0-rc.1", "--no-push")
-    assert result.returncode == 0, result.stdout + result.stderr
-    _git("checkout", "-q", "main", cwd=tmp_path)
-    _git("merge", "-q", "--ff-only", "release-v0.93.0-rc.1", cwd=tmp_path)
-    _git("tag", "v0.93.0-rc.1", cwd=tmp_path)
+    assert _release_notes(tmp_path, "0.93.0").stdout == "- A change users notice.\n"
 
-    result = _run(tmp_path, "0.93.0", "--no-push", extra_env={"RELEASE_DATE": "2026-11-04"})
-    assert result.returncode == 0, result.stdout + result.stderr
 
-    _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
-    notes = subprocess.run([str(EXTRACT_NOTES), "0.93.0"], cwd=tmp_path, capture_output=True, text=True)
-    assert notes.stdout == "- A change users notice.\n"
+def test_final_release_after_candidates_from_the_old_heading(tmp_path: Path):
+    _init_repo(tmp_path)
+    _commit_changes(tmp_path, CHANGES_WITH_OLD_HEADING)
+    _release_candidate_then_final(tmp_path)
+
+    assert (tmp_path / "CHANGES.md").read_text() == CHANGES_WITH_UNRELEASED.replace(
+        "## Unreleased", "## v0.93.0 — 2026-11-04"
+    )
+    assert _release_notes(tmp_path, "0.93.0").stdout == "- A change users notice.\n"

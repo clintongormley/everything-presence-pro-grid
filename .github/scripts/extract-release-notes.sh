@@ -7,9 +7,10 @@
 #        CHANGES_FILE=path/to/CHANGES.md extract-release-notes.sh <version>
 #
 # Prints the section body (heading and surrounding blank lines stripped) and
-# exits 0 when the version has a `## v<version> …` section. Exits 1 with no
-# output when it doesn't (e.g. a pre-release tag with no changelog entry), so
-# the caller can fall back to GitHub's generated notes.
+# exits 0 when the first `## v<version>` section has something in it. The version
+# must be followed by a space, a tab or the end of the line. Exits 1 with no output
+# otherwise (e.g. a pre-release tag with no changelog entry), so the caller can
+# fall back to GitHub's generated notes.
 
 set -euo pipefail
 
@@ -22,15 +23,17 @@ if [ ! -f "$CHANGES" ]; then
 fi
 
 # Escape regex metacharacters in the version so dots match literally (so
-# `1.2.1` can't match `1x2x1`). A trailing `([^0-9.]|$)` boundary stops a
-# shorter version from matching a longer heading (`1.2` vs `1.2.1`, `1.2.1`
-# vs `1.2.10`).
+# `1.2.1` can't match `1x2x1`). The version must be followed by a space, a tab
+# or the end of the line, so it can't match a longer heading (`1.2` vs `1.2.1`,
+# `1.2.1` vs `1.2.10`, `1.2.1` vs `1.2.1-rc.1`). The tab is spelled out because
+# older versions of mawk, Ubuntu's default awk, have no POSIX character classes.
 ver_re="$(printf '%s' "$VERSION" | sed 's/[.[\*^$]/\\&/g')"
 
+# Passed through the environment because `awk -v` strips the backslashes.
 section="$(
-  awk -v ver_re="$ver_re" '
-    $0 ~ "^## v" ver_re "([^0-9.]|$)" { found = 1; next }   # our heading: start, drop it
-    found && /^## / { exit }                                # next version heading: stop
+  VER_RE="$ver_re" awk '
+    found && /^## / { exit }                                       # next `## ` heading: stop
+    $0 ~ "^## v" ENVIRON["VER_RE"] "([ \t]|$)" { found = 1; next } # our heading: start, drop it
     found { print }
   ' "$CHANGES"
 )"

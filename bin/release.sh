@@ -12,9 +12,16 @@
 # (never auto-marked "latest"). Once tested, promote it with
 # `bin/promote.sh <version>`.
 #
-# A final release renames `## Unreleased` to `## v<version> — <date>`, the heading
-# .github/scripts/extract-release-notes.sh looks for when it writes the release
-# notes. Set RELEASE_DATE (YYYY-MM-DD) to choose the date; it defaults to today.
+# A final release needs CHANGES.md entries, because
+# .github/scripts/extract-release-notes.sh turns them into the release notes. This
+# script picks the first `## v<version>` section, otherwise the first `## Unreleased`,
+# and stops before creating the branch if it finds neither or the section has no
+# entries.
+#
+# If the picked heading is `## Unreleased` or `## v<version> — unreleased`, it
+# becomes `## v<version> — <date>`. Any other heading stays as written, and so does
+# a `## Unreleased` beside a `## v<version>` section. Set RELEASE_DATE (YYYY-MM-DD)
+# to choose the date; it defaults to today.
 #
 # A pre-release leaves CHANGES.md alone. A candidate and the final release of the
 # same version share one section, and promotion only flips the GitHub release, so
@@ -118,22 +125,38 @@ fi
 # a pre-release version.
 STAMP_CHANGELOG=false
 if [[ "$VERSION" != *-* ]]; then
-  UNRELEASED_RE='^## Unreleased[[:space:]]*$'
-  if ! grep -Eqs "^## v${VERSION//./\\.}( |\$)" CHANGES.md; then
-    if ! grep -Eqs "$UNRELEASED_RE" CHANGES.md; then
-      echo "✗ CHANGES.md has neither a '## Unreleased' section nor a '## $TAG' heading" >&2
-      echo "  add one so the release notes are not GitHub's commit list" >&2
-      exit 1
-    fi
-    UNRELEASED_ENTRIES=$(awk -v heading="$UNRELEASED_RE" '
-      /^## / { if (found) exit; found = ($0 ~ heading); next }
-      found && !/^#/ && /[^ \t]/
-    ' CHANGES.md)
-    if [ -z "$UNRELEASED_ENTRIES" ]; then
-      echo "✗ the '## Unreleased' section of CHANGES.md is empty; nothing to release" >&2
-      exit 1
-    fi
+  VERSION_RE="${VERSION//./\\.}"
+  # The same first heading the notes script will pick.
+  SECTION=$(grep -Ensm1 "^## v${VERSION_RE}([[:blank:]]|\$)" CHANGES.md || true)
+  if [ -z "$SECTION" ]; then
+    SECTION=$(grep -Ensm1 '^## Unreleased[[:space:]]*$' CHANGES.md || true)
+  fi
+  if [ -z "$SECTION" ]; then
+    echo "✗ CHANGES.md has neither a '## Unreleased' section nor a '## $TAG' heading" >&2
+    echo "  add one so the release notes are not GitHub's commit list" >&2
+    exit 1
+  fi
+  SECTION_LINE="${SECTION%%:*}"
+  SECTION_HEADING="${SECTION#*:}"
+
+  SECTION_ENTRIES=$(awk -v start="$SECTION_LINE" '
+    NR <= start { next }
+    /^## / { exit }
+    !/^#/ && /[^ \t]/
+  ' CHANGES.md)
+  if [ -z "$SECTION_ENTRIES" ]; then
+    echo "✗ the '$SECTION_HEADING' section of CHANGES.md is empty; nothing to release" >&2
+    exit 1
+  fi
+
+  if grep -Eq "^## (Unreleased|v${VERSION_RE}[[:blank:]]+—[[:blank:]]+unreleased)[[:space:]]*\$" <<<"$SECTION_HEADING"; then
     STAMP_CHANGELOG=true
+    RELEASE_DATE="${RELEASE_DATE:-$(date +%Y-%m-%d)}"
+    DATE_RE='^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'
+    if ! [[ "$RELEASE_DATE" =~ $DATE_RE ]]; then
+      echo "✗ RELEASE_DATE must be YYYY-MM-DD (got: $RELEASE_DATE)" >&2
+      exit 1
+    fi
   fi
 fi
 
@@ -180,8 +203,7 @@ BRANCH_CREATED=true
 "$SCRIPT_DIR/bump-version.sh" "$VERSION"
 
 if [ "$STAMP_CHANGELOG" = "true" ]; then
-  RELEASE_DATE="${RELEASE_DATE:-$(date +%Y-%m-%d)}"
-  sed -i.bak "s/$UNRELEASED_RE/## $TAG — $RELEASE_DATE/" CHANGES.md
+  sed -i.bak "${SECTION_LINE}s/.*/## $TAG — $RELEASE_DATE/" CHANGES.md
   rm -f CHANGES.md.bak
   grep -q "^## $TAG — $RELEASE_DATE\$" CHANGES.md
 fi

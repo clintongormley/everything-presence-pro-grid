@@ -393,9 +393,10 @@ This site. MkDocs Material source.
     `.github/scripts/validate-release.sh`), then compiles the firmware variants
     and uploads ESP Web Tools manifests + binaries as release assets. Takes the
     release notes from the version's `CHANGES.md` section, which
-    `bin/release.sh` names when it prepares a final release. Publishes every
-    release as a **pre-release** (never auto-marked `latest`); promote it after
-    testing with `bin/promote.sh <version>`.
+    `bin/release.sh` checks when it prepares a final release, naming or dating
+    the heading if it needs that. Publishes every release as a **pre-release**
+    (never auto-marked `latest`); promote it after testing with
+    `bin/promote.sh <version>`.
 
 ______________________________________________________________________
 
