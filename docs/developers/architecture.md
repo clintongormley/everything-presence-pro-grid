@@ -984,8 +984,9 @@ alignment, environmental defaults, mmWave entity wiring, translation coverage.
 - **tests.yml** — Python tests (multiple HA versions), frontend lint + vitest +
     coverage, C++ ctest
 - **nightly.yml** — scheduled run of the Python + frontend suites against the
-    latest upstream deps (HA stable + dev, latest aioesphomeapi, frontend deps
-    resolved fresh); catches breaking upstream releases between commits
+    latest upstream deps (HA stable, beta and dev, latest aioesphomeapi,
+    frontend deps resolved fresh); catches breaking upstream releases between
+    commits
 - **firmware.yml** — C++ tests + ESPHome compilation for both variants (on push
     to main touching `firmware/`)
 - **firmware-release.yml** — Tag-triggered firmware build + ESP Web Tools

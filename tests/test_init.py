@@ -10,13 +10,13 @@ from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid import _PANEL_REGISTERED_KEY
 from custom_components.eppgrid import async_apply_panel_visibility
 from custom_components.eppgrid import async_setup_entry
 from custom_components.eppgrid import async_unload_entry
 from custom_components.eppgrid.const import DOMAIN
+from tests.ha_harness import MockConfigEntry
 
 
 @pytest.fixture(autouse=True)

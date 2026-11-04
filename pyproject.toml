@@ -35,6 +35,7 @@ force-single-line = true
 known-first-party = ["custom_components.eppgrid"]
 
 [tool.pytest.ini_options]
+addopts = "-p no:respx"
 asyncio_mode = "auto"
 testpaths = ["tests"]
 

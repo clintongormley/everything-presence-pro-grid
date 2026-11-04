@@ -13,10 +13,10 @@ from __future__ import annotations
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import EPP_MANUFACTURER
 from custom_components.eppgrid.const import EPP_MODEL_PRO
+from tests.ha_harness import MockConfigEntry
 
 _DEVICE_CACHE_KEY = "_epp_test_esphome_devices"
 

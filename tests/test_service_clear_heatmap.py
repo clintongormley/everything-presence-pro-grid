@@ -14,10 +14,10 @@ from homeassistant.exceptions import Unauthorized
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
-from pytest_homeassistant_custom_component.common import MockUser
 
 from custom_components.eppgrid import _async_register_services
 from custom_components.eppgrid.const import DOMAIN
+from tests.ha_harness import MockUser
 from tests.test_websocket_api import setup_integration
 
 SERVICES_YAML = Path(__file__).parent.parent / "custom_components" / "eppgrid" / "services.yaml"

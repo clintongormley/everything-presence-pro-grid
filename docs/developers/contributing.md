@@ -22,7 +22,7 @@ how to run the tests the pre-push hook enforces, and the PR process.
     `epp_zone_engine/`'s `src/`.)
 
 A locally-running Home Assistant is helpful but not required for running the
-test suite — the Python tests use `pytest-homeassistant-custom-component`, which
+test suite — the Python tests use a pytest plugin for Home Assistant that
 provides fixtures that don't need a real HA instance.
 
 ## Clone and set up
@@ -34,7 +34,8 @@ cd everything-presence-pro-grid
 # Python environment
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements_test.txt
+python scripts/ci_ha_install.py stable \
+    --requirements requirements_test.txt --extra "aioesphomeapi>=29.0.0"
 
 # Frontend dependencies
 cd frontend
@@ -93,12 +94,18 @@ pytest tests/ -x -q --cov=custom_components/eppgrid --cov-fail-under=90
 - Covers the integration's Python code (device manager, storage, WebSocket API,
     flasher, diagnostics, config flow).
 - **Coverage floor: 90%.** The hook fails the push if coverage drops below.
-- Uses `pytest-homeassistant-custom-component` for HA fixtures.
-- **CI runs the suite against three HA versions** (floor `2025.2.0`, `stable`,
-    and `dev` from git `main`), and the `nightly.yml` workflow re-runs `stable`
-    and `dev` daily against the latest dependencies. That is what surfaces an
-    upstream release that breaks us — *provided the fixtures exercise the
-    upstream behaviour*.
+- Uses `pytest-homeassistant` for HA fixtures on HA 2026.11 and newer, and
+    `pytest-homeassistant-custom-component` on older HA. Tests import the
+    helpers from `tests/ha_harness.py`, which works with either.
+- **CI runs the suite against four HA versions** (floor `2025.2.0`, `stable`,
+    the newest `beta`, and `dev` from git `main`), and the `nightly.yml`
+    workflow re-runs `stable`, `beta` and `dev` daily against the latest
+    dependencies. That is what surfaces an upstream release that breaks us —
+    *provided the fixtures exercise the upstream behaviour*.
+- **`scripts/ci_ha_install.py` installs the `stable`, `beta` and `dev` legs**
+    and fails the job if it does not end up on the HA version it asked for. In
+    `tests.yml`, a test failure on `beta` or `dev` is only a warning, so an
+    unreleased HA cannot block a PR. In `nightly.yml` it is a real failure.
 - **When a test depends on a format HA or a bundled library produces, build the
     fixture through that library — never hardcode the string.** Issue #355 (the
     HA 2026.8 ESPHome `unique_id` format change) reached users despite the

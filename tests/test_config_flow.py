@@ -7,12 +7,12 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid import _PANEL_REGISTERED_KEY
 from custom_components.eppgrid.config_flow import EPPGridConfigFlow
 from custom_components.eppgrid.config_flow import EPPGridOptionsFlow
 from custom_components.eppgrid.const import DOMAIN
+from tests.ha_harness import MockConfigEntry
 
 MODULE_URL = "/eppgrid_static/eppgrid-panel.js?v=deadbeef"
 

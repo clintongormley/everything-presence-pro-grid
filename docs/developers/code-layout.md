@@ -11,6 +11,7 @@ everything-presence-pro-grid/
 ├── docs/                        # This site
 ├── .githooks/pre-push           # Pre-push hook (required to be set up)
 ├── scripts/pre-push-fast.sh     # Lightweight pre-push gate (run manually)
+├── scripts/ci_ha_install.py     # Installs and checks the HA version for CI
 ├── tests/                       # Python tests
 ├── .github/workflows/           # CI
 ├── pyproject.toml               # Python config (ruff, pytest)
@@ -368,13 +369,13 @@ This site. MkDocs Material source.
 
 ## CI (`.github/workflows/`)
 
-- **`tests.yml`** — Python (HA 2025.2.0 floor, HA stable, HA dev), Frontend
-    (Vitest + coverage), C++ tests (CMake + CTest, both libs).
+- **`tests.yml`** — Python (HA 2025.2.0 floor, HA stable, HA beta, HA dev),
+    Frontend (Vitest + coverage), C++ tests (CMake + CTest, both libs).
 - **`nightly.yml`** — daily (and `workflow_dispatch`) run of the Python +
-    Frontend suites against the **latest** upstream deps (HA stable + dev,
-    latest `aioesphomeapi`, frontend deps resolved fresh from `package.json`).
-    Catches a breaking upstream release between commits. Separate from
-    `tests.yml` so its noise never blocks a PR.
+    Frontend suites against the **latest** upstream deps (HA stable, beta and
+    dev, latest `aioesphomeapi`, frontend deps resolved fresh from
+    `package.json`). Catches a breaking upstream release between commits.
+    Separate from `tests.yml` so its noise never blocks a PR.
 - **`firmware.yml`** — compiles each firmware variant on changes under
     `firmware/`.
 - **`hacs.yml`** — HACS integration validation.

@@ -1,7 +1,7 @@
 name: Nightly (latest deps)
 
 # Runs the suite against the LATEST upstream dependencies — Home Assistant
-# stable + dev, latest aioesphomeapi, latest test deps, and frontend deps
+# stable, beta and dev, latest aioesphomeapi, latest test deps, and frontend deps
 # resolved fresh from package.json ranges — so a new upstream release that
 # breaks us is caught here, on a schedule, rather than on the next push.
 # Kept separate from tests.yml so its noise never blocks a PR. A failing run
@@ -25,7 +25,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        ha-version: ["stable", "dev"]
+        ha-version: ["stable", "beta", "dev"]
     name: "Python (HA ${{ matrix.ha-version }}, latest deps)"
     steps:
       - uses: actions/checkout@v5
@@ -34,13 +34,10 @@ jobs:
           python-version: "3.14"
       - name: Install latest dependencies
         run: |
-          if [ "${{ matrix.ha-version }}" = "dev" ]; then
-            pip install git+https://github.com/home-assistant/core.git
-          else
-            pip install --upgrade homeassistant
-          fi
-          pip install --upgrade "aioesphomeapi>=29.0.0"
-          pip install --upgrade -r requirements_test.txt
+          python scripts/ci_ha_install.py "${{ matrix.ha-version }}" \
+            --requirements requirements_test.txt \
+            --extra "aioesphomeapi>=29.0.0"
+          python -c "from homeassistant.const import __version__; print(__version__)"
       - name: Ruff lint
         run: ruff check custom_components/ tests/ firmware/
       - name: Pytest

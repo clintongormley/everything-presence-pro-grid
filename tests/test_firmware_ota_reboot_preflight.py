@@ -30,14 +30,14 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.common import async_fire_time_changed
-from pytest_homeassistant_custom_component.common import async_mock_service
 
 from custom_components.eppgrid.device_manager import _OTA_SESSION_GRACE_S
 from custom_components.eppgrid.device_manager import DeviceManager
 from custom_components.eppgrid.device_manager import ManagedDevice
 from custom_components.eppgrid.storage import EPPGridStore
+from tests.ha_harness import MockConfigEntry
+from tests.ha_harness import async_fire_time_changed
+from tests.ha_harness import async_mock_service
 
 MAC = "AA:BB:CC:DD:EE:01"
 

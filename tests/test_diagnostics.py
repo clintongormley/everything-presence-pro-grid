@@ -9,7 +9,6 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import DOMAIN
 from custom_components.eppgrid.const import FIRMWARE_VERSION
@@ -17,6 +16,7 @@ from custom_components.eppgrid.device_manager import DeviceManager
 from custom_components.eppgrid.device_manager import ManagedDevice
 from custom_components.eppgrid.diagnostics import async_get_config_entry_diagnostics
 from custom_components.eppgrid.storage import EPPGridStore
+from tests.ha_harness import MockConfigEntry
 
 
 @pytest.fixture

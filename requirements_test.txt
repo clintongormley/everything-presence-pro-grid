@@ -1,7 +1,6 @@
 pytest
 pytest-asyncio
 pytest-cov
-pytest-homeassistant-custom-component
 pytest-socket
 ruff
 mypy
