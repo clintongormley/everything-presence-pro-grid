@@ -103,9 +103,10 @@ pytest tests/ -x -q --cov=custom_components/eppgrid --cov-fail-under=90
     dependencies. That is what surfaces an upstream release that breaks us —
     *provided the fixtures exercise the upstream behaviour*.
 - **`scripts/ci_ha_install.py` installs the `stable`, `beta` and `dev` legs**
-    and fails the job if it does not end up on the HA version it asked for. In
-    `tests.yml`, a test failure on `beta` or `dev` is only a warning, so an
-    unreleased HA cannot block a PR. In `nightly.yml` it is a real failure.
+    and fails if it does not end up on the HA version it asked for. In
+    `tests.yml`, a failed install or a test failure on `beta` or `dev` is only a
+    warning, so an unreleased HA cannot block a PR. After a failed install, that
+    job skips the steps that need it. In `nightly.yml` both are real failures.
 - **When a test depends on a format HA or a bundled library produces, build the
     fixture through that library — never hardcode the string.** Issue #355 (the
     HA 2026.8 ESPHome `unique_id` format change) reached users despite the
