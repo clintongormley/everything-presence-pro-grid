@@ -9,7 +9,6 @@ test = [
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
-    "pytest-homeassistant-custom-component",
     "pytest-socket",
     "ruff",
     "mypy",
@@ -35,6 +34,7 @@ force-single-line = true
 known-first-party = ["custom_components.eppgrid"]
 
 [tool.pytest.ini_options]
+# respx's pytest plugin imports httpx before Home Assistant installs its httpx alias.
 addopts = "-p no:respx"
 asyncio_mode = "auto"
 testpaths = ["tests"]

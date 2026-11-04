@@ -37,9 +37,8 @@ jobs:
           python scripts/ci_ha_install.py "${{ matrix.ha-version }}" \
             --requirements requirements_test.txt \
             --extra "aioesphomeapi>=29.0.0"
-          python -c "from homeassistant.const import __version__; print(__version__)"
       - name: Ruff lint
-        run: ruff check custom_components/ tests/ firmware/
+        run: ruff check custom_components/ tests/ firmware/ scripts/
       - name: Pytest
         run: pytest tests/ -v
 

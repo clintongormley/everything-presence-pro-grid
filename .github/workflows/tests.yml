@@ -85,19 +85,19 @@ jobs:
               pip install "homeassistant==${{ matrix.ha-version }}" "aioesphomeapi>=29.0.0" \
                 "pytest-homeassistant-custom-component==0.13.210" \
                 -r requirements_test.txt -c /tmp/ha-constraint.txt
+              python -c "from homeassistant.const import __version__; print(__version__)"
               ;;
           esac
-          python -c "from homeassistant.const import __version__; print(__version__)"
       - name: Warn when an unreleased Home Assistant cannot be installed
         if: steps.install.outcome == 'failure'
         run: echo "::warning::Could not install Home Assistant ${{ matrix.ha-version }}"
 
       - name: Ruff lint
         if: steps.gate.outputs.run == 'true' && steps.install.outcome == 'success'
-        run: ruff check custom_components/ tests/ firmware/
+        run: ruff check custom_components/ tests/ firmware/ scripts/
       - name: Ruff format
         if: steps.gate.outputs.run == 'true' && steps.install.outcome == 'success'
-        run: ruff format --check custom_components/ tests/ firmware/
+        run: ruff format --check custom_components/ tests/ firmware/ scripts/
       - name: Mypy (type check)
         # Type-check on the floor job only: [tool.mypy] pins python_version and
         # sets ignore_missing_imports, so the result is HA-version-independent —
