@@ -16,7 +16,7 @@ export const checkRowStyles = css`
   }
 `;
 
-interface CheckRowOptions {
+export interface CheckRowOptions {
 	label: string;
 	checked: boolean;
 	onToggle: (checked: boolean) => void;

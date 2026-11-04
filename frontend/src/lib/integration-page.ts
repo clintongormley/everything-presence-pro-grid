@@ -2,7 +2,7 @@ const REPOSITORY_ID = "1172848595";
 
 export interface IntegrationPageLink {
 	href: string;
-	labelKey: "open_marketplace" | "open_hacs";
+	isMarketplace: boolean;
 }
 
 /** Where to update the integration, given `hass.config.components`. */
@@ -12,7 +12,7 @@ export function integrationPageLink(
 	return components?.includes("marketplace")
 		? {
 				href: `/marketplace/repository/${REPOSITORY_ID}`,
-				labelKey: "open_marketplace",
+				isMarketplace: true,
 			}
-		: { href: `/hacs/repository/${REPOSITORY_ID}`, labelKey: "open_hacs" };
+		: { href: `/hacs/repository/${REPOSITORY_ID}`, isMarketplace: false };
 }

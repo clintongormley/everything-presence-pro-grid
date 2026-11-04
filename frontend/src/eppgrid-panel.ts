@@ -3241,6 +3241,14 @@ export class EPPGridPanel extends LitElement {
 		});
 	}
 
+	private _renderProtocolUpdateLink() {
+		const page = integrationPageLink(this.hass?.config?.components);
+		return html`<a href=${page.href} class="protocol-link"
+			>${this._localize(
+				page.isMarketplace ? "protocol.open_marketplace" : "protocol.open_hacs",
+			)}</a>`;
+	}
+
 	private _renderProtocolBanner() {
 		const dev = this._devices.find((d) => d.mac === this._selectedMac);
 		if (!dev || dev.firmware_status === "compatible") return nothing;
@@ -3255,7 +3263,6 @@ export class EPPGridPanel extends LitElement {
 				: this._localize("protocol.firmware_ahead");
 
 		const isAhead = status === "firmware_ahead";
-		const updatePage = integrationPageLink(this.hass?.config?.components);
 		return html`
 			<div class="protocol-fullpage protocol-fullpage-${isBehind ? "warning" : "info"}">
 				<ha-icon icon=${isBehind ? "mdi:alert-circle-outline" : "mdi:information-outline"}></ha-icon>
@@ -3267,12 +3274,7 @@ export class EPPGridPanel extends LitElement {
 					>${this._localize("protocol.update_firmware")}</epp-button>`
 						: nothing
 				}
-				${
-					isAhead
-						? html`<a href=${updatePage.href} class="protocol-link"
-					>${this._localize(`protocol.${updatePage.labelKey}`)}</a>`
-						: nothing
-				}
+				${isAhead ? this._renderProtocolUpdateLink() : nothing}
 			</div>
 		`;
 	}

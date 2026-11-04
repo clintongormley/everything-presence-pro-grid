@@ -8,14 +8,14 @@ describe("integrationPageLink", () => {
 	it("uses the Marketplace when Home Assistant has it", () => {
 		expect(integrationPageLink(["http", "marketplace"])).toEqual({
 			href: "/marketplace/repository/1172848595",
-			labelKey: "open_marketplace",
+			isMarketplace: true,
 		});
 	});
 
 	it("keeps the HACS page otherwise", () => {
 		const hacs = {
 			href: "/hacs/repository/1172848595",
-			labelKey: "open_hacs",
+			isMarketplace: false,
 		};
 		expect(integrationPageLink(["http"])).toEqual(hacs);
 		expect(integrationPageLink(undefined)).toEqual(hacs);
@@ -24,9 +24,9 @@ describe("integrationPageLink", () => {
 
 describe("integration update wording", () => {
 	it.each([
-		["en", en, "Settings > Updates", "Open in Marketplace"],
-		["es", es, "Ajustes > Actualizaciones", "Abrir en Marketplace"],
-		["cs", cs, "Nastavení > Aktualizace", "Otevřít v Marketplace"],
+		["en", en, "Settings → Updates", "Open in Marketplace"],
+		["es", es, "Ajustes → Actualizaciones", "Abrir en Marketplace"],
+		["cs", cs, "Nastavení → Aktualizace", "Otevřít v Marketplace"],
 	])("%s points to the updates page, not HACS", (_lang, t, path, open) => {
 		expect(t.protocol.firmware_ahead).toContain(path);
 		expect(t.protocol.firmware_ahead).not.toContain("HACS");

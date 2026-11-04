@@ -1,8 +1,12 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
-import { checkRowStyles, renderCheckRow } from "../check-row.js";
+import {
+	type CheckRowOptions,
+	checkRowStyles,
+	renderCheckRow,
+} from "../check-row.js";
 
-function mount(overrides: Partial<Parameters<typeof renderCheckRow>[0]> = {}): {
+function mount(overrides: Partial<CheckRowOptions> = {}): {
 	root: HTMLDivElement;
 	onToggle: ReturnType<typeof vi.fn>;
 } {

@@ -377,7 +377,7 @@
 	},
 	"protocol": {
 		"firmware_behind": "Firmware tohoto senzoru je potřeba aktualizovat, aby fungoval s touto verzí integrace.",
-		"firmware_ahead": "Firmware tohoto senzoru je novější než integrace. Aktualizujte integraci Everything Presence Grid v Nastavení > Aktualizace.",
+		"firmware_ahead": "Firmware tohoto senzoru je novější než integrace. Aktualizujte integraci Everything Presence Grid v Nastavení → Aktualizace.",
 		"open_hacs": "Otevřít v HACS",
 		"open_marketplace": "Otevřít v Marketplace",
 		"unavailable": "Zařízení je offline — verzi firmwaru nelze zjistit.",

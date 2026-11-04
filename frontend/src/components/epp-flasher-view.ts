@@ -1095,6 +1095,13 @@ export class EppFlasherView extends LitElement {
 		return { badges, action };
 	}
 
+	private _renderUpdateLink() {
+		const page = integrationPageLink(this.haComponents);
+		return html`<a href=${page.href} class="update-link">${this.localize(
+			page.isMarketplace ? "flasher.open_marketplace" : "flasher.open_hacs",
+		)}</a>`;
+	}
+
 	private _renderDeviceList() {
 		const { flashableDevices } = this;
 		const hasAheadDevices = flashableDevices.some(
@@ -1102,7 +1109,6 @@ export class EppFlasherView extends LitElement {
 				d.firmware_type === "eppgrid" && d.firmware_status === "firmware_ahead",
 		);
 
-		const updatePage = integrationPageLink(this.haComponents);
 		return html`
       <div class="flasher-content">
         ${
@@ -1113,7 +1119,7 @@ export class EppFlasherView extends LitElement {
             <div>
               <strong>${this.localize("flasher.integration_outdated_title")}</strong>
               <p>${this.localize("flasher.integration_outdated_body")}</p>
-              <a href=${updatePage.href} class="update-link">${this.localize(`flasher.${updatePage.labelKey}`)}</a>
+              ${this._renderUpdateLink()}
             </div>
           </div>
         `

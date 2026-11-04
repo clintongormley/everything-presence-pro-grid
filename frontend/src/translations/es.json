@@ -377,7 +377,7 @@
 	},
 	"protocol": {
 		"firmware_behind": "El firmware de este sensor debe actualizarse para funcionar con esta versión de la integración.",
-		"firmware_ahead": "El firmware de este sensor es más reciente que la integración. Actualiza la integración Everything Presence Grid desde Ajustes > Actualizaciones.",
+		"firmware_ahead": "El firmware de este sensor es más reciente que la integración. Actualiza la integración Everything Presence Grid desde Ajustes → Actualizaciones.",
 		"open_hacs": "Abrir en HACS",
 		"open_marketplace": "Abrir en Marketplace",
 		"unavailable": "El dispositivo no está disponible — no se puede determinar la versión del firmware.",

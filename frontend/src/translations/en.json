@@ -377,7 +377,7 @@
 	},
 	"protocol": {
 		"firmware_behind": "This sensor's firmware needs to be updated to work with this version of the integration.",
-		"firmware_ahead": "This sensor's firmware is newer than the integration. Update the Everything Presence Grid integration from Settings > Updates.",
+		"firmware_ahead": "This sensor's firmware is newer than the integration. Update the Everything Presence Grid integration from Settings → Updates.",
 		"open_hacs": "Open in HACS",
 		"open_marketplace": "Open in Marketplace",
 		"unavailable": "Device is offline — firmware version cannot be determined.",
