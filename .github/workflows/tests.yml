@@ -158,7 +158,7 @@ jobs:
       - name: Build with coverage
         working-directory: firmware/lib/epp_zone_engine
         run: |
-          cmake -B build -DCMAKE_BUILD_TYPE=Coverage
+          cmake -B build -DCMAKE_BUILD_TYPE=Coverage -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build build
       - name: Run tests
         working-directory: firmware/lib/epp_zone_engine/build

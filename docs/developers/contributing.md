@@ -148,13 +148,13 @@ There are two host-testable libraries under `firmware/lib/`:
 ```bash
 # Zone engine — the main pipeline (rolling window, perspective, zone state machine)
 cd firmware/lib/epp_zone_engine
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Coverage
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Coverage -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build
 ctest --test-dir build --output-on-failure
 
 # Component helpers — small pure helpers extracted from components/epp/
 cd ../epp_component_helpers
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Coverage
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Coverage -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```

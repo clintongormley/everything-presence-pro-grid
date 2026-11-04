@@ -22,7 +22,7 @@ jobs:
       - name: Build and test
         run: |
           cd firmware/lib/epp_zone_engine
-          cmake -B build -DCMAKE_BUILD_TYPE=Debug
+          cmake -B build -DCMAKE_BUILD_TYPE=Debug -DCMAKE_POLICY_VERSION_MINIMUM=3.5
           cmake --build build
           cd build && ctest --output-on-failure
 
