@@ -66,13 +66,19 @@ def _make_flow(hass: HomeAssistant, mac: str = "AA:BB:CC:DD:EE:01") -> Any:
 
     The Repairs framework normally sets these via `async_init`; for unit tests
     we just bypass that machinery and assign directly.
+
+    Newer HA reads `issue_id` from the flow's context, and its setter raises
+    outside an integration. HA 2025.2 reads a plain attribute, which the
+    instance dict supplies; there the property does not exist to shadow it.
     """
     from custom_components.eppgrid.repairs import FirmwareUpdateRepairFlow
 
+    issue_id = f"firmware_behind_{mac}"
     flow = FirmwareUpdateRepairFlow(mac=mac)
     flow.hass = hass
     flow.handler = DOMAIN
-    flow.issue_id = f"firmware_behind_{mac}"
+    flow.context = {"issue_id": issue_id}
+    vars(flow)["issue_id"] = issue_id
     return flow
 
 
