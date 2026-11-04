@@ -375,14 +375,16 @@ def _send_device_not_found(connection: websocket_api.ActiveConnection, msg_id: i
 def _connection_is_closed(connection: websocket_api.ActiveConnection) -> bool:
     """True when HA has already torn down this WS connection.
 
-    `async_handle_close` swaps `send_message` for `_connect_closed_error`
-    (and clears `subscriptions`) as it shuts a connection down. For an
+    `async_handle_close` swaps the send function for `_connect_closed_error`
+    (and clears `subscriptions`) as it shuts a connection down: HA 2026.11 and
+    newer swap `_send_message`, older HA swaps `send_message`. For an
     `@async_response` handler that was awaiting when the close landed, that
     swap is the reliable post-close signal: the background task is NOT
     cancelled, so on resume the handler must detect it and undo any session
     refcount it took, since the unsub it registers will never be invoked.
     """
-    return getattr(connection, "send_message", None) == getattr(connection, "_connect_closed_error", object())
+    closed_error = getattr(connection, "_connect_closed_error", object())
+    return closed_error in (getattr(connection, "send_message", None), getattr(connection, "_send_message", None))
 
 
 def _send_not_loaded(connection: websocket_api.ActiveConnection, msg_id: int) -> None:
