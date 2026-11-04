@@ -146,6 +146,11 @@ Each configured zone has two entities:
     of tracked targets currently inside that zone, with the same `Zone <name>` /
     `Zone Rest of Room` display-name treatment.
 
+On Home Assistant 2026.11 or newer, these names show with the device name in
+front, so a zone on a device called `Lounge` reads `Lounge Zone Sofa`. Only the
+displayed name changes: the entity IDs stay the same, so your automations and
+dashboards keep working.
+
 **Zone Presence** entities are enabled by default. **Zone Target Count**
 entities are disabled by default. Both are toggled in
 [Entity settings](settings/entities.md).

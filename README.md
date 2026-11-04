@@ -96,14 +96,25 @@ for worked examples.
 
 ## Installation
 
-### HACS (recommended)
+### Home Assistant 2026.11 or newer
 
-Everything Presence Grid is in the **HACS** default list — search for it and
-install it directly.
+Everything Presence Grid is in the **Marketplace**, which comes with Home
+Assistant, so there is nothing else to install first.
 
-[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=clintongormley&repository=everything-presence-pro-grid&category=integration)
+[Open Everything Presence Grid in your Home Assistant](https://my.home-assistant.io/redirect/hacs_repository/?owner=clintongormley&repository=everything-presence-pro-grid&category=integration),
+or find it yourself:
 
-Or install it from the HACS list:
+1. Go to **Settings > Marketplace**. The first time you open it, Home Assistant
+    warns you that community projects are not reviewed by the Home Assistant
+    project, and you need to accept that before you can install anything.
+1. Search for **Everything Presence Grid** and open it.
+1. Select **Install**. The setup page normally opens when the installation
+    finishes. If it doesn't, restart Home Assistant.
+
+### Home Assistant 2026.10 or older
+
+Everything Presence Grid is in the **HACS** default list, and the same link
+above opens it there. To find it yourself:
 
 1. Open **HACS** in Home Assistant and search for **Everything Presence Grid**.
 1. Click **Download**, then restart Home Assistant.

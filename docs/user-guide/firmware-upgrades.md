@@ -4,9 +4,9 @@ Once a device is running Everything Presence Grid firmware and on your network,
 updates happen over the air. No USB cable needed.
 
 The Everything Presence Grid integration is pinned to a specific firmware
-version. When you upgrade the integration via HACS to a release that expects a
-newer firmware than what your devices are running, the integration notifies you
-and offers to upgrade.
+version. When you upgrade the integration to a release that expects a newer
+firmware than what your devices are running, the integration notifies you and
+offers to upgrade.
 
 ## Two ways to upgrade
 
@@ -105,7 +105,7 @@ The panel reports a specific error and offers Retry. Common causes:
 If your firmware version is *newer* than your installed Everything Presence Grid
 integration, the panel refuses to operate the device until the integration is
 updated. Look for the **Integration update required** banner and update the
-integration via HACS.
+integration from **Settings > Updates**.
 
 ## Flashing a specific version
 
@@ -118,7 +118,7 @@ To roll back or pin to a specific firmware version, flash via USB. See
 | ------------------------------------------------------------------------- | --------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
 | OTA stalls or times out repeatedly                                        | Weak Wi-Fi at the device                                                    | Move the device, switch to Ethernet variant, or flash via USB.                                                                      |
 | OTA reports "Update failed" on every retry                                | Flash partition unhealthy                                                   | Re-flash via USB.                                                                                                                   |
-| Panel refuses to control device                                           | Firmware newer than installed integration                                   | Update the integration in HACS.                                                                                                     |
+| Panel refuses to control device                                           | Firmware newer than installed integration                                   | Update the integration from **Settings > Updates**.                                                                                 |
 | Device disappeared from the list after a variant swap                     | ESPHome cache stale                                                         | Remove and re-add the device in **Settings → Devices & services → ESPHome**.                                                        |
 | OTA fails with a connection error on a device that has no internet access | Device blocked from the internet *and* cannot reach the Home Assistant host | Ensure the device can reach Home Assistant on your network; update via Repairs or the panel, not the native Firmware Update entity. |
 

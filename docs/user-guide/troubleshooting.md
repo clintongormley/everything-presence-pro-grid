@@ -12,9 +12,9 @@ to be flashed over USB — and could be missing from the panel's device list, wi
 its zones and settings unavailable. This was caused by a change in how Home
 Assistant 2026.8 labels ESPHome entities internally.
 
-**Fix:** update the integration to **1.7.0 or newer** (HACS → Everything
-Presence Grid → Update), then reload it or restart Home Assistant. The device is
-recognised again with no re-flash needed.
+**Fix:** update the integration to **1.7.0 or newer** from **Settings >
+Updates**, then reload it or restart Home Assistant. The device is recognised
+again with no re-flash needed.
 
 ## No target dots, and Target Presence stays clear
 
@@ -250,8 +250,8 @@ Open the issue at
 Include the following in the issue description:
 
 - **Home Assistant version** (e.g. 2026.4.2).
-- **Everything Presence Grid integration version** (from HACS, or the
-    `manifest.json`).
+- **Everything Presence Grid integration version** (from the Marketplace, HACS,
+    or the `manifest.json`).
 - **Device firmware version** (from the device's **Firmware Version** sensor).
 - **Steps to reproduce** — numbered, starting from a known state.
 - **Expected vs actual behaviour.**

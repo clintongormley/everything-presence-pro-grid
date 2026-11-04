@@ -79,7 +79,7 @@
     },
     "firmware_ahead": {
       "title": "Vyžadována aktualizace integrace pro zařízení {device_name}",
-      "description": "Zařízení {device_name} používá firmware **{current_version}**, ale integrace Everything Presence Grid je připnutá na verzi **{required_version}**. Aktualizujte integraci přes HACS, aby mohla komunikovat s novějším firmwarem. Dokud integraci neaktualizujete, nemusí některé funkce fungovat správně."
+      "description": "Zařízení {device_name} používá firmware **{current_version}**, ale integrace Everything Presence Grid je připnutá na verzi **{required_version}**. Aktualizujte integraci v Nastavení > Aktualizace, aby mohla komunikovat s novějším firmwarem. Dokud integraci neaktualizujete, nemusí některé funkce fungovat správně."
     }
   },
   "services": {

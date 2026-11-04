@@ -1,6 +1,7 @@
 {
   "domain": "eppgrid",
   "name": "Everything Presence Grid",
+  "categories": ["sensors.motion_presence"],
   "codeowners": ["@clintongormley"],
   "config_flow": true,
   "dependencies": ["frontend", "http", "panel_custom", "repairs", "websocket_api"],

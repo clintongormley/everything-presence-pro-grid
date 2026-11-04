@@ -79,7 +79,7 @@
     },
     "firmware_ahead": {
       "title": "{device_name}: actualización de la integración necesaria",
-      "description": "{device_name} está ejecutando el firmware **{current_version}**, pero la integración Everything Presence Grid está fijada a **{required_version}**. Actualiza la integración a través de HACS para que pueda comunicarse con el firmware más reciente. Algunas funciones de la integración pueden no funcionar correctamente hasta que se actualice la integración."
+      "description": "{device_name} está ejecutando el firmware **{current_version}**, pero la integración Everything Presence Grid está fijada a **{required_version}**. Actualiza la integración desde Ajustes > Actualizaciones para que pueda comunicarse con el firmware más reciente. Algunas funciones de la integración pueden no funcionar correctamente hasta que se actualice la integración."
     }
   },
   "services": {
