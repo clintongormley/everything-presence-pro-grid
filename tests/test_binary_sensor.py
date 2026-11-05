@@ -12,9 +12,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import DOMAIN
+from tests.ha_harness import MockConfigEntry
 
 from ._esphome_helpers import register_esphome_source
 from ._registry_helpers import get_device_by_identifier

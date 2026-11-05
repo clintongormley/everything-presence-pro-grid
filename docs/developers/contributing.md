@@ -7,7 +7,9 @@ how to run the tests the pre-push hook enforces, and the PR process.
 
 ## Prerequisites
 
-- **Python 3.13+** — matches the integration's `requires-python` floor.
+- **Python 3.14.2+** — the setup command below installs the latest stable Home
+    Assistant, which needs it. The integration's `requires-python` floor stays
+    3.13 for the `2025.2.0` CI job.
 - **Node.js** (LTS) and `npm` — for the frontend build and tests.
 - **CMake** and a C++17 compiler — for the zone engine library tests (only
     needed if you touch firmware).
@@ -22,7 +24,7 @@ how to run the tests the pre-push hook enforces, and the PR process.
     `epp_zone_engine/`'s `src/`.)
 
 A locally-running Home Assistant is helpful but not required for running the
-test suite — the Python tests use `pytest-homeassistant-custom-component`, which
+test suite — the Python tests use a pytest plugin for Home Assistant that
 provides fixtures that don't need a real HA instance.
 
 ## Clone and set up
@@ -32,15 +34,20 @@ git clone https://github.com/clintongormley/everything-presence-pro-grid
 cd everything-presence-pro-grid
 
 # Python environment
-python3 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements_test.txt
+python scripts/ci_ha_install.py stable \
+    --requirements requirements_test.txt --extra "aioesphomeapi>=29.0.0"
 
 # Frontend dependencies
 cd frontend
 npm install
 cd ..
 ```
+
+Use a new virtual environment when you move from Home Assistant 2026.10 or older
+to 2026.11 or newer. `pytest-homeassistant-custom-component` left installed
+beside `pytest-homeassistant` stops pytest before it collects any tests.
 
 For docs work, also install the docs dependencies:
 
@@ -93,12 +100,19 @@ pytest tests/ -x -q --cov=custom_components/eppgrid --cov-fail-under=90
 - Covers the integration's Python code (device manager, storage, WebSocket API,
     flasher, diagnostics, config flow).
 - **Coverage floor: 90%.** The hook fails the push if coverage drops below.
-- Uses `pytest-homeassistant-custom-component` for HA fixtures.
-- **CI runs the suite against three HA versions** (floor `2025.2.0`, `stable`,
-    and `dev` from git `main`), and the `nightly.yml` workflow re-runs `stable`
-    and `dev` daily against the latest dependencies. That is what surfaces an
-    upstream release that breaks us — *provided the fixtures exercise the
-    upstream behaviour*.
+- Uses `pytest-homeassistant` for HA fixtures on HA 2026.11 and newer, and
+    `pytest-homeassistant-custom-component` on older HA. Tests import the
+    helpers from `tests/ha_harness.py`, which works with either.
+- **CI runs the suite against four HA versions** (floor `2025.2.0`, `stable`,
+    the newest `beta`, and `dev` from git `main`), and the `nightly.yml`
+    workflow re-runs `stable`, `beta` and `dev` daily against the latest
+    dependencies. That is what surfaces an upstream release that breaks us —
+    *provided the fixtures exercise the upstream behaviour*.
+- **`scripts/ci_ha_install.py` installs the `stable`, `beta` and `dev` legs**
+    and fails if it does not end up on the HA version it asked for. In
+    `tests.yml`, a failed install or a test failure on `beta` or `dev` is only a
+    warning, so an unreleased HA cannot block a PR. After a failed install, that
+    job skips the steps that need it. In `nightly.yml` both are real failures.
 - **When a test depends on a format HA or a bundled library produces, build the
     fixture through that library — never hardcode the string.** Issue #355 (the
     HA 2026.8 ESPHome `unique_id` format change) reached users despite the
@@ -109,8 +123,8 @@ pytest tests/ -x -q --cov=custom_components/eppgrid --cov-fail-under=90
     via the installed `aioesphomeapi` builder at its default version, so the
     format tracks the library (v1 on the floor, v3 on 2026.8+, whatever ships
     next) and `tests/test_esphome_unique_id_installed_format.py` fails on the
-    `dev` job if a future format stops normalising. Keep that pattern for any
-    device→integration contract.
+    nightly `dev` job if a future format stops normalising. Keep that pattern
+    for any device→integration contract.
 
 ### Frontend
 
@@ -134,13 +148,13 @@ There are two host-testable libraries under `firmware/lib/`:
 ```bash
 # Zone engine — the main pipeline (rolling window, perspective, zone state machine)
 cd firmware/lib/epp_zone_engine
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Coverage
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Coverage -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build
 ctest --test-dir build --output-on-failure
 
 # Component helpers — small pure helpers extracted from components/epp/
 cd ../epp_component_helpers
-cmake -B build -S . -DCMAKE_BUILD_TYPE=Coverage
+cmake -B build -S . -DCMAKE_BUILD_TYPE=Coverage -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
@@ -197,6 +211,10 @@ If any step fails, the push aborts. Fix the issue, re-stage, and push again.
 1. Work on a feature branch cut off `main`.
 1. Make small, focused commits — one concern per commit. See
     [commit style](#commit-message-style) below.
+1. Add user-facing changes under `## Unreleased` in `CHANGES.md`, creating the
+    heading if it is missing. A final release uses that section for the release
+    notes unless a `## v<version>` section already exists, and `bin/release.sh`
+    stops if the section it would use is missing or has no entries.
 1. When ready, open a PR against `main`.
 1. CI runs the same checks as the pre-push hook, plus the firmware-compile
     matrix and HACS / Hassfest / CodeQL. Most jobs are **path-gated** via

@@ -130,6 +130,7 @@ everything-presence-pro-grid/
 │   │       ├── furniture-tones.ts        # Per-item furniture tone from the cell underneath
 │   │       ├── view-hash.ts              # URL fragment ↔ ViewState encoding
 │   │       ├── help-url.ts               # Panel state → contextual user-guide URL
+│   │       ├── integration-page.ts       # Marketplace or HACS link for updating the integration
 │   │       ├── tablist-nav.ts            # Roving-tabindex keyboard nav for ARIA tablists
 │   │       ├── storage.ts                # localStorage helper (selected device MAC)
 │   │       ├── safe-unsub.ts             # HA WS unsubscribe wrapper (swallows stale-subscription errors)
@@ -379,20 +380,21 @@ must keep seeing frames and nothing else; the current panel bundle always opts
 in.
 
 Re-arming heals a *device* flap, but not the manager's own death. On a config-
-entry unload/reload (an options change, a HACS update) `async_stop` drops every
-stream and the fresh manager comes up with an empty registry — while the card's
-subscription is still open, now pointing at nothing. `_on_device_removed` leaves
-the same hole for one device. The client cannot detect either (an
-`available: false` from a manager teardown and one from a flap are identical on
-the wire), and re-subscribing on every `available: false` would churn the wire
-for a device the backend is merely waiting on. So a second, terminal signal —
-`on_closed()` / `StateStream.notify_closed()` — says *this stream is gone,
-re-subscribe*. It fires from those two manager-initiated teardowns ONLY: never
-on a client unsub (the client already knows) and never on a flap (the stream
-survives that). On the wire it is `{"available": false, "closed": true}` for
-`overview/subscribe` and the panel's three commands (when opted in via
-`availability: true`), and `{"closed": true}` for `overview/subscribe_heatmap`;
-all are inert-or-harmless to a bundle that predates them.
+entry unload/reload (an options change, an integration update) `async_stop`
+drops every stream and the fresh manager comes up with an empty registry — while
+the card's subscription is still open, now pointing at nothing.
+`_on_device_removed` leaves the same hole for one device. The client cannot
+detect either (an `available: false` from a manager teardown and one from a flap
+are identical on the wire), and re-subscribing on every `available: false` would
+churn the wire for a device the backend is merely waiting on. So a second,
+terminal signal — `on_closed()` / `StateStream.notify_closed()` — says *this
+stream is gone, re-subscribe*. It fires from those two manager-initiated
+teardowns ONLY: never on a client unsub (the client already knows) and never on
+a flap (the stream survives that). On the wire it is
+`{"available": false, "closed": true}` for `overview/subscribe` and the panel's
+three commands (when opted in via `availability: true`), and `{"closed": true}`
+for `overview/subscribe_heatmap`; all are inert-or-harmless to a bundle that
+predates them.
 
 The panel's own three streams (`subscribe_raw_targets`,
 `subscribe_grid_targets`, `subscribe_heatmap`, in `_devices.py`) go through this
@@ -984,8 +986,9 @@ alignment, environmental defaults, mmWave entity wiring, translation coverage.
 - **tests.yml** — Python tests (multiple HA versions), frontend lint + vitest +
     coverage, C++ ctest
 - **nightly.yml** — scheduled run of the Python + frontend suites against the
-    latest upstream deps (HA stable + dev, latest aioesphomeapi, frontend deps
-    resolved fresh); catches breaking upstream releases between commits
+    latest upstream deps (HA stable, beta and dev, latest aioesphomeapi,
+    frontend deps resolved fresh); catches breaking upstream releases between
+    commits
 - **firmware.yml** — C++ tests + ESPHome compilation for both variants (on push
     to main touching `firmware/`)
 - **firmware-release.yml** — Tag-triggered firmware build + ESP Web Tools
@@ -1015,6 +1018,23 @@ on-main, clean-tree, tag-not-exists, and origin-up-to-date. Bumps
 since the previous tag) so the integration version and firmware version remain
 independent — they only re-align when the firmware actually changes.
 
+A final release also checks the `CHANGES.md` section that will become the
+release notes: `## v<version>` if there is one, otherwise `## Unreleased`. The
+script stops before creating the branch if that section is missing or has no
+entries; subheadings and HTML comments alone do not count.
+
+In the release commit, that heading becomes `## v<version> — <date>` if it is
+`## Unreleased` or `## v<version> — unreleased`. Any other heading stays as
+written, and so does a `## Unreleased` beside a `## v<version>` section. The
+date comes from `RELEASE_DATE` (YYYY-MM-DD) and defaults to today. When a
+heading will be dated, a value that does not fit that format stops the script
+before the branch exists.
+
+A pre-release (`-alpha`, `-beta`, `-rc`) leaves `CHANGES.md` alone and needs no
+entry. A candidate and the final release of a version share one section, and
+`bin/promote.sh` only flips the GitHub release, so the final release is the one
+that takes `## Unreleased`.
+
 **firmware-release.yml** — Triggered by tag push (`v*`). First runs
 `.github/scripts/validate-release.sh`, which fails the workflow if
 `manifest.json` ≠ tag, or if the three firmware-version files (manifest
@@ -1026,7 +1046,11 @@ integration keeps `FIRMWARE_VERSION` pointed at the release where the firmware
 last changed). **Every release is published as a pre-release**
 (`prerelease=true`, `make_latest=false`) — none are ever auto-marked the GitHub
 `latest`. After testing, promote with `bin/promote.sh <version>` (which runs
-`gh release edit v<version> --prerelease=false --latest=true`).
+`gh release edit v<version> --prerelease=false --latest=true`). The release
+notes are the version's `CHANGES.md` section, read by
+`.github/scripts/extract-release-notes.sh`. A tag with no section or an empty
+one, which today means every pre-release, gets GitHub's generated commit list
+instead.
 
 **pages.yml** — Triggers on push to main *and* on `release: released`. Stages
 firmware in two passes:

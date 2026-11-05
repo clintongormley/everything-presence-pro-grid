@@ -79,7 +79,7 @@
     },
     "firmware_ahead": {
       "title": "{device_name} integration update required",
-      "description": "{device_name} is running firmware **{current_version}** but the Everything Presence Grid integration is pinned to **{required_version}**. Update the integration via HACS so it can talk to the newer firmware. Some integration features may not work correctly until the integration is updated."
+      "description": "{device_name} is running firmware **{current_version}** but the Everything Presence Grid integration is pinned to **{required_version}**. Update the integration from Settings → Updates so it can talk to the newer firmware. Some integration features may not work correctly until the integration is updated."
     }
   },
   "services": {

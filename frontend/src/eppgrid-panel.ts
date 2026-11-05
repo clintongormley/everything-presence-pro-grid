@@ -46,6 +46,7 @@ import {
 	type OverlayMode,
 } from "./lib/grid.js";
 import { getHelpUrl, type PanelTab } from "./lib/help-url.js";
+import { integrationPageLink } from "./lib/integration-page.js";
 import {
 	autoDetectionRange,
 	boundsToRoomMm,
@@ -237,7 +238,7 @@ const hostStyles = css`
        custom panel with no HA app-header above it, so the viewport IS its box. */
     height: 100vh;
     height: 100dvh;
-    background: var(--primary-background-color, #fafafa);
+    background: var(--ha-panel-background, var(--primary-background-color, #fafafa));
     color: var(--primary-text-color, #212121);
     font-family: var(--ha-font-family-body, "Roboto", sans-serif);
     /* Own the desktop scroll on the panel host and ALWAYS reserve the
@@ -2795,6 +2796,7 @@ export class EPPGridPanel extends LitElement {
 					.flashableDevices=${this._flasherCtrl.flashableDevices}
 					.loading=${this._flasherCtrl.loading}
 					.localize=${this._localize}
+					.haComponents=${this.hass?.config?.components}
 					.usbFlashState=${this._flasherCtrl.usbFlashState}
 					.wifiNetworks=${this._flasherCtrl.wifiNetworks}
 					.firmwareVersion=${this._flasherCtrl.firmwareVersion}
@@ -3239,6 +3241,14 @@ export class EPPGridPanel extends LitElement {
 		});
 	}
 
+	private _renderProtocolUpdateLink() {
+		const page = integrationPageLink(this.hass?.config?.components);
+		return html`<a href=${page.href} class="protocol-link"
+			>${this._localize(
+				page.isMarketplace ? "protocol.open_marketplace" : "protocol.open_hacs",
+			)}</a>`;
+	}
+
 	private _renderProtocolBanner() {
 		const dev = this._devices.find((d) => d.mac === this._selectedMac);
 		if (!dev || dev.firmware_status === "compatible") return nothing;
@@ -3264,12 +3274,7 @@ export class EPPGridPanel extends LitElement {
 					>${this._localize("protocol.update_firmware")}</epp-button>`
 						: nothing
 				}
-				${
-					isAhead
-						? html`<a href="/hacs/repository/1172848595" class="protocol-link"
-					>${this._localize("protocol.open_hacs")}</a>`
-						: nothing
-				}
+				${isAhead ? this._renderProtocolUpdateLink() : nothing}
 			</div>
 		`;
 	}

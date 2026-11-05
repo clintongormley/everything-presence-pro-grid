@@ -7,10 +7,10 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid import async_setup_entry
 from custom_components.eppgrid.const import DOMAIN
+from tests.ha_harness import MockConfigEntry
 
 
 async def setup_integration(hass: HomeAssistant, config_entry: MockConfigEntry) -> MagicMock:
@@ -254,8 +254,9 @@ class TestSubscribeOtaProgress:
 
         async def _open(mac: str) -> object:
             # Simulate HA's async_handle_close landing mid-await: clear the
-            # subscriptions dict and swap send_message for the closed-error
-            # stub (HA does NOT cancel this background task).
+            # subscriptions dict and swap send_message (the HA 2026.10 and older
+            # shape) for the closed-error stub (HA does NOT cancel this
+            # background task).
             connection.subscriptions.clear()
             connection.send_message = connection._connect_closed_error
             return device_conn

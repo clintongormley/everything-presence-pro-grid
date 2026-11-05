@@ -24,7 +24,8 @@ It provides:
 
 ## Quick start
 
-1. [Install](user-guide/installation.md) the integration via HACS.
+1. [Install](user-guide/installation.md) the integration from the Marketplace,
+    or from HACS on Home Assistant 2026.10 or older.
 1. [Flash](user-guide/flashing-firmware.md) the Grid firmware onto your device
     via USB.
 1. [Mount](user-guide/placement.md) the device and

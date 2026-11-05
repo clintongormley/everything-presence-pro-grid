@@ -12,9 +12,9 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
+from tests.ha_harness import MockConfigEntry
+from tests.ha_harness import WebSocketGenerator
 from tests.test_websocket_api import setup_integration
 
 MAC = "AA:BB:CC:DD:EE:FF"
@@ -137,7 +137,7 @@ async def test_clear_heatmap_reachable_by_non_admin_user(
     config-mutating command elsewhere in the integration.
     hass_ws_client only takes an access token (not a user dict) to pick
     the authenticated user; hass_read_only_access_token (from
-    pytest_homeassistant_custom_component) is the read-only, non-admin one.
+    the HA test harness) is the read-only, non-admin one.
     """
     mock_dm = await setup_integration(hass, config_entry)
     session = MagicMock()

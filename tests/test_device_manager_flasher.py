@@ -9,10 +9,10 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.device_manager import DeviceManager
 from custom_components.eppgrid.storage import EPPGridStore
+from tests.ha_harness import MockConfigEntry
 
 from ._registry_helpers import create_sub_device
 

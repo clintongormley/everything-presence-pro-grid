@@ -178,11 +178,11 @@ async def test_on_device_available_clears_repair_after_ota_brings_versions_in_li
 
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.eppgrid.device_manager import DeviceManager
     from custom_components.eppgrid.device_manager import ManagedDevice
     from custom_components.eppgrid.storage import EPPGridStore
+    from tests.ha_harness import MockConfigEntry
 
     mac = "AA:BB:CC:DD:EE:11"
 
@@ -247,11 +247,11 @@ async def test_repair_issues_cleared_on_device_removal(hass: HomeAssistant) -> N
     Settings → Repairs.
     """
     from homeassistant.helpers import device_registry as dr
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.eppgrid.device_manager import DeviceManager
     from custom_components.eppgrid.device_manager import ManagedDevice
     from custom_components.eppgrid.storage import EPPGridStore
+    from tests.ha_harness import MockConfigEntry
 
     mac = "AA:BB:CC:DD:EE:20"
 
@@ -301,11 +301,11 @@ async def test_repair_issue_resyncs_on_device_rename(hass: HomeAssistant) -> Non
     """
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.eppgrid.device_manager import DeviceManager
     from custom_components.eppgrid.device_manager import ManagedDevice
     from custom_components.eppgrid.storage import EPPGridStore
+    from tests.ha_harness import MockConfigEntry
 
     mac = "AA:BB:CC:DD:EE:21"
     behind_version = _bump(FIRMWARE_VERSION, kind="behind")
@@ -385,11 +385,11 @@ async def test_late_firmware_version_arrival_re_syncs_repair_issue(hass: HomeAss
     from homeassistant.const import STATE_UNAVAILABLE
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.eppgrid.device_manager import DeviceManager
     from custom_components.eppgrid.device_manager import ManagedDevice
     from custom_components.eppgrid.storage import EPPGridStore
+    from tests.ha_harness import MockConfigEntry
 
     mac = "AA:BB:CC:DD:EE:30"
 
@@ -476,11 +476,11 @@ async def test_late_arrival_ignores_empty_string_firmware_version(hass: HomeAssi
     from homeassistant.const import STATE_UNAVAILABLE
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.eppgrid.device_manager import DeviceManager
     from custom_components.eppgrid.device_manager import ManagedDevice
     from custom_components.eppgrid.storage import EPPGridStore
+    from tests.ha_harness import MockConfigEntry
 
     mac = "AA:BB:CC:DD:EE:31"
 
@@ -538,10 +538,10 @@ async def test_async_discover_creates_repair_issue_for_outdated_device(hass: Hom
     """
     from homeassistant.helpers import device_registry as dr
     from homeassistant.helpers import entity_registry as er
-    from pytest_homeassistant_custom_component.common import MockConfigEntry
 
     from custom_components.eppgrid.device_manager import DeviceManager
     from custom_components.eppgrid.storage import EPPGridStore
+    from tests.ha_harness import MockConfigEntry
 
     behind_version = _bump(FIRMWARE_VERSION, kind="behind")
     mac = "AA:BB:CC:DD:EE:10"

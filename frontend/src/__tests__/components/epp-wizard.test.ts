@@ -376,6 +376,38 @@ describe("don't show tutorial again checkbox", () => {
 		expect(events).toHaveLength(1);
 	});
 
+	it("renders the don't-show-again row with its label and no ha-formfield", async () => {
+		const el = createWizard({ mode: "wizard" });
+		(el as any)._setupStep = "guide";
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const root = el.shadowRoot!;
+		expect(root.querySelector("ha-formfield")).toBeNull();
+		expect(
+			root.querySelector(".dont-show-again .check-row-label")?.textContent,
+		).toBe("wizard.dont_show_again");
+	});
+
+	it("one click on the don't-show-again label flips it once", async () => {
+		const el = createWizard({ mode: "wizard" });
+		(el as any)._setupStep = "guide";
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const label = () =>
+			el.shadowRoot!.querySelector(
+				".dont-show-again .check-row-label",
+			) as HTMLElement;
+		label().click();
+		await el.updateComplete;
+		expect((el as any)._dismissTutorial).toBe(true);
+
+		label().click();
+		await el.updateComplete;
+		expect((el as any)._dismissTutorial).toBe(false);
+	});
+
 	it("does not dispatch dismiss-tutorial when checkbox is unchecked", async () => {
 		const el = createWizard({ mode: "wizard" });
 		(el as any)._setupStep = "guide";

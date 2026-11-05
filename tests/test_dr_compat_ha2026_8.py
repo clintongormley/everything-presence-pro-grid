@@ -30,11 +30,11 @@ from homeassistant.const import STATE_OFF
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
 from custom_components.eppgrid.const import DOMAIN
 from custom_components.eppgrid.device_groups._registry import build_source_index
+from tests.ha_harness import MockConfigEntry
+from tests.ha_harness import WebSocketGenerator
 
 from ._esphome_helpers import register_esphome_source
 from ._registry_helpers import device_config_entry_ids

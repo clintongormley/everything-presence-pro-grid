@@ -125,17 +125,17 @@ fi
 if [ -n "$py_changed" ]; then
 
 step "Python format check"
-if ruff format --check "$ROOT/custom_components/" "$ROOT/tests/" "$ROOT/firmware/" 2>&1; then
+if ruff format --check "$ROOT/custom_components/" "$ROOT/tests/" "$ROOT/firmware/" "$ROOT/scripts/" 2>&1; then
     pass "Python formatting"
 else
-    fail "Python formatting — run: ruff format custom_components/ tests/ firmware/"
+    fail "Python formatting — run: ruff format custom_components/ tests/ firmware/ scripts/"
 fi
 
 step "Python lint"
-if ruff check "$ROOT/custom_components/" "$ROOT/tests/" "$ROOT/firmware/" 2>&1; then
+if ruff check "$ROOT/custom_components/" "$ROOT/tests/" "$ROOT/firmware/" "$ROOT/scripts/" 2>&1; then
     pass "Python lint"
 else
-    fail "Python lint — run: ruff check --fix custom_components/ tests/ firmware/"
+    fail "Python lint — run: ruff check --fix custom_components/ tests/ firmware/ scripts/"
 fi
 
 step "Python tests + coverage"

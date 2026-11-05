@@ -18,9 +18,9 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
+from tests.ha_harness import MockConfigEntry
+from tests.ha_harness import WebSocketGenerator
 from tests.test_websocket_api import register_managed_device
 from tests.test_websocket_api import setup_integration
 

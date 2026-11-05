@@ -4,6 +4,21 @@ User-facing changes to Everything Presence Grid. For full release assets and
 firmware downloads, see the
 [GitHub releases page](https://github.com/clintongormley/everything-presence-pro-grid/releases).
 
+## Unreleased
+
+**Ready for Home Assistant 2026.11.** The Marketplace replaces HACS from this
+version: install Everything Presence Grid from **Settings → Marketplace** and
+update it from **Settings → Updates**. On Home Assistant 2026.10 or older, you
+keep installing it through HACS.
+
+- The manual SSID, show password and "don't show again" tick boxes keep their
+    labels on Home Assistant 2026.11.
+- The panel now shows your theme's background instead of painting over it.
+- The "integration update required" message points to **Settings → Updates**,
+    and its link opens the Marketplace on Home Assistant 2026.11 or newer.
+- On Home Assistant 2026.11, zone entities show with the device name in front.
+    Their entity IDs do not change.
+
 ## v1.9.0 — 2026-09-07
 
 **Everything Presence Grid now runs on the Everything Presence Lite as well as

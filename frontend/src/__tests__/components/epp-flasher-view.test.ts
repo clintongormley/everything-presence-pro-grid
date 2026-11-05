@@ -838,7 +838,7 @@ describe("render() WiFi provisioning", () => {
 		const tpl = (el as any).render();
 		const c = renderTo(tpl);
 
-		expect(c.querySelector("ha-formfield")).not.toBeNull();
+		expect(c.querySelector(".check-row ha-checkbox")).not.toBeNull();
 	});
 
 	it("shows manual SSID text input when _manualSsid=true", () => {
@@ -1132,9 +1132,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 		const c = renderTo(tpl);
 
 		expect(c.querySelector("ha-textfield[type='password']")).not.toBeNull();
-		const toggle = c.querySelector(
-			"ha-formfield[data-show-password] ha-checkbox",
-		) as any;
+		const toggle = c.querySelector(".show-password ha-checkbox") as any;
 		expect(toggle).not.toBeNull();
 		expect(toggle.checked).toBe(false);
 	});
@@ -1161,9 +1159,7 @@ describe("WiFi provisioning DOM event handlers", () => {
 		await el.updateComplete;
 
 		const root = el.shadowRoot!;
-		const toggle = root.querySelector(
-			"ha-formfield[data-show-password] ha-checkbox",
-		) as any;
+		const toggle = root.querySelector(".show-password ha-checkbox") as any;
 		expect(toggle).not.toBeNull();
 
 		toggle.checked = true;
@@ -1173,6 +1169,99 @@ describe("WiFi provisioning DOM event handlers", () => {
 		toggle.checked = false;
 		toggle.dispatchEvent(new Event("change"));
 		expect((el as any)._showPassword).toBe(false);
+	});
+
+	it("renders both wifi options as labelled rows without ha-formfield", async () => {
+		const el = createView();
+		(el as any).usbFlashState = { step: "wifi_provision" };
+		document.body.appendChild(el);
+		await el.updateComplete;
+		const root = el.shadowRoot!;
+
+		expect(root.querySelector("ha-formfield")).toBeNull();
+		expect(
+			Array.from(root.querySelectorAll(".check-row-label")).map(
+				(l) => l.textContent,
+			),
+		).toEqual(["flasher.manual_ssid", "flasher.show_password"]);
+	});
+
+	it("one click on the show-password label flips it once", async () => {
+		const el = createView();
+		(el as any).usbFlashState = { step: "wifi_provision" };
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const label = () =>
+			el.shadowRoot!.querySelector(
+				".show-password .check-row-label",
+			) as HTMLElement;
+		label().click();
+		await el.updateComplete;
+		expect((el as any)._showPassword).toBe(true);
+		expect(
+			(el.shadowRoot!.querySelector(".show-password ha-checkbox") as any)
+				.checked,
+		).toBe(true);
+
+		label().click();
+		await el.updateComplete;
+		expect((el as any)._showPassword).toBe(false);
+	});
+
+	it("one click on the manual-SSID label flips it once and clears the password", async () => {
+		const el = createView();
+		(el as any).usbFlashState = { step: "wifi_provision" };
+		(el as any).wifiNetworks = [{ name: "Home", rssi: -40, secured: true }];
+		(el as any)._selectedSsid = "Home";
+		(el as any)._wifiPassword = "secret";
+		document.body.appendChild(el);
+		await el.updateComplete;
+
+		const label = () =>
+			Array.from(el.shadowRoot!.querySelectorAll(".check-row-label")).find(
+				(l) => l.textContent === "flasher.manual_ssid",
+			) as HTMLElement;
+		label().click();
+		await el.updateComplete;
+		expect((el as any)._manualSsid).toBe(true);
+		expect((el as any)._wifiPassword).toBe("");
+		expect((el as any)._selectedSsid).toBe("Home");
+
+		label().click();
+		await el.updateComplete;
+		expect((el as any)._manualSsid).toBe(false);
+		expect((el as any)._selectedSsid).toBe("");
+	});
+});
+
+describe("outdated-integration link", () => {
+	const ahead: FlashableDevice = {
+		...device2,
+		mac: "AA:BB:CC:DD:EE:0A",
+		firmware_type: "eppgrid",
+		firmware_status: "firmware_ahead",
+	};
+
+	it("opens the Marketplace when Home Assistant has it", () => {
+		const el = createView({
+			flashableDevices: [ahead],
+			haComponents: ["http", "marketplace"],
+		});
+		const c = renderTo((el as any).render());
+		const link = c.querySelector(".update-link") as HTMLAnchorElement;
+		expect(link.getAttribute("href")).toBe(
+			"/marketplace/repository/1172848595",
+		);
+		expect(link.textContent).toBe("flasher.open_marketplace");
+	});
+
+	it("keeps the HACS link on older Home Assistant", () => {
+		const el = createView({ flashableDevices: [ahead] });
+		const c = renderTo((el as any).render());
+		const link = c.querySelector(".update-link") as HTMLAnchorElement;
+		expect(link.getAttribute("href")).toBe("/hacs/repository/1172848595");
+		expect(link.textContent).toBe("flasher.open_hacs");
 	});
 });
 

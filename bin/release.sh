@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Prepares a release PR: bumps version files and opens a PR.
+# Prepares a release PR: bumps version files, puts the version on CHANGES.md and
+# opens a PR.
 #
 # Usage: bin/release.sh <version>
 #
@@ -10,6 +11,21 @@
 # release workflow. That workflow publishes the release as a PRE-RELEASE
 # (never auto-marked "latest"). Once tested, promote it with
 # `bin/promote.sh <version>`.
+#
+# A final release needs CHANGES.md entries, because
+# .github/scripts/extract-release-notes.sh turns them into the release notes. This
+# script picks the first `## v<version>` section, otherwise the first `## Unreleased`,
+# and stops before creating the branch if it finds neither or the section has no
+# entries. Subheadings and HTML comments are not entries.
+#
+# If the picked heading is `## Unreleased` or `## v<version> — unreleased`, it
+# becomes `## v<version> — <date>`. Any other heading stays as written, and so does
+# a `## Unreleased` beside a `## v<version>` section. Set RELEASE_DATE (YYYY-MM-DD)
+# to choose the date; it defaults to today.
+#
+# A pre-release leaves CHANGES.md alone. A candidate and the final release of the
+# same version share one section, and promotion only flips the GitHub release, so
+# a candidate that took `## Unreleased` would leave the final with nothing.
 
 set -euo pipefail
 
@@ -105,6 +121,59 @@ if [ -z "$FW_VERSION" ]; then
   exit 1
 fi
 
+# The semver gate above only allows -alpha/-beta/-rc suffixes, so any dash means
+# a pre-release version.
+STAMP_CHANGELOG=false
+if [[ "$VERSION" != *-* ]]; then
+  VERSION_RE="${VERSION//./\\.}"
+  # The same first heading the notes script will pick.
+  SECTION=$(grep -Ensm1 "^## v${VERSION_RE}([[:space:]]|\$)" CHANGES.md || true)
+  if [ -z "$SECTION" ]; then
+    SECTION=$(grep -Ensm1 '^## Unreleased[[:space:]]*$' CHANGES.md || true)
+  fi
+  if [ -z "$SECTION" ]; then
+    echo "✗ CHANGES.md has neither a '## Unreleased' section nor a '## $TAG' heading" >&2
+    echo "  add one so the release notes are not GitHub's commit list" >&2
+    exit 1
+  fi
+  SECTION_LINE="${SECTION%%:*}"
+  SECTION_HEADING="${SECTION#*:}"
+  SECTION_HEADING="${SECTION_HEADING%$'\r'}"
+
+  # What is left once HTML comments, subheadings and blank lines are gone. An
+  # unclosed comment hides the rest of the section, as it does on the release page.
+  SECTION_ENTRIES=$(awk -v start="$SECTION_LINE" '
+    NR <= start { next }
+    /^## / { exit }
+    { text = text $0 "\n" }
+    END {
+      while ((opening = index(text, "<!--")) > 0) {
+        rest = substr(text, opening + 4)
+        closing = index(rest, "-->")
+        text = substr(text, 1, opening - 1) (closing > 0 ? substr(rest, closing + 3) : "")
+      }
+      count = split(text, lines, "\n")
+      for (i = 1; i <= count; i++) {
+        if (lines[i] !~ /^#/ && lines[i] ~ /[^ \t\r]/) print lines[i]
+      }
+    }
+  ' CHANGES.md)
+  if [ -z "$SECTION_ENTRIES" ]; then
+    echo "✗ the '$SECTION_HEADING' section of CHANGES.md is empty; nothing to release" >&2
+    exit 1
+  fi
+
+  if grep -Eq "^## (Unreleased|v${VERSION_RE}[[:blank:]]+—[[:blank:]]+unreleased)[[:space:]]*\$" <<<"$SECTION_HEADING"; then
+    STAMP_CHANGELOG=true
+    RELEASE_DATE="${RELEASE_DATE:-$(date +%Y-%m-%d)}"
+    DATE_RE='^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])$'
+    if ! [[ "$RELEASE_DATE" =~ $DATE_RE ]]; then
+      echo "✗ RELEASE_DATE must be YYYY-MM-DD (got: $RELEASE_DATE)" >&2
+      exit 1
+    fi
+  fi
+fi
+
 BRANCH="release-$TAG"
 PUSHED=false
 BRANCH_CREATED=false
@@ -146,6 +215,12 @@ BRANCH_CREATED=true
 # Always bump manifest.json version (delegated to bump-version.sh, the single
 # owner of the manifest edit and its non-greedy sed pattern).
 "$SCRIPT_DIR/bump-version.sh" "$VERSION"
+
+if [ "$STAMP_CHANGELOG" = "true" ]; then
+  sed -i.bak "${SECTION_LINE}s/.*/## $TAG — $RELEASE_DATE/" CHANGES.md
+  rm -f CHANGES.md.bak
+  grep -q "^## $TAG — $RELEASE_DATE\$" CHANGES.md
+fi
 
 if [ "$FIRMWARE_CHANGED" = "true" ]; then
   # Bump FIRMWARE_VERSION in const.py.

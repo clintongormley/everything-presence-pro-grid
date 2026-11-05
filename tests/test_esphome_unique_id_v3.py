@@ -18,7 +18,6 @@ import pytest
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import EPP_MANUFACTURER
 from custom_components.eppgrid.const import EPP_MODEL_PRO
@@ -27,6 +26,7 @@ from custom_components.eppgrid.device_manager._helpers import _esphome_object_id
 from custom_components.eppgrid.storage import EPPGridStore
 from custom_components.eppgrid.websocket_api._devices import _entity_key_for_object_id
 from custom_components.eppgrid.websocket_api._devices import _object_id_from_unique_id
+from tests.ha_harness import MockConfigEntry
 
 
 class TestEsphomeObjectId:

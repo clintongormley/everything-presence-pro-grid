@@ -9,11 +9,11 @@ from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid import async_setup_entry
 from custom_components.eppgrid import websocket_api as ws_module
 from custom_components.eppgrid.const import DOMAIN
+from tests.ha_harness import MockConfigEntry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -4072,8 +4072,9 @@ class TestWebSocketSubscriptions:
 
         async def _open(mac: str) -> MagicMock:
             # Simulate HA's async_handle_close landing mid-await: it clears the
-            # subscriptions dict and swaps send_message for the closed-error
-            # stub (and does NOT cancel this background task).
+            # subscriptions dict and swaps send_message (the HA 2026.10 and older
+            # shape) for the closed-error stub (and does NOT cancel this
+            # background task).
             connection.subscriptions.clear()
             connection.send_message = connection._connect_closed_error
             return mock_conn

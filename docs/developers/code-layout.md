@@ -11,6 +11,7 @@ everything-presence-pro-grid/
 ├── docs/                        # This site
 ├── .githooks/pre-push           # Pre-push hook (required to be set up)
 ├── scripts/pre-push-fast.sh     # Lightweight pre-push gate (run manually)
+├── scripts/ci_ha_install.py     # Installs and checks the HA version for CI
 ├── tests/                       # Python tests
 ├── .github/workflows/           # CI
 ├── pyproject.toml               # Python config (ruff, pytest)
@@ -229,6 +230,9 @@ Pure-logic modules — no Lit, no HA, testable in isolation.
     `#furniture`, `#settings`).
 - `help-url.ts` — `(panelTab, view, sidebarTab)` → contextual user-guide URL
     (drives the help icon in the panel tab-bar).
+- `integration-page.ts` — where to update the integration: the Marketplace page
+    when `hass.config.components` includes `marketplace`, otherwise the HACS
+    page.
 - `storage.ts` — `localStorage` helper (e.g. selected device MAC).
 - `safe-unsub.ts` — wrapper around HA WebSocket unsubscribe callbacks that
     swallows the "stale subscription" error from already-torn-down connections.
@@ -368,13 +372,13 @@ This site. MkDocs Material source.
 
 ## CI (`.github/workflows/`)
 
-- **`tests.yml`** — Python (HA 2025.2.0 floor, HA stable, HA dev), Frontend
-    (Vitest + coverage), C++ tests (CMake + CTest, both libs).
+- **`tests.yml`** — Python (HA 2025.2.0 floor, HA stable, HA beta, HA dev),
+    Frontend (Vitest + coverage), C++ tests (CMake + CTest, both libs).
 - **`nightly.yml`** — daily (and `workflow_dispatch`) run of the Python +
-    Frontend suites against the **latest** upstream deps (HA stable + dev,
-    latest `aioesphomeapi`, frontend deps resolved fresh from `package.json`).
-    Catches a breaking upstream release between commits. Separate from
-    `tests.yml` so its noise never blocks a PR.
+    Frontend suites against the **latest** upstream deps (HA stable, beta and
+    dev, latest `aioesphomeapi`, frontend deps resolved fresh from
+    `package.json`). Catches a breaking upstream release between commits.
+    Separate from `tests.yml` so its noise never blocks a PR.
 - **`firmware.yml`** — compiles each firmware variant on changes under
     `firmware/`.
 - **`hacs.yml`** — HACS integration validation.
@@ -387,9 +391,12 @@ This site. MkDocs Material source.
 - **`firmware-release.yml`** — on tag push, validates that the manifest,
     `manifest.json`, and `FIRMWARE_VERSION` all agree (via
     `.github/scripts/validate-release.sh`), then compiles the firmware variants
-    and uploads ESP Web Tools manifests + binaries as release assets. Publishes
-    every release as a **pre-release** (never auto-marked `latest`); promote it
-    after testing with `bin/promote.sh <version>`.
+    and uploads ESP Web Tools manifests + binaries as release assets. Takes the
+    release notes from the version's `CHANGES.md` section, which
+    `bin/release.sh` checks when it prepares a final release, naming or dating
+    the heading if it needs that. Publishes every release as a **pre-release**
+    (never auto-marked `latest`); promote it after testing with
+    `bin/promote.sh <version>`.
 
 ______________________________________________________________________
 

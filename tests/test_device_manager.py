@@ -22,7 +22,6 @@ from homeassistant.core import HomeAssistant
 from homeassistant.core import callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from pytest_homeassistant_custom_component.common import MockConfigEntry
 
 from custom_components.eppgrid.const import EPP_MANUFACTURER
 from custom_components.eppgrid.const import EPP_MODEL_PRO
@@ -41,6 +40,7 @@ from custom_components.eppgrid.device_manager import _extract_mac
 from custom_components.eppgrid.device_manager._streams import StateStream
 from custom_components.eppgrid.dr_compat import all_devices
 from custom_components.eppgrid.storage import EPPGridStore
+from tests.ha_harness import MockConfigEntry
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -5930,7 +5930,7 @@ class TestEventCallbacks:
         may have added required fields the older integration doesn't send.
 
         This case is NOT fixable from Repairs (user must update the
-        integration via HACS); the warning must not point them at OTA.
+        integration from Settings → Updates); the warning must not point them at OTA.
         """
         mac = "AA:BB:CC:DD:EE:FF"
         store.devices[mac] = {"calibration": {"perspective": [1.0] * 8}}

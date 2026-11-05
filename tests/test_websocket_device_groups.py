@@ -7,10 +7,10 @@ from unittest.mock import patch
 
 import pytest
 from homeassistant.core import HomeAssistant
-from pytest_homeassistant_custom_component.common import MockConfigEntry
-from pytest_homeassistant_custom_component.typing import WebSocketGenerator
 
 from custom_components.eppgrid.const import DOMAIN
+from tests.ha_harness import MockConfigEntry
+from tests.ha_harness import WebSocketGenerator
 
 from ._esphome_helpers import add_esphome_source
 

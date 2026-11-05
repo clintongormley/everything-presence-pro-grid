@@ -122,8 +122,8 @@ line up, the live grid is replaced by a banner informing you of the problem:
     check that the device is still powered and on the network.
 - **Firmware / integration version mismatch** — a protocol banner appears when
     the integration is older than the device firmware, or vice versa. The banner
-    explains which side to update. Usually: open HACS to update the integration,
-    or the Flash Firmware tab to OTA-update the device.
+    explains which side to update. Usually: open **Settings → Updates** to
+    update the integration, or the Flash Firmware tab to OTA-update the device.
 
 ## Troubleshooting
 
