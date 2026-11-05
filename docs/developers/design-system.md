@@ -105,9 +105,12 @@ makes one template work on both sides of that change. It passes `.options`, sets
 the older element's `selectedText` and also renders `ha-list-item` children, and
 `onSelect` only hears a new, non-empty value from an element still in the
 document. Options can carry an `iconPath`. A unit test in happy-dom can't prove
-a dropdown works, because happy-dom has no `ha-select`, so check a change to the
-helper in Chromium against real Home Assistant frontend builds from both sides
-of 2026.3. The repository has no harness for that check.
+a dropdown works, because happy-dom has no `ha-select`, so anyone changing
+`ui/select.ts` runs `npm run test:select-compat` from `frontend/`. It checks the
+helper and its call sites in Chromium against real Home Assistant frontend
+builds from both sides of 2026.3. It is a manual check, not part of CI or the
+pre-push hook, and `frontend/tools/select-compat/README.md` explains what it
+needs.
 
 ## Theming rules
 

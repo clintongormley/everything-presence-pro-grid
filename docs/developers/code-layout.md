@@ -251,6 +251,9 @@ Pure-logic modules — no Lit, no HA, testable in isolation.
 
 - **`__tests__/`** — Vitest specs mirroring the source tree. See
     [Contributing](contributing.md) for how to run them.
+- **`frontend/tools/select-compat/`** — manual check of `renderSelect` against
+    real Home Assistant frontend builds. Not part of CI or the pre-push hook.
+    See its `README.md`.
 
 ### Build
 
