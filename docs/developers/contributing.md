@@ -22,6 +22,9 @@ how to run the tests the pre-push hook enforces, and the PR process.
     coverage but still runs C++ tests. (`epp_component_helpers/` is header-only,
     so coverage is implicit in its host tests; lcov only measures
     `epp_zone_engine/`'s `src/`.)
+- **`gh`** (optional) — logged in, for `npm run test:select-compat`, which uses
+    it to download Home Assistant frontend sources when its cache is missing or
+    out of date.
 
 A locally-running Home Assistant is helpful but not required for running the
 test suite — the Python tests use a pytest plugin for Home Assistant that
@@ -140,6 +143,10 @@ npm run test:coverage
 - Layout/geometry assertions (measured sizes, real CSS) need a real browser —
     happy-dom does no layout — so those run separately in headless Chromium via
     `npm run test:browser`.
+- A unit test can't prove a dropdown works, because happy-dom has no
+    `ha-select`. After changing `src/ui/select.ts`, also run
+    `npm run test:select-compat`. Unlike the commands above it is manual, not
+    part of the pre-push hook or CI. See `frontend/tools/select-compat/README.md`.
 
 ### C++ libraries
 

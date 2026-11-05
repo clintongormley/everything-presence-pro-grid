@@ -47,6 +47,9 @@ epp-live-view.png
 frontend/node_modules
 
 # Throwaway diagnostic tooling (not shipped)
-tools/
+/tools/
 .ha-changes-state.json
 HA_CHANGES_REPORT.md
+
+# Downloads and builds made by the dropdown compatibility check
+frontend/tools/select-compat/.cache/
