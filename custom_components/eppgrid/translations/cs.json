@@ -85,7 +85,7 @@
   "services": {
     "clear_heatmap": {
       "name": "Vymazat heatmapu",
-      "description": "Vymaže nahromaděnou heatmapu přítomnosti pro cílené senzory Everything Presence Grid. Bez zadaného cíle vymaže všechny spravované senzory."
+      "description": "Vymaže nahromaděnou heatmapu přítomnosti pro cílené senzory Everything Presence Grid. Bez zadaného cíle vymaže všechny spravované senzory. Senzory v bloku exclude se nikdy nevymažou."
     }
   }
 }
