@@ -1246,9 +1246,8 @@ describe("_renderHeader ha-select handlers", () => {
 
 	it("@selected ignores empty or same-mac selection", () => {
 		const a = createPanel() as any;
-		const tpl = a._renderHeader();
-		const c = document.createElement("div");
-		render(tpl, c);
+		const load = vi.spyOn(a, "_loadDeviceConfig");
+		const c = renderTo(a._renderHeader());
 
 		const select = c.querySelector("ha-select") as any;
 		expect(select).not.toBeNull();
@@ -1263,6 +1262,7 @@ describe("_renderHeader ha-select handlers", () => {
 
 		// No device change should have occurred
 		expect(a._selectedMac).toBe("AA:BB:CC:DD:EE:01");
+		expect(load).not.toHaveBeenCalled();
 	});
 
 	it("renders option labels with area suffix when area is set", () => {

@@ -1655,10 +1655,10 @@ describe("renderEntities entity toggle @change handlers", () => {
 
 	// Regression for "rate dropdown allows change once, then not again":
 	// PR #168 (da1bd018) removed `this.requestUpdate()` from the rate dropdown
-	// @selected handlers with the wrong claim that `ha-select` shows the
-	// user's picked value internally. Without requestUpdate, the second click
+	// @selected handlers. Without requestUpdate, the second click
 	// doesn't trigger a re-render — the override is set but `.value` never
-	// flows back to `ha-select`, so the displayed value stays stuck.
+	// flows back to `ha-select`, so from HA 2026.3 the displayed value stays
+	// stuck.
 
 	it("zone update rate @selected handler calls requestUpdate", () => {
 		const sv = createView({

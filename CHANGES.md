@@ -21,6 +21,9 @@ keep installing it through HACS.
 - The `eppgrid.clear_heatmap` action can target a floor. On Home Assistant
     2026.11, it also accepts an `exclude` block to keep some sensors out, and it
     never erases a sensor that the block covers.
+- On Home Assistant 2026.2 or older, dropdowns list their options and show the
+    current value. This covers the device picker, the Settings dropdowns, the
+    Wi-Fi network list and the "Add a device" picker.
 
 ## v1.9.0 — 2026-09-07
 

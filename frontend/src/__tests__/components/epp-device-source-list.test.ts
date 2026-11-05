@@ -52,6 +52,20 @@ describe("epp-device-source-list", () => {
 		expect(optMacs).toEqual(["BB"]);
 	});
 
+	it("ignores a pick with no device in it", async () => {
+		const el = await fixture();
+		el.availableDevices = DEVICES;
+		await el.updateComplete;
+		const onToggle = vi.fn();
+		el.addEventListener("source-toggled", onToggle);
+		const sel = el.shadowRoot!.querySelector<HTMLSelectElement>(
+			'select[data-testid="add-picker"]',
+		)!;
+		sel.value = "";
+		sel.dispatchEvent(new Event("change"));
+		expect(onToggle).not.toHaveBeenCalled();
+	});
+
 	it("selecting a device emits source-toggled {on:true}", async () => {
 		const el = await fixture();
 		el.availableDevices = DEVICES;

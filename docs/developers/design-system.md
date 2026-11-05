@@ -97,6 +97,18 @@ a form-associated checkbox toggles it twice. Use it to keep an existing tick box
 as a tick box without changing how it looks. New on/off settings still use
 `epp-toggle`.
 
+**Dropdown:** `renderSelect` (`ui/select.ts`) is a template helper, not an
+element, so `.panel-header ha-select` and `.wide-select` still reach the
+`ha-select`. Use it for every `ha-select` dropdown and never write `<ha-select>`
+directly: `ha-select` changed in Home Assistant 2026.3, and the helper is what
+makes one template work on both sides of that change. It passes `.options`, sets
+the older element's `selectedText` and also renders `ha-list-item` children, and
+`onSelect` only hears a new, non-empty value from an element still in the
+document. Options can carry an `iconPath`. A unit test in happy-dom can't prove
+a dropdown works, because happy-dom has no `ha-select`, so check a change to the
+helper in Chromium against real Home Assistant frontend builds from both sides
+of 2026.3. The repository has no harness for that check.
+
 ## Theming rules
 
 - **Chrome colours are themeable** via the `--epp-*` → HA-var indirection. The

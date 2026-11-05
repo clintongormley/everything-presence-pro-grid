@@ -4,6 +4,7 @@ import { property } from "lit/decorators.js";
 import "../ui/epp-icon-button.js";
 import "../ui/epp-tooltip.js";
 import type { DeviceInfo } from "../types.js";
+import { renderSelect } from "../ui/select.js";
 
 interface MissingSource {
 	mac: string;
@@ -104,21 +105,16 @@ export class EppDeviceSourceList extends LitElement {
 			value: d.mac,
 			label: this._label(d),
 		}));
-		/* v8 ignore start — ha-select is the panel path; happy-dom is unregistered
-		   so tests exercise the native <select> fallback below. */
 		if (customElements.get("ha-select")) {
-			return html`<ha-select
-				class="add-picker"
-				data-testid="add-picker"
-				label="Add a device"
-				.value=${""}
-				.options=${opts}
-				@selected=${(e: CustomEvent<{ value: string }>) =>
-					this._add(e.detail.value)}
-				@closed=${(e: Event) => e.stopPropagation()}
-			></ha-select>`;
+			return renderSelect({
+				className: "add-picker",
+				testId: "add-picker",
+				label: "Add a device",
+				value: "",
+				options: opts,
+				onSelect: (mac) => this._add(mac),
+			});
 		}
-		/* v8 ignore stop */
 		return html`<select
 			class="add-picker"
 			data-testid="add-picker"
