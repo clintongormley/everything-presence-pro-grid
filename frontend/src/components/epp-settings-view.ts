@@ -20,13 +20,8 @@ import { type DeviceCapabilities, hasCapability } from "../types.js";
 import "./epp-info-tip.js";
 import "../ui/epp-card.js";
 import "../ui/epp-toggle.js";
+import { renderSelect, type SelectOption } from "../ui/select.js";
 import { renderSaveCancelBar } from "./save-cancel-bar.js";
-
-/** Option shape consumed by ha-select's `.options` property. */
-interface SelectOption {
-	value: string;
-	label: string;
-}
 
 // Wire values are English (firmware protocol); labels are localized at
 // render time via the memoised option arrays.
@@ -290,13 +285,6 @@ export class EppSettingsView extends LitElement {
 	private _localDirty = false;
 
 	@property({ attribute: false }) localize: LocalizeFn = defaultLocalize;
-
-	// Shared no-op closed handler — stops the ha-select's "closed" event from
-	// bubbling out to ancestor menu/dialog widgets that would otherwise treat
-	// it as their own close signal.
-	private _stopClosed = (e: Event): void => {
-		e.stopPropagation();
-	};
 
 	// ---------------------------------------------------------------------
 	// Memoised derived data. The view re-renders at 5Hz from the live sensor
@@ -1187,25 +1175,20 @@ export class EppSettingsView extends LitElement {
           ${rows(ZONE_TOGGLES)}
           <div class="setting-row">
             <label>${this.localize("settings.update_rate")}</label>
-            <ha-select
-              .value=${String(o.zoneUpdateRateMs ?? this.zoneUpdateRateMs)}
-              .options=${rateOptions}
-              .disabled=${!anyZoneOn}
-              @selected=${(e: CustomEvent<{ value: string }>) => {
-								const val = e.detail.value;
-								if (val) {
-									const v = Number(val);
-									this._overrides.zoneUpdateRateMs = v;
-									this._fireChange("zoneUpdateRateMs", v);
-									// requestUpdate is required: ha-select doesn't keep the
-									// user's pick visible on its own — only `.value` does, and
-									// _fireChange alone won't re-evaluate the binding once the
-									// parent's `dirty` prop is already true.
-									this.requestUpdate();
-								}
-							}}
-              @closed=${this._stopClosed}>
-            </ha-select>
+            ${renderSelect({
+							value: String(o.zoneUpdateRateMs ?? this.zoneUpdateRateMs),
+							options: rateOptions,
+							disabled: !anyZoneOn,
+							onSelect: (val) => {
+								const v = Number(val);
+								this._overrides.zoneUpdateRateMs = v;
+								this._fireChange("zoneUpdateRateMs", v);
+								// requestUpdate is required: _fireChange alone won't
+								// re-evaluate the binding once the parent's `dirty` prop is
+								// already true.
+								this.requestUpdate();
+							},
+						})}
           </div>
         </epp-card>
         <epp-card heading=${this.localize("entities.target_level")}>
@@ -1213,22 +1196,18 @@ export class EppSettingsView extends LitElement {
           ${rows(TARGET_TOGGLES)}
           <div class="setting-row">
             <label>${this.localize("settings.update_rate")}</label>
-            <ha-select
-              .value=${String(o.targetUpdateRateMs ?? this.targetUpdateRateMs)}
-              .options=${rateOptions}
-              .disabled=${!anyTargetOn}
-              @selected=${(e: CustomEvent<{ value: string }>) => {
-								const val = e.detail.value;
-								if (val) {
-									const v = Number(val);
-									this._overrides.targetUpdateRateMs = v;
-									this._fireChange("targetUpdateRateMs", v);
-									// requestUpdate is required: see zone update rate handler.
-									this.requestUpdate();
-								}
-							}}
-              @closed=${this._stopClosed}>
-            </ha-select>
+            ${renderSelect({
+							value: String(o.targetUpdateRateMs ?? this.targetUpdateRateMs),
+							options: rateOptions,
+							disabled: !anyTargetOn,
+							onSelect: (val) => {
+								const v = Number(val);
+								this._overrides.targetUpdateRateMs = v;
+								this._fireChange("targetUpdateRateMs", v);
+								// requestUpdate is required: see zone update rate handler.
+								this.requestUpdate();
+							},
+						})}
           </div>
         </epp-card>
         <epp-card heading=${this.localize("settings.environmental")}>
@@ -1256,12 +1235,10 @@ export class EppSettingsView extends LitElement {
 						return html`
               <div class="setting-row">
                 <label>${this.localize(c.label)}</label>
-                <ha-select
-                  .value=${current}
-                  .options=${logLevelOptions}
-                  @selected=${(e: CustomEvent<{ value: string }>) => {
-										const val = e.detail.value;
-										if (!val || val === current) return;
+                ${renderSelect({
+									value: current,
+									options: logLevelOptions,
+									onSelect: (val) => {
 										if (!this._overrides.logLevels)
 											this._overrides.logLevels = {};
 										this._overrides.logLevels[c.key] = val;
@@ -1269,13 +1246,12 @@ export class EppSettingsView extends LitElement {
 											...(this.logLevels || {}),
 											...this._overrides.logLevels,
 										});
-										// requestUpdate keeps the captured `current` in sync with
-										// `_overrides.logLevels[c.key]` so the `val === current`
-										// early return works on subsequent picks.
+										// requestUpdate keeps the bound value in sync with
+										// `_overrides.logLevels[c.key]`, so an unchanged pick
+										// is still ignored on subsequent picks.
 										this.requestUpdate();
-									}}
-                  @closed=${this._stopClosed}
-                ></ha-select>
+									},
+								})}
                 <button
 								type="button"
 								class="setting-info"
@@ -1321,19 +1297,18 @@ export class EppSettingsView extends LitElement {
                the label/control shape. -->
           <div class="setting-row">
             <label>${this.localize("settings.led_mode")}</label>
-            <ha-select class="wide-select" .value=${mode} .options=${modes} @selected=${(
-							e: CustomEvent<{ value: string }>,
-						) => {
-							const val = e.detail.value;
-							if (val) {
+            ${renderSelect({
+							className: "wide-select",
+							value: mode,
+							options: modes,
+							onSelect: (val) => {
 								this._overrides.ledMode = val;
 								this._fireChange("ledMode", val);
 								// requestUpdate is required: changing mode shows/hides the
 								// brightness slider and presence color rows downstream.
 								this.requestUpdate();
-							}
-						}} @closed=${this._stopClosed}>
-            </ha-select>
+							},
+						})}
             ${this.infoTip(this.localize("info.led_mode"))}
           </div>
           ${
@@ -1393,21 +1368,19 @@ export class EppSettingsView extends LitElement {
                the label/control shape. -->
           <div class="setting-row">
             <label>${this.localize("settings.relay_trigger_mode")}</label>
-            <ha-select class="wide-select"
-              .value=${currentTrigger}
-              .options=${TRIGGER_MODES}
-              @selected=${(e: CustomEvent<{ value: string }>) => {
-								const val = e.detail.value;
-								if (!val || val === currentTrigger) return;
+            ${renderSelect({
+							className: "wide-select",
+							value: currentTrigger,
+							options: TRIGGER_MODES,
+							onSelect: (val) => {
 								this._overrides.relayTriggerMode = val;
 								this._fireChange("relayTriggerMode", val);
 								// requestUpdate is required: switching to/from "disabled"
 								// shows or hides the contact mode row, and refreshes the
-								// captured `currentTrigger` for the early-return check.
+								// bound value that an unchanged pick is compared with.
 								this.requestUpdate();
-							}}
-              @closed=${this._stopClosed}
-            ></ha-select>
+							},
+						})}
             ${this.infoTip(this.localize("info.relay_trigger_mode"))}
           </div>
           ${
@@ -1415,21 +1388,18 @@ export class EppSettingsView extends LitElement {
 							? html`
             <div class="setting-row">
               <label>${this.localize("settings.relay_contact_mode")}</label>
-              <ha-select class="wide-select"
-                .value=${currentContact}
-                .options=${CONTACT_MODES}
-                @selected=${(e: CustomEvent<{ value: string }>) => {
-									const val = e.detail.value;
-									if (!val || val === currentContact) return;
+              ${renderSelect({
+								className: "wide-select",
+								value: currentContact,
+								options: CONTACT_MODES,
+								onSelect: (val) => {
 									this._overrides.relayContactMode = val;
 									this._fireChange("relayContactMode", val);
-									// requestUpdate refreshes the captured `currentContact` so
-									// the `val === currentContact` early return reflects the
-									// latest override on subsequent picks.
+									// requestUpdate refreshes the bound value that an unchanged
+									// pick is compared with on subsequent picks.
 									this.requestUpdate();
-								}}
-                @closed=${this._stopClosed}
-              ></ha-select>
+								},
+							})}
               ${this.infoTip(this.localize("info.relay_contact_mode"))}
             </div>
           `
