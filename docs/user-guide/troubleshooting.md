@@ -222,6 +222,13 @@ Engine**; for connectivity issues, **Network** or **System**.
 
 ![Enabling debug logging.](../images/settings/logging/debug-logging.png "Enabling debug logging.")
 
+This also turns on debug logging for `aioesphomeapi`, the library the
+integration uses to talk to your sensors. A connection that opens while this is
+on logs every message it receives, with its contents. That normally means your
+sensors, but it can include another ESPHome device if Home Assistant reloads it
+during that time. So keep debug logging on only while you reproduce the bug, and
+look through the downloaded log before you attach it to a public issue.
+
 Alternatively, call the `logger.set_level` action from **Settings → Developer
 tools → Actions**:
 
@@ -229,7 +236,10 @@ tools → Actions**:
 action: logger.set_level
 data:
     custom_components.eppgrid: debug
+    aioesphomeapi: debug
 ```
+
+When you finish, run the action again with both set to `warning`.
 
 **Reproduce the bug.** You can watch logs live at **Settings → System → Logs**
 in Home Assistant if you want to see messages as they appear. Firmware messages
@@ -237,8 +247,8 @@ appear inline with the integration's own output.
 
 **Download the captured logs.** If you used the **Enable debug logging** option
 on the integration page, then click **Disable debug logging** on the same page.
-Home Assistant writes the captured logs to a file and downloads it; attach it to
-the issue alongside the diagnostics JSON.
+Home Assistant writes the captured logs to a file and downloads it. Look through
+it, then attach it to the issue alongside the diagnostics JSON.
 
 ![Disabling debug logging.](../images/settings/logging/disabling-debug-logging.png "Disabling debug logging.")
 
@@ -257,4 +267,4 @@ Include the following in the issue description:
 - **Expected vs actual behaviour.**
 - **Diagnostics JSON** — attach the file you saved above.
 - **Debug log file** — if you turned on debug logging, attach the downloaded log
-    too.
+    too, once you have looked through it.

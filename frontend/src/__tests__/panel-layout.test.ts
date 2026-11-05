@@ -495,24 +495,14 @@ describe("layout styles", () => {
 	});
 
 	it("reserves the header height so the device picker can't collapse on the swap", () => {
-		// Root cause of the desktop live↔editor swap flicker: the .panel-header holds
-		// an <ha-select> whose 56px field renders asynchronously (the element is 0px
-		// tall until it upgrades). The swap rebuilds the header from scratch, so for
-		// the first few microtasks it is 0px — and epp-grid's _measureAvail() runs in
-		// that window, reading its viewport `top` 56px too high and latching an
-		// inflated available-height (innerHeight − top − reserve). The width-only
-		// ResizeObserver never re-measures it, so a height-bound grid renders oversized
-		// then snaps back: the flicker. A min-height reserve equal to the ha-select's
-		// steady height keeps `top` stable from first paint, so the measurement is
-		// correct immediately. (Desktop-only: mobile caps height to the viewport, not
-		// `top`.)
+		// The .panel-header holds an <ha-select> whose 56px field renders asynchronously
+		// (the element is 0px tall until it upgrades), and the live<->editor swap rebuilds
+		// the header from scratch. The rule's comment in styles.ts says why the grid needs
+		// the space reserved from first paint.
 		//
-		// CRITICAL: .panel-header is declared in BOTH panelStyles and headerStyles.
-		// At equal specificity the LAST sheet in the panel's `static styles` array
-		// wins (headerStyles, applied after panelStyles), so the reserve MUST live on
-		// that winning rule — putting it on the earlier one is silently overridden.
-		// Compose the real styles array in order and assert the FINAL bare
-		// ".panel-header {" rule (not ".panel-header ha-select") carries the reserve.
+		// headerStyles carries the reserve. Compose the real styles array in order and
+		// assert the last match, so a later rule that redeclares .panel-header without
+		// it fails here.
 		const styles = (
 			customElements.get("eppgrid-panel") as typeof HTMLElement & {
 				styles: { cssText: string }[];
@@ -526,6 +516,40 @@ describe("layout styles", () => {
 		while ((m = re.exec(allCss)) !== null) winning = m[1];
 		expect(winning).not.toBeNull();
 		expect(winning!).toMatch(/min-height:\s*56px/);
+	});
+});
+
+describe("device picker text in the panel header", () => {
+	const pickerRule = () => {
+		const styles = (
+			customElements.get("eppgrid-panel") as typeof HTMLElement & {
+				styles: { cssText: string }[];
+			}
+		).styles;
+		const allCss = styles.map((s) => s.cssText).join("\n");
+		const rules = [
+			...allCss.matchAll(/\.panel-header ha-select\s*\{([^}]*)\}/g),
+		];
+		expect(rules).not.toHaveLength(0);
+		return rules[rules.length - 1][1];
+	};
+
+	it("sets what ha-combo-box-item reads on HA 2026.3 and newer", () => {
+		expect(pickerRule()).toContain(
+			"--ha-font-size-m: var(--epp-font-lg, 16px)",
+		);
+		expect(pickerRule()).toContain(
+			"--ha-combo-box-item-headline-font-weight: var(--epp-weight-medium, 500)",
+		);
+	});
+
+	it("still sets what mwc-select reads on HA 2026.2 and older", () => {
+		expect(pickerRule()).toContain(
+			"--mdc-typography-subtitle1-font-size: var(--epp-font-lg, 16px)",
+		);
+		expect(pickerRule()).toContain(
+			"--mdc-typography-subtitle1-font-weight: var(--epp-weight-medium, 500)",
+		);
 	});
 });
 

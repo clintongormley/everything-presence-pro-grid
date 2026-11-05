@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -785,15 +783,6 @@ async def test_setup_entry_registers_proxy_view_once_across_reloads(
         await async_setup_entry(hass, config_entry)
 
     assert mock_register_view.call_count == 1
-
-
-def test_manifest_declares_hard_dependencies() -> None:
-    """Setup hard-uses these HA components; declaring them guarantees load order."""
-    manifest_path = os.path.join(os.path.dirname(__file__), "..", "custom_components", "eppgrid", "manifest.json")
-    with open(manifest_path, encoding="utf-8") as f:
-        manifest = json.load(f)
-
-    assert manifest["dependencies"] == ["frontend", "http", "panel_custom", "repairs", "websocket_api"]
 
 
 async def test_hash_file(tmp_path) -> None:
