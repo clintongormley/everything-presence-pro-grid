@@ -42,8 +42,9 @@ export class EppField extends LitElement {
     .field > [data-field-control] {
       flex: 1;
       min-width: 0;
-      /* Size the control's label/value/placeholder to the design type scale
-         rather than HA's larger field default (kept the field labels oversized). */
+      /* Size the control's label/value/placeholder to the design type scale.
+         ha-textfield on HA 2026.3 and older reads the mdc property. ha-input on
+         later HA already defaults to this size. */
       font-size: var(--epp-font-base, 14px);
       --mdc-typography-subtitle1-font-size: var(--epp-font-base, 14px);
     }

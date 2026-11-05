@@ -187,8 +187,9 @@ const de={attribute:!0,type:String,converter:v,reflect:!1,hasChanged:w},pe=(e=de
     .field > [data-field-control] {
       flex: 1;
       min-width: 0;
-      /* Size the control's label/value/placeholder to the design type scale
-         rather than HA's larger field default (kept the field labels oversized). */
+      /* Size the control's label/value/placeholder to the design type scale.
+         ha-textfield on HA 2026.3 and older reads the mdc property. ha-input on
+         later HA already defaults to this size. */
       font-size: var(--epp-font-base, 14px);
       --mdc-typography-subtitle1-font-size: var(--epp-font-base, 14px);
     }
@@ -489,10 +490,7 @@ const de={attribute:!0,type:String,converter:v,reflect:!1,hasChanged:w},pe=(e=de
     /* Reserve the device picker's 56px height (the ha-select field) so the header
        can't collapse to 0 while ha-select upgrades async.
 
-       STILL LOAD-BEARING, for a NEW reason. It used to stop a collapsed header from
-       deflating the grid's viewport-relative "top" measurement. Nothing reads that
-       top any more (#338: the grid measures its own BOX, never the window) — but the
-       header is a SIBLING ABOVE the grid inside the height-bounded column, so a
+       The header is a SIBLING ABOVE the grid inside the height-bounded column, so a
        header that is briefly 0px hands the grid's card 56px of remainder it is about
        to lose. The grid measures that inflated box, sizes the map to it, and the map
        jumps back down a frame later when ha-select upgrades — a visible flicker on
@@ -501,17 +499,21 @@ const de={attribute:!0,type:String,converter:v,reflect:!1,hasChanged:w},pe=(e=de
        post-layout re-measure as defence in depth; this rule is what stops the known
        case from ever needing it.)
 
-       Intentionally unscoped (not desktop-only): the same reserve is load-bearing on
-       mobile too, since the grid container-measures there as well now (#338) — a
-       briefly-0px header inflates the grid's measured box on mobile just as on
-       desktop. Must stay on this (cascade-winning) .panel-header rule; see the root
-       cause + cascade guard in panel-layout.test.ts. */
+       Intentionally unscoped (not desktop-only): the grid container-measures on mobile
+       too, so a briefly-0px header inflates its measured box there just as on desktop.
+       Must stay on this rule; see the "reserves the header height" test in
+       panel-layout.test.ts. */
     min-height: 56px;
   }
 
   .panel-header ha-select {
-    --mdc-typography-subtitle1-font-size: 16px;
-    --mdc-typography-subtitle1-font-weight: 500;
+    /* mwc-select reads these on HA 2026.2 and older. */
+    --mdc-typography-subtitle1-font-size: var(--epp-font-lg, 16px);
+    --mdc-typography-subtitle1-font-weight: var(--epp-weight-medium, 500);
+    /* ha-combo-box-item reads the size from HA 2026.3 and the weight from HA 2026.11.
+       HA has no size property for this text alone, so this sets the general one. */
+    --ha-font-size-m: var(--epp-font-lg, 16px);
+    --ha-combo-box-item-headline-font-weight: var(--epp-weight-medium, 500);
     min-width: 200px;
   }
 `;class Me extends ce{constructor(){super(...arguments),this.label="",this.checked=!1,this.disabled=!1,this.controlLabel="",this._onChange=e=>{e.stopPropagation();const t=e.target.checked;this.checked=t,this.dispatchEvent(new CustomEvent("value-changed",{detail:{value:t},bubbles:!0,composed:!0}))}}render(){const e=customElements.get("ha-switch")?N`<ha-switch
