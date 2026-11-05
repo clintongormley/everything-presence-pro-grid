@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import os
-from collections.abc import Iterable
+from collections.abc import Collection
 from collections.abc import Mapping
 from typing import Any
 
@@ -30,6 +30,7 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.group import expand_entity_ids
+from homeassistant.helpers.group import get_entity_ids
 from homeassistant.helpers.service import async_register_admin_service
 
 from .const import CARD_BUNDLE_HASH_KEY
@@ -38,6 +39,7 @@ from .const import CURRENT_BUNDLE_HASH_KEY
 from .const import DOMAIN
 from .device_groups._registry import zone_name_from_store
 from .device_manager import DeviceManager
+from .dr_compat import with_related_devices
 from .firmware_cache import async_register_firmware_cache
 from .firmware_proxy import FirmwareProxyView
 from .storage import EPPGridStore
@@ -53,25 +55,29 @@ SERVICE_CLEAR_HEATMAP = "clear_heatmap"
 _TARGET_KEYS = (ATTR_DEVICE_ID, ATTR_ENTITY_ID, ATTR_AREA_ID, ATTR_FLOOR_ID, ATTR_LABEL_ID)
 _TARGET_FIELDS = {vol.Optional(key): vol.All(cv.ensure_list, [cv.string]) for key in _TARGET_KEYS}
 
-CLEAR_HEATMAP_SCHEMA = vol.Schema({**_TARGET_FIELDS, vol.Optional(CONF_EXCLUDE): vol.Schema(_TARGET_FIELDS)})
+# A value that is not an entity id would protect nothing, leaving the sensor it was meant
+# to keep to be erased, so it is refused. HA does the same under `target:` from 2026.11,
+# but `data:` and direct calls reach only this schema. The target side stays lenient.
+_EXCLUDE_FIELDS = {**_TARGET_FIELDS, vol.Optional(ATTR_ENTITY_ID): vol.All(cv.ensure_list, [cv.entity_id])}
+
+CLEAR_HEATMAP_SCHEMA = vol.Schema({**_TARGET_FIELDS, vol.Optional(CONF_EXCLUDE): vol.Schema(_EXCLUDE_FIELDS)})
 
 
-def _device_ids_for(
-    hass: HomeAssistant,
-    device_ids: Iterable[str],
-    entity_ids: Iterable[str],
-    area_ids: Iterable[str],
-    label_ids: Iterable[str],
-) -> set[str]:
-    """Return the given devices plus those owning the given entities, areas and labels."""
+def _device_ids_for(hass: HomeAssistant, data: Mapping[str, Any]) -> set[str]:
+    """Return the devices named in `data` plus those owning its entities, areas, floors and labels."""
     dev_reg = dr.async_get(hass)
     ent_reg = er.async_get(hass)
-    found: set[str] = set(device_ids)
+    area_reg = ar.async_get(hass)
+    found: set[str] = set(data.get(ATTR_DEVICE_ID, []))
 
-    for entity_id in entity_ids:
+    for entity_id in data.get(ATTR_ENTITY_ID, []):
         ent = ent_reg.async_get(entity_id)
         if ent and ent.device_id:
             found.add(ent.device_id)
+
+    area_ids = list(data.get(ATTR_AREA_ID, []))
+    for floor_id in data.get(ATTR_FLOOR_ID, []):
+        area_ids.extend(area.id for area in ar.async_entries_for_floor(area_reg, floor_id))
 
     for area_id in area_ids:
         for dev in dr.async_entries_for_area(dev_reg, area_id):
@@ -80,7 +86,7 @@ def _device_ids_for(
             if ent.device_id:
                 found.add(ent.device_id)
 
-    for label_id in label_ids:
+    for label_id in data.get(ATTR_LABEL_ID, []):
         for dev in dr.async_entries_for_label(dev_reg, label_id):
             found.add(dev.id)
         for ent in er.async_entries_for_label(ent_reg, label_id):
@@ -90,52 +96,50 @@ def _device_ids_for(
     return found
 
 
-def _area_ids_with_floors(hass: HomeAssistant, data: Mapping[str, Any]) -> list[str]:
-    """Return the area ids in `data` plus the areas on its floors."""
-    area_reg = ar.async_get(hass)
-    area_ids = list(data.get(ATTR_AREA_ID, []))
-    for floor_id in data.get(ATTR_FLOOR_ID, []):
-        area_ids.extend(area.id for area in ar.async_entries_for_floor(area_reg, floor_id))
-    return area_ids
+def _with_groups_and_members(hass: HomeAssistant, entity_ids: Collection[str]) -> set[str]:
+    """Return `entity_ids`, every entity reached through an `entity_id` state attribute, and group members.
+
+    `expand_entity_ids` swaps a group for its members, which would lose a group that is
+    itself registered to a device; only recent HA can be told to keep it.
+    """
+    found: set[str] = set()
+    pending = list(entity_ids)
+    while pending:
+        entity_id = pending.pop()
+        if entity_id not in found:
+            found.add(entity_id)
+            pending.extend(get_entity_ids(hass, entity_id))
+    return found | set(expand_entity_ids(hass, entity_ids))
 
 
 def _resolve_excluded_device_ids(hass: HomeAssistant, exclude: Mapping[str, Any]) -> set[str]:
     """Expand an exclude block to device_ids.
 
     Wider than the target side on purpose. Whatever HA's own exclude keeps must be
-    kept here too, or an erase with no undo reaches a device the user protected:
-    so old-style groups, areas carrying a label, and the devices HA split from a
-    composite device_id all count here, though none of them reach a device as a target.
+    kept here too, or an erase with no undo reaches a device the user protected: so
+    groups alongside their members, areas carrying a label, and the devices split from
+    a composite device_id or sitting under an excluded device all count here, though
+    the target side follows none of these links.
     """
     dev_reg = dr.async_get(hass)
-    label_ids = exclude.get(ATTR_LABEL_ID, [])
-    area_ids = _area_ids_with_floors(hass, exclude)
     area_reg = ar.async_get(hass)
-    for label_id in label_ids:
-        area_ids.extend(area.id for area in ar.async_entries_for_label(area_reg, label_id))
-
-    device_ids = set(exclude.get(ATTR_DEVICE_ID, []))
-    # Older HA supported by this integration has no composite device ids.
-    if hasattr(dev_reg, "async_get_devices_for_composite_device_id"):
-        for device_id in tuple(device_ids):
-            device_ids.update(dev.id for dev in dev_reg.async_get_devices_for_composite_device_id(device_id))
-
+    label_ids = exclude.get(ATTR_LABEL_ID, [])
+    labelled_devices = [dev.id for label_id in label_ids for dev in dr.async_entries_for_label(dev_reg, label_id)]
+    labelled_areas = [area.id for label_id in label_ids for area in ar.async_entries_for_label(area_reg, label_id)]
     return _device_ids_for(
-        hass, device_ids, expand_entity_ids(hass, exclude.get(ATTR_ENTITY_ID, [])), area_ids, label_ids
+        hass,
+        {
+            **exclude,
+            ATTR_DEVICE_ID: with_related_devices(dev_reg, [*exclude.get(ATTR_DEVICE_ID, []), *labelled_devices]),
+            ATTR_ENTITY_ID: _with_groups_and_members(hass, exclude.get(ATTR_ENTITY_ID, [])),
+            ATTR_AREA_ID: [*exclude.get(ATTR_AREA_ID, []), *labelled_areas],
+        },
     )
 
 
 def _resolve_target_device_ids(hass: HomeAssistant, call: ServiceCall) -> set[str]:
     """Expand a service-call target to device_ids, leaving out everything it excludes."""
-    data = call.data
-    targeted = _device_ids_for(
-        hass,
-        data.get(ATTR_DEVICE_ID, []),
-        data.get(ATTR_ENTITY_ID, []),
-        _area_ids_with_floors(hass, data),
-        data.get(ATTR_LABEL_ID, []),
-    )
-    return targeted - _resolve_excluded_device_ids(hass, data.get(CONF_EXCLUDE, {}))
+    return _device_ids_for(hass, call.data) - _resolve_excluded_device_ids(hass, call.data.get(CONF_EXCLUDE, {}))
 
 
 def _has_target(call: ServiceCall) -> bool:

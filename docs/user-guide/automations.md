@@ -265,7 +265,9 @@ script) rather than for household members — for that, use the dashboard card's
 
 Target it at a device, entity, area, floor, or label the same way as any other
 HA action; leave the target empty to clear every Everything Presence Grid sensor
-at once.
+at once. Unlike other actions, a label on an area does not reach the sensors in
+that area, and a group does not reach the sensors in it. Put the label on the
+device, target the area itself, or list the sensors.
 
 ```yaml
 action: eppgrid.clear_heatmap
@@ -298,6 +300,8 @@ target:
         `target: "{{ {} }}"` wipes them all.
     - `entity_id: all` with an `exclude` block clears nothing. To clear everything
         except some sensors, target the floors or areas you want instead.
+    - Inside `exclude`, `entity_id: all` is refused with an error and nothing is
+        cleared.
 
 ## Troubleshooting
 

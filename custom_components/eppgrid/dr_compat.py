@@ -14,6 +14,7 @@ capability check — rather than a version string, so it survives backports.
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from typing import Any
 
 from homeassistant.helpers import device_registry as dr
@@ -111,3 +112,24 @@ def all_devices(registry: DeviceRegistry) -> list[DeviceEntry]:
         return list(registry.devices.values())
     # HA 2026.9+: iteration yields DeviceEntry values directly.
     return list(registry.devices)
+
+
+def with_related_devices(registry: DeviceRegistry, device_ids: Iterable[str]) -> set[str]:
+    """Return ``device_ids`` plus the devices split from them and their child devices.
+
+    This follows what HA 2026.11 reaches from a device id (``_resolve_referenced_devices``
+    in ``homeassistant/helpers/target.py``), except that the composite id itself is kept:
+    a composite id stands for the devices HA 2026.8 split it into, and a device stands
+    for its child devices too. Older HA has neither concept, so each is feature-detected
+    on its own and the ids come back unchanged. Children are read after splits so a
+    composite id reaches them as well.
+    """
+    found = set(device_ids)
+    if hasattr(registry, "async_get_devices_for_composite_device_id"):
+        for device_id in tuple(found):
+            found.update(dev.id for dev in registry.async_get_devices_for_composite_device_id(device_id))
+    children_of = getattr(dr, "async_entries_for_parent_device", None)
+    if children_of is not None:
+        for device_id in tuple(found):
+            found.update(child.id for child in children_of(registry, device_id))
+    return found

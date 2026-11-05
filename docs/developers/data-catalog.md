@@ -311,21 +311,43 @@ button uses.
 
 Accepts a standard HA `target:` (`device_id` / `entity_id` / `area_id` /
 `floor_id` / `label_id`, any combination, each optionally a list), plus an
-`exclude` block taking the same five keys (not nested; HA 2026.11 adds it to
-targets in automations). `_resolve_target_device_ids` expands
-entities/areas/floors/labels to device_ids via the device and entity registries
-(`dr.async_entries_for_area` / `_for_label`, `er.async_entries_for_area` /
-`_for_label`, and `ar.async_entries_for_floor` for the areas on a floor), unions
-them with any `device_id`s given directly, and removes everything the `exclude`
-block resolves to. Excluding an entity excludes its device, because the heatmap
+`exclude` block taking the same five keys, with a stricter `entity_id` (below;
+not nested; HA 2026.11 adds it to targets in automations). `_device_ids_for`
+expands entities/areas/floors/labels to device_ids via the device and entity
+registries (`dr.async_entries_for_area` / `_for_label`,
+`er.async_entries_for_area` / `_for_label`, and `ar.async_entries_for_floor` for
+the areas on a floor) and unions them with any `device_id`s given directly;
+`_resolve_target_device_ids` then removes everything the `exclude` block
+resolves to. Excluding an entity excludes its device, because the heatmap
 belongs to the device.
 
 The exclude side (`_resolve_excluded_device_ids`) is deliberately wider than the
-target side, so that a device HA's own `exclude` would keep is never erased: it
-also expands old-style groups (`group.expand_entity_ids`), areas carrying a
-label (`ar.async_entries_for_label`) and the devices HA split from a composite
-device_id. The target side stays narrower so that an existing erase action does
-not start reaching more devices.
+target side, so that a device HA's own `exclude` would keep is never erased:
+
+- Groups are kept alongside their members, nested groups included
+    (`_with_groups_and_members` walks `group.get_entity_ids` and adds
+    `group.expand_entity_ids`), so a group entity that is itself registered to a
+    device protects that device. The walk follows any entity whose state has an
+    `entity_id` attribute, so a scene counts too.
+- Areas carrying a label count (`ar.async_entries_for_label`).
+- Devices named directly and devices carrying a label go through
+    `dr_compat.with_related_devices`, which adds the devices HA split from a
+    composite device_id and the child devices of all of these, on the HA
+    versions that have them.
+
+The target side stays narrower so that an existing erase action does not start
+reaching more devices. It does not read a label on an area, a composite
+device_id reaches nothing, a group reaches only the device it is itself
+registered to and never its members, and a parent device reaches itself but not
+its children.
+
+`exclude.entity_id` is also stricter than the target's: each value must pass
+`cv.entity_id`, so `all`, malformed text and a comma-separated string are
+refused and nothing is cleared, rather than protecting nothing while the target
+is erased. Under `data:` and on direct calls this schema refuses them with
+`vol.Invalid` and lowercases each valid id. Under `target:`, HA 2026.11 refuses
+them first, and refuses mixed case too. The target's `entity_id` stays a plain
+list of strings, so `entity_id: all` is accepted there.
 
 - **With a target:** clears every targeted device that resolves to a live
     session (`manager.get_session(mac)`); non-eppgrid device_ids are silently
