@@ -24,6 +24,7 @@ import type {
 	UsbFlashState,
 } from "../types.js";
 import { checkRowStyles, renderCheckRow } from "../ui/check-row.js";
+import { renderSelect } from "../ui/select.js";
 
 const WIFI_ICONS_LOCK = [
 	mdiWifiStrength1Lock,
@@ -940,23 +941,20 @@ export class EppFlasherView extends LitElement {
             ${
 							sortedNetworks.length > 0
 								? html`
-                <ha-select
-                  .label=${this.localize("flasher.select_a_network")}
-                  .value=${this._selectedSsid}
-                  .options=${sortedNetworks.map((n) => ({
+                ${renderSelect({
+									label: this.localize("flasher.select_a_network"),
+									value: this._selectedSsid,
+									options: sortedNetworks.map((n) => ({
 										value: n.ssid,
 										label: n.ssid,
 										iconPath: wifiIconPath(n.rssi, n.authRequired),
-									}))}
-                  @selected=${(e: CustomEvent<{ value: string }>) => {
-										if (e.detail.value !== this._selectedSsid) {
-											this._wifiPassword = "";
-										}
-										this._selectedSsid = e.detail.value;
+									})),
+									onSelect: (ssid) => {
+										this._wifiPassword = "";
+										this._selectedSsid = ssid;
 										this._manualSsid = false;
-									}}
-                  @closed=${(e: Event) => e.stopPropagation()}
-                ></ha-select>
+									},
+								})}
               `
 								: nothing
 						}

@@ -375,7 +375,6 @@ describe("_renderHeader device selector", () => {
 		const tpl = a._renderHeader();
 		const c = renderTo(tpl);
 		const select = c.querySelector("ha-select")!;
-		// The @selected handler reads e.detail.value
 		select.dispatchEvent(
 			new CustomEvent("selected", {
 				bubbles: true,

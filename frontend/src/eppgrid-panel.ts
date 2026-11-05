@@ -103,6 +103,7 @@ import type {
 	RawTarget,
 	Target,
 } from "./types.js";
+import { renderSelect } from "./ui/select.js";
 import { tokens } from "./ui/tokens.js";
 
 // ZoneSlots / INITIAL_ZONE_SLOTS moved to lib/zone-defaults.ts so the
@@ -3174,15 +3175,13 @@ export class EPPGridPanel extends LitElement {
 		}
 		return html`
       <div class="panel-header">
-        <ha-select
-          .value=${this._selectedMac}
-          .options=${this._devices.map((d) => ({
+        ${renderSelect({
+					value: this._selectedMac,
+					options: this._devices.map((d) => ({
 						value: d.mac,
 						label: d.area ? `${d.name} (${d.area})` : d.name,
-					}))}
-          @selected=${(e: CustomEvent<{ value: string }>) => {
-						const val = e.detail.value;
-						if (!val || val === this._selectedMac) return;
+					})),
+					onSelect: (val) => {
 						this._navGuard.guardNavigation(async () => {
 							this._closeDeviceSession();
 							this._selectedMac = val;
@@ -3193,9 +3192,8 @@ export class EPPGridPanel extends LitElement {
 							this._furnitureClipboard = null;
 							await this._loadDeviceConfig(val);
 						});
-					}}
-          @closed=${(e: Event) => e.stopPropagation()}
-        ></ha-select>
+					},
+				})}
       </div>
     `;
 	}
