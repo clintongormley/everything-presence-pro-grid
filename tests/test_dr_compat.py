@@ -23,6 +23,7 @@ from custom_components.eppgrid.dr_compat import all_devices
 from custom_components.eppgrid.dr_compat import config_entry_id_for_domain
 from custom_components.eppgrid.dr_compat import device_by_connection
 from custom_components.eppgrid.dr_compat import device_by_identifier
+from custom_components.eppgrid.dr_compat import with_related_devices
 
 _IDENTIFIER = ("eppgrid", "device_group:abc")
 _CONNECTION = ("mac", "11:22:33:44:55:66")
@@ -274,3 +275,60 @@ class TestConfigEntryIdForDomain:
         device = SimpleNamespace(id="dev1", config_entries=["other1"])
 
         assert config_entry_id_for_domain(hass, device, "esphome") is None
+
+
+class _CompositeRegistry:
+    """HA 2026.8+ registry: a composite id resolves to the devices split from it."""
+
+    def __init__(self, splits: dict[str, list[str]]) -> None:
+        self.splits = splits
+
+    def async_get_devices_for_composite_device_id(self, composite_device_id):
+        return [SimpleNamespace(id=device_id) for device_id in self.splits.get(composite_device_id, [])]
+
+
+def _fake_children(children: dict[str, list[str]], registry_seen: list[object] | None = None):
+    """HA with child devices: ``dr.async_entries_for_parent_device`` over a fixed map."""
+
+    def async_entries_for_parent_device(registry, parent_device_id):
+        if registry_seen is not None:
+            registry_seen.append(registry)
+        return [SimpleNamespace(id=device_id) for device_id in children.get(parent_device_id, [])]
+
+    return async_entries_for_parent_device
+
+
+class TestWithRelatedDevices:
+    def test_old_ha_returns_only_the_ids_given(self, monkeypatch) -> None:
+        monkeypatch.delattr(ha_dr, "async_entries_for_parent_device", raising=False)
+
+        assert with_related_devices(_OldRegistry(None), ["a", "b", "a"]) == {"a", "b"}
+
+    def test_adds_split_devices_without_child_support(self, monkeypatch) -> None:
+        monkeypatch.delattr(ha_dr, "async_entries_for_parent_device", raising=False)
+        reg = _CompositeRegistry({"old": ["split1", "split2"]})
+
+        assert with_related_devices(reg, ["old", "plain"]) == {"old", "split1", "split2", "plain"}
+
+    def test_adds_child_devices_without_composite_support(self, monkeypatch) -> None:
+        seen: list[object] = []
+        monkeypatch.setattr(
+            ha_dr, "async_entries_for_parent_device", _fake_children({"parent": ["kid"]}, seen), raising=False
+        )
+        reg = _OldRegistry(None)
+
+        assert with_related_devices(reg, ["parent", "plain"]) == {"parent", "kid", "plain"}
+        assert seen == [reg, reg]
+
+    def test_composite_id_reaches_the_children_of_its_split_devices(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            ha_dr, "async_entries_for_parent_device", _fake_children({"split1": ["kid"]}), raising=False
+        )
+        reg = _CompositeRegistry({"old": ["split1", "split2"]})
+
+        assert with_related_devices(reg, ["old"]) == {"old", "split1", "split2", "kid"}
+
+    def test_empty_input_stays_empty(self, monkeypatch) -> None:
+        monkeypatch.setattr(ha_dr, "async_entries_for_parent_device", _fake_children({}), raising=False)
+
+        assert with_related_devices(_CompositeRegistry({}), []) == set()

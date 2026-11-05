@@ -6,14 +6,22 @@ from pathlib import Path
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 
+import attr
 import pytest
+import voluptuous as vol
 import yaml
 from homeassistant.core import Context
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.exceptions import Unauthorized
+from homeassistant.helpers import area_registry as ar
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import floor_registry as fr
+from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers import selector
+from homeassistant.helpers.service import async_call_from_config
+from homeassistant.setup import async_setup_component
 
 from custom_components.eppgrid import _async_register_services
 from custom_components.eppgrid.const import DOMAIN
@@ -21,6 +29,19 @@ from tests.ha_harness import MockUser
 from tests.test_websocket_api import setup_integration
 
 SERVICES_YAML = Path(__file__).parent.parent / "custom_components" / "eppgrid" / "services.yaml"
+
+needs_target_exclude = pytest.mark.skipif(
+    not hasattr(cv, "TARGET_EXCLUDE_SCHEMA"), reason="this Home Assistant has no target exclude block"
+)
+needs_composite_devices = pytest.mark.skipif(
+    not hasattr(dr.DeviceRegistry, "async_get_devices_for_composite_device_id"),
+    reason="this Home Assistant has no composite device ids",
+)
+needs_child_devices = pytest.mark.skipif(
+    not hasattr(dr, "async_entries_for_parent_device"), reason="this Home Assistant has no child devices"
+)
+
+INVALID_EXCLUDED_ENTITY_IDS = ["all", "bad syntax", "binary_sensor.aa,binary_sensor.bb"]
 
 
 def _session(ok=True):
@@ -261,6 +282,424 @@ async def test_label_target_resolved_via_entity(hass, config_entry):
     await hass.services.async_call(DOMAIN, "clear_heatmap", {"label_id": ["security"]}, blocking=True)
 
     session.async_clear_heatmap.assert_awaited_once_with()
+
+
+class _Home:
+    """Sensors AA (area a1) and BB (area a2) on floor f1, and CC (area a3) on no floor."""
+
+    def __init__(self, hass, config_entry, mgr):
+        self.hass = hass
+        self.config_entry = config_entry
+        self.mgr = mgr
+        self.dev_reg = dr.async_get(hass)
+        self.ent_reg = er.async_get(hass)
+        self.area_reg = ar.async_get(hass)
+        self.label = lr.async_get(hass).async_create("keep").label_id
+        self.floor = fr.async_get(hass).async_create("f1").floor_id
+        self.areas = {}
+        self.devices = {}
+        self.entities = {}
+        self.sessions = {}
+        for mac, floor in (("AA", self.floor), ("BB", self.floor), ("CC", None)):
+            area = self.area_reg.async_create(f"area {mac}")
+            self.area_reg.async_update(area.id, floor_id=floor)
+            device = self.dev_reg.async_get_or_create(
+                config_entry_id=config_entry.entry_id, identifiers={("esphome", mac)}, name=mac
+            )
+            self.dev_reg.async_update_device(device.id, area_id=area.id)
+            entity = self.ent_reg.async_get_or_create(
+                "binary_sensor",
+                "esphome",
+                mac,
+                config_entry=config_entry,
+                device_id=device.id,
+                suggested_object_id=mac.lower(),
+            )
+            self.areas[mac] = area.id
+            self.devices[mac] = device.id
+            self.entities[mac] = entity.entity_id
+            self.sessions[mac] = _session()
+        self.macs = {device_id: mac for mac, device_id in self.devices.items()}
+        mgr.devices = {mac: MagicMock() for mac in self.devices}
+        mgr.mac_for_device_id = MagicMock(side_effect=self.macs.get)
+        mgr.get_session = MagicMock(side_effect=self.sessions.get)
+
+    async def add_old_style_groups(self, **members_by_name):
+        """Set up old-style groups; the group component only reads its config once, so pass them all at once."""
+        groups = {name: {"entities": members} for name, members in members_by_name.items()}
+        assert await async_setup_component(self.hass, "group", {"group": groups})
+        await self.hass.async_block_till_done()
+
+    def register_group_to_device(self, object_id, mac):
+        return self.ent_reg.async_get_or_create(
+            "group",
+            "group",
+            object_id,
+            config_entry=self.config_entry,
+            device_id=self.devices[mac],
+            suggested_object_id=object_id,
+        ).entity_id
+
+    def add_child_device(self, mac, parent_mac):
+        child = self.dev_reg.async_get_or_create_child(
+            config_entry_id=self.config_entry.entry_id,
+            identifiers={("esphome", mac)},
+            parent_device_id=self.devices[parent_mac],
+        )
+        self.devices[mac] = child.id
+        self.macs[child.id] = mac
+        self.mgr.devices[mac] = MagicMock()
+        self.sessions[mac] = _session()
+
+    async def clear(self, data):
+        await self.hass.services.async_call(DOMAIN, "clear_heatmap", data, blocking=True)
+
+    def cleared(self):
+        return sorted(mac for mac, session in self.sessions.items() if session.async_clear_heatmap.await_count)
+
+
+@pytest.fixture
+async def home(hass, config_entry):
+    return _Home(hass, config_entry, await setup_integration(hass, config_entry))
+
+
+async def test_floor_target_clears_only_that_floor(home):
+    await home.clear({"floor_id": [home.floor]})
+
+    assert home.cleared() == ["AA", "BB"]
+
+
+async def test_empty_floor_target_clears_nothing(home):
+    await home.clear({"floor_id": []})
+
+    assert home.cleared() == []
+
+
+async def test_unknown_floor_target_clears_nothing(home):
+    await home.clear({"floor_id": ["no_such_floor"]})
+
+    assert home.cleared() == []
+
+
+async def test_area_target_with_excluded_device(home):
+    await home.clear({"area_id": [home.areas["AA"], home.areas["BB"]], "exclude": {"device_id": [home.devices["AA"]]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_excluded_entity_excludes_its_device(home):
+    await home.clear({"floor_id": [home.floor], "exclude": {"entity_id": [home.entities["AA"]]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_excluded_area(home):
+    await home.clear({"floor_id": [home.floor], "exclude": {"area_id": [home.areas["AA"]]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_excluded_floor(home):
+    await home.clear(
+        {"area_id": [home.areas["AA"], home.areas["CC"]], "exclude": {"floor_id": [home.floor]}},
+    )
+
+    assert home.cleared() == ["CC"]
+
+
+async def test_label_on_device_in_exclude(home):
+    home.dev_reg.async_update_device(home.devices["AA"], labels={home.label})
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"label_id": [home.label]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_label_on_entity_in_exclude(home):
+    home.ent_reg.async_update_entity(home.entities["AA"], labels={home.label})
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"label_id": [home.label]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_label_on_area_in_exclude(home):
+    home.area_reg.async_update(home.areas["AA"], labels={home.label})
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"label_id": [home.label]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_old_style_group_in_exclude(home):
+    await home.add_old_style_groups(keep=[home.entities["AA"]])
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"entity_id": ["group.keep"]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_excluded_group_registered_to_a_device_keeps_that_device(home):
+    assert home.register_group_to_device("keep", "AA") == "group.keep"
+    await home.add_old_style_groups(keep=[home.entities["CC"]])
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"entity_id": ["group.keep"]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_excluded_group_keeps_a_nested_group_registered_to_a_device(home):
+    assert home.register_group_to_device("inner", "AA") == "group.inner"
+    await home.add_old_style_groups(outer=["group.inner"], inner=[home.entities["CC"]])
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"entity_id": ["group.outer"]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_excluded_lock_group_keeps_a_nested_lock_group_registered_to_a_device(home):
+    """A lock group is a group without the `group.` prefix, and recent HA expands it differently."""
+    home.hass.states.async_set("lock.front", "locked")
+    config = [
+        {"platform": "group", "name": "outer", "unique_id": "outer", "entities": ["lock.inner"]},
+        {"platform": "group", "name": "inner", "unique_id": "inner", "entities": ["lock.front"]},
+    ]
+    assert await async_setup_component(home.hass, "lock", {"lock": config})
+    await home.hass.async_block_till_done()
+    home.ent_reg.async_update_entity("lock.inner", device_id=home.devices["AA"])
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"entity_id": ["lock.outer"]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_excluded_group_containing_itself_finishes_and_keeps_its_members(home):
+    await home.add_old_style_groups(loop=["group.loop", home.entities["AA"]])
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"entity_id": ["group.loop"]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_label_on_area_does_not_widen_the_target(home):
+    """The exclude side reads labels on areas; the target side must keep ignoring them."""
+    home.area_reg.async_update(home.areas["AA"], labels={home.label})
+
+    await home.clear({"label_id": [home.label]})
+
+    assert home.cleared() == []
+
+
+async def test_old_style_group_does_not_widen_the_target(home):
+    """The exclude side expands groups; the target side must keep ignoring their members."""
+    await home.add_old_style_groups(keep=[home.entities["AA"]])
+
+    await home.clear({"entity_id": ["group.keep"]})
+
+    assert home.cleared() == []
+
+
+@pytest.mark.parametrize("key", ["device_id", "entity_id", "area_id", "floor_id", "label_id"])
+async def test_exclude_only_clears_nothing(home, key):
+    """Erasing has no undo: a call naming only what to keep must never reach the clear-all branch."""
+    values = {
+        "device_id": home.devices["AA"],
+        "entity_id": home.entities["AA"],
+        "area_id": home.areas["AA"],
+        "floor_id": home.floor,
+        "label_id": home.label,
+    }
+
+    await home.clear({"exclude": {key: [values[key]]}})
+
+    assert home.cleared() == []
+
+
+@pytest.mark.parametrize(
+    "exclude",
+    [{}, {"device_id": []}, {"device_id": [], "entity_id": [], "area_id": [], "floor_id": [], "label_id": []}],
+)
+async def test_empty_exclude_alone_clears_nothing(home, exclude):
+    await home.clear({"exclude": exclude})
+
+    assert home.cleared() == []
+
+
+async def test_empty_exclude_leaves_the_target_alone(home):
+    await home.clear({"area_id": [home.areas["AA"]], "exclude": {"device_id": []}})
+
+    assert home.cleared() == ["AA"]
+
+
+async def test_excluded_offline_device_is_not_a_failure(home):
+    del home.sessions["AA"]
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"device_id": [home.devices["AA"]]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_nested_exclude_is_refused(home):
+    with pytest.raises(vol.Invalid):
+        await home.clear({"floor_id": [home.floor], "exclude": {"exclude": {"device_id": [home.devices["AA"]]}}})
+
+    assert home.cleared() == []
+
+
+@pytest.mark.parametrize("entity_id", INVALID_EXCLUDED_ENTITY_IDS)
+async def test_invalid_excluded_entity_id_is_refused_and_clears_nothing(home, entity_id):
+    """An exclusion that cannot name an entity would protect nothing, leaving the target to be erased."""
+    with pytest.raises(vol.Invalid):
+        await home.clear({"floor_id": [home.floor], "exclude": {"entity_id": entity_id}})
+
+    assert home.cleared() == []
+
+
+@pytest.mark.parametrize("entity_id", INVALID_EXCLUDED_ENTITY_IDS)
+async def test_invalid_excluded_entity_id_in_action_data_is_refused_and_clears_nothing(home, entity_id):
+    """Home Assistant validates `target:` for exclude blocks but passes `data:` through to the action's schema."""
+    with pytest.raises(vol.Invalid):
+        await async_call_from_config(
+            home.hass,
+            {
+                "action": f"{DOMAIN}.clear_heatmap",
+                "data": {"area_id": home.areas["AA"], "exclude": {"entity_id": entity_id}},
+            },
+            blocking=True,
+        )
+
+    assert home.cleared() == []
+
+
+async def test_mixed_case_excluded_entity_id_keeps_its_device(home):
+    await home.clear({"floor_id": [home.floor], "exclude": {"entity_id": home.entities["AA"].upper()}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_entity_all_with_exclude_clears_nothing(home):
+    await home.clear({"entity_id": ["all"], "exclude": {"entity_id": [home.entities["AA"]]}})
+
+    assert home.cleared() == []
+
+
+@needs_target_exclude
+async def test_exclude_through_an_automation_action(home):
+    await async_call_from_config(
+        home.hass,
+        {
+            "action": f"{DOMAIN}.clear_heatmap",
+            "target": {"floor_id": home.floor, "exclude": {"entity_id": home.entities["AA"]}},
+        },
+        blocking=True,
+    )
+
+    assert home.cleared() == ["BB"]
+
+
+@needs_target_exclude
+async def test_entity_all_with_exclude_through_an_automation_action_clears_nothing(home):
+    await async_call_from_config(
+        home.hass,
+        {
+            "action": f"{DOMAIN}.clear_heatmap",
+            "target": {"entity_id": "all", "exclude": {"entity_id": home.entities["AA"]}},
+        },
+        blocking=True,
+    )
+
+    assert home.cleared() == []
+
+
+async def test_template_target_rendering_to_nothing_clears_every_sensor(home):
+    """The user guide warns about exactly this; if it ever stops being true, the warning must go."""
+    await async_call_from_config(
+        home.hass,
+        {"action": f"{DOMAIN}.clear_heatmap", "target": "{{ {} }}"},
+        blocking=True,
+    )
+
+    assert home.cleared() == ["AA", "BB", "CC"]
+
+
+async def test_excluded_composite_device_id_covers_the_devices_split_from_it(home, monkeypatch):
+    """HA 2026.8 split shared devices but still honours the old id, including in an exclude block."""
+    aa = home.dev_reg.async_get(home.devices["AA"])
+    monkeypatch.setattr(
+        home.dev_reg,
+        "async_get_devices_for_composite_device_id",
+        lambda device_id: [aa] if device_id == "old_id" else [],
+        raising=False,
+    )
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"device_id": ["old_id"]}})
+
+    assert home.cleared() == ["BB"]
+
+
+@needs_composite_devices
+async def test_excluded_composite_device_id_on_the_real_registry(home):
+    device = home.dev_reg.async_get(home.devices["AA"])
+    home.dev_reg._devices[device.id] = attr.evolve(device, composite_device_id="old_id")
+
+    await home.clear({"floor_id": [home.floor], "exclude": {"device_id": ["old_id"]}})
+
+    assert home.cleared() == ["BB"]
+
+
+async def test_composite_device_id_does_not_widen_the_target(home, monkeypatch):
+    """The exclude side follows a composite id to its split devices; the target side must not."""
+    aa = home.dev_reg.async_get(home.devices["AA"])
+    monkeypatch.setattr(
+        home.dev_reg,
+        "async_get_devices_for_composite_device_id",
+        lambda device_id: [aa] if device_id == "old_id" else [],
+        raising=False,
+    )
+
+    await home.clear({"device_id": ["old_id"]})
+
+    assert home.cleared() == []
+
+
+@needs_child_devices
+async def test_child_device_does_not_widen_the_target(home):
+    """The exclude side follows a device to its children; the target side must not."""
+    home.add_child_device("KID", parent_mac="AA")
+
+    await home.clear({"device_id": [home.devices["AA"]]})
+
+    assert home.cleared() == ["AA"]
+
+
+@needs_child_devices
+async def test_excluded_device_keeps_its_child_device(home):
+    home.add_child_device("KID", parent_mac="AA")
+
+    await home.clear(
+        {"device_id": [home.devices["BB"], home.devices["KID"]], "exclude": {"device_id": [home.devices["AA"]]}}
+    )
+
+    assert home.cleared() == ["BB"]
+
+
+@needs_child_devices
+async def test_device_excluded_through_a_label_keeps_its_child_device(home):
+    home.add_child_device("KID", parent_mac="AA")
+    home.dev_reg.async_update_device(home.devices["AA"], labels={home.label})
+
+    await home.clear({"device_id": [home.devices["BB"], home.devices["KID"]], "exclude": {"label_id": [home.label]}})
+
+    assert home.cleared() == ["BB"]
+
+
+@needs_child_devices
+async def test_child_device_is_cleared_when_nothing_excludes_it(home):
+    home.add_child_device("KID", parent_mac="AA")
+
+    await home.clear({"device_id": [home.devices["KID"]], "exclude": {"device_id": [home.devices["BB"]]}})
+
+    assert home.cleared() == ["KID"]
 
 
 async def test_register_services_is_idempotent(hass, config_entry):

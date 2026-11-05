@@ -85,7 +85,7 @@
   "services": {
     "clear_heatmap": {
       "name": "Clear heatmap",
-      "description": "Clear the accumulated presence heatmap for the targeted Everything Presence Grid sensors. With no target, clears every managed sensor."
+      "description": "Clear the accumulated presence heatmap for the targeted Everything Presence Grid sensors. With no target, clears every managed sensor. Sensors in an exclude block are never cleared."
     }
   }
 }

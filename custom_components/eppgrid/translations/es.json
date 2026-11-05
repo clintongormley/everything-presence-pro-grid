@@ -85,7 +85,7 @@
   "services": {
     "clear_heatmap": {
       "name": "Borrar mapa de calor",
-      "description": "Borra el mapa de calor de presencia acumulado para los sensores Everything Presence Grid indicados. Sin un objetivo, borra todos los sensores gestionados."
+      "description": "Borra el mapa de calor de presencia acumulado para los sensores Everything Presence Grid indicados. Sin un objetivo, borra todos los sensores gestionados. Los sensores de un bloque exclude nunca se borran."
     }
   }
 }
