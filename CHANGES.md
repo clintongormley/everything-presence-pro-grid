@@ -4,7 +4,7 @@ User-facing changes to Everything Presence Grid. For full release assets and
 firmware downloads, see the
 [GitHub releases page](https://github.com/clintongormley/everything-presence-pro-grid/releases).
 
-## Unreleased
+## v1.10.0 — 2026-11-05
 
 **Ready for Home Assistant 2026.11.** The Marketplace replaces HACS from this
 version: install Everything Presence Grid from **Settings → Marketplace** and
