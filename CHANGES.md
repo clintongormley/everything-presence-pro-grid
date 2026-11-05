@@ -18,6 +18,9 @@ keep installing it through HACS.
     and its link opens the Marketplace on Home Assistant 2026.11 or newer.
 - On Home Assistant 2026.11, zone entities show with the device name in front.
     Their entity IDs do not change.
+- The `eppgrid.clear_heatmap` action can target a floor. On Home Assistant
+    2026.11, it also accepts an `exclude` block to keep some sensors out, and it
+    never erases a sensor that the block covers.
 
 ## v1.9.0 — 2026-09-07
 

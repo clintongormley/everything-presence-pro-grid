@@ -310,18 +310,32 @@ MAC-based `eppgrid/clear_heatmap_device`, which the panel's Heatmap **Clear**
 button uses.
 
 Accepts a standard HA `target:` (`device_id` / `entity_id` / `area_id` /
-`label_id`, any combination, each optionally a list).
-`_resolve_target_device_ids` expands entities/areas/labels to device_ids via the
-device and entity registries (`dr.async_entries_for_area` / `_for_label`,
-`er.async_entries_for_area` / `_for_label`) and unions them with any
-`device_id`s given directly.
+`floor_id` / `label_id`, any combination, each optionally a list), plus an
+`exclude` block taking the same five keys (not nested; HA 2026.11 adds it to
+targets in automations). `_resolve_target_device_ids` expands
+entities/areas/floors/labels to device_ids via the device and entity registries
+(`dr.async_entries_for_area` / `_for_label`, `er.async_entries_for_area` /
+`_for_label`, and `ar.async_entries_for_floor` for the areas on a floor), unions
+them with any `device_id`s given directly, and removes everything the `exclude`
+block resolves to. Excluding an entity excludes its device, because the heatmap
+belongs to the device.
+
+The exclude side (`_resolve_excluded_device_ids`) is deliberately wider than the
+target side, so that a device HA's own `exclude` would keep is never erased: it
+also expands old-style groups (`group.expand_entity_ids`), areas carrying a
+label (`ar.async_entries_for_label`) and the devices HA split from a composite
+device_id. The target side stays narrower so that an existing erase action does
+not start reaching more devices.
 
 - **With a target:** clears every targeted device that resolves to a live
     session (`manager.get_session(mac)`); non-eppgrid device_ids are silently
     ignored. A device with no live session, or whose clear call raises, is
     collected rather than short-circuiting the loop — once every target has been
     attempted, the action raises `HomeAssistantError` naming every device_id
-    that failed.
+    that failed. `_has_target` tests for key presence and counts `exclude`, so
+    an empty target key or a call holding only `exclude` clears nothing rather
+    than falling through to the clear-all path below. `entity_id: all` matches
+    no registry entry, so it also clears nothing, with or without `exclude`.
 - **With no target:** clears every device the manager currently tracks
     (`manager.devices`), silently skipping devices with no live session or whose
     clear call raises. This is a best-effort sweep, not all-or-nothing — some

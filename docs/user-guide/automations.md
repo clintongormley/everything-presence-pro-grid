@@ -263,9 +263,9 @@ meant for Developer tools or an automation you trigger yourself (a schedule, a
 script) rather than for household members — for that, use the dashboard card's
 **Toggle and clear on card** button instead.
 
-Target it at a device, entity, area, or label the same way as any other HA
-action; leave the target empty to clear every Everything Presence Grid sensor at
-once.
+Target it at a device, entity, area, floor, or label the same way as any other
+HA action; leave the target empty to clear every Everything Presence Grid sensor
+at once.
 
 ```yaml
 action: eppgrid.clear_heatmap
@@ -277,6 +277,27 @@ target:
 # Clear every Everything Presence Grid sensor's heatmap
 action: eppgrid.clear_heatmap
 ```
+
+On Home Assistant 2026.11 or newer, add an `exclude` block to keep some sensors
+out of the target. Excluding one of a sensor's entities protects the whole
+sensor, because the heatmap belongs to the device:
+
+```yaml
+# Clear a whole floor, except the sensor in the nursery
+action: eppgrid.clear_heatmap
+target:
+  floor_id: upstairs
+  exclude:
+    area_id: nursery
+```
+
+!!! warning "Check the target before you automate this"
+
+    - A target that is one template, and renders to nothing, reaches the action as
+        "no target", so it clears **every** sensor. For example,
+        `target: "{{ {} }}"` wipes them all.
+    - `entity_id: all` with an `exclude` block clears nothing. To clear everything
+        except some sensors, target the floors or areas you want instead.
 
 ## Troubleshooting
 
