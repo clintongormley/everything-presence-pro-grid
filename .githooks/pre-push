@@ -39,7 +39,7 @@ changed_files=$(git diff --name-only "$DIFF_RANGE" 2>/dev/null || echo "")
 
 # Only run a language's (slower) gates when files for that language changed —
 # the cheap docs/translations drift checks below always run.
-py_changed=$(echo "$changed_files" | grep -E '\.py$' || true)
+py_changed=$(echo "$changed_files" | grep -E '\.py$|^\.github/workflows/firmware.*\.yml$|^\.github/scripts/' || true)
 ts_changed=$(echo "$changed_files" | grep -E '^frontend/' || true)
 
 step "Docs check"

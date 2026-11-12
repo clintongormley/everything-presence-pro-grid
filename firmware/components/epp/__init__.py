@@ -1,6 +1,6 @@
 """EPP Zone Engine ESPHome external component."""
 
-import os
+from pathlib import Path
 
 import esphome.codegen as cg
 import esphome.config_validation as cv
@@ -85,11 +85,12 @@ async def to_code(config):
     var = cg.new_Pvariable(config[CONF_ID])
     await cg.register_component(var, config)
 
-    # Add zone engine library + pure-C++ helpers (host-testable, no ESPHome deps)
-    lib_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "lib"))
-    cg.add_platformio_option("lib_extra_dirs", lib_dir)
-    cg.add_library("epp_zone_engine", None)
-    cg.add_library("epp_component_helpers", None)
+    # Zone engine library + pure-C++ helpers (host-testable, no ESPHome deps).
+    # Named by file:// URL: ESPHome's ESP-IDF build converts libraries to IDF
+    # components and ignores PlatformIO's lib_extra_dirs.
+    lib_dir = Path(__file__).resolve().parents[2] / "lib"
+    for name in ("epp_zone_engine", "epp_component_helpers"):
+        cg.add_library(name, None, (lib_dir / name).as_uri())
 
     # Device tracking binary sensor
     if CONF_DEVICE_TRACKING in config:

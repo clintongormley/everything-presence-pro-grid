@@ -32,11 +32,10 @@ esphome:
   # Floor for DIY adopters who build from package_import_url with their own
   # ESPHome — the CI pin (firmware/requirements.txt) can't reach them. Set to
   # the build pin as policy: we declare the version we actually validate against,
-  # not the lowest that merely compiles. The state_class fix itself needs no
-  # floor (it's set explicitly below), so this is deliberately conservative.
+  # not the lowest that merely compiles.
   # Kept consistent with the pin (min_version <= pin) by
   # tests/test_firmware_esphome_pin.py.
-  min_version: "2026.5.3"
+  min_version: "2026.10.2"
   project:
     version: "1.9.0"
   on_boot:

@@ -28,6 +28,9 @@ python:
   - 'pyproject.toml'
   - '.github/workflows/tests.yml'
   - '.github/filters.yml'
+  # Workflows and scripts that tests/ runs or reads.
+  - '.github/workflows/firmware*.yml'
+  - '.github/scripts/**'
 
 frontend:
   - 'frontend/**'
