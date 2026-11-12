@@ -436,6 +436,8 @@ script:
           ESP_LOGD("control_leds", "Called - api_connected (subscribed): %d, led_mode: %s",
                    id(api_id).is_connected(), id(led_mode_select).current_option().c_str());
 
+          id(stop_led_mode_scripts).execute();
+
           // No API connection
           if (!id(api_id).is_connected()) {
             ESP_LOGD("control_leds", "Executing control_leds_connecting (no API)");
@@ -461,6 +463,22 @@ script:
             ESP_LOGD("control_leds", "Executing control_leds_environmental_presence");
             id(control_leds_environmental_presence).execute();
           }
+
+  # Stop in-flight mode scripts - control_leds runs this before picking a mode.
+  # A mode script still waiting between steps would otherwise finish with a
+  # stale state: control_leds_manual and control_leds_presence run one copy at
+  # a time and ignore the new start, and the restart-mode ones are not
+  # restarted when control_leds picks a different mode. List every script
+  # control_leds can reach that has a delay or loop, except
+  # control_leds_connecting, which re-checks the connection after its delay;
+  # tests/test_firmware_led_mode_scripts.py enforces the list. This script
+  # must stay free of delays so it has finished when execute() returns.
+  - id: stop_led_mode_scripts
+    then:
+      - script.stop: control_leds_manual
+      - script.stop: control_leds_presence
+      - script.stop: update_environmental_led
+      - script.stop: alternate_presence_environmental
 
   # Connection state - blue pulsing
   - id: control_leds_connecting
