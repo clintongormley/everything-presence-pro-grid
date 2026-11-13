@@ -516,6 +516,7 @@ Returns discovered EPP devices.
             "area": "Living Room",
             "firmware_status": "compatible",
             "current_connection_count": 1,
+            "led_status_animations_entity_id": "switch.living_room_sensor_led_status_animations",
             "bluetooth_enabled": false,
             "co2_enabled": true,
             "ethernet_enabled": false,
@@ -546,6 +547,14 @@ HA or ESPHome are reflected on the next call.
 
 `area` is the assigned HA area name, or `null` if the device is not in an area.
 
+`led_status_animations_entity_id` is the entity_id of the device's "LED Status
+Animations" switch (object_id `led_status_animations`), or `null` when the
+firmware has none (older firmware, the Lite) and while the entity is disabled (a
+disabled entity has no state). The panel's **Status animations** toggle reads
+the switch's state from `hass.states` and calls `switch.turn_on` /
+`switch.turn_off` on it directly; it is not part of `set_settings`, because the
+device holds the setting.
+
 `firmware_status` is `"compatible"`, `"firmware_behind"`, or `"firmware_ahead"`
 — comparing the device's `Firmware Version` text sensor to the integration's
 `FIRMWARE_VERSION` using semver.
@@ -558,8 +567,9 @@ The build flag fields (`bluetooth_enabled`, `co2_enabled`, `ethernet_enabled`,
 present after the device has connected and build flags have been fetched via the
 `get_build_flags` API action. Build flags are merged without overriding the base
 fields above (`mac`, `name`, `host`, `available`, `configured`, `area`,
-`firmware_status`, `current_connection_count`) — flag data comes from the device
-and must not rewrite identity fields.
+`firmware_status`, `current_connection_count`,
+`led_status_animations_entity_id`) — flag data comes from the device and must
+not rewrite identity fields.
 
 `model` is the firmware's own model string (`everything-presence-pro` or
 `everything-presence-lite`), not a display label. It is load-bearing: the OTA

@@ -1334,6 +1334,53 @@ class TestDeviceManager:
         assert result[0]["available"] is True
         assert result[0]["configured"] is False
         assert result[0]["current_connection_count"] is None
+        assert result[0]["led_status_animations_entity_id"] is None
+
+    async def test_list_devices_includes_the_status_animations_switch(
+        self, hass: HomeAssistant, manager: DeviceManager
+    ) -> None:
+        """The panel's status-animations toggle acts on the device's switch,
+        so list_devices hands it the entity_id (matched by object_id, so the
+        relay switch on the same device doesn't match)."""
+        dev_reg = dr.async_get(hass)
+        ent_reg = er.async_get(hass)
+        esphome_entry = MockConfigEntry(domain="esphome", data={"host": "192.168.1.50"}, title="EPP")
+        esphome_entry.add_to_hass(hass)
+        device = dev_reg.async_get_or_create(
+            config_entry_id=esphome_entry.entry_id,
+            connections={("mac", "aa:bb:cc:dd:ee:ff")},
+            name="EPP Device",
+            manufacturer="EverythingSmartTechnology",
+            model="Everything Presence Pro",
+        )
+        ent_reg.async_get_or_create(
+            "switch",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FF-switch-system_alarm_relay",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+        switch = ent_reg.async_get_or_create(
+            "switch",
+            "esphome",
+            unique_id="AA:BB:CC:DD:EE:FF-switch-led_status_animations",
+            config_entry=esphome_entry,
+            device_id=device.id,
+        )
+        manager.devices["AA:BB:CC:DD:EE:FF"] = ManagedDevice(
+            mac="AA:BB:CC:DD:EE:FF",
+            name="EPP Device",
+            host="192.168.1.50",
+            device_id=device.id,
+        )
+
+        result = manager.list_devices()
+        assert result[0]["led_status_animations_entity_id"] == switch.entity_id
+
+        # A disabled entity has no state, so the panel gets none to show.
+        ent_reg.async_update_entity(switch.entity_id, disabled_by=er.RegistryEntryDisabler.USER)
+        result = manager.list_devices()
+        assert result[0]["led_status_animations_entity_id"] is None
 
     async def test_list_devices_build_flags_cannot_override_reserved_keys(
         self, hass: HomeAssistant, manager: DeviceManager

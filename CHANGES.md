@@ -4,6 +4,15 @@ User-facing changes to Everything Presence Grid. For full release assets and
 firmware downloads, see the
 [GitHub releases page](https://github.com/clintongormley/everything-presence-pro-grid/releases).
 
+## Unreleased
+
+- The LED's connection status animations can now be switched off, with **Status
+    animations** under **Settings → LED and Relay** (#450): the blue pulse at
+    start-up and while the device has no connection to Home Assistant, and the
+    colour sequence when it reconnects. It is also a switch entity on the
+    device, **LED Status Animations**, so an automation can turn the animations
+    off at night. Needs the firmware from this release.
+
 ## v1.10.0 — 2026-11-05
 
 **Ready for Home Assistant 2026.11.** The Marketplace replaces HACS from this

@@ -60,6 +60,11 @@ export interface DeviceInfo extends DeviceCapabilities {
 		| "firmware_ahead"
 		| "unavailable";
 	current_connection_count: number | null;
+	/**
+	 * The device's "LED Status Animations" switch, or null on firmware without
+	 * it (and on the Lite) and while the entity is disabled.
+	 */
+	led_status_animations_entity_id?: string | null;
 	bluetooth_enabled?: boolean;
 	co2_enabled?: boolean;
 	ethernet_enabled?: boolean;

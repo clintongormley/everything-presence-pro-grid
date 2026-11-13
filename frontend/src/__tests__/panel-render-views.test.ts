@@ -1414,6 +1414,44 @@ describe("_renderSettings", () => {
 		expect(caps1).toBe(caps2);
 		expect(Object.keys(caps1 as object)).toHaveLength(0);
 	});
+
+	it("passes the device's status-animations switch and its live state", async () => {
+		const a = createPanel() as any;
+		a._view = "settings";
+		const entityId = "switch.test_sensor_led_status_animations";
+		a._devices = [
+			{ ...a._devices[0], led_status_animations_entity_id: entityId },
+		];
+		a.hass = { ...a.hass, states: { [entityId]: { state: "off" } } };
+		const sv = await renderSettings(a);
+		expect(sv.statusAnimationsEntityId).toBe(entityId);
+		expect(sv.statusAnimationsState).toBe("off");
+
+		expect(sv.setStatusAnimations).toBe(a._setStatusAnimations);
+	});
+
+	it("passes no switch while Home Assistant has no state for it", async () => {
+		const a = createPanel() as any;
+		a._view = "settings";
+		a._devices = [
+			{
+				...a._devices[0],
+				led_status_animations_entity_id: "switch.renamed_meanwhile",
+			},
+		];
+		vi.spyOn(a, "_loadDevices").mockResolvedValue(undefined);
+		a.hass = { ...a.hass, states: {} };
+		const sv = await renderSettings(a);
+		expect(sv.statusAnimationsEntityId).toBeNull();
+	});
+
+	it("passes no switch for a device without one", async () => {
+		const a = createPanel() as any;
+		a._view = "settings";
+		const sv = await renderSettings(a);
+		expect(sv.statusAnimationsEntityId).toBeNull();
+		expect(sv.statusAnimationsState).toBeUndefined();
+	});
 });
 
 describe("_renderSettingsSection (via EppSettingsView)", () => {
