@@ -533,19 +533,24 @@ script:
                 id: led_rgb
                 effect: "Network Connecting"
 
-  # Manual control - turn off
+  # Manual control - turn off. Fade only while the LED is on: light.turn_on
+  # would switch an LED that is already off back on in its last colour.
   - id: control_leds_manual
     then:
       - logger.log: "control_leds_manual: Turning off LED"
-      - light.turn_on:
-          id: led_rgb
-          effect: none
-      - delay: 50ms
-      - light.turn_on:
-          id: led_rgb
-          brightness: 1%
-          transition_length: 500ms
-      - delay: 500ms
+      - if:
+          condition:
+            light.is_on: led_rgb
+          then:
+            - light.turn_on:
+                id: led_rgb
+                effect: none
+            - delay: 50ms
+            - light.turn_on:
+                id: led_rgb
+                brightness: 1%
+                transition_length: 500ms
+            - delay: 500ms
       - light.turn_off: led_rgb
       - logger.log: "control_leds_manual: LED turned off"
 
@@ -583,12 +588,17 @@ script:
                 id: led_rgb
                 effect: "Presence Glow"
           else:
-            # No presence - turn off
-            - light.turn_on:
-                id: led_rgb
-                brightness: 1%
-                transition_length: 500ms
-            - delay: 500ms
+            # No presence - turn off, fading only while the LED is on (as in
+            # control_leds_manual)
+            - if:
+                condition:
+                  light.is_on: led_rgb
+                then:
+                  - light.turn_on:
+                      id: led_rgb
+                      brightness: 1%
+                      transition_length: 500ms
+                  - delay: 500ms
             - light.turn_off: led_rgb
 
   # DEPRECATED - kept for backwards compatibility with CO2
