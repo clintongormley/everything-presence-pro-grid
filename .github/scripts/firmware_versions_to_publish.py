@@ -11,7 +11,7 @@ installed integration can ask for has to be published on every deploy:
   1.9.0), so this is not always the tag's own version.
 
 A version equal to the latest tag's is left out: the latest-release pass
-already publishes fw/v{tag}/. An unreadable pin is skipped with a warning on
+already publishes it. An unreadable pin is skipped with a warning on
 stderr, so a bad const.py never stops the docs and fw/latest from deploying.
 
 Run from the repository root:

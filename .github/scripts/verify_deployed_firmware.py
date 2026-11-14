@@ -14,7 +14,7 @@ non-zero (failing the Pages run) if any manifest is not live+current in time.
 The version check also catches Fastly serving a stale manifest, not just 404s.
 
 Usage:
-    verify_deployed_firmware.py --base-url URL --version PINNED \\
+    verify_deployed_firmware.py --base-url URL --version VERSION \\
         [--latest-version LATEST] [--variants a,b] \\
         [--timeout SECONDS] [--interval SECONDS]
 """
@@ -139,15 +139,13 @@ def _real_fetch(url: str) -> tuple[int, str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Verify deployed firmware OTA manifests.")
     parser.add_argument("--base-url", required=True, help="Deployed Pages base URL")
-    parser.add_argument("--version", required=True, help="Pinned FIRMWARE_VERSION (fw/v{version}/)")
+    parser.add_argument("--version", required=True, help="Version whose fw/v{version}/ manifests to check")
     parser.add_argument("--latest-version", default="", help="Version behind fw/latest/ (optional)")
     parser.add_argument("--variants", default=",".join(VARIANTS), help="Comma-separated variants")
     parser.add_argument(
         "--latest-variants",
         default="",
-        help="Comma-separated variants present in the promoted-latest release "
-        "(fw/latest/). Defaults to --variants; narrow it when a variant is only "
-        "in the pinned pre-release and not yet in stable.",
+        help="Comma-separated variants present in the promoted-latest release (fw/latest/). Defaults to --variants.",
     )
     parser.add_argument(
         "--timeout",

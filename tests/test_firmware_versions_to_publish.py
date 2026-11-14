@@ -71,7 +71,7 @@ def test_the_same_version_is_listed_once(tmp_path):
 
 def test_a_version_the_latest_release_already_publishes_is_left_out(tmp_path):
     # A firmware-changing stable release pins its own tag's version, which the
-    # latest-release pass already publishes as fw/v{tag}/.
+    # latest-release pass already publishes as fw/v{version}/.
     repo = _repo(tmp_path)
     _commit_pin(repo, "1.11.0", tag="v1.11.0")
     _commit_pin(repo, "1.11.0")

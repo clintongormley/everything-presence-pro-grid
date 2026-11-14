@@ -14,9 +14,9 @@
 # Optional env:
 #   STAGE_LATEST — "1" (default) also mirrors into fw/latest/; "0" stages only
 #                  fw/v{VERSION}/. The Pages pipeline stages /releases/latest
-#                  with the default, then re-runs with STAGE_LATEST=0 to publish
-#                  the integration's pinned (possibly prerelease) FIRMWARE_VERSION
-#                  for the panel's OTA button WITHOUT moving the stable channel
+#                  with the default, then re-runs with STAGE_LATEST=0 for each
+#                  pinned FIRMWARE_VERSION (firmware_versions_to_publish.py lists
+#                  them) for the panel's OTA button WITHOUT moving the stable channel
 #                  that ESPHome's native update entity reads via fw/latest/.
 #
 set -euo pipefail
@@ -42,7 +42,7 @@ variant_label() {
 
 # The per-version dir is the source of truth (the manifest md5 is computed
 # there); fw/latest/ is an optional mirror gated on STAGE_LATEST so a
-# prerelease pass can publish fw/v{VERSION}/ without moving the stable channel.
+# pinned-version pass can publish fw/v{VERSION}/ without moving the stable channel.
 DEST="fw/v${VERSION}"
 mkdir -p "$DEST"
 [ "$STAGE_LATEST" = "1" ] && mkdir -p fw/latest

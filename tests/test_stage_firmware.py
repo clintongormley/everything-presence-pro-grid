@@ -104,7 +104,7 @@ def test_stage_latest_zero_preserves_existing_latest(tmp_path: Path) -> None:
     """A STAGE_LATEST=0 pass must leave an already-staged fw/latest/ intact.
 
     Mirrors the pipeline order: fw/latest/ is populated by the latest-release
-    pass, then the pinned-prerelease pass runs with STAGE_LATEST=0 and must not
+    pass, then each pinned-version pass runs with STAGE_LATEST=0 and must not
     touch it."""
     latest = tmp_path / "fw" / "latest"
     latest.mkdir(parents=True)

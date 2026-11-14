@@ -10,6 +10,8 @@ on:
       - 'fw/**'
       - '.github/workflows/pages.yml'
       - '.github/scripts/stage-firmware.sh'
+      - '.github/scripts/firmware_versions_to_publish.py'
+      - '.github/scripts/verify_deployed_firmware.py'
   workflow_dispatch:
   workflow_run:
     workflows: ["Firmware Release"]
@@ -145,9 +147,10 @@ jobs:
       # A "successful" deploy doesn't guarantee the OTA manifests actually
       # serve: the Fastly CDN can 404 a just-published path or keep serving a
       # stale one, silently shipping a broken OTA that a user only hits when
-      # their firmware upgrade fails. Poll the live manifest URLs — the panel's
-      # fw/v{FIRMWARE_VERSION}/{variant}.json (Path B) and ESPHome's
-      # fw/latest/{variant}.json — and fail the run if any isn't live+current,
+      # their firmware upgrade fails. Poll the live manifest URLs —
+      # fw/v{version}/{variant}.json for the latest release and for every pinned
+      # FIRMWARE_VERSION (Path B), and ESPHome's fw/latest/{variant}.json — and
+      # fail the run if any isn't live+current,
       # so a bad deploy is caught here (re-run this workflow to redeploy+purge)
       # instead of by a user. Skips the no-release bootstrap (nothing staged).
       - name: Verify deployed firmware manifests are reachable

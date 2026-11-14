@@ -1058,12 +1058,13 @@ always builds from `main` (a `release` event's own ref is the tag, which would
 deploy that tag's docs and pin). Each deploy rebuilds the site from scratch, so
 only what these passes stage is served:
 
-1. `fw/latest/` from the GitHub `latest` release via `gh api /releases/latest`
-    (simpler than scanning + filtering). Since releases start as pre-releases,
-    `fw/latest/` stays on the previous promoted release until you promote the
-    new one; promotion fires `release: released`, re-running this workflow
-    without needing a fresh tag. This is the channel ESPHome's *native* update
-    entity reads, so it must only ever advance to a promoted (stable) release.
+1. `fw/v{version}/` (tag `v{version}`) and `fw/latest/` from the GitHub `latest`
+    release via `gh api /releases/latest` (simpler than scanning + filtering).
+    Since releases start as pre-releases, `fw/latest/` stays on the previous
+    promoted release until you promote the new one; promotion fires
+    `release: released`, re-running this workflow without needing a fresh tag.
+    This is the channel ESPHome's *native* update entity reads, so it must only
+    ever advance to a promoted (stable) release.
 1. `fw/v{FIRMWARE_VERSION}/` for every version an installed integration pins —
     staged with `STAGE_LATEST=0` so it does **not** move `fw/latest/`. The
     panel's OTA button fetches `OTA_MANIFEST_BASE_URL` =
