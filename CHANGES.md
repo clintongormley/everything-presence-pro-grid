@@ -11,7 +11,8 @@ firmware downloads, see the
     start-up and while the device has no connection to Home Assistant, and the
     colour sequence when it reconnects. It is also a switch entity on the
     device, **LED Status Animations**, so an automation can turn the animations
-    off at night. Needs the firmware from this release.
+    off at night. Needs the firmware from this release. Thanks to
+    @markusressel for contributing this (#451).
 
 ## v1.10.0 — 2026-11-05
 
