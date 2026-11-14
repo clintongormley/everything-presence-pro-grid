@@ -301,6 +301,158 @@ describe("_onFurnitureDrag with active drag state", () => {
 	});
 });
 
+describe("_setStatusAnimations", () => {
+	const ENTITY = "switch.epp_led_status_animations";
+
+	const withSwitch = (a: any, entityId: string | null = ENTITY) => {
+		a._devices = [
+			{ ...a._devices[0], led_status_animations_entity_id: entityId },
+		];
+		if (entityId) {
+			a.hass = {
+				...a.hass,
+				states: { ...a.hass?.states, [entityId]: { state: "on" } },
+			};
+		}
+	};
+
+	it("switches the selected device's entity straight away", async () => {
+		const a = createPanel() as any;
+		withSwitch(a);
+		const callService = vi.fn().mockResolvedValue(undefined);
+		a.hass = { ...a.hass, callService };
+
+		expect(await a._setStatusAnimations(false)).toBe(true);
+		expect(await a._setStatusAnimations(true)).toBe(true);
+
+		expect(callService.mock.calls).toEqual([
+			["switch", "turn_off", { entity_id: ENTITY }],
+			["switch", "turn_on", { entity_id: ENTITY }],
+		]);
+		expect(a._controllerError).toBeNull();
+	});
+
+	it("reads the entity at call time, not at the last render", async () => {
+		const a = createPanel() as any;
+		withSwitch(a, "switch.old_name");
+		const callService = vi.fn().mockResolvedValue(undefined);
+		a.hass = { ...a.hass, callService };
+		withSwitch(a, "switch.new_name");
+
+		await a._setStatusAnimations(false);
+		expect(callService).toHaveBeenCalledWith("switch", "turn_off", {
+			entity_id: "switch.new_name",
+		});
+	});
+
+	it("shows the error banner when the call fails, and clears it on a retry", async () => {
+		const a = createPanel() as any;
+		withSwitch(a);
+		const callService = vi
+			.fn()
+			.mockRejectedValueOnce(new Error("offline"))
+			.mockResolvedValue(undefined);
+		a.hass = { ...a.hass, callService };
+
+		expect(await a._setStatusAnimations(false)).toBe(false);
+		expect(a._controllerError).toBe("set_status_animations");
+
+		expect(await a._setStatusAnimations(false)).toBe(true);
+		expect(a._controllerError).toBeNull();
+	});
+
+	it("leaves another error, e.g. of a failed Save, on the banner", async () => {
+		const a = createPanel() as any;
+		withSwitch(a);
+		a.hass = { ...a.hass, callService: vi.fn().mockResolvedValue(undefined) };
+		a._controllerError = "save_configuration";
+
+		expect(await a._setStatusAnimations(false)).toBe(true);
+		expect(a._controllerError).toBe("save_configuration");
+	});
+
+	it("shows no banner for a call that failed after a later one", async () => {
+		const a = createPanel() as any;
+		withSwitch(a);
+		let failFirst!: (e: Error) => void;
+		const callService = vi
+			.fn()
+			.mockReturnValueOnce(
+				new Promise((_, reject) => {
+					failFirst = reject;
+				}),
+			)
+			.mockResolvedValue(undefined);
+		a.hass = { ...a.hass, callService };
+
+		const first = a._setStatusAnimations(true);
+		expect(await a._setStatusAnimations(false)).toBe(true);
+		failFirst(new Error("timeout"));
+		expect(await first).toBe(false);
+		expect(a._controllerError).toBeNull();
+	});
+
+	it("shows no banner when the device was switched before the call failed", async () => {
+		const a = createPanel() as any;
+		withSwitch(a);
+		let fail!: (e: Error) => void;
+		a.hass = {
+			...a.hass,
+			callService: vi.fn().mockReturnValue(
+				new Promise((_, reject) => {
+					fail = reject;
+				}),
+			),
+		};
+
+		const call = a._setStatusAnimations(true);
+		a._selectedMac = "AA:BB:CC:DD:EE:02";
+		fail(new Error("offline"));
+		expect(await call).toBe(false);
+		expect(a._controllerError).toBeNull();
+	});
+
+	it("shows the error banner when the switch went away before the click", async () => {
+		const a = createPanel() as any;
+		withSwitch(a, null);
+		const callService = vi.fn();
+		a.hass = { ...a.hass, callService };
+
+		expect(await a._setStatusAnimations(false)).toBe(false);
+		expect(callService).not.toHaveBeenCalled();
+		expect(a._controllerError).toBe("set_status_animations");
+	});
+
+	it("doesn't call a switch Home Assistant has no state for (renamed, disabled)", async () => {
+		const a = createPanel() as any;
+		withSwitch(a);
+		const callService = vi.fn();
+		a.hass = { ...a.hass, states: {}, callService };
+
+		expect(await a._setStatusAnimations(false)).toBe(false);
+		expect(callService).not.toHaveBeenCalled();
+	});
+});
+
+describe("a LED Status Animations switch Home Assistant has no state for", () => {
+	const ENTITY = "switch.epp_led_status_animations";
+
+	it("hides the toggle and leaves the device list alone", () => {
+		const a = createPanel() as any;
+		a._devices = [
+			{ ...a._devices[0], led_status_animations_entity_id: ENTITY },
+		];
+		const load = vi.spyOn(a, "_loadDevices").mockResolvedValue(undefined);
+
+		// renamed or disabled since the device list was loaded
+		a.hass = { ...a.hass, states: {} };
+		a.willUpdate(new Map([["hass", undefined]]));
+
+		expect(a._statusAnimationsEntityId()).toBeNull();
+		expect(load).not.toHaveBeenCalled();
+	});
+});
+
 describe("_saveSettings delegation", () => {
 	it("delegates to _gridCtrl.saveSettings with payload", async () => {
 		const a = createPanel() as any;

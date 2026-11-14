@@ -49,6 +49,25 @@ occupied.
 Environmental mode's colour scale (green/yellow/red for CO₂) is fixed and not
 user-configurable.
 
+### Status animations
+
+Whatever the mode, the LED also shows the state of the connection to Home
+Assistant:
+
+- a blue pulse while the device starts up, and whenever it has no connection to
+    Home Assistant, for example while Home Assistant restarts;
+- a short colour sequence when it connects again (not in Manual control).
+
+Turn **Status animations** off to keep the LED dark at those times instead, for
+example for a sensor in a bedroom. Once connected, the LED shows what the mode
+sets. The toggle takes effect straight away; it isn't part of Save.
+
+The toggle is a switch entity on the device in Home Assistant, **LED Status
+Animations**, so an automation can also turn the animations off at night and
+back on in the morning. The device keeps the switch's state across restarts. The
+switch needs firmware 1.11.0 or newer; on older firmware, and while the entity
+is disabled in Home Assistant, the toggle isn't shown.
+
 ## Relay
 
 The device has a solid-state relay you can wire into a circuit. Typical uses are

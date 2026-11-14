@@ -1134,17 +1134,21 @@ class DeviceManager:
         return False
 
     def _find_esphome_entry(
-        self, device_id: str | None, suffix: str, *, entries: list[er.RegistryEntry] | None = None
+        self,
+        device_id: str | None,
+        suffix: str,
+        *,
+        entries: list[er.RegistryEntry] | None = None,
+        domain: str = "sensor",
     ) -> er.RegistryEntry | None:
-        """The registry entry for the ESPHome sensor whose object_id is
-        ``suffix`` on a device, or ``None``.
+        """The registry entry for the ESPHome entity of ``domain`` whose
+        object_id is ``suffix`` on a device, or ``None``.
 
-        Shared matcher for `_read_sensor_state` (reads its state) and
-        `_firmware_version_entity_id` (returns its entity_id). Matches by exact
-        object_id equality (via `_esphome_object_id`, which normalises every HA
-        unique_id format), so an unrelated object_id that merely *contains* the
-        suffix (e.g. ``max_current_connections`` vs ``current_connections``)
-        can't false-match.
+        Matches any ESPHome entity of the device (a sensor by default, or e.g.
+        a switch) by exact object_id equality (via `_esphome_object_id`, which
+        normalises every HA unique_id format), so an unrelated object_id that
+        merely *contains* the suffix (e.g. ``max_current_connections`` vs
+        ``current_connections``) can't false-match.
 
         ``entries`` lets the caller pass pre-fetched device entries so callers
         looping over many devices don't re-scan the entity registry per call.
@@ -1155,7 +1159,7 @@ class DeviceManager:
             ent_reg = er.async_get(self._hass)
             entries = er.async_entries_for_device(ent_reg, device_id, include_disabled_entities=True)
         for entry in entries:
-            if _is_esphome_entity(entry, "sensor", suffix):
+            if _is_esphome_entity(entry, domain, suffix):
                 return entry
         return None
 
@@ -3070,6 +3074,14 @@ class DeviceManager:
             return conn
         return None
 
+    def _led_status_animations_entity_id(self, device_id: str | None, entries: list[er.RegistryEntry]) -> str | None:
+        """The switch the panel's "Status animations" toggle acts on directly.
+        None on firmware without it (and on the Lite), and while it is
+        disabled: a disabled entity has no state, so the toggle couldn't show
+        or switch it."""
+        entry = self._find_esphome_entry(device_id, "led_status_animations", entries=entries, domain="switch")
+        return entry.entity_id if entry is not None and not entry.disabled else None
+
     def list_devices(self) -> list[dict[str, Any]]:
         """Return serializable list of managed devices for the frontend."""
         dev_reg = dr.async_get(self._hass)
@@ -3098,6 +3110,7 @@ class DeviceManager:
                     (_compare_firmware_version(fw_ver) if fw_ver is not None else None) or "unavailable"
                 ),
                 "current_connection_count": self.read_current_connection_count(dev.device_id, entries=entries),
+                "led_status_animations_entity_id": self._led_status_animations_entity_id(dev.device_id, entries),
             }
             # Merge cached build flags WITHOUT letting them clobber the base
             # fields above — get_build_flags data comes from the device, and

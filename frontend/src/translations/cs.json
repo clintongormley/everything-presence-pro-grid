@@ -171,6 +171,7 @@
 		"led_mode": "Režim",
 		"led_brightness": "Jas",
 		"led_presence_color": "Barva obsazenosti",
+		"led_status_animations": "Stavové animace",
 		"manual_control": "Ruční ovládání",
 		"presence": "Obsazenost",
 		"environmental_presence": "Prostředí + obsazenost",
@@ -367,6 +368,7 @@
 		"led_mode": "Řídí chování RGB LED. Ruční ovládání vypne automatickou LED a umožní vám ji ovládat jako standardní entitu světla v HA.",
 		"led_brightness": "Násobitel jasu RGB LED v automatických režimech.",
 		"led_presence_color": "Barva používaná pro indikaci obsazenosti, když je LED v režimu Obsazenost nebo Prostředí + obsazenost.",
+		"led_status_animations": "Animace LED, které ukazují stav připojení: modré pulzování při startu a když zařízení nemá spojení s Home Assistantem, a barevná sekvence při opětovném připojení. Projeví se ihned, ne až po uložení. Je to také entita přepínače na zařízení, takže ji automatizace může v noci vypnout.",
 		"relay_trigger_mode": "Co aktivuje relé. Zakázáno ponechá relé pod ručním ovládáním přes přepínač relé. Jakýkoli jiný režim automaticky sleduje zvolený signál přítomnosti a přepíše ruční ovládání.",
 		"relay_contact_mode": "Spínací kontakt sepne relé při spuštění (typické „aktivní = sepnuto“). Rozpínací kontakt jej naopak rozepne — užitečné pro zabezpečovací obvody, které v klidovém stavu očekávají uzavřenou smyčku."
 	},
@@ -539,6 +541,7 @@
 	"errors": {
 		"apply_layout": "Uložení rozvržení místnosti se nezdařilo. Zkontrolujte, že je zařízení online, a zkuste to znovu.",
 		"save_settings": "Uložení nastavení se nezdařilo. Zkontrolujte, že je zařízení online, a zkuste to znovu.",
+		"set_status_animations": "Přepnutí stavových animací se nezdařilo. Zkontrolujte, že je zařízení online, a zkuste to znovu.",
 		"save_configuration": "Uložení zálohy konfigurace se nezdařilo. Zkuste to znovu.",
 		"load_configuration": "Obnovení konfigurace se nezdařilo. Může být ve starém formátu — znovu ji uložte a zkuste to znovu."
 	},

@@ -2081,6 +2081,59 @@ export class EPPGridPanel extends LitElement {
 		return this._gridCtrl.saveSettings(payload || {});
 	}
 
+	/**
+	 * Switch the device's "LED Status Animations" switch straight away (it is
+	 * not part of Save). The toggle follows the entity's state from then on.
+	 * Resolves to false when the call failed. The error banner only shows for
+	 * the latest call, and only while its device is still selected: an older
+	 * one failing after a later one succeeded says nothing about the switch.
+	 * Reads the entity at call time, so a device list pushed since the last
+	 * render can't send the call to an old entity ID. An arrow function, so
+	 * the settings view gets the same callback on every render.
+	 */
+	_setStatusAnimations = async (on: boolean): Promise<boolean> => {
+		const mac = this._selectedMac;
+		const entityId = this._statusAnimationsEntityId();
+		const call = ++this._statusAnimationsCalls;
+		if (!entityId) {
+			// The switch went away since the last render (renamed, disabled):
+			// say so instead of silently putting the toggle back.
+			this._controllerError = "set_status_animations";
+			return false;
+		}
+		// Only its own error: the toggle runs at once, and must not clear an
+		// unrelated one (e.g. a failed Save) the user hasn't seen yet.
+		if (this._controllerError === "set_status_animations") {
+			this._controllerError = null;
+		}
+		try {
+			await this.hass.callService("switch", on ? "turn_on" : "turn_off", {
+				entity_id: entityId,
+			});
+			return true;
+		} catch {
+			if (call === this._statusAnimationsCalls && mac === this._selectedMac) {
+				this._controllerError = "set_status_animations";
+			}
+			return false;
+		}
+	};
+
+	/** Counts `_setStatusAnimations` calls, to tell the latest one. */
+	private _statusAnimationsCalls = 0;
+
+	/**
+	 * The selected device's "LED Status Animations" switch, or null when it
+	 * has none, or when Home Assistant has no state for the one the device
+	 * list names (renamed, disabled or removed since the list was loaded).
+	 */
+	private _statusAnimationsEntityId(): string | null {
+		const entityId = this._devices.find(
+			(d) => d.mac === this._selectedMac,
+		)?.led_status_animations_entity_id;
+		return entityId && this.hass?.states?.[entityId] ? entityId : null;
+	}
+
 	private async _cancelSettings(): Promise<void> {
 		this._dirty = false;
 		this._view = "live";
@@ -3742,6 +3795,7 @@ export class EPPGridPanel extends LitElement {
 		// `hasCapability` reads as "present" — the settings view renders as it
 		// always did rather than flickering controls in as flags arrive.
 		const activeDevice = this._devices.find((d) => d.mac === this._selectedMac);
+		const statusAnimationsEntityId = this._statusAnimationsEntityId();
 		return html`
       <div class="panel panel--settings">
         ${this._renderHeader()}
@@ -3780,6 +3834,13 @@ export class EPPGridPanel extends LitElement {
           .ledMode=${this._ledMode}
           .ledBrightness=${this._ledBrightness}
           .ledPresenceColor=${this._ledPresenceColor}
+          .statusAnimationsEntityId=${statusAnimationsEntityId}
+          .statusAnimationsState=${
+						statusAnimationsEntityId
+							? this.hass?.states?.[statusAnimationsEntityId]?.state
+							: undefined
+					}
+          .setStatusAnimations=${this._setStatusAnimations}
           .relayTriggerMode=${this._relayTriggerMode}
           .relayContactMode=${this._relayContactMode}
           .targetUpdateRateMs=${this._targetUpdateRateMs}

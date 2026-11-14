@@ -1,5 +1,6 @@
 import { css, html, LitElement, nothing } from "lit";
 import { property } from "lit/decorators.js";
+import { live } from "lit/directives/live.js";
 import { STATIC_ON_DELAY_MAX } from "../lib/config-serialization.js";
 import {
 	autoDetectionRange,
@@ -26,6 +27,14 @@ import { renderSaveCancelBar } from "./save-cancel-bar.js";
 // Wire values are English (firmware protocol); labels are localized at
 // render time via the memoised option arrays.
 const LOG_LEVELS = ["None", "Error", "Warning", "Info", "Debug"];
+
+/**
+ * How long the status animations toggle holds a clicked position after the
+ * call succeeded, waiting for the switch to report it. Home Assistant reports
+ * a state change within a second; after this, the toggle shows the switch's
+ * state again.
+ */
+export const STATUS_ANIMATIONS_CONFIRM_MS = 5000;
 
 // Firmware log categories, in display order. Every category is always shown:
 // BLE and CO2 used to be gated on the device's build flags, but hiding rows the
@@ -255,6 +264,106 @@ export class EppSettingsView extends LitElement {
 	@property({ type: String }) ledMode = "Manual Control";
 	@property({ type: Number }) ledBrightness = 1.0;
 	@property({ type: String }) ledPresenceColor = "#CC33FF";
+
+	/**
+	 * The device's "LED Status Animations" switch entity, or null when the
+	 * firmware has none (the toggle is then hidden). Unlike the settings above,
+	 * the toggle is not part of Save: it calls `setStatusAnimations`, which
+	 * switches the entity straight away.
+	 */
+	@property({ attribute: false }) statusAnimationsEntityId: string | null =
+		null;
+	/** The switch's live HA state ("on", "off", "unavailable", …). */
+	@property({ attribute: false }) statusAnimationsState: string | undefined =
+		undefined;
+	/** Switches the entity; resolves to false when the call failed. */
+	@property({ attribute: false }) setStatusAnimations:
+		| ((on: boolean) => Promise<boolean>)
+		| null = null;
+
+	/**
+	 * The position the user switched the toggle to, shown until the latest
+	 * call has succeeded and the entity's state confirms it, the call failed,
+	 * or `STATUS_ANIMATIONS_CONFIRM_MS` passed after the call without a
+	 * confirmation (the device may have dropped the command, e.g. in a
+	 * connection blip: the toggle then shows what the switch reports).
+	 * Without it, the frequent re-renders would put the toggle back to the
+	 * last reported state in the meantime (and, with two quick clicks, show
+	 * the state the first one reports). It belongs to one entity: the view is
+	 * reused when the panel switches device. Non-reactive and settled in
+	 * render(), like `_localDirty`.
+	 *
+	 * `changed` tells whether the entity has reported the other position since
+	 * the click: only then is a state equal to `on` news. After two quick
+	 * clicks (off, then on) the entity still reports the old "on" when the
+	 * second call succeeds; taking that as the confirmation would let the first
+	 * call's "off" move the toggle when it arrives.
+	 */
+	private _requestedStatusAnimations: {
+		entityId: string | null;
+		on: boolean;
+		succeeded: boolean;
+		changed: boolean;
+	} | null = null;
+	/** Counts the calls, so only the latest one settles the toggle. */
+	private _statusAnimationsCalls = 0;
+	/** Ends the hold of the latest successful call, see above. */
+	private _statusAnimationsTimer: ReturnType<typeof setTimeout> | undefined;
+
+	override disconnectedCallback(): void {
+		super.disconnectedCallback();
+		clearTimeout(this._statusAnimationsTimer);
+		this._statusAnimationsTimer = undefined;
+	}
+
+	private _statusAnimationsChecked(): boolean {
+		const state = this.statusAnimationsState;
+		const requested = this._requestedStatusAnimations;
+		if (
+			requested !== null &&
+			requested.entityId === this.statusAnimationsEntityId &&
+			(state === "on" || state === "off")
+		) {
+			if ((state === "on") !== requested.on) {
+				requested.changed = true;
+				return requested.on;
+			}
+			// The entity reports the requested position: confirmed, unless
+			// that is still the state from before the click.
+			if (!(requested.succeeded && requested.changed)) return requested.on;
+		}
+		this._requestedStatusAnimations = null;
+		return state === "on";
+	}
+
+	private async _onStatusAnimationsChange(on: boolean): Promise<void> {
+		if (!this.setStatusAnimations) return;
+		const call = ++this._statusAnimationsCalls;
+		const state = this.statusAnimationsState;
+		const requested = {
+			entityId: this.statusAnimationsEntityId,
+			on,
+			succeeded: false,
+			changed: (state === "on") !== on,
+		};
+		this._requestedStatusAnimations = requested;
+		const ok = await this.setStatusAnimations(on);
+		if (call !== this._statusAnimationsCalls) return;
+		if (ok) {
+			requested.succeeded = true;
+			clearTimeout(this._statusAnimationsTimer);
+			this._statusAnimationsTimer = setTimeout(() => {
+				this._statusAnimationsTimer = undefined;
+				if (this._requestedStatusAnimations !== requested) return;
+				this._requestedStatusAnimations = null;
+				this.requestUpdate();
+			}, STATUS_ANIMATIONS_CONFIRM_MS);
+		} else if (this._requestedStatusAnimations === requested) {
+			// The entity didn't change, so no new state arrives: put it back.
+			this._requestedStatusAnimations = null;
+		}
+		this.requestUpdate();
+	}
 
 	@property({ type: String }) relayTriggerMode = "disabled";
 	@property({ type: String }) relayContactMode = "no";
@@ -1001,7 +1110,7 @@ export class EppSettingsView extends LitElement {
         <label>${this.localize(d.label)}</label>
         <epp-toggle
           data-entity-key=${d.key}
-          .checked=${isOn(d.key, d.defaultValue)}
+          .checked=${live(isOn(d.key, d.defaultValue))}
           .disabled=${d.disabled ?? false}
           @value-changed=${(e: CustomEvent<{ value: boolean }>) => {
 						e.stopPropagation();
@@ -1341,6 +1450,24 @@ export class EppSettingsView extends LitElement {
 						}} />
             ${this.infoTip(this.localize("info.led_presence_color"))}
           </div>`
+							: nothing
+					}
+          ${
+						// Shown in every mode: the animations override all of them.
+						this.statusAnimationsEntityId
+							? this.renderEntityToggleRow(
+									{
+										label: "settings.led_status_animations",
+										key: "led_status_animations",
+										defaultValue: true,
+										tip: "info.led_status_animations",
+										disabled:
+											this.statusAnimationsState !== "on" &&
+											this.statusAnimationsState !== "off",
+									},
+									() => this._statusAnimationsChecked(),
+									(_key, value) => void this._onStatusAnimationsChange(value),
+								)
 							: nothing
 					}
         </epp-card>

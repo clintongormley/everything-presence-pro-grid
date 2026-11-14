@@ -171,6 +171,7 @@
 		"led_mode": "Mode",
 		"led_brightness": "Brightness",
 		"led_presence_color": "Occupancy color",
+		"led_status_animations": "Status animations",
 		"manual_control": "Manual Control",
 		"presence": "Occupancy",
 		"environmental_presence": "Environmental + Occupancy",
@@ -367,6 +368,7 @@
 		"led_mode": "Controls the RGB LED behavior. Manual Control disables automatic LED and lets you control it as a standard HA light entity.",
 		"led_brightness": "Brightness multiplier for the RGB LED in automatic modes.",
 		"led_presence_color": "Color used for occupancy indication when LED is in Occupancy or Environmental + Occupancy mode.",
+		"led_status_animations": "The LED's connection status animations: the blue pulse at start-up and while the device has no connection to Home Assistant, and the color sequence when it reconnects. Takes effect straight away, not on Save. It is also a switch entity on the device, so an automation can turn the animations off at night.",
 		"relay_trigger_mode": "What activates the relay. Disabled leaves the relay under manual control via the relay switch entity. Any other mode follows the chosen presence signal automatically and overrides manual control.",
 		"relay_contact_mode": "Normally Open closes the relay when the trigger fires (typical \"active = closed\"). Normally Closed opens it instead — useful for security circuits that expect a closed loop in the idle state."
 	},
@@ -539,6 +541,7 @@
 	"errors": {
 		"apply_layout": "Saving the room layout failed. Check that the device is online and try again.",
 		"save_settings": "Saving the settings failed. Check that the device is online and try again.",
+		"set_status_animations": "Switching the status animations failed. Check that the device is online and try again.",
 		"save_configuration": "Saving the configuration backup failed. Try again.",
 		"load_configuration": "Restoring the configuration failed. It may be in an old format — re-save it and try again."
 	},

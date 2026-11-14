@@ -14,15 +14,26 @@ esphome:
     - priority: 375
       then:
         - delay: 200ms
-        # Start loading animation and keep it until API connects
-        - light.turn_on:
-            id: led_rgb
-            brightness: 30%
-            red: 0%
-            green: 60%
-            blue: 100%
-            white: 0%
-            effect: "Network Connecting"
+        # Start loading animation and keep it until API connects, unless the
+        # status animations are switched off. The switch has restored its state
+        # by now: template switches restore in setup() at priority 798.
+        - if:
+            condition:
+              switch.is_on: led_status_animations
+            then:
+              - light.turn_on:
+                  id: led_rgb
+                  brightness: 30%
+                  red: 0%
+                  green: 60%
+                  blue: 100%
+                  white: 0%
+                  effect: "Network Connecting"
+            else:
+              # led_rgb may have restored the state it had before the power
+              # cut (e.g. the presence glow): the LED stays dark until a client
+              # connects and the LED mode sets it.
+              - light.turn_off: led_rgb
 
 epp:
   static_presence: dfrobot_presence
@@ -217,9 +228,11 @@ api:
             api.connected:
               state_subscription_only: true
           timeout: 3s
+      # The colour sequence is a status animation: skipped when they are
+      # switched off, going straight to the mode's LED state below.
       - if:
           condition:
-            lambda: 'return id(led_mode_select).current_option() != "Manual Control";'
+            lambda: 'return id(led_status_animations).state && id(led_mode_select).current_option() != "Manual Control";'
           then:
             # Stop any effects first
             - light.turn_on:
@@ -440,8 +453,17 @@ script:
 
           // No API connection
           if (!id(api_id).is_connected()) {
-            ESP_LOGD("control_leds", "Executing control_leds_connecting (no API)");
-            id(control_leds_connecting).execute();
+            if (id(led_status_animations).state) {
+              ESP_LOGD("control_leds", "Executing control_leds_connecting (no API)");
+              id(control_leds_connecting).execute();
+            } else {
+              // Switched off right away rather than through control_leds_manual:
+              // its delays would let a reconnect's mode script run first, and the
+              // turn-off would then land after it.
+              ESP_LOGD("control_leds", "No API, status animations off: turning off LED");
+              auto call = id(led_rgb).turn_off();
+              call.perform();
+            }
           }
           // Manual control mode
           else if (id(led_mode_select).current_option() == "Manual Control") {
@@ -500,9 +522,12 @@ script:
       # would land after it and leave the LED stuck on "Network Connecting"
       # until the next client connect/disconnect. Re-checking here closes that
       # race — control_leds' `mode: restart` can't cancel this in-flight delay.
+      # The switch is read again for the same reason: a reconnect in this delay
+      # can switch the animations off, and the next disconnect then turns the
+      # LED off without stopping this script.
       - if:
           condition:
-            lambda: 'return !id(api_id).is_connected();'
+            lambda: 'return !id(api_id).is_connected() && id(led_status_animations).state;'
           then:
             - light.turn_on:
                 id: led_rgb
@@ -723,6 +748,24 @@ script:
       - light.turn_off: led_rgb
 
 switch:
+  # Turns the LED's connection status animations on or off: the "Network
+  # Connecting" pulse at boot and while disconnected, and the colour sequence
+  # when a client connects. The mode-driven light (LED Mode) is not affected.
+  # An entity on purpose, so automations can turn the animations off at night.
+  #
+  # No turn_on_action / turn_off_action: a restored template switch re-runs
+  # them on every boot, so anything there must be safe to run at boot. None is
+  # needed either: the animations read the state when they start (the pulse
+  # again before it latches), and while the pulse shows, no client is
+  # connected that could flip the switch. The connect sequence is the only one
+  # that runs with a client connected; switched off during it, it finishes.
+  - platform: template
+    name: "LED Status Animations"
+    id: led_status_animations
+    icon: mdi:led-on
+    entity_category: config
+    optimistic: true
+    restore_mode: RESTORE_DEFAULT_ON
   - platform: gpio
     name: "Relay Output"
     id: system_alarm_relay

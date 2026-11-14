@@ -1,7 +1,10 @@
 import { render } from "lit";
 import { describe, expect, it, vi } from "vitest";
 import "../../components/epp-settings-view.js";
-import { EppSettingsView } from "../../components/epp-settings-view.js";
+import {
+	EppSettingsView,
+	STATUS_ANIMATIONS_CONFIRM_MS,
+} from "../../components/epp-settings-view.js";
 import { GRID_CELL_COUNT, initGridFromRoom } from "../../lib/grid.js";
 import { SETTINGS_FIELD_MAP } from "../../lib/settings-defaults.js";
 import { setupLocalize } from "../../localize.js";
@@ -2667,6 +2670,330 @@ describe("renderLed() event handlers", () => {
 
 		expect(stopSpy).toHaveBeenCalled();
 		document.body.removeChild(c);
+	});
+});
+
+describe("LED status animations toggle", () => {
+	const ENTITY = "switch.epp_led_status_animations";
+
+	const toggleIn = (c: HTMLElement) =>
+		c.querySelector(
+			'epp-toggle[data-entity-key="led_status_animations"]',
+		) as any;
+
+	it("is hidden when the device has no switch (older firmware)", () => {
+		const sv = createView({ ledMode: "Presence" });
+		const c = renderTo((sv as any).renderLed());
+		expect(toggleIn(c)).toBeNull();
+		document.body.removeChild(c);
+	});
+
+	it("shows the switch's live state in every LED mode", () => {
+		for (const ledMode of [
+			"Manual Control",
+			"Environmental",
+			"Presence",
+			"Environmental + Presence",
+		]) {
+			for (const [state, checked] of [
+				["on", true],
+				["off", false],
+			] as const) {
+				const sv = createView({
+					ledMode,
+					statusAnimationsEntityId: ENTITY,
+					statusAnimationsState: state,
+				});
+				const c = renderTo((sv as any).renderLed());
+				const toggle = toggleIn(c);
+				expect(toggle, ledMode).not.toBeNull();
+				expect(toggle.checked).toBe(checked);
+				expect(toggle.disabled).toBe(false);
+				document.body.removeChild(c);
+			}
+		}
+	});
+
+	it("is disabled while the switch is unavailable", () => {
+		const sv = createView({
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "unavailable",
+		});
+		const c = renderTo((sv as any).renderLed());
+		expect(toggleIn(c).disabled).toBe(true);
+		document.body.removeChild(c);
+	});
+
+	const click = (c: HTMLElement, value: boolean) =>
+		toggleIn(c).dispatchEvent(
+			new CustomEvent("value-changed", {
+				detail: { value },
+				bubbles: true,
+			}),
+		);
+	const flush = async () => {
+		await Promise.resolve();
+		await Promise.resolve();
+	};
+
+	it("calls setStatusAnimations instead of marking the settings dirty", () => {
+		const setStatusAnimations = vi.fn().mockResolvedValue(true);
+		const sv = createView({
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "on",
+			setStatusAnimations,
+		});
+		const c = renderTo((sv as any).renderLed());
+		let dirtyFired = false;
+		sv.addEventListener("dirty", () => {
+			dirtyFired = true;
+		});
+
+		click(c, false);
+
+		expect(setStatusAnimations).toHaveBeenCalledWith(false);
+		expect(dirtyFired).toBe(false);
+		document.body.removeChild(c);
+	});
+
+	it("holds the new position until the entity confirms it", async () => {
+		const sv = createView({
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "on",
+			setStatusAnimations: vi.fn().mockResolvedValue(true),
+		});
+		const c = renderTo((sv as any).renderLed());
+		click(c, false);
+		await flush();
+
+		// Re-renders before Home Assistant reports the new state keep it.
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(false);
+
+		// Once confirmed, the toggle follows the entity again.
+		sv.statusAnimationsState = "off";
+		render((sv as any).renderLed(), c);
+		sv.statusAnimationsState = "on";
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(true);
+		document.body.removeChild(c);
+	});
+
+	it("shows the switch's state again when it doesn't confirm in time", async () => {
+		vi.useFakeTimers();
+		try {
+			const sv = createView({
+				statusAnimationsEntityId: ENTITY,
+				statusAnimationsState: "on",
+				setStatusAnimations: vi.fn().mockResolvedValue(true),
+			});
+			const c = renderTo((sv as any).renderLed());
+			click(c, false);
+			await flush();
+			const update = vi.spyOn(sv, "requestUpdate");
+
+			// The device dropped the command: the switch stays "on".
+			vi.advanceTimersByTime(STATUS_ANIMATIONS_CONFIRM_MS - 1);
+			render((sv as any).renderLed(), c);
+			expect(toggleIn(c).checked).toBe(false);
+			expect(update).not.toHaveBeenCalled();
+
+			vi.advanceTimersByTime(1);
+			expect(update).toHaveBeenCalledTimes(1);
+			render((sv as any).renderLed(), c);
+			expect(toggleIn(c).checked).toBe(true);
+			document.body.removeChild(c);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("keeps a later click's position when an earlier one's time is up", async () => {
+		vi.useFakeTimers();
+		try {
+			const setStatusAnimations = vi
+				.fn()
+				.mockResolvedValueOnce(true)
+				// the second call is still on its way
+				.mockReturnValueOnce(new Promise<boolean>(() => {}));
+			const sv = createView({
+				statusAnimationsEntityId: ENTITY,
+				statusAnimationsState: "off",
+				setStatusAnimations,
+			});
+			const c = renderTo((sv as any).renderLed());
+			click(c, true);
+			await flush();
+			click(c, false);
+			sv.statusAnimationsState = "on";
+
+			vi.advanceTimersByTime(STATUS_ANIMATIONS_CONFIRM_MS);
+			render((sv as any).renderLed(), c);
+			expect(toggleIn(c).checked).toBe(false);
+			document.body.removeChild(c);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("doesn't take the old state for the confirmation of a second quick click", async () => {
+		const sv = createView({
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "on",
+			setStatusAnimations: vi.fn().mockResolvedValue(true),
+		});
+		const c = renderTo((sv as any).renderLed());
+		click(c, false);
+		click(c, true);
+		await flush();
+
+		// Both calls succeeded while HA still reports the old "on"; then the
+		// first call's "off" arrives, then the second's "on".
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(true);
+		sv.statusAnimationsState = "off";
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(true);
+		sv.statusAnimationsState = "on";
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(true);
+
+		// Confirmed: the toggle follows the entity again.
+		sv.statusAnimationsState = "off";
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(false);
+		document.body.removeChild(c);
+	});
+
+	it("stops the hold's timer when the view is removed", async () => {
+		vi.useFakeTimers();
+		try {
+			const sv = createView({
+				statusAnimationsEntityId: ENTITY,
+				statusAnimationsState: "on",
+				setStatusAnimations: vi.fn().mockResolvedValue(true),
+			});
+			const c = renderTo((sv as any).renderLed());
+			click(c, false);
+			await flush();
+			expect(vi.getTimerCount()).toBe(1);
+
+			sv.disconnectedCallback();
+			expect(vi.getTimerCount()).toBe(0);
+			document.body.removeChild(c);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("puts the toggle back when the call fails", async () => {
+		const sv = createView({
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "on",
+			setStatusAnimations: vi.fn().mockResolvedValue(false),
+		});
+		const c = renderTo((sv as any).renderLed());
+		const update = vi.spyOn(sv, "requestUpdate");
+		click(c, false);
+		await flush();
+
+		expect(update).toHaveBeenCalledTimes(1);
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(true);
+		document.body.removeChild(c);
+	});
+
+	it("ignores the failure of a call a later click replaced", async () => {
+		let failFirst!: (ok: boolean) => void;
+		const setStatusAnimations = vi
+			.fn()
+			.mockReturnValueOnce(
+				new Promise<boolean>((resolve) => {
+					failFirst = resolve;
+				}),
+			)
+			.mockResolvedValue(true);
+		const sv = createView({
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "off",
+			setStatusAnimations,
+		});
+		const c = renderTo((sv as any).renderLed());
+		click(c, true);
+		click(c, false);
+		click(c, true);
+		await flush();
+		const update = vi.spyOn(sv, "requestUpdate");
+		failFirst(false);
+		await flush();
+
+		expect(update).not.toHaveBeenCalled();
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(true);
+		document.body.removeChild(c);
+	});
+
+	it("shows the latest click while an earlier call's state arrives", async () => {
+		const sv = createView({
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "off",
+			setStatusAnimations: vi.fn().mockResolvedValue(true),
+		});
+		const c = renderTo((sv as any).renderLed());
+		click(c, true);
+		render((sv as any).renderLed(), c);
+		click(c, false);
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(false);
+
+		// The first call's "on" arrives before the second call has finished.
+		sv.statusAnimationsState = "on";
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(false);
+
+		await flush();
+		sv.statusAnimationsState = "off";
+		render((sv as any).renderLed(), c);
+		sv.statusAnimationsState = "on";
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(true);
+		document.body.removeChild(c);
+	});
+
+	it("drops a pending position when the view shows another device", () => {
+		const sv = createView({
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "off",
+			setStatusAnimations: () => new Promise<boolean>(() => {}),
+		});
+		const c = renderTo((sv as any).renderLed());
+		click(c, true);
+
+		sv.statusAnimationsEntityId = "switch.other_led_status_animations";
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(false);
+
+		// Back on the first device, the toggle follows its entity again.
+		sv.statusAnimationsEntityId = ENTITY;
+		render((sv as any).renderLed(), c);
+		expect(toggleIn(c).checked).toBe(false);
+		document.body.removeChild(c);
+	});
+
+	it("is not part of the save payload", () => {
+		const sv = createView({
+			dirty: true,
+			statusAnimationsEntityId: ENTITY,
+			statusAnimationsState: "off",
+		});
+		let payload: any = null;
+		sv.addEventListener("save", ((e: CustomEvent) => {
+			payload = e.detail;
+		}) as EventListener);
+		(sv as any)._emitSave();
+		expect(Object.keys(payload).some((k) => k.includes("animation"))).toBe(
+			false,
+		);
 	});
 });
 
