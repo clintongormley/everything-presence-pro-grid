@@ -1,11 +1,8 @@
 """Each script in a Pro build is defined once.
 
 ESPHome's `!extend` on a script does not replace the original's steps: it
-appends the extension's `then:` to them. The CO2 LED scripts used to extend
-placeholders in everything-presence-pro-base.yaml, so every CO2 colour update
-first ran the placeholder's fade to off, dimming the LED about once a minute in
-Environmental mode. A script defined in two packages is the sign of that, so
-these tests require one definition per script id in the built config.
+appends the extension's `then:` to them, so both run. A script id defined in
+two packages is the sign of that.
 """
 
 from collections import Counter

@@ -2,10 +2,9 @@
 
 The LED's fade-out steps use `light.turn_on` (to clear an effect, then to dim
 to 1%) before `light.turn_off`. On an LED that is already off, `light.turn_on`
-switches it on again in its last colour and brightness, so the fade showed a
-faint flash of an old colour, e.g. the blue of the "Network Connecting" pulse
-after every reconnect in Manual Control. The fade-out steps must only run while
-the LED is on. (See firmware/common/everything-presence-pro-base.yaml.)
+switches it back on in its last colour and brightness, so the fade-out steps
+must run only while the LED is on. (See
+firmware/common/everything-presence-pro-base.yaml.)
 """
 
 import pytest
@@ -28,15 +27,16 @@ def _turn_off_steps(script_id: str) -> list:
 
 
 def _unguarded_turn_ons(steps: list) -> list:
-    """`light.turn_on` actions in `steps` that are not inside an `if` on LED_IS_ON."""
+    """`light.turn_on` actions in `steps` that are not in the `then` of an `if` on LED_IS_ON."""
     found = []
     for step in steps:
         if not isinstance(step, dict):
             continue
         if "light.turn_on" in step:
             found.append(step)
-        if "if" in step and step["if"].get("condition") != LED_IS_ON:
-            found += _unguarded_turn_ons(step["if"].get("then", []))
+        if "if" in step:
+            if step["if"].get("condition") != LED_IS_ON:
+                found += _unguarded_turn_ons(step["if"].get("then", []))
             found += _unguarded_turn_ons(step["if"].get("else", []))
     return found
 
