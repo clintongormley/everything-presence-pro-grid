@@ -10,5 +10,5 @@
   "issue_tracker": "https://github.com/clintongormley/everything-presence-pro-grid/issues",
   "loggers": ["aioesphomeapi"],
   "requirements": ["aioesphomeapi>=29.0.0"],
-  "version": "1.11.0"
+  "version": "1.11.0-beta.1"
 }
