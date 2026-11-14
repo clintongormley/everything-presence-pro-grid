@@ -1432,34 +1432,29 @@ definitions:
 ```python
 [
     {
-        "id": str,                  # UUID hex, server-assigned
-        "name": str,                # 1-128 chars
-        "area_id": str | None,      # HA area applied to the group's device
-        "sources": [str, ...],      # 1-8 member MACs (uppercase)
+        "id": str,  # UUID hex, server-assigned
+        "name": str,  # 1-128 chars
+        "area_id": str | None,  # HA area applied to the group's device
+        "sources": [str, ...],  # 1-8 member MACs (uppercase)
         "zone_groups": [
             {
                 "id": str,
-                "name": str,        # 1-128 chars
-                "members": [
-                    {"mac": str, "zone_index": int},   # zone_index 1-7 (named zones only)
-                    ...                                 # 0-16 members
-                ],
+                "name": str,  # 1-128 chars
+                # 0-16 members; zone_index 1-7 (named zones only)
+                "members": [{"mac": str, "zone_index": int}, ...],
             },
-            ...                     # up to MAX_ZONE_GROUPS_PER_DEVICE_GROUP (16)
+            ...,  # up to MAX_ZONE_GROUPS_PER_DEVICE_GROUP (16)
         ],
         # Opt-out exclusion fields (all default []); added by v3→v4 migration:
-        "excluded_presence": [str, ...],            # presence slot keys to suppress
-                                                    # e.g. ["static_presence"]
-        "excluded_zones": [                         # individual source zones to suppress
-            {"mac": str, "zone_index": int},        # zone_index 1-7
-            ...
-        ],
-        "excluded_zone_groups": [str, ...],         # zone-group ids to suppress; the
-                                                    # schema accepts any id, but the
-                                                    # editor only ever adds "rest_of_room"
-                                                    # (merged zones have no toggle)
+        # presence slot keys to suppress, e.g. ["static_presence"]
+        "excluded_presence": [str, ...],
+        # individual source zones to suppress; zone_index 1-7
+        "excluded_zones": [{"mac": str, "zone_index": int}, ...],
+        # zone-group ids to suppress; the schema accepts any id, but the editor
+        # only ever adds "rest_of_room" (merged zones have no toggle)
+        "excluded_zone_groups": [str, ...],
     },
-    ...                             # up to MAX_DEVICE_GROUPS (32)
+    ...,  # up to MAX_DEVICE_GROUPS (32)
 ]
 ```
 
