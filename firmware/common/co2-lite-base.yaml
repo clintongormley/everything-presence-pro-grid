@@ -2,7 +2,7 @@
 #
 # Kept separate from co2-base.yaml (the Pro's) because that file is half LED
 # code: the Pro drives its RGB LED from the CO2 reading, so its `co2.on_value`
-# runs `control_leds` and it `!extend`s the LED scripts to colour the ring by
+# runs `control_leds` and it defines the LED scripts that colour the ring by
 # air quality. None of that exists on a Lite, whose only indicator is a plain
 # status LED. What is left once the LED coupling is removed is the sensor and
 # its calibration button.
