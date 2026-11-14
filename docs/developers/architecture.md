@@ -994,8 +994,9 @@ alignment, environmental defaults, mmWave entity wiring, translation coverage.
 - **firmware-release.yml** — Tag-triggered firmware build + ESP Web Tools
     manifest publish
 - **pages.yml** — Stages `fw/` for OTA: `fw/latest/` from the GitHub `latest`
-    release, plus `fw/v{FIRMWARE_VERSION}/` for the version the integration pins
-    (even when it's a prerelease)
+    release, plus `fw/v{FIRMWARE_VERSION}/` for every version an installed
+    integration pins: `main`'s (even when it's a prerelease) and the latest
+    stable release's
 - **post-release-bump.yml** — On `release: released`, rolls `main` forward to
     the next minor (manifest only)
 - **codeql.yml** — CodeQL static analysis
@@ -1052,23 +1053,30 @@ notes are the version's `CHANGES.md` section, read by
 one, which today means every pre-release, gets GitHub's generated commit list
 instead.
 
-**pages.yml** — Triggers on push to main *and* on `release: released`. Stages
-firmware in two passes:
+**pages.yml** — Triggers on push to main *and* on `release: released`, and
+always builds from `main` (a `release` event's own ref is the tag, which would
+deploy that tag's docs and pin). Each deploy rebuilds the site from scratch, so
+only what these passes stage is served:
 
-1. `fw/latest/` from the GitHub `latest` release via `gh api /releases/latest`
-    (simpler than scanning + filtering). Since releases start as pre-releases,
-    `fw/latest/` stays on the previous promoted release until you promote the
-    new one; promotion fires `release: released`, re-running this workflow
-    without needing a fresh tag. This is the channel ESPHome's *native* update
-    entity reads, so it must only ever advance to a promoted (stable) release.
-1. `fw/v{FIRMWARE_VERSION}/` for the version the integration pins in `const.py`
-    — staged with `STAGE_LATEST=0` so it does **not** move `fw/latest/`. The
+1. `fw/v{version}/` (tag `v{version}`) and `fw/latest/` from the GitHub `latest`
+    release via `gh api /releases/latest` (simpler than scanning + filtering).
+    Since releases start as pre-releases, `fw/latest/` stays on the previous
+    promoted release until you promote the new one; promotion fires
+    `release: released`, re-running this workflow without needing a fresh tag.
+    This is the channel ESPHome's *native* update entity reads, so it must only
+    ever advance to a promoted (stable) release.
+1. `fw/v{FIRMWARE_VERSION}/` for every version an installed integration pins —
+    staged with `STAGE_LATEST=0` so it does **not** move `fw/latest/`. The
     panel's OTA button fetches `OTA_MANIFEST_BASE_URL` =
-    `fw/v{FIRMWARE_VERSION}/` (Path B), so without this pass a
-    prerelease-pinned integration 404s on every OTA. Skipped when the pinned
-    version already *is* `latest`. This is what lets beta testers OTA-update
-    onto a pre-release the GitHub `latest` pointer (and the native update entity)
-    deliberately ignore.
+    `fw/v{FIRMWARE_VERSION}/` (Path B), so a pin that isn't staged 404s on
+    every OTA. `.github/scripts/firmware_versions_to_publish.py` lists the
+    pins: `main`'s `const.py` (what lets beta testers OTA-update onto a
+    pre-release the GitHub `latest` pointer and the native update entity
+    deliberately ignore), and `const.py` at the latest stable tag. A release
+    that changed only the integration keeps the previous firmware (tag v1.10.0
+    pins 1.9.0), so without that second pin a beta that moves `main`'s pin
+    would break OTA for everyone on stable. A pin equal to the latest tag's
+    version is skipped, since the first pass already staged it.
 
 **post-release-bump.yml** — Triggers on `release: released` (promotion), not on
 tag push: every tag is published as a pre-release, so bumping at tag time would

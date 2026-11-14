@@ -49,7 +49,7 @@ def empty_zone_slots() -> list[dict[str, str] | None]:
 
 # Firmware version this integration requires.
 # Must match the firmware's Firmware Version text sensor value.
-# Bump when releasing new firmware. GitHub release tag is v{FIRMWARE_VERSION}.
+# Bump when releasing new firmware.
 FIRMWARE_VERSION = "1.9.0"
 
 # Original EPP firmware identifiers (for device discovery). The model string is

@@ -387,10 +387,12 @@ This site. MkDocs Material source.
 - **`hacs.yml`** — HACS integration validation.
 - **`hassfest.yml`** — HA integration metadata validation.
 - **`codeql.yml`** — CodeQL analysis (Python, JS/TS, C/C++).
-- **`pages.yml`** — builds and deploys this docs site to GitHub Pages, and
-    stages `fw/` from the GitHub `latest` release. Triggers on push to main
-    *and* on `release: released`, so promoting a pre-release to latest
-    republishes Pages without needing a fresh tag.
+- **`pages.yml`** — builds and deploys this docs site to GitHub Pages from
+    `main`, and stages `fw/`: `fw/latest/` and `fw/v{version}/` from the GitHub
+    `latest` release, plus `fw/v{FIRMWARE_VERSION}/` for main's pin and the
+    latest stable release's pin. Triggers on push to main *and* on
+    `release: released`, so promoting a pre-release to latest republishes Pages
+    without needing a fresh tag.
 - **`firmware-release.yml`** — on tag push, validates that the manifest,
     `manifest.json`, and `FIRMWARE_VERSION` all agree (via
     `.github/scripts/validate-release.sh`), then compiles the firmware variants
