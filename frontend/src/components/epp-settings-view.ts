@@ -286,11 +286,12 @@ export class EppSettingsView extends LitElement {
 	 * call has succeeded and the entity's state confirms it, the call failed,
 	 * or `STATUS_ANIMATIONS_CONFIRM_MS` passed after the call without a
 	 * confirmation (the device may have dropped the command, e.g. in a
-	 * connection blip: the toggle then shows what the switch reports). Without it, the frequent re-renders would put the toggle back to
-	 * the last reported state in the meantime (and, with two quick clicks,
-	 * show the state the first one reports). It belongs to one entity: the
-	 * view is reused when the panel switches device. Non-reactive and settled
-	 * in render(), like `_localDirty`.
+	 * connection blip: the toggle then shows what the switch reports).
+	 * Without it, the frequent re-renders would put the toggle back to the
+	 * last reported state in the meantime (and, with two quick clicks, show
+	 * the state the first one reports). It belongs to one entity: the view is
+	 * reused when the panel switches device. Non-reactive and settled in
+	 * render(), like `_localDirty`.
 	 *
 	 * `changed` tells whether the entity has reported the other position since
 	 * the click: only then is a state equal to `on` news. After two quick

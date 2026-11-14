@@ -434,32 +434,22 @@ describe("_setStatusAnimations", () => {
 	});
 });
 
-describe("a stale LED Status Animations switch", () => {
+describe("a LED Status Animations switch Home Assistant has no state for", () => {
 	const ENTITY = "switch.epp_led_status_animations";
 
-	it("loads the device list again, once, when its state goes missing", () => {
+	it("hides the toggle and leaves the device list alone", () => {
 		const a = createPanel() as any;
 		a._devices = [
 			{ ...a._devices[0], led_status_animations_entity_id: ENTITY },
 		];
 		const load = vi.spyOn(a, "_loadDevices").mockResolvedValue(undefined);
 
-		a.hass = { ...a.hass, states: { [ENTITY]: { state: "on" } } };
-		a._reloadDevicesForAStaleStatusAnimationsSwitch();
-		expect(load).not.toHaveBeenCalled();
-
-		// renamed: the old entity_id has no state anymore
+		// renamed or disabled since the device list was loaded
 		a.hass = { ...a.hass, states: {} };
-		a._reloadDevicesForAStaleStatusAnimationsSwitch();
-		a._reloadDevicesForAStaleStatusAnimationsSwitch();
-		expect(load).toHaveBeenCalledTimes(1);
-	});
-
-	it("is checked whenever hass changes", () => {
-		const a = createPanel() as any;
-		const check = vi.spyOn(a, "_reloadDevicesForAStaleStatusAnimationsSwitch");
 		a.willUpdate(new Map([["hass", undefined]]));
-		expect(check).toHaveBeenCalledTimes(1);
+
+		expect(a._statusAnimationsEntityId()).toBeNull();
+		expect(load).not.toHaveBeenCalled();
 	});
 });
 

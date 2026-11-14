@@ -1289,7 +1289,6 @@ export class EPPGridPanel extends LitElement {
 				this._currentLang = newLang;
 				this._localize = setupLocalize(this.hass);
 			}
-			this._reloadDevicesForAStaleStatusAnimationsSwitch();
 		}
 		// `_sidebarTab` is the editor's sub-tab — meaningful only when
 		// `_view === "editor"`. Six code paths set `_view = "live"` without
@@ -2134,31 +2133,6 @@ export class EPPGridPanel extends LitElement {
 		)?.led_status_animations_entity_id;
 		return entityId && this.hass?.states?.[entityId] ? entityId : null;
 	}
-
-	/**
-	 * The device list is only loaded now and then, so a switch renamed or
-	 * disabled meanwhile is noticed by its state going missing: the list is
-	 * loaded again then, for the switch's current entity_id. Once per entity,
-	 * so a list that still names it can't cause a loop.
-	 */
-	private _reloadDevicesForAStaleStatusAnimationsSwitch(): void {
-		const entityId = this._devices.find(
-			(d) => d.mac === this._selectedMac,
-		)?.led_status_animations_entity_id;
-		if (
-			!entityId ||
-			!this.hass?.states ||
-			this.hass.states[entityId] ||
-			entityId === this._staleStatusAnimationsEntityId
-		) {
-			return;
-		}
-		this._staleStatusAnimationsEntityId = entityId;
-		void this._loadDevices();
-	}
-
-	/** The switch entity the device list was last reloaded for. */
-	private _staleStatusAnimationsEntityId: string | null = null;
 
 	private async _cancelSettings(): Promise<void> {
 		this._dirty = false;
