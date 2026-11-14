@@ -39,8 +39,13 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
+      # Always main, whatever fired the run: on a promotion (`release`) the
+      # event's ref is the release tag, which would deploy that tag's docs and
+      # drop the firmware main pins. fetch-depth 0 brings the tags, whose
+      # const.py firmware_versions_to_publish.py reads.
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.repository.default_branch }}
           fetch-depth: 0
       - uses: actions/setup-python@v6
         with:
@@ -69,32 +74,21 @@ jobs:
             exit 1
           fi
           VERSION="${LATEST#v}" ARTIFACTS=artifacts ./.github/scripts/stage-firmware.sh
-          # Also stage the version the *integration* pins itself to, even when
-          # it is a prerelease that never becomes /releases/latest. The panel's
-          # OTA button fetches fw/v{FIRMWARE_VERSION}/{variant}.json (Path B in
-          # const.py), so a beta-pinned integration 404s on every OTA unless its
-          # manifest is published here. STAGE_LATEST=0 leaves fw/latest/ on the
-          # stable release above, so ESPHome's native update entity stays on it.
-          # awk first-match-exit (POSIX, no PCRE; no `head -1`, so no SIGPIPE/141
-          # under pipefail if const.py ever grows a second matching line) and
-          # fail-soft: an unreadable/unmatched const.py prints nothing → PINNED
-          # empty → warn and skip, never hard-fail the Pages deploy (docs +
-          # fw/latest/) under `set -e -o pipefail`.
-          # NOTE: FIRMWARE_VERSION is also parsed in .github/scripts/validate-release.sh
-          # and bin/release.sh — keep the patterns in sync if const.py's line format changes.
-          # `2>/dev/null || true`: a missing/unreadable const.py makes awk exit
-          # non-zero, which under `set -e` would abort the whole deploy — swallow
-          # it so the [ -z ] guard always gets to warn-and-skip (fail-soft).
-          PINNED=$(awk -F'"' '/^FIRMWARE_VERSION[ \t]*=/{print $2; exit}' custom_components/eppgrid/const.py 2>/dev/null || true)
-          if [ -z "$PINNED" ]; then
-            echo "::warning::Could not read FIRMWARE_VERSION from const.py — skipping pinned OTA staging"
-          elif [ "v$PINNED" != "$LATEST" ]; then
-            echo "Pinned firmware v$PINNED differs from latest $LATEST — staging it for the OTA path"
-            # A missing/empty pinned release IS a release-integrity error (the OTA
-            # source of truth is gone), so fail loud here — same as the latest pass
-            # above. In practice the pin always has a published release: every tag
-            # builds firmware (firmware-release.yml) and this pass runs via
-            # workflow_run after it, so the tag + binaries exist by now.
+          # Also publish every firmware version an installed integration pins
+          # (FIRMWARE_VERSION): the panel's update tab fetches
+          # fw/v{FIRMWARE_VERSION}/{variant}.json (Path B in const.py), and each
+          # deploy rebuilds the site from scratch. That is main's pin (e.g. a
+          # beta being tested) and the latest stable release's pin, which stays
+          # on the previous firmware when a release changed only the integration
+          # (tag v1.10.0 pins 1.9.0). STAGE_LATEST=0 leaves fw/latest/ on the
+          # stable release above, for ESPHome's own update entity.
+          # An assignment, so a failure in the script stops the step (`bash -e`
+          # ignores one inside a `for ... in $(...)`).
+          PINS=$(python3 .github/scripts/firmware_versions_to_publish.py --latest-tag "$LATEST")
+          for PINNED in $PINS; do
+            echo "Staging pinned firmware v$PINNED for the OTA path"
+            # A pinned release without binaries IS a release-integrity error (the
+            # OTA source of truth is gone), so fail loud, as for latest above.
             rm -rf artifacts-pinned && mkdir -p artifacts-pinned
             gh release download "v$PINNED" -D artifacts-pinned --pattern 'everything-presence-pro-*'
             if ! ls artifacts-pinned/*.bin >/dev/null 2>&1; then
@@ -102,7 +96,7 @@ jobs:
               exit 1
             fi
             VERSION="$PINNED" ARTIFACTS=artifacts-pinned STAGE_LATEST=0 ./.github/scripts/stage-firmware.sh
-          fi
+          done
       - name: Build mkdocs site
         run: mkdocs build --strict
       - name: Copy firmware manifests into site
@@ -169,26 +163,34 @@ jobs:
             echo "No latest release — no firmware staged, nothing to verify."
             exit 0
           fi
-          # FIRMWARE_VERSION is the version the integration's OTA button pins to
-          # (fw/v{PINNED}/). Same awk as the staging step above and
-          # validate-release.sh — keep in sync if const.py's line format changes.
-          # `2>/dev/null || true` so an unreadable const.py can't hard-fail the
-          # step at the assignment under `set -e`; the guard below then emits a
-          # clear, actionable error instead of running the verifier with an
-          # empty --version (which would build bogus fw/v//… URLs).
-          PINNED=$(awk -F'"' '/^FIRMWARE_VERSION[ \t]*=/{print $2; exit}' custom_components/eppgrid/const.py 2>/dev/null || true)
-          if [ -z "$PINNED" ]; then
-            echo "::error::could not parse FIRMWARE_VERSION from custom_components/eppgrid/const.py — cannot verify the pinned OTA manifests"
-            exit 1
-          fi
-          # fw/latest only carries the variants in the promoted-latest release:
-          # a variant newer than stable is staged under fw/v{pinned}/ but skipped
-          # for fw/latest (stage-firmware.sh) until its release is promoted, so
-          # checking fw/latest for it would 404. Derive the set from what staging
-          # actually wrote rather than assuming every variant is in stable.
-          LATEST_VARIANTS=$(find site/fw/latest -maxdepth 1 -name '*.json' -exec basename {} .json \; 2>/dev/null | paste -sd, -)
+          # Check exactly what staging wrote: each variant set comes from the
+          # site, because a release only carries the variants that existed when
+          # it was cut (stage-firmware.sh skips the others).
+          # An empty set would verify nothing and pass, so it fails here instead.
+          variants_in() {
+            local found
+            found=$(find "site/fw/$1" -maxdepth 1 -name '*.json' -exec basename {} .json \; 2>/dev/null | paste -sd, -)
+            if [ -z "$found" ]; then
+              echo "::error::no firmware manifests staged under fw/$1/" >&2
+              return 1
+            fi
+            echo "$found"
+          }
+          # Assignments, not inline $(...): `bash -e` stops on a failing
+          # command substitution only in an assignment.
+          RELEASE_VARIANTS=$(variants_in "$LATEST")
+          LATEST_VARIANTS=$(variants_in latest)
           python3 .github/scripts/verify_deployed_firmware.py \
             --base-url "$PAGE_URL" \
-            --version "$PINNED" \
+            --version "${LATEST#v}" \
+            --variants "$RELEASE_VARIANTS" \
             --latest-version "${LATEST#v}" \
             --latest-variants "$LATEST_VARIANTS"
+          PINS=$(python3 .github/scripts/firmware_versions_to_publish.py --latest-tag "$LATEST")
+          for PINNED in $PINS; do
+            PINNED_VARIANTS=$(variants_in "v$PINNED")
+            python3 .github/scripts/verify_deployed_firmware.py \
+              --base-url "$PAGE_URL" \
+              --version "$PINNED" \
+              --variants "$PINNED_VARIANTS"
+          done
