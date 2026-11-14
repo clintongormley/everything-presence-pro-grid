@@ -69,28 +69,25 @@ def _can_be_in_flight(script: dict) -> bool:
 
 def test_control_leds_stops_every_mode_script_that_can_be_in_flight():
     """stop_led_mode_scripts stops exactly the scripts control_leds can reach that delay or loop."""
-    # The CO2 build extends the mode scripts (a second entry with the same id),
-    # so both definitions count. control_leds_connecting re-checks the
-    # connection after its delay instead (test_firmware_led_connecting_guard.py).
-    scripts: dict[str, list[dict]] = {}
-    for script in load_variant(WIFI_VARIANT_YAML)["script"]:
-        scripts.setdefault(script["id"], []).append(script)
+    # Each script is defined once (test_firmware_scripts_defined_once.py).
+    # control_leds_connecting re-checks the connection after its delay instead
+    # (test_firmware_led_connecting_guard.py).
+    scripts = {script["id"]: script for script in load_variant(WIFI_VARIANT_YAML)["script"]}
 
     reachable: set[str] = set()
     pending = ["control_leds"]
     while pending:
-        for script in scripts[pending.pop()]:
-            for name in _started_scripts(script) - reachable:
-                reachable.add(name)
-                pending.append(name)
+        for name in _started_scripts(scripts[pending.pop()]) - reachable:
+            reachable.add(name)
+            pending.append(name)
     in_flight = {
         name
         for name in reachable - {"control_leds_connecting", "stop_led_mode_scripts"}
-        if any(_can_be_in_flight(script) for script in scripts[name])
+        if _can_be_in_flight(scripts[name])
     }
 
     assert "stop_led_mode_scripts" in scripts, "stop_led_mode_scripts script not found in firmware YAML"
-    (stop_script,) = scripts["stop_led_mode_scripts"]
+    stop_script = scripts["stop_led_mode_scripts"]
     assert not _can_be_in_flight(stop_script), "control_leds relies on it having finished when execute() returns"
     stopped = {action["script.stop"] for action in stop_script["then"]}
     assert stopped == in_flight, (

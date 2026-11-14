@@ -32,7 +32,7 @@ button:
           id: scd40
 
 script:
-  - id: !extend update_environmental_led
+  - id: update_environmental_led
     mode: restart
     then:
       - lambda: |-
@@ -111,12 +111,12 @@ script:
                 id: led_rgb
                 effect: "Environmental Alert"
 
-  - id: !extend control_leds_environmental_presence
+  - id: control_leds_environmental_presence
     mode: restart
     then:
       - script.execute: alternate_presence_environmental
 
-  - id: !extend alternate_presence_environmental
+  - id: alternate_presence_environmental
     mode: restart
     then:
       - while:

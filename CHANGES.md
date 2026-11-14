@@ -13,6 +13,14 @@ firmware downloads, see the
     device, **LED Status Animations**, so an automation can turn the animations
     off at night. Needs the firmware from this release. Thanks to @markusressel
     for contributing this (#451).
+- In the **Environmental** and **Environmental + Occupancy** LED modes, the LED
+    no longer dims to off before it shows the CO₂ colour. This happened with
+    every new CO₂ reading (once a minute) in Environmental mode, and every 8 to
+    13 seconds in Environmental + Occupancy mode. Needs the firmware from this
+    release.
+- The Pro's LED no longer flashes faintly in its last colour when it is turned
+    off while already off, for example when you switch the LED mode to **Manual
+    Control** while the LED is off. Needs the firmware from this release.
 
 ## v1.10.0 — 2026-11-05
 
