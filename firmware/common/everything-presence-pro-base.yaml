@@ -131,7 +131,8 @@ api:
       then:
         - lambda: |-
             ESP_LOGI("epp", "epp_set_static_presence: min_range=%.1f max_range=%.1f trigger_range=%.1f sustain_sensitivity=%d trigger_sensitivity=%d on_delay=%.2f led_enabled=%s",
-                     min_range, max_range, trigger_range, sustain_sensitivity, trigger_sensitivity, on_delay, led_enabled ? "true" : "false");
+                     min_range, max_range, trigger_range, static_cast<int>(sustain_sensitivity),
+                     static_cast<int>(trigger_sensitivity), on_delay, led_enabled ? "true" : "false");
         - uart.write:
             id: uart_bus_dfrobot
             data: "sensorStop\r\n"
@@ -151,7 +152,8 @@ api:
         - uart.write:
             id: uart_bus_dfrobot
             data: !lambda |-
-              auto ms = str_sprintf("setSensitivity %d %d\r\n", sustain_sensitivity, trigger_sensitivity);
+              auto ms = str_sprintf("setSensitivity %d %d\r\n", static_cast<int>(sustain_sensitivity),
+                                    static_cast<int>(trigger_sensitivity));
               return std::vector<unsigned char>(ms.begin(), ms.end());
         - delay: 1s
         - uart.write:
@@ -337,7 +339,7 @@ binary_sensor:
 light:
   - platform: esp32_rmt_led_strip
     id: led_rgb
-    rgb_order: GRB
+    channel_colors: GRB
     pin:
       number: GPIO2
       ignore_strapping_warning: true

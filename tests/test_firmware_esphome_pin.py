@@ -11,7 +11,7 @@ local build on 2026.3.1 did not. See test_firmware_heap_diagnostics.py.
 Pinning makes builds reproducible across CI and local dev:
 
   1. firmware/requirements.txt        — exact `esphome==X.Y.Z` used by CI + local.
-  2. esphome.min_version in base.yaml — floor for DIY adopters who build from the
+  2. esphome.min_version in epp-core.yaml — floor for DIY adopters who build from the
        package_import_url with their own ESPHome (the CI pin can't reach them).
 
 Invariant: min_version <= pin. You must never declare a minimum above the
@@ -73,7 +73,7 @@ def test_requirements_pins_esphome_exactly():
     assert re.fullmatch(r"\d+\.\d+\.\d+", pin), f"ESPHome pin {pin!r} should be a concrete X.Y.Z release."
 
 
-def test_base_yaml_declares_min_version():
+def test_core_yaml_declares_min_version():
     """A min_version floor protects DIY builds from too-old ESPHome."""
     _read_min_version()
 

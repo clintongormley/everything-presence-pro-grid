@@ -9,6 +9,7 @@
 #include "esphome/core/log.h"
 
 #include <algorithm>
+#include <cinttypes>
 #include <cmath>
 #include <cstddef>
 #include <cstring>
@@ -221,7 +222,7 @@ void EPPComponent::loop() {
   // otherwise the first frame after cold-start would trip the !stale &&
   // was_stale_ branch and log a spurious "frames recovered" line.
   if (stale && !was_stale_ && has_received_frame_) {
-    ESP_LOGW(TAG, "LD2450 frames stale (last frame %ums ago); publishing offline state",
+    ESP_LOGW(TAG, "LD2450 frames stale (last frame %" PRIu32 "ms ago); publishing offline state",
              now - last_frame_ms_);
   } else if (!stale && was_stale_) {
     ESP_LOGI(TAG, "LD2450 frames recovered");
@@ -240,7 +241,7 @@ void EPPComponent::loop() {
   TrackerHealth health = tracker_health(now, last_frame_ms_, has_received_frame_,
                                         boot_ms_, STALE_FRAME_MS);
   if (health == TrackerHealth::OFFLINE && !has_received_frame_ && !never_came_up_warned_) {
-    ESP_LOGW(TAG, "LD2450 has sent no frames %ums after boot; tracking sensor may be "
+    ESP_LOGW(TAG, "LD2450 has sent no frames %" PRIu32 "ms after boot; tracking sensor may be "
                   "disconnected or dead",
              now - boot_ms_);
     never_came_up_warned_ = true;
@@ -430,7 +431,7 @@ void EPPComponent::loop() {
     // indefinitely with monotonically growing totals.
     uint32_t drop_delta = frames_dropped_ - last_frames_dropped_log_;
     if (drop_delta >= FRAME_DROP_LOG_THRESHOLD) {
-      ESP_LOGW(TAG, "LD2450 frame ring buffer dropped %u frames in %ums (total %u)",
+      ESP_LOGW(TAG, "LD2450 frame ring buffer dropped %" PRIu32 " frames in %" PRIu32 "ms (total %" PRIu32 ")",
                drop_delta, now - last_frames_dropped_log_ts_, frames_dropped_);
       last_frames_dropped_log_ = frames_dropped_;
       last_frames_dropped_log_ts_ = now;
@@ -540,11 +541,11 @@ void EPPComponent::dump_config() {
   ESP_LOGCONFIG(TAG, "EPP Zone Engine:");
   ESP_LOGCONFIG(TAG, "  Firmware Version: %s", FIRMWARE_VERSION_STR);
   ESP_LOGCONFIG(TAG, "  Throttle intervals (ms, 0 = disabled):");
-  ESP_LOGCONFIG(TAG, "    display:       %u", display_interval_ms_);
-  ESP_LOGCONFIG(TAG, "    zone_state:    %u", zone_state_interval_ms_);
-  ESP_LOGCONFIG(TAG, "    entity_target: %u", entity_target_interval_ms_);
-  ESP_LOGCONFIG(TAG, "    entity_zone:   %u", entity_zone_interval_ms_);
-  ESP_LOGCONFIG(TAG, "    system:        %u (fixed)", SYSTEM_INTERVAL_MS);
+  ESP_LOGCONFIG(TAG, "    display:       %" PRIu32, display_interval_ms_);
+  ESP_LOGCONFIG(TAG, "    zone_state:    %" PRIu32, zone_state_interval_ms_);
+  ESP_LOGCONFIG(TAG, "    entity_target: %" PRIu32, entity_target_interval_ms_);
+  ESP_LOGCONFIG(TAG, "    entity_zone:   %" PRIu32, entity_zone_interval_ms_);
+  ESP_LOGCONFIG(TAG, "    system:        %" PRIu32 " (fixed)", SYSTEM_INTERVAL_MS);
   ESP_LOGCONFIG(TAG, "  Sensor wiring:");
   ESP_LOGCONFIG(TAG, "    device_tracking:  %s", device_tracking_sensor_ ? "yes" : "no");
   ESP_LOGCONFIG(TAG, "    tracking_health:  %s", tracking_health_sensor_ ? "yes" : "no");

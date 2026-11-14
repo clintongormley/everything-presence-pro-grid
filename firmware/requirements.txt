@@ -7,7 +7,7 @@
 # added in 2026.4.0 — see tests/test_firmware_heap_diagnostics.py).
 #
 # When bumping: read the ESPHome changelog for breaking changes, bump
-# esphome.min_version in firmware/common/everything-presence-pro-base.yaml to
+# esphome.min_version in firmware/common/epp-core.yaml to
 # match (kept consistent by tests/test_firmware_esphome_pin.py), test-build and
 # flash, then treat it as a firmware version bump + release.
-esphome==2026.5.3
+esphome==2026.10.2

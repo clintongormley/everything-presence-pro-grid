@@ -58,12 +58,23 @@ jobs:
           DEVICE_NAME=$(esphome config "firmware/variants/${{ matrix.variant }}.yaml" \
             | awk '/^esphome:/{f=1} f && /^  name:/{print $2; exit}')
           test -n "$DEVICE_NAME" || { echo "::error::could not resolve device name"; exit 1; }
-          BUILD_DIR="firmware/variants/.esphome/build/${DEVICE_NAME}/.pioenvs/${DEVICE_NAME}"
+          # ESP-IDF's build folder. flasher_args.json names the file for each
+          # flash part; the manifest step below and .github/scripts/stage-firmware.sh
+          # hard-code their offsets, so stop here if ESP-IDF ever moves one.
+          BUILD_DIR="firmware/variants/.esphome/build/${DEVICE_NAME}/build"
+          FLASHER_ARGS="$BUILD_DIR/flasher_args.json"
+          test -f "$FLASHER_ARGS" || { echo "::error::$FLASHER_ARGS missing; ESPHome's build layout moved"; exit 1; }
+          jq -e '.bootloader.offset == "0x1000" and ."partition-table".offset == "0x8000" and .app.offset == "0x10000"' \
+            "$FLASHER_ARGS" > /dev/null \
+            || { echo "::error::flash offsets in $FLASHER_ARGS no longer match the manifest"; exit 1; }
+          BOOTLOADER="$BUILD_DIR/$(jq -er '.bootloader.file' "$FLASHER_ARGS")"
+          PARTITIONS="$BUILD_DIR/$(jq -er '."partition-table".file' "$FLASHER_ARGS")"
+          APP="$BUILD_DIR/$(jq -er '.app.file' "$FLASHER_ARGS")"
           VARIANT="everything-presence-pro-${{ matrix.variant }}"
           cp "$BUILD_DIR/firmware.ota.bin" "dist/${VARIANT}.ota.bin"
-          cp "$BUILD_DIR/bootloader.bin" "dist/${VARIANT}-bootloader.bin"
-          cp "$BUILD_DIR/partitions.bin" "dist/${VARIANT}-partitions.bin"
-          cp "$BUILD_DIR/firmware.bin" "dist/${VARIANT}.bin"
+          cp "$BOOTLOADER" "dist/${VARIANT}-bootloader.bin"
+          cp "$PARTITIONS" "dist/${VARIANT}-partitions.bin"
+          cp "$APP" "dist/${VARIANT}.bin"
       - name: Generate ESP Web Tools manifest
         run: |
           VER="${{ steps.version.outputs.version }}"
