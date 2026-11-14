@@ -21,6 +21,11 @@ firmware downloads, see the
 - The Pro's LED no longer flashes faintly in its last colour when it is turned
     off while already off, for example when you switch the LED mode to **Manual
     Control** while the LED is off. Needs the firmware from this release.
+- In the **Occupancy** LED modes, the LED no longer ends up off in an occupied
+    room, or lit in an empty one, when occupancy changes twice within about half
+    a second. Needs the firmware from this release.
+- If you build the firmware yourself, you now need ESPHome 2026.10.2 or newer
+    (`pip install -r firmware/requirements.txt`).
 
 ## v1.10.0 — 2026-11-05
 
