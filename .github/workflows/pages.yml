@@ -82,7 +82,8 @@ jobs:
           # deploy rebuilds the site from scratch. That is main's pin (e.g. a
           # beta being tested) and the latest stable release's pin, which stays
           # on the previous firmware when a release changed only the integration
-          # (tag v1.10.0 pins 1.9.0). STAGE_LATEST=0 leaves fw/latest/ on the
+          # (tag v1.10.0 pins 1.9.0), unless it was a final release replacing a
+          # pre-release firmware version. STAGE_LATEST=0 leaves fw/latest/ on the
           # stable release above, for ESPHome's own update entity.
           # An assignment, so a failure in the script stops the step (`bash -e`
           # ignores one inside a `for ... in $(...)`).
