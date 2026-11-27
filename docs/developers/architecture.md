@@ -1078,10 +1078,11 @@ only what these passes stage is served:
     pre-release the GitHub `latest` pointer and the native update entity
     deliberately ignore), and `const.py` at the latest stable tag. A release
     that changed only the integration keeps the previous firmware (tag v1.10.0
-    pins 1.9.0) unless it is a final release replacing a pre-release firmware
-    version, so without that second pin a beta that moves `main`'s pin would
-    break OTA for everyone on stable. A pin equal to the latest tag's version
-    is skipped, since the first pass already staged it.
+    pins 1.9.0), so without that second pin a beta that moves `main`'s pin
+    would break OTA for everyone on stable. The exception is a final release
+    replacing a pre-release firmware version, which pins its own version. A pin
+    equal to the latest tag's version is skipped, since the first pass already
+    staged it.
 
 **post-release-bump.yml** — Triggers on `release: released` (promotion), not on
 tag push: every tag is published as a pre-release, so bumping at tag time would

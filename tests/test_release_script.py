@@ -278,6 +278,25 @@ def test_final_release_with_firmware_changes_after_a_prerelease_says_firmware_ch
     assert "Firmware-changing release: bumped firmware versions to 0.93.0." in message
 
 
+def test_final_release_with_firmware_changes_lower_than_the_firmware_prerelease_is_refused(tmp_path: Path):
+    _init_repo(tmp_path)
+    _release_firmware_prerelease(tmp_path, "1.12.0-beta.1")
+    (tmp_path / "firmware" / "common" / "hardware.yaml").write_text("# another firmware change\n")
+    _git("commit", "-qam", "firmware: change hardware.yaml", cwd=tmp_path)
+    const_py = tmp_path / "custom_components" / "eppgrid" / "const.py"
+    before = const_py.read_text()
+
+    result = _run(tmp_path, "1.11.0", "--no-push")
+    assert result.returncode != 0
+    assert "✗" in result.stderr
+    assert "1.12.0-beta.1" in result.stderr
+    assert "1.11.0" in result.stderr
+    assert "release preparation failed" not in result.stderr, "stopped only after the branch existed"
+    assert _current_branch(tmp_path) == "main"
+    assert _branches(tmp_path, "release-v1.11.0") == ""
+    assert const_py.read_text() == before
+
+
 @pytest.mark.parametrize("version", ["0.93.0-rc.1", "0.93.0-beta.1", "0.93.0-alpha.1"])
 def test_prerelease_after_a_firmware_prerelease_leaves_firmware_alone(tmp_path: Path, version: str):
     """An integration-only follow-up pre-release keeps the earlier pre-release's
@@ -299,7 +318,7 @@ def test_prerelease_after_a_firmware_prerelease_leaves_firmware_alone(tmp_path: 
 
 @pytest.mark.parametrize(
     ("prerelease", "final"),
-    [("1.12.0-beta.1", "1.11.0"), ("1.0.0-beta.1", "0.99.0"), ("0.93.1-rc.1", "0.93.0")],
+    [("1.12.0-beta.1", "1.11.0"), ("1.0.0-beta.1", "0.99.0"), ("0.93.1-rc.1", "0.93.0"), ("1.10.0-beta.1", "1.9.99")],
 )
 def test_final_release_lower_than_the_firmware_prerelease_is_refused(tmp_path: Path, prerelease: str, final: str):
     _init_repo(tmp_path)
@@ -318,7 +337,9 @@ def test_final_release_lower_than_the_firmware_prerelease_is_refused(tmp_path: P
     assert const_py.read_text() == before
 
 
-@pytest.mark.parametrize(("prerelease", "final"), [("0.92.1-beta.1", "0.93.0"), ("0.93.0-beta.1", "1.0.0")])
+@pytest.mark.parametrize(
+    ("prerelease", "final"), [("0.92.1-beta.1", "0.93.0"), ("0.93.0-beta.1", "1.0.0"), ("1.9.0-beta.1", "1.10.0")]
+)
 def test_final_release_higher_than_the_firmware_prerelease_bumps_firmware(tmp_path: Path, prerelease: str, final: str):
     _init_repo(tmp_path)
     _release_firmware_prerelease(tmp_path, prerelease)
@@ -330,6 +351,10 @@ def test_final_release_higher_than_the_firmware_prerelease_bumps_firmware(tmp_pa
         "show", f"release-v{final}:custom_components/eppgrid/const.py", cwd=tmp_path, capture_output=True, text=True
     ).stdout
     assert f'FIRMWARE_VERSION = "{final}"' in const_py
+    base_yaml = _git(
+        "show", f"release-v{final}:firmware/common/epp-core.yaml", cwd=tmp_path, capture_output=True, text=True
+    ).stdout
+    assert f'version: "{final}"' in base_yaml
 
 
 def test_succeeds_when_versions_already_at_target(tmp_path: Path):

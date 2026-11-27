@@ -126,17 +126,22 @@ fi
 # since that pre-release's tag.
 REPLACES_FW_PRERELEASE=false
 if [[ "$FIRMWARE_CHANGED" = "false" && "$FW_VERSION" == *-* && "$VERSION" != *-* ]]; then
+  FIRMWARE_CHANGED=true
+  REPLACES_FW_PRERELEASE=true
+fi
+
+# Whichever way the firmware gets bumped, a final release must not move it
+# below the pre-release it carries now.
+if [[ "$FIRMWARE_CHANGED" = "true" && "$FW_VERSION" == *-* && "$VERSION" != *-* ]]; then
   IFS=. read -r FW_MAJOR FW_MINOR FW_PATCH <<<"${FW_VERSION%%-*}"
   IFS=. read -r NEW_MAJOR NEW_MINOR NEW_PATCH <<<"$VERSION"
   if ((10#$NEW_MAJOR < 10#$FW_MAJOR ||
     (10#$NEW_MAJOR == 10#$FW_MAJOR && (10#$NEW_MINOR < 10#$FW_MINOR ||
     (10#$NEW_MINOR == 10#$FW_MINOR && 10#$NEW_PATCH < 10#$FW_PATCH))))); then
     echo "✗ firmware is already at pre-release $FW_VERSION, newer than $VERSION" >&2
-    echo "  a final release must not give the same firmware a lower version; release ${FW_VERSION%%-*} or higher" >&2
+    echo "  a final release must not give the firmware a lower version; release ${FW_VERSION%%-*} or higher" >&2
     exit 1
   fi
-  FIRMWARE_CHANGED=true
-  REPLACES_FW_PRERELEASE=true
 fi
 
 STAMP_CHANGELOG=false
