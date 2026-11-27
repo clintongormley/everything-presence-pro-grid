@@ -989,7 +989,7 @@ alignment, environmental defaults, mmWave entity wiring, translation coverage.
     latest upstream deps (HA stable, beta and dev, latest aioesphomeapi,
     frontend deps resolved fresh); catches breaking upstream releases between
     commits
-- **firmware.yml** — C++ tests + ESPHome compilation for both variants (on push
+- **firmware.yml** — C++ tests + ESPHome compilation for every variant (on push
     to main touching `firmware/`)
 - **firmware-release.yml** — Tag-triggered firmware build + ESP Web Tools
     manifest publish
@@ -1042,12 +1042,12 @@ that takes `## Unreleased`.
 **firmware-release.yml** — Triggered by tag push (`v*`). First runs
 `.github/scripts/validate-release.sh`, which fails the workflow if
 `manifest.json` ≠ tag, or if the three firmware-version files (manifest
-template, `FIRMWARE_VERSION`, etc.) disagree. It then **always** compiles both
-variants, generates ESP Web Tools manifests, and publishes them as release
-assets — every tag rebuilds firmware unconditionally, so an integration-only
-release attaches a byte-identical rebuild of the unchanged firmware (the
-integration keeps `FIRMWARE_VERSION` pointed at the last release that bumped the
-firmware). **Every release is published as a pre-release** (`prerelease=true`,
+template, `FIRMWARE_VERSION`, etc.) disagree. It then **always** compiles every
+variant, generates ESP Web Tools manifests, and publishes them as release assets
+— every tag rebuilds firmware unconditionally, so an integration-only release
+attaches a byte-identical rebuild of the unchanged firmware (the integration
+keeps `FIRMWARE_VERSION` pointed at the last release that bumped the firmware).
+**Every release is published as a pre-release** (`prerelease=true`,
 `make_latest=false`) — none are ever auto-marked the GitHub `latest`. After
 testing, promote with `bin/promote.sh <version>` (which runs
 `gh release edit v<version> --prerelease=false --latest=true`). The release
@@ -1077,9 +1077,10 @@ only what these passes stage is served:
     pre-release the GitHub `latest` pointer and the native update entity
     deliberately ignore), and `const.py` at the latest stable tag. A release
     that changed only the integration keeps the previous firmware (tag v1.10.0
-    pins 1.9.0), so without that second pin a beta that moves `main`'s pin
-    would break OTA for everyone on stable. A pin equal to the latest tag's
-    version is skipped, since the first pass already staged it.
+    pins 1.9.0) unless it is a final release replacing a pre-release firmware
+    version, so without that second pin a beta that moves `main`'s pin would
+    break OTA for everyone on stable. A pin equal to the latest tag's version
+    is skipped, since the first pass already staged it.
 
 **post-release-bump.yml** — Triggers on `release: released` (promotion), not on
 tag push: every tag is published as a pre-release, so bumping at tag time would
