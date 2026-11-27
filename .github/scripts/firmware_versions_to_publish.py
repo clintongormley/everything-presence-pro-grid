@@ -8,8 +8,9 @@ installed integration can ask for has to be published on every deploy:
 - main's, for a pre-release being tested;
 - the latest stable release's, read from const.py at its tag. A release that
   did not change the firmware keeps the previous version (tag v1.10.0 pins
-  1.9.0), unless it is a final release replacing a pre-release firmware
-  version, so this is not always the tag's own version.
+  1.9.0), so this is not always the tag's own version. The exception is a
+  final release replacing a pre-release firmware version, which pins its own
+  version.
 
 A version equal to the latest tag's is left out: the latest-release pass
 already publishes it. An unreadable pin is skipped with a warning on
