@@ -121,10 +121,9 @@ if [ -z "$FW_VERSION" ]; then
   exit 1
 fi
 
-# The semver gate above only allows -alpha/-beta/-rc suffixes, so any dash means
-# a pre-release version. A final release must not ship a pre-release firmware
-# version, even when the firmware source is unchanged since that pre-release's
-# tag.
+# A dash marks a pre-release version. A final release must not ship a
+# pre-release firmware version, even when the firmware source is unchanged
+# since that pre-release's tag.
 REPLACES_FW_PRERELEASE=false
 if [[ "$FIRMWARE_CHANGED" = "false" && "$FW_VERSION" == *-* && "$VERSION" != *-* ]]; then
   FIRMWARE_CHANGED=true

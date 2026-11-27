@@ -484,6 +484,21 @@ def test_pr_body_uses_const_py_firmware_version(tmp_path: Path):
     )
 
 
+def test_pr_body_names_the_prerelease_firmware_a_final_release_replaces(tmp_path: Path):
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _init_repo(repo)
+    _release_firmware_prerelease(repo, "0.93.0-rc.1")
+
+    fake_bin, log = _make_fake_tools(tmp_path)
+    result = _run_with_fake_tools(repo, fake_bin, "0.93.0")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    pr_create = log.read_text().split("gh pr create", 1)[1]
+    assert "Final release after pre-release firmware `0.93.0-rc.1`" in pr_create
+    assert "Firmware-changing release" not in pr_create
+
+
 def test_failure_after_branch_creation_cleans_up(tmp_path: Path):
     """If a step fails after `git checkout -b`, the script must return the
     repo to main and delete the local release branch so a rerun isn't
