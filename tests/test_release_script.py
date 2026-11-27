@@ -228,6 +228,54 @@ def test_firmware_release_bumps_three_versions(tmp_path: Path):
     assert "0.93.0" not in header, "release script must not bump the header literal"
 
 
+def _release_firmware_prerelease(repo: Path, version: str) -> None:
+    """Commit and tag a pre-release that put `version` on the firmware."""
+    (repo / "custom_components" / "eppgrid" / "manifest.json").write_text(
+        f'{{\n  "domain": "eppgrid",\n  "version": "{version}"\n}}\n'
+    )
+    (repo / "custom_components" / "eppgrid" / "const.py").write_text(f'FIRMWARE_VERSION = "{version}"\n')
+    (repo / "firmware" / "common" / "epp-core.yaml").write_text(
+        f'substitutions:\n  project:\n    version: "{version}"\n'
+    )
+    _git("add", ".", cwd=repo)
+    _git("commit", "-qm", f"chore: release v{version}", cwd=repo)
+    _git("tag", f"v{version}", cwd=repo)
+
+
+def test_final_release_after_a_firmware_prerelease_bumps_firmware(tmp_path: Path):
+    """The final release replaces a pre-release firmware version even when the
+    firmware source has not changed since that pre-release's tag."""
+    _init_repo(tmp_path)
+    _release_firmware_prerelease(tmp_path, "0.93.0-beta.1")
+
+    result = _run(tmp_path, "0.93.0", "--no-push")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    _git("checkout", "-q", "release-v0.93.0", cwd=tmp_path)
+    const_py = (tmp_path / "custom_components" / "eppgrid" / "const.py").read_text()
+    assert 'FIRMWARE_VERSION = "0.93.0"' in const_py
+    base_yaml = (tmp_path / "firmware" / "common" / "epp-core.yaml").read_text()
+    assert 'version: "0.93.0"' in base_yaml
+    message = _git("log", "-1", "--format=%B", cwd=tmp_path, capture_output=True, text=True).stdout
+    assert "Firmware-changing release" in message
+
+
+def test_prerelease_after_a_firmware_prerelease_leaves_firmware_alone(tmp_path: Path):
+    """An integration-only beta.2 keeps the beta.1 firmware: only a final release
+    needs the pre-release suffix gone."""
+    _init_repo(tmp_path)
+    _release_firmware_prerelease(tmp_path, "0.93.0-beta.1")
+
+    result = _run(tmp_path, "0.93.0-beta.2", "--no-push")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    _git("checkout", "-q", "release-v0.93.0-beta.2", cwd=tmp_path)
+    const_py = (tmp_path / "custom_components" / "eppgrid" / "const.py").read_text()
+    assert 'FIRMWARE_VERSION = "0.93.0-beta.1"' in const_py
+    base_yaml = (tmp_path / "firmware" / "common" / "epp-core.yaml").read_text()
+    assert 'version: "0.93.0-beta.1"' in base_yaml
+
+
 def test_succeeds_when_versions_already_at_target(tmp_path: Path):
     """When versions are already bumped on main (e.g. in an earlier feature
     commit) and there are firmware code changes since the last tag, the
