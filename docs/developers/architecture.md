@@ -1046,10 +1046,10 @@ template, `FIRMWARE_VERSION`, etc.) disagree. It then **always** compiles both
 variants, generates ESP Web Tools manifests, and publishes them as release
 assets — every tag rebuilds firmware unconditionally, so an integration-only
 release attaches a byte-identical rebuild of the unchanged firmware (the
-integration keeps `FIRMWARE_VERSION` pointed at the release where the firmware
-last changed). **Every release is published as a pre-release**
-(`prerelease=true`, `make_latest=false`) — none are ever auto-marked the GitHub
-`latest`. After testing, promote with `bin/promote.sh <version>` (which runs
+integration keeps `FIRMWARE_VERSION` pointed at the last release that bumped the
+firmware). **Every release is published as a pre-release** (`prerelease=true`,
+`make_latest=false`) — none are ever auto-marked the GitHub `latest`. After
+testing, promote with `bin/promote.sh <version>` (which runs
 `gh release edit v<version> --prerelease=false --latest=true`). The release
 notes are the version's `CHANGES.md` section, read by
 `.github/scripts/extract-release-notes.sh`. A tag with no section or an empty

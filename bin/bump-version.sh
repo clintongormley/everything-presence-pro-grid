@@ -5,7 +5,8 @@
 # HACS/HA version of record. It deliberately does NOT touch
 # custom_components/eppgrid/const.py (FIRMWARE_VERSION) or any firmware YAML:
 # those are an independent firmware version that only changes when firmware
-# changes.
+# changes, or when a final release replaces a pre-release firmware version (see
+# bin/release.sh).
 #
 # Used by .github/workflows/post-release-bump.yml to roll main forward to the
 # next minor after a release is promoted. Also called by bin/release.sh for
