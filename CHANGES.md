@@ -4,7 +4,7 @@ User-facing changes to Everything Presence Grid. For full release assets and
 firmware downloads, see the
 [GitHub releases page](https://github.com/clintongormley/everything-presence-pro-grid/releases).
 
-## Unreleased
+## v1.11.0 — 2026-11-27
 
 - The LED's connection status animations can now be switched off, with **Status
     animations** under **Settings → LED and Relay** (#450): the blue pulse at
