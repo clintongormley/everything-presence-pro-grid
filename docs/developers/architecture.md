@@ -1020,7 +1020,8 @@ since the previous tag) so the integration version and firmware version remain
 independent — they only re-align when the firmware actually changes. The one
 exception is a final release made while the firmware still carries a pre-release
 version (for example `1.11.0` after `1.11.0-beta.1`): it bumps the firmware too,
-so a final release never ships a beta or rc firmware version.
+so a final release never ships a beta or rc firmware version. The script refuses
+a final version lower than that pre-release (`1.11.0` after `1.12.0-beta.1`).
 
 A final release also checks the `CHANGES.md` section that will become the
 release notes: `## v<version>` if there is one, otherwise `## Unreleased`. The

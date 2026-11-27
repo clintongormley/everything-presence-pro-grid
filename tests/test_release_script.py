@@ -297,6 +297,41 @@ def test_prerelease_after_a_firmware_prerelease_leaves_firmware_alone(tmp_path: 
     assert "Integration-only release" in message
 
 
+@pytest.mark.parametrize(
+    ("prerelease", "final"),
+    [("1.12.0-beta.1", "1.11.0"), ("1.0.0-beta.1", "0.99.0"), ("0.93.1-rc.1", "0.93.0")],
+)
+def test_final_release_lower_than_the_firmware_prerelease_is_refused(tmp_path: Path, prerelease: str, final: str):
+    _init_repo(tmp_path)
+    _release_firmware_prerelease(tmp_path, prerelease)
+    const_py = tmp_path / "custom_components" / "eppgrid" / "const.py"
+    before = const_py.read_text()
+
+    result = _run(tmp_path, final, "--no-push")
+    assert result.returncode != 0
+    assert "✗" in result.stderr
+    assert prerelease in result.stderr
+    assert final in result.stderr
+    assert "release preparation failed" not in result.stderr, "stopped only after the branch existed"
+    assert _current_branch(tmp_path) == "main"
+    assert _branches(tmp_path, f"release-v{final}") == ""
+    assert const_py.read_text() == before
+
+
+@pytest.mark.parametrize(("prerelease", "final"), [("0.92.1-beta.1", "0.93.0"), ("0.93.0-beta.1", "1.0.0")])
+def test_final_release_higher_than_the_firmware_prerelease_bumps_firmware(tmp_path: Path, prerelease: str, final: str):
+    _init_repo(tmp_path)
+    _release_firmware_prerelease(tmp_path, prerelease)
+
+    result = _run(tmp_path, final, "--no-push")
+    assert result.returncode == 0, result.stdout + result.stderr
+
+    const_py = _git(
+        "show", f"release-v{final}:custom_components/eppgrid/const.py", cwd=tmp_path, capture_output=True, text=True
+    ).stdout
+    assert f'FIRMWARE_VERSION = "{final}"' in const_py
+
+
 def test_succeeds_when_versions_already_at_target(tmp_path: Path):
     """When versions are already bumped on main (e.g. in an earlier feature
     commit) and there are firmware code changes since the last tag, the
